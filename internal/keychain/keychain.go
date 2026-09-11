@@ -31,3 +31,11 @@ func ReadLive() (*Blob, error) { return credstore.Read(credstore.LiveService) }
 
 // Backend describes where credentials live on this platform.
 const Backend = credstore.Backend
+
+// CheckWritable proves the credential store can be written before a caller does
+// something irreversible that depends on it. It writes a sentinel item, reads it
+// back and deletes it, so a store that accepts writes but loses them fails here
+// rather than at the moment an account is on the line.
+func CheckWritable() error {
+	return credstore.CheckWritable()
+}

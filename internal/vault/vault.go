@@ -438,6 +438,17 @@ func (v *Vault) Refresh(ctx context.Context, accountID string, isActive, allowAc
 			cur.RefreshExpiry().Format("2006-01-02")}
 	}
 
+	// A refresh is irreversible: the moment the server answers, the old pair is
+	// revoked, and if the new one cannot be stored the account is gone until
+	// someone logs in by hand. That is not hypothetical — a keychain write that
+	// timed out under a throttled launchd job destroyed a working account here.
+	// So prove the store is writable first, while failing still costs nothing.
+	if err := keychain.CheckWritable(); err != nil {
+		return nil, fmt.Errorf("refusing to refresh %q: the credential store is not "+
+			"writable, and a refresh that cannot be stored destroys the account: %w",
+			accountID, err)
+	}
+
 	tok, err := v.oauth.Refresh(ctx, cur.RefreshToken)
 	if err != nil {
 		return nil, err

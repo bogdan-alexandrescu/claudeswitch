@@ -145,3 +145,30 @@ func verifyWrite(service string, want *Blob) error {
 	}
 	return nil
 }
+
+// probeService is the sentinel item CheckWritable uses. It is namespaced like a
+// vault entry so anyone auditing their keychain sees where it came from, and it
+// never survives a successful check.
+const probeService = "claudeswitch:__writable_probe"
+
+// CheckWritable writes a sentinel, reads it back and removes it. A store that
+// silently drops writes, or that blocks long enough to time out, fails here —
+// which is the whole point: the caller is about to do something it cannot undo.
+func CheckWritable() error {
+	want := &Blob{ClaudeAIOAuth: &OAuth{
+		AccessToken: fmt.Sprintf("probe-%d", time.Now().UnixNano()),
+	}}
+	if err := Write(probeService, want); err != nil {
+		return fmt.Errorf("writing a probe item: %w", err)
+	}
+	defer func() { _ = Delete(probeService) }()
+
+	got, err := Read(probeService)
+	if err != nil {
+		return fmt.Errorf("reading the probe item back: %w", err)
+	}
+	if got.ClaudeAIOAuth.AccessToken != want.ClaudeAIOAuth.AccessToken {
+		return fmt.Errorf("the probe item did not read back as written")
+	}
+	return nil
+}
