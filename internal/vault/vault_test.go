@@ -15,7 +15,7 @@ import (
 // logging the user out of the session they are sitting in.
 func TestRefreshRefusesTheActiveAccountByDefault(t *testing.T) {
 	v := New(quietLogger())
-	_, err := v.Refresh(nil, "personal", true, false)
+	_, err := v.Refresh(nil, "personal", "", true, false)
 	if !errors.Is(err, ErrActiveAccount) {
 		t.Fatalf("got %v, want ErrActiveAccount", err)
 	}

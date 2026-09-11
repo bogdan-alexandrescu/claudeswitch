@@ -686,6 +686,14 @@ func cmdDoctor(args []string) error {
 		fmt.Printf("         └ fix: run `claudeswitch init`\n")
 	}
 
+	if dup := checkDuplicateCredentials(cfg); dup != "" {
+		fmt.Printf("  [%s] vault entries   %s\n", ok(false), "corrupted")
+		fmt.Printf("         └ %s\n", dup)
+		fmt.Printf("         └ fix: re-add the affected accounts while each is signed in\n")
+	} else if cerr == nil {
+		fmt.Printf("  [%s] vault entries   %s\n", ok(true), "each holds its own credential")
+	}
+
 	if problem := checkServiceQoS(); problem != "" {
 		fmt.Printf("  [%s] service qos     %s\n", ok(false), "throttled")
 		fmt.Printf("         └ %s\n", problem)
@@ -1555,7 +1563,7 @@ func maintainVault(ctx context.Context, v *vault.Vault, st *state.State, cfg *co
 		}
 
 		rctx, cancel := context.WithTimeout(ctx, 40*time.Second)
-		_, err := v.Refresh(rctx, a.ID, false, false)
+		_, err := v.Refresh(rctx, a.ID, cfg.SeatOf(a.ID), false, false)
 		cancel()
 		if err != nil {
 			var needsLogin *oauth.NeedsLoginError
@@ -1678,7 +1686,7 @@ func cmdRefresh(args []string) error {
 	}
 	id := positional[0]
 
-	_, _, err := load(*cfgPath)
+	cfg, _, err := load(*cfgPath)
 	if err != nil {
 		return err
 	}
@@ -1705,7 +1713,7 @@ func cmdRefresh(args []string) error {
 	defer cancel()
 
 	before, _ := v.Load(id)
-	e, err := v.Refresh(ctx, id, isActive, *allowActive)
+	e, err := v.Refresh(ctx, id, cfg.SeatOf(id), isActive, *allowActive)
 	if err != nil {
 		var needsLogin *oauth.NeedsLoginError
 		if errors.As(err, &needsLogin) {
@@ -3295,4 +3303,41 @@ func checkServiceQoS() string {
 		}
 	}
 	return ""
+}
+
+// checkDuplicateCredentials finds vault entries holding the same credential as
+// each other, or one whose stored seat is not the seat its config entry pins.
+//
+// Either state is quietly catastrophic. Two entries sharing a credential report
+// identical utilization, so rotating between them does nothing; and because a
+// refresh revokes the token it was given, refreshing one destroys the other.
+// That is how three accounts here came to need an interactive login on the same
+// morning. It is cheap to detect and was never being looked for.
+func checkDuplicateCredentials(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+	seen := map[string]string{} // access token -> first account id holding it
+	var problems []string
+	for _, a := range cfg.Accounts {
+		b, err := keychain.Read(keychain.VaultService(a.ID))
+		if err != nil || b.ClaudeAIOAuth == nil {
+			continue // not vaulted, or unreadable; other checks cover that
+		}
+		if tok := b.ClaudeAIOAuth.AccessToken; tok != "" {
+			if other, dup := seen[tok]; dup {
+				problems = append(problems,
+					fmt.Sprintf("%s and %s hold the same credential", other, a.ID))
+			} else {
+				seen[tok] = a.ID
+			}
+		}
+		want := a.Seat()
+		if want != "" && b.Meta != nil && b.Meta.Seat() != "" && b.Meta.Seat() != want {
+			problems = append(problems, fmt.Sprintf(
+				"%s holds a credential for seat %s, but is pinned to %s",
+				a.ID, b.Meta.Seat()[:8], want[:8]))
+		}
+	}
+	return strings.Join(problems, "; ")
 }

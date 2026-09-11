@@ -425,13 +425,28 @@ var ErrActiveAccount = errors.New(
 //  4. verify
 //
 // isActive tells us whether accountID is the credential Claude Code is using.
-func (v *Vault) Refresh(ctx context.Context, accountID string, isActive, allowActive bool) (*Entry, error) {
+func (v *Vault) Refresh(ctx context.Context, accountID, wantSeat string, isActive, allowActive bool) (*Entry, error) {
 	if isActive && !allowActive {
 		return nil, ErrActiveAccount
 	}
-	cur, err := v.Load(accountID)
+	blob, err := keychain.Read(keychain.VaultService(accountID))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("account %q is not in the vault (run `claudeswitch add %s`): %w",
+			accountID, accountID, err)
+	}
+	cur := blob.ClaudeAIOAuth
+
+	// Never refresh a credential that is not this account's. Refreshing revokes
+	// the token it was given, so doing it through a mis-filed entry kills the
+	// account that entry actually belongs to — and if two entries hold the same
+	// credential, refreshing either one destroys both. That cascade took three
+	// accounts out here before this check existed.
+	if wantSeat != "" && blob.Meta != nil && blob.Meta.Seat() != "" && blob.Meta.Seat() != wantSeat {
+		return nil, fmt.Errorf(
+			"refusing to refresh %q: its stored credential belongs to seat %s, not the %s this "+
+				"account is pinned to. Refreshing would revoke another account's token. "+
+				"Re-add it with `claudeswitch add %s` while the right account is signed in",
+			accountID, short(blob.Meta.Seat()), short(wantSeat), accountID)
 	}
 	if cur.RefreshDead() {
 		return nil, &oauth.NeedsLoginError{Detail: "the stored refresh token expired on " +
