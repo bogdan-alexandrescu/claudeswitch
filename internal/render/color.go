@@ -119,6 +119,28 @@ func visibleLen(s string) int {
 	return n
 }
 
+// stripColor removes escape sequences, leaving the text. Used when a cell has
+// to be recoloured wholesale: painting over an existing colour would leave the
+// inner reset sequence in place, which ends the new colour partway through.
+func stripColor(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	inEscape := false
+	for _, r := range s {
+		switch {
+		case inEscape:
+			if r == 'm' {
+				inEscape = false
+			}
+		case r == '\033':
+			inEscape = true
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 // padRight pads to a display width, colour or not.
 func padRight(s string, w int) string {
 	if d := w - visibleLen(s); d > 0 {

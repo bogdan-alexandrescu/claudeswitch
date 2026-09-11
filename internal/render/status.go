@@ -316,19 +316,32 @@ func statusCompact(out io.Writer, o Options) {
 			state += " · " + paint(yellow, bill)
 		}
 
+		// Figures for an account that cannot be read again are leftovers. They
+		// are kept, because knowing where it stood is useful, but greyed: shown
+		// in the same colours as a live account they read as current, and a
+		// dead account looked like a healthy one with room to spare.
+		frozen := needsLogin(acct.LastErr)
+		if frozen {
+			five, seven = paint(grey, stripColor(five)), paint(grey, stripColor(seven))
+		}
+		bar := func(pctVal, trigger float64, which string) string {
+			if frozen {
+				return paint(grey, miniBar(pctVal))
+			}
+			return paint(levelFor(pctVal, trigger, severityName(acct.Last, which)), miniBar(pctVal))
+		}
+
 		row := []string{marker, nameCell}
 		if lay.plan {
 			row = append(row, plan)
 		}
 		row = append(row, five)
 		if lay.bars {
-			row = append(row, paint(levelFor(acct.Last.FiveHour.Pct(), cfg.TriggerFor(usage.FiveHourKey),
-				severityName(acct.Last, "five_hour")), miniBar(acct.Last.FiveHour.Pct())))
+			row = append(row, bar(acct.Last.FiveHour.Pct(), cfg.TriggerFor(usage.FiveHourKey), "five_hour"))
 		}
 		row = append(row, seven)
 		if lay.bars {
-			row = append(row, paint(levelFor(acct.Last.SevenDay.Pct(), cfg.TriggerFor(usage.SevenDayKey),
-				severityName(acct.Last, "seven_day")), miniBar(acct.Last.SevenDay.Pct())))
+			row = append(row, bar(acct.Last.SevenDay.Pct(), cfg.TriggerFor(usage.SevenDayKey), "seven_day"))
 		}
 		if lay.clears {
 			row = append(row, clears)
@@ -341,7 +354,15 @@ func statusCompact(out io.Writer, o Options) {
 		// keeping up. When the last attempt failed, the daemon already knows
 		// exactly why, and printing a generic lag message instead throws away
 		// the one line that tells the reader what to do about it.
-		if age := time.Since(acct.LastAt); age > staleAfter(cfg, a.ID == st.Active) {
+		// An account needing a sign-in is reported whatever the age of its
+		// figures. Hanging this off staleness meant the one condition a person
+		// has to act on appeared only once a timer had also elapsed, and the
+		// row meanwhile showed a headroom verdict computed from numbers that
+		// could no longer be refreshed.
+		if fix := loginFix(acct.LastErr); fix != "" {
+			warnings = append(warnings, fmt.Sprintf("%s needs a sign-in — %s",
+				a.ID, fmt.Sprintf(fix, a.ID)))
+		} else if age := time.Since(acct.LastAt); age > staleAfter(cfg, a.ID == st.Active) {
 			switch {
 			case holdingOff != "":
 				// Deliberately not polling is not the same as failing to keep
@@ -747,11 +768,29 @@ func firstLine(s string) string {
 // usage API answers 401 for a revoked or expired credential, and no amount of
 // retrying fixes it — so a row in that state must say so rather than claim it
 // is being re-read.
-func needsLogin(lastErr string) bool {
-	if lastErr == "" {
-		return false
+func needsLogin(lastErr string) bool { return loginFix(lastErr) != "" }
+
+// loginFix returns the command that puts an account back in service, or "" when
+// nothing a person does would help. Retrying is useless for all of these: the
+// credential is gone, revoked, or was never stored, and only an interactive
+// sign-in produces a new one.
+//
+// The account id is filled in by the caller, so the message a user reads is
+// something they can paste rather than a description of their situation.
+func loginFix(lastErr string) string {
+	switch {
+	case lastErr == "":
+		return ""
+	case strings.Contains(lastErr, "no stored credential"),
+		strings.Contains(lastErr, "not in the vault"):
+		// Configured but never captured, or the entry has been removed.
+		return "sign in with `claude` and run `claudeswitch add %s`"
+	case strings.Contains(lastErr, "401"),
+		strings.Contains(lastErr, "re-login"),
+		strings.Contains(lastErr, "invalid_grant"),
+		strings.Contains(lastErr, "needs an interactive login"):
+		// The stored credential was revoked or expired beyond refreshing.
+		return "its credential was rejected — sign in with `claude`, then `claudeswitch add %s`"
 	}
-	return strings.Contains(lastErr, "401") ||
-		strings.Contains(lastErr, "re-login") ||
-		strings.Contains(lastErr, "needs an interactive login")
+	return ""
 }
