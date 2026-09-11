@@ -74,6 +74,18 @@ func (a Account) Name() string { return a.ID }
 // pool — two people in one organization have separate quota (different
 // subscriptions and plans), and one person in two organizations likewise.
 // Empty means unpinned, which the guards treat as "cannot verify".
+// SeatOf is the quota pool an account id names, or "" when the config has not
+// pinned one. Callers that are about to decide whose credential they are
+// holding need this rather than the organization on its own.
+func (c *Config) SeatOf(accountID string) string {
+	for _, a := range c.Accounts {
+		if a.ID == accountID {
+			return a.Seat()
+		}
+	}
+	return ""
+}
+
 func (a Account) Seat() string {
 	if a.AccountUUID == "" || a.OrgID == "" {
 		return ""

@@ -319,9 +319,19 @@ func statusCompact(out io.Writer, o Options) {
 
 		// Anything the reader should act on goes to the warnings block rather
 		// than crowding the row it belongs to.
+		// "the poller is behind" is only true when the poller is trying and not
+		// keeping up. When the last attempt failed, the daemon already knows
+		// exactly why, and printing a generic lag message instead throws away
+		// the one line that tells the reader what to do about it.
 		if age := time.Since(acct.LastAt); age > staleAfter(cfg, a.ID == st.Active) {
-			warnings = append(warnings, fmt.Sprintf("%s reading is %s old — the poller is behind",
-				a.ID, shortDur(age)))
+			switch {
+			case acct.LastErr != "":
+				warnings = append(warnings, fmt.Sprintf("%s has not been readable for %s — %s",
+					a.ID, shortDur(age), firstLine(acct.LastErr)))
+			default:
+				warnings = append(warnings, fmt.Sprintf("%s reading is %s old — the poller is behind",
+					a.ID, shortDur(age)))
+			}
 		}
 		if !acct.RefreshExpiry.IsZero() && time.Until(acct.RefreshExpiry) < 7*24*time.Hour {
 			warnings = append(warnings, fmt.Sprintf("%s needs a login within %s",
@@ -457,6 +467,10 @@ func stateOf(acct *state.Account, a config.Account, cfg *config.Config, proj flo
 	}
 	avail := acct.Availability(a.Reserve)
 	switch {
+	case needsLogin(acct.LastErr):
+		// Nothing else in this row can be trusted: the figures are whatever was
+		// last readable, and no amount of waiting will refresh them.
+		return "needs login"
 	case acct.ExpiredAt(time.Now()):
 		// The window this reading describes has since refilled, so the figure
 		// says nothing about the account now.
@@ -500,10 +514,14 @@ func footer(out io.Writer, o Options) {
 		fmt.Fprintf(out, "  ·  %d api call(s) spare", o.Budget.Remaining())
 	}
 	fmt.Fprintln(out)
-	legend := "  ! flagged by the API   ~ projected from an older reading"
+	legend := "  ! flagged by the API  ·  ~ projected from an older reading"
 	if useColor {
-		legend += "   " + paint(green, "ok") + " " + paint(yellow, "climbing") +
-			" " + paint(orange, "close") + " " + paint(red, "act now")
+		// These four are colour swatches, not words to read in sequence. Without
+		// a label and separators they run together into "ok climbing close act
+		// now", which is what the line looks like the moment colour is stripped
+		// — by a pipe, a paste, or a terminal that does not support it.
+		legend += "\n  colour:  " + paint(green, "ok") + "  ·  " + paint(yellow, "climbing") +
+			"  ·  " + paint(orange, "close") + "  ·  " + paint(red, "act now")
 	}
 	fmt.Fprintln(out, legend)
 	fmt.Fprintln(out)
@@ -686,4 +704,26 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n-1] + "…"
+}
+
+// firstLine keeps a multi-line error to the part worth putting in a warning
+// list. The rest is available from `claudeswitch doctor`.
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	return strings.TrimSpace(s)
+}
+
+// needsLogin recognises the one failure a user has to act on themselves. The
+// usage API answers 401 for a revoked or expired credential, and no amount of
+// retrying fixes it — so a row in that state must say so rather than claim it
+// is being re-read.
+func needsLogin(lastErr string) bool {
+	if lastErr == "" {
+		return false
+	}
+	return strings.Contains(lastErr, "401") ||
+		strings.Contains(lastErr, "re-login") ||
+		strings.Contains(lastErr, "needs an interactive login")
 }

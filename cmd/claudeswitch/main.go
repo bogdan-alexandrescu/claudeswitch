@@ -1500,7 +1500,7 @@ func maintainVault(ctx context.Context, v *vault.Vault, st *state.State, cfg *co
 
 	if st.Active != "" && v.Has(st.Active) {
 		sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		changed, err := v.SyncActive(sctx, st.Active)
+		changed, err := v.SyncActive(sctx, st.Active, cfg.SeatOf(st.Active))
 		cancel()
 		switch {
 		case err != nil:

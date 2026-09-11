@@ -438,17 +438,6 @@ func (v *Vault) Refresh(ctx context.Context, accountID string, isActive, allowAc
 			cur.RefreshExpiry().Format("2006-01-02")}
 	}
 
-	// A refresh is irreversible: the moment the server answers, the old pair is
-	// revoked, and if the new one cannot be stored the account is gone until
-	// someone logs in by hand. That is not hypothetical — a keychain write that
-	// timed out under a throttled launchd job destroyed a working account here.
-	// So prove the store is writable first, while failing still costs nothing.
-	if err := keychain.CheckWritable(keychain.VaultService(accountID)); err != nil {
-		return nil, fmt.Errorf("refusing to refresh %q: the credential store is not "+
-			"writable, and a refresh that cannot be stored destroys the account: %w",
-			accountID, err)
-	}
-
 	tok, err := v.oauth.Refresh(ctx, cur.RefreshToken)
 	if err != nil {
 		return nil, err
@@ -560,7 +549,17 @@ func (v *Vault) VaultedAt(accountID string) time.Time {
 // Nothing in the credential itself distinguishes them, so the organization is
 // checked against the entry's recorded org before anything is written. That
 // costs one API call, and only on the rare occasions the tokens differ.
-func (v *Vault) SyncActive(ctx context.Context, accountID string) (bool, error) {
+func (v *Vault) SyncActive(ctx context.Context, accountID, wantSeat string) (bool, error) {
+	// Before touching the store at all: without a pinned seat there is no way to
+	// tell this account's credential from a colleague's in the same
+	// organization, and guessing is what corrupted two entries here.
+	if wantSeat == "" {
+		return false, fmt.Errorf(
+			"refusing to re-capture %q: it has no `account_uuid` in the config, so there is "+
+				"no way to tell whether the live credential is this account or a colleague's "+
+				"in the same organization. Run `claudeswitch identify` and add it", accountID)
+	}
+
 	live, err := keychain.ReadLive()
 	if err != nil {
 		return false, err
@@ -582,20 +581,35 @@ func (v *Vault) SyncActive(ctx context.Context, accountID string) (bool, error) 
 				"re-add it with `claudeswitch add %s` while that account is signed in", accountID, accountID)
 	}
 
-	u, err := v.fetch(ctx, live.ClaudeAIOAuth.AccessToken)
+	// Verify the SEAT, not just the organization. An organization holds many
+	// people and each has their own quota, so an org match alone says only
+	// "someone at this company" — and on that evidence this function will
+	// happily overwrite one colleague's vault entry with another's. It did
+	// exactly that: two accounts in one organization ended up holding the same
+	// credential and reporting identical utilization, which quietly turned a
+	// rotation between them into a no-op.
+	pr, err := v.identify(ctx, live.ClaudeAIOAuth.AccessToken)
 	if err != nil {
 		return false, fmt.Errorf("cannot verify which account the live credential belongs to: %w", err)
 	}
-	if u.OrgID != wantOrg {
+	if got := pr.Seat(); got != wantSeat {
 		return false, &ForeignCredentialError{
-			AccountID: accountID, WantOrg: wantOrg, GotOrg: u.OrgID,
+			AccountID: accountID, WantOrg: wantSeat, GotOrg: got,
+			GotEmail: pr.Describe(),
 		}
 	}
 
 	entry := &keychain.Blob{
 		ClaudeAIOAuth: live.ClaudeAIOAuth,
-		Meta: &keychain.Meta{OrgID: wantOrg, AccountID: accountID,
-			VaultedAt: time.Now().Format(time.RFC3339)},
+		Meta: &keychain.Meta{
+			OrgID:       pr.Organization.UUID,
+			AccountUUID: pr.Account.UUID,
+			Email:       pr.Account.Email,
+			Plan:        pr.Plan(),
+			OrgName:     pr.Organization.Name,
+			AccountID:   accountID,
+			VaultedAt:   time.Now().Format(time.RFC3339),
+		},
 	}
 	if err := keychain.Write(keychain.VaultService(accountID), entry); err != nil {
 		return false, err

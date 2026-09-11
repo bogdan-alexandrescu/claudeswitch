@@ -1,7 +1,9 @@
 package vault
 
 import (
+	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -200,5 +202,43 @@ func TestRefreshPreservesTheAnnotation(t *testing.T) {
 	}
 	if cp.VaultedAt == before.VaultedAt {
 		t.Error("the timestamp should move forward")
+	}
+}
+
+// Two people in one organization are two quota pools. An organization match
+// therefore says only "someone at this company", and acting on it lets one
+// colleague's credential be filed under another's name — which is how two
+// accounts came to report identical utilization and a rotation between them
+// silently did nothing.
+func TestForeignCredentialSeparatesSeatsWithinOneOrg(t *testing.T) {
+	const org = "22222222-2222-2222-2222-222222222222"
+	mine := "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb@" + org
+	theirs := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa@" + org
+
+	if mine == theirs {
+		t.Fatal("the two seats must differ")
+	}
+	// The failing comparison is the one that only looked at the org half.
+	if mineOrg, theirsOrg := mine[strings.Index(mine, "@"):], theirs[strings.Index(theirs, "@"):]; mineOrg != theirsOrg {
+		t.Fatal("this test is meaningless unless both seats share an organization")
+	}
+
+	e := &ForeignCredentialError{AccountID: "work-seat", WantOrg: mine, GotOrg: theirs}
+	if !strings.Contains(e.Error(), "not overwriting it") {
+		t.Errorf("the error must say the entry was left alone, got: %s", e.Error())
+	}
+}
+
+// An entry with no pinned seat cannot be verified at all, and guessing is what
+// caused the damage. SyncActive has to refuse rather than fall back to the org.
+func TestSyncActiveRefusesAnUnpinnedSeat(t *testing.T) {
+	v := New(quietLogger())
+	// No seat is pinned, so this must fail before it reads any credential.
+	_, err := v.SyncActive(context.Background(), "work-seat", "")
+	if err == nil {
+		t.Fatal("expected a refusal when no seat is pinned")
+	}
+	if !strings.Contains(err.Error(), "account_uuid") {
+		t.Errorf("the refusal must name the config key that fixes it, got: %v", err)
 	}
 }
