@@ -335,3 +335,67 @@ func contains(s, sub string) bool {
 	}
 	return false
 }
+
+// The two windows are held to different lines because they cost different
+// things to spend. 85% of a 5-hour window is nearly gone and refills the same
+// afternoon; 85% of a weekly window still holds days of work. Judging both by
+// one number retired accounts that had plenty left.
+func TestTheWindowsAreJudgedByTheirOwnTriggers(t *testing.T) {
+	later := now.Add(time.Hour)
+
+	// Weekly at 88: past the old single trigger, comfortably inside the weekly one.
+	c := cfg()
+	c.SwitchAtWeekly = 95
+	in := Input{Cfg: c, Now: now, St: st("work-a", map[string]*state.Account{
+		"work-a": reading(10, 88, later),
+		"work-b": reading(10, 10, later),
+	})}
+	if d := Decide(in); d.Kind != Stay {
+		t.Errorf("88%% of a weekly window is under the 95%% weekly trigger and must not rotate: %v %s",
+			d.Kind, d.Reason)
+	}
+
+	// Past the weekly trigger it must go, and say which window drove it.
+	in.St = st("work-a", map[string]*state.Account{
+		"work-a": reading(10, 96, later),
+		"work-b": reading(10, 10, later),
+	})
+	d := Decide(in)
+	if d.Kind != Switch || d.Target != "work-b" {
+		t.Fatalf("96%% weekly is over the 95%% trigger and must rotate: %v -> %s (%s)",
+			d.Kind, d.Target, d.Reason)
+	}
+	if !contains(d.Reason, "weekly") {
+		t.Errorf("the reason must name the window that drove it, got: %s", d.Reason)
+	}
+
+	// The session window keeps its own, lower trigger at the same time.
+	in.St = st("work-a", map[string]*state.Account{
+		"work-a": reading(86, 10, later),
+		"work-b": reading(10, 10, later),
+	})
+	d = Decide(in)
+	if d.Kind != Switch {
+		t.Fatalf("86%% of a session window is over the 85%% session trigger: %v %s", d.Kind, d.Reason)
+	}
+	if !contains(d.Reason, "session") {
+		t.Errorf("the reason must name the session window, got: %s", d.Reason)
+	}
+}
+
+// A Config built in code has no defaults applied. A zero weekly threshold must
+// not mean "trigger at 0%", which would put every account over the line at once
+// and leave nothing to rotate to.
+func TestAnUnsetWeeklyTriggerFallsBackRatherThanBlockingEverything(t *testing.T) {
+	later := now.Add(time.Hour)
+	c := cfg()
+	c.SwitchAtWeekly = 0
+	in := Input{Cfg: c, Now: now, St: st("work-a", map[string]*state.Account{
+		"work-a": reading(90, 20, later),
+		"work-b": reading(10, 20, later),
+	})}
+	if d := Decide(in); d.Kind != Switch || d.Target != "work-b" {
+		t.Fatalf("an unset weekly trigger must fall back to the session one: %v -> %s (%s)",
+			d.Kind, d.Target, d.Reason)
+	}
+}

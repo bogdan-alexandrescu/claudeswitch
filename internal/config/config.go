@@ -13,14 +13,22 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/usage"
 )
 
 // Defaults are the tuning surface. They are settled decisions (see
 // BUILD_PROMPT.md) but must remain configurable and visible in `status`.
 const (
-	DefaultSwitchAt  = 85.0 // utilization % at which we rotate away
-	DefaultHardFloor = 96.0 // above this, swap mid-turn rather than wait for idle
-	DefaultReserve   = 70.0 // personal is ineligible for overflow above this
+	DefaultSwitchAt = 85.0 // session (5-hour) utilization % at which we rotate away
+	// DefaultSwitchAtWeekly is higher than the session trigger on purpose. The
+	// two windows cost different things to spend: 85% of a 5-hour window is
+	// nearly gone and refills the same afternoon, while 85% of a weekly window
+	// still holds days of work. Judging both by one number retired accounts that
+	// had plenty left.
+	DefaultSwitchAtWeekly = 95.0
+	DefaultHardFloor      = 96.0 // above this, swap mid-turn rather than wait for idle
+	DefaultReserve        = 70.0 // personal is ineligible for overflow above this
 )
 
 type Account struct {
@@ -102,6 +110,22 @@ func (c *Config) AccountBySeat(seat string) string {
 	return ""
 }
 
+// TriggerFor is the utilization at which this window is considered spent. The
+// two windows are judged against their own thresholds rather than a single one,
+// because a 5-hour window that refills this afternoon and a weekly one that is
+// gone until next week are not the same kind of loss.
+func (c *Config) TriggerFor(window string) float64 {
+	if window == usage.SevenDayKey && c.SwitchAtWeekly > 0 {
+		return c.SwitchAtWeekly
+	}
+	// Unset falls back to the session trigger rather than to zero. A zero
+	// threshold is not a threshold — it would mark every account over the line
+	// the moment it had used anything at all, and leave nothing to rotate to.
+	// Config.Load fills the default, but a Config built in code has no such
+	// guarantee and must not be able to express that.
+	return c.SwitchAt
+}
+
 func (a Account) Seat() string {
 	if a.AccountUUID == "" || a.OrgID == "" {
 		return ""
@@ -110,10 +134,13 @@ func (a Account) Seat() string {
 }
 
 type Config struct {
-	SwitchAt   float64  `toml:"switch_at"`
-	HardFloor  float64  `toml:"hard_floor"`
-	SwitchWhen string   `toml:"switch_when"`
-	Cooldown   Duration `toml:"cooldown"`
+	SwitchAt float64 `toml:"switch_at"`
+	// SwitchAtWeekly is the same idea for the seven-day window. Kept separate
+	// because the two windows recover on completely different timescales.
+	SwitchAtWeekly float64  `toml:"switch_at_weekly"`
+	HardFloor      float64  `toml:"hard_floor"`
+	SwitchWhen     string   `toml:"switch_when"`
+	Cooldown       Duration `toml:"cooldown"`
 	// MaxSwitchWait bounds how long a wanted switch will hold out for an idle
 	// gap. Preferring to swap between turns is right; waiting indefinitely is
 	// not, because during continuous heavy use — precisely when a limit is
@@ -190,18 +217,19 @@ func Load(path string) (*Config, error) {
 		path = DefaultPath()
 	}
 	c := &Config{
-		SwitchAt:      DefaultSwitchAt,
-		HardFloor:     DefaultHardFloor,
-		SwitchWhen:    "idle",
-		Cooldown:      Duration{10 * time.Minute},
-		MaxSwitchWait: Duration{30 * time.Second},
-		RefreshWindow: Duration{time.Hour},
-		RefreshProbe:  Duration{24 * time.Hour},
-		PollActive:    Duration{60 * time.Second},
-		PollHot:       Duration{20 * time.Second},
-		PollIdle:      Duration{10 * time.Minute},
-		APIBudget:     12,
-		Path:          path,
+		SwitchAt:       DefaultSwitchAt,
+		SwitchAtWeekly: DefaultSwitchAtWeekly,
+		HardFloor:      DefaultHardFloor,
+		SwitchWhen:     "idle",
+		Cooldown:       Duration{10 * time.Minute},
+		MaxSwitchWait:  Duration{30 * time.Second},
+		RefreshWindow:  Duration{time.Hour},
+		RefreshProbe:   Duration{24 * time.Hour},
+		PollActive:     Duration{60 * time.Second},
+		PollHot:        Duration{20 * time.Second},
+		PollIdle:       Duration{10 * time.Minute},
+		APIBudget:      12,
+		Path:           path,
 	}
 	if _, err := toml.DecodeFile(path, c); err != nil {
 		if os.IsNotExist(err) {
@@ -222,6 +250,9 @@ func (c *Config) Validate() error { return c.validate() }
 func (c *Config) validate() error {
 	if c.SwitchAt <= 0 || c.SwitchAt > 100 {
 		return fmt.Errorf("switch_at must be between 0 and 100, got %v", c.SwitchAt)
+	}
+	if c.SwitchAtWeekly <= 0 || c.SwitchAtWeekly > 100 {
+		return fmt.Errorf("switch_at_weekly must be between 0 and 100, got %v", c.SwitchAtWeekly)
 	}
 	if c.HardFloor < c.SwitchAt {
 		return fmt.Errorf("hard_floor (%v) must be at or above switch_at (%v)", c.HardFloor, c.SwitchAt)

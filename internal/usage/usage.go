@@ -133,6 +133,31 @@ func (u *Usage) Worst() (string, float64) {
 	return FiveHourKey, f
 }
 
+// WorstAgainst reports which window is in the most trouble relative to its own
+// trigger, that window's utilization, and how far past the trigger it is.
+//
+// Worst() compares the two windows to each other, which is only meaningful when
+// both are judged by the same number. Once the 5-hour and weekly windows have
+// separate triggers, "85% of one" and "85% of the other" stop being comparable
+// quantities: the first is nearly spent, the second still holds days. What
+// matters is distance from the line each window is actually being held to.
+func (u *Usage) WorstAgainst(fiveTrigger, sevenTrigger float64) (key string, pct, exceedance float64) {
+	f, s := u.FiveHour.Pct(), u.SevenDay.Pct()
+	if !u.FiveHour.Known() && !u.SevenDay.Known() {
+		return "", 0, 0
+	}
+	fe, se := f-fiveTrigger, s-sevenTrigger
+	switch {
+	case !u.SevenDay.Known():
+		return FiveHourKey, f, fe
+	case !u.FiveHour.Known():
+		return SevenDayKey, s, se
+	case se > fe:
+		return SevenDayKey, s, se
+	}
+	return FiveHourKey, f, fe
+}
+
 // Billing renders what this account is costing, or empty when nothing is
 // billed. Percentages say when you will be stopped; this says what you are
 // paying, which for anyone on usage-based billing is the number that matters.

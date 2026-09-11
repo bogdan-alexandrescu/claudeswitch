@@ -12,6 +12,7 @@ import (
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/state"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/usage"
 )
 
 type Kind string
@@ -94,8 +95,23 @@ type candidate struct {
 	acct  config.Account
 	obs   *state.Account
 	avail state.Availability
-	worst float64
+	// worst is the utilization of whichever window is closest to its own
+	// trigger, and window names that window. over says it has reached it.
+	//
+	// These are kept as three fields rather than one number compared against one
+	// threshold because the two windows are held to different lines: the
+	// comparison has to happen where the window is still known.
+	worst  float64
+	window string
+	over   bool
+	// exceedance is points past the trigger, negative when there is room. It
+	// orders candidates by how much trouble they are in, across windows.
+	exceedance float64
 }
+
+// trigger is the threshold governing whichever window this candidate is judged
+// on, for use in messages that quote it.
+func (c candidate) trigger(cfg *config.Config) float64 { return cfg.TriggerFor(c.window) }
 
 // Decide returns what to do now.
 func Decide(in Input) Decision {
@@ -121,7 +137,7 @@ func Decide(in Input) Decision {
 	// An account that has been refused must be left alone until it resets, no
 	// matter what an older usage reading said.
 	activeBurnt := active.avail == state.Burnt
-	overTrigger := active.obs != nil && active.obs.Last != nil && active.worst >= in.Cfg.SwitchAt
+	overTrigger := active.obs != nil && active.obs.Last != nil && active.over
 	forced := active.obs != nil && active.obs.Last != nil && active.worst >= in.Cfg.HardFloor
 
 	if !activeBurnt && !overTrigger {
@@ -131,7 +147,7 @@ func Decide(in Input) Decision {
 			return Decision{Kind: Stay, Reason: "active account's usage is unknown; holding until it can be read"}
 		}
 		return Decision{Kind: Stay, Reason: fmt.Sprintf("active account at %.0f%%, under the %.0f%% trigger",
-			active.worst, in.Cfg.SwitchAt)}
+			active.worst, active.trigger(in.Cfg))}
 	}
 
 	// Cooldown damps flapping between two marginal accounts — but never delays
@@ -160,7 +176,8 @@ func Decide(in Input) Decision {
 		return waiting(all, in, why)
 	}
 
-	reason := fmt.Sprintf("active account at %.0f%%, over the %.0f%% trigger", active.worst, in.Cfg.SwitchAt)
+	reason := fmt.Sprintf("active account at %.0f%% of its %s, over the %.0f%% trigger",
+		active.worst, windowName(active.window), active.trigger(in.Cfg))
 	if activeBurnt {
 		reason = fmt.Sprintf("active account was refused on its %s window", active.obs.BurntWin)
 	}
@@ -179,7 +196,9 @@ func gather(in Input) []candidate {
 			// a perfectly good target.
 			if a.ID != in.St.Active {
 				if obs.Last != nil {
-					_, c.worst = obs.Last.Worst()
+					c.window, c.worst, c.exceedance = obs.Last.WorstAgainst(
+						in.Cfg.TriggerFor(usage.FiveHourKey), in.Cfg.TriggerFor(usage.SevenDayKey))
+					c.over = c.exceedance >= 0
 				}
 				out = append(out, c)
 				continue
@@ -189,7 +208,15 @@ func gather(in Input) []candidate {
 				// lower bound, and under heavy use it can be ten points low by
 				// the time it is acted on. Projected() equals the reading when
 				// no burn rate is known, so this is conservative by default.
-				c.worst = obs.Projected(in.Now.Add(in.Lookahead))
+				c.window, c.worst, c.exceedance = obs.Last.WorstAgainst(
+					in.Cfg.TriggerFor(usage.FiveHourKey), in.Cfg.TriggerFor(usage.SevenDayKey))
+				// The projection applies to the window we are judging, so carry
+				// the same amount of growth onto the exceedance.
+				if proj := obs.Projected(in.Now.Add(in.Lookahead)); proj > c.worst {
+					c.exceedance += proj - c.worst
+					c.worst = proj
+				}
+				c.over = c.exceedance >= 0
 			}
 		}
 		out = append(out, c)
@@ -218,7 +245,7 @@ func firstEligible(all []candidate, in Input) (candidate, bool) {
 		if c.avail != state.Available {
 			continue
 		}
-		if c.worst >= in.Cfg.SwitchAt {
+		if c.over {
 			continue
 		}
 		if !in.Cfg.ScopeAllowed(c.acct.Scope, in.Dir) {
@@ -260,7 +287,7 @@ func preferredOrder(all []candidate, in Input) []candidate {
 // permitted in this directory.
 func scopeBlocked(all []candidate, in Input) string {
 	for _, c := range all {
-		if c.acct.ID == in.St.Active || c.avail != state.Available || c.worst >= in.Cfg.SwitchAt {
+		if c.acct.ID == in.St.Active || c.avail != state.Available || c.over {
 			continue
 		}
 		if !in.Cfg.ScopeAllowed(c.acct.Scope, in.Dir) {
@@ -289,7 +316,7 @@ func waiting(all []candidate, in Input, why string) Decision {
 			continue
 		case c.avail == state.Burnt:
 			at = c.obs.BurntTil
-		case c.obs.Last != nil && c.worst >= in.Cfg.SwitchAt:
+		case c.obs.Last != nil && c.over:
 			if r := earliestReset(c); !r.IsZero() {
 				at = r
 			}
@@ -368,10 +395,11 @@ func Explain(in Input) (Decision, []Verdict) {
 		switch {
 		case v.Active:
 			v.Eligible = true
-			if c.worst >= in.Cfg.SwitchAt {
-				v.Why = fmt.Sprintf("at %.0f%%, over the %.0f%% trigger", c.worst, in.Cfg.SwitchAt)
+			if c.over {
+				v.Why = fmt.Sprintf("at %.0f%%, over the %.0f%% %s trigger",
+					c.worst, c.trigger(in.Cfg), windowName(c.window))
 			} else {
-				v.Why = fmt.Sprintf("at %.0f%%, %.0f points of room", c.worst, in.Cfg.SwitchAt-c.worst)
+				v.Why = fmt.Sprintf("at %.0f%%, %.0f points of room", c.worst, -c.exceedance)
 			}
 		case c.avail == state.Burnt:
 			v.Why = "refused on its " + c.obs.BurntWin + " window"
@@ -382,7 +410,7 @@ func Explain(in Input) (Decision, []Verdict) {
 			}
 		case c.avail == state.Reserved:
 			v.Why = fmt.Sprintf("held in reserve above %.0f%%", c.acct.Reserve)
-		case c.worst >= in.Cfg.SwitchAt:
+		case c.over:
 			v.Why = fmt.Sprintf("at %.0f%%, no headroom", c.worst)
 		case !in.Cfg.ScopeAllowed(c.acct.Scope, in.Dir):
 			v.Why = fmt.Sprintf("scope %q not allowed in this directory", c.acct.Scope)
@@ -393,4 +421,12 @@ func Explain(in Input) (Decision, []Verdict) {
 		out = append(out, v)
 	}
 	return dec, out
+}
+
+// windowName is how a window is referred to in something a person reads.
+func windowName(key string) string {
+	if key == usage.SevenDayKey {
+		return "weekly"
+	}
+	return "session"
 }

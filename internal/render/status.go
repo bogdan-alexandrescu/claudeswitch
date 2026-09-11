@@ -293,9 +293,11 @@ func statusCompact(out io.Writer, o Options) {
 		projected := proj-worst >= 1
 
 		five := pct(acct.Last.FiveHour.Pct(), severityOf(acct.Last, "five_hour"),
-			projected && which == "five_hour", cfg.SwitchAt, severityName(acct.Last, "five_hour"))
+			projected && which == "five_hour", cfg.TriggerFor(usage.FiveHourKey),
+			severityName(acct.Last, "five_hour"))
 		seven := pct(acct.Last.SevenDay.Pct(), severityOf(acct.Last, "seven_day"),
-			projected && which == "seven_day", cfg.SwitchAt, severityName(acct.Last, "seven_day"))
+			projected && which == "seven_day", cfg.TriggerFor(usage.SevenDayKey),
+			severityName(acct.Last, "seven_day"))
 
 		// CLEARS is the reset of whichever window is binding — the one that will
 		// actually stop you — not always the five-hour.
@@ -320,12 +322,12 @@ func statusCompact(out io.Writer, o Options) {
 		}
 		row = append(row, five)
 		if lay.bars {
-			row = append(row, paint(levelFor(acct.Last.FiveHour.Pct(), cfg.SwitchAt,
+			row = append(row, paint(levelFor(acct.Last.FiveHour.Pct(), cfg.TriggerFor(usage.FiveHourKey),
 				severityName(acct.Last, "five_hour")), miniBar(acct.Last.FiveHour.Pct())))
 		}
 		row = append(row, seven)
 		if lay.bars {
-			row = append(row, paint(levelFor(acct.Last.SevenDay.Pct(), cfg.SwitchAt,
+			row = append(row, paint(levelFor(acct.Last.SevenDay.Pct(), cfg.TriggerFor(usage.SevenDayKey),
 				severityName(acct.Last, "seven_day")), miniBar(acct.Last.SevenDay.Pct())))
 		}
 		if lay.clears {
@@ -440,7 +442,7 @@ func headline(o Options) string {
 		window = "weekly"
 	}
 
-	level := levelFor(proj, cfg.SwitchAt, severityName(acct.Last, which))
+	level := levelFor(proj, cfg.TriggerFor(which), severityName(acct.Last, which))
 	head := fmt.Sprintf("%s at %s of its %s", paint(bold, st.Active),
 		paint(level, fmt.Sprintf("%.0f%%", proj)), window)
 
@@ -460,7 +462,7 @@ func headline(o Options) string {
 
 	// Staying put. Say how much room is left, which is the reassuring form of
 	// the same fact.
-	if left := cfg.SwitchAt - proj; left > 0 {
+	if left := cfg.TriggerFor(which) - proj; left > 0 {
 		return head + paint(grey, fmt.Sprintf(" · %.0f points before it rotates", left))
 	}
 	return head
@@ -502,7 +504,7 @@ func stateOf(acct *state.Account, a config.Account, cfg *config.Config, proj flo
 		return "refused · " + acct.BurntWin
 	case avail == state.Reserved:
 		return "reserved · " + window
-	case proj >= cfg.SwitchAt:
+	case proj >= cfg.TriggerFor(which):
 		return "no headroom · " + window
 	}
 	s := string(avail)
@@ -531,8 +533,9 @@ func warnings(out io.Writer, o Options) {
 }
 
 func footer(out io.Writer, o Options) {
-	fmt.Fprintf(out, "  switch ≥%.0f%%  ·  hard floor ≥%.0f%%  ·  swap %s, forced after %s",
-		o.Cfg.SwitchAt, o.Cfg.HardFloor, o.Cfg.SwitchWhen, o.Cfg.MaxSwitchWait.Duration)
+	fmt.Fprintf(out, "  switch ≥%.0f%% session / ≥%.0f%% weekly  ·  hard floor ≥%.0f%%  ·  swap %s, forced after %s",
+		o.Cfg.TriggerFor(usage.FiveHourKey), o.Cfg.TriggerFor(usage.SevenDayKey),
+		o.Cfg.HardFloor, o.Cfg.SwitchWhen, o.Cfg.MaxSwitchWait.Duration)
 	if o.Budget != nil {
 		fmt.Fprintf(out, "  ·  %d api call(s) spare", o.Budget.Remaining())
 	}
@@ -589,8 +592,8 @@ func statusDetailed(out io.Writer, o Options) {
 	// rather than filing it under a guess.
 	if un, ok := st.Accounts[Unattributed]; ok && un.Last != nil {
 		fmt.Fprintf(out, "  %s %-31s %-31s %-9s %s\n", pad("(live)"),
-			window(un.Last.FiveHour, cfg.SwitchAt, 0),
-			window(un.Last.SevenDay, cfg.SwitchAt, 0),
+			window(un.Last.FiveHour, cfg.TriggerFor(usage.FiveHourKey), 0),
+			window(un.Last.SevenDay, cfg.TriggerFor(usage.SevenDayKey), 0),
 			until(un.Last.FiveHour.ResetsAt), "ACTIVE, unattributed")
 		fmt.Fprintf(out, "  %s   ↳ org %s is not in your config. Add org_id = %q to the\n",
 			pad(""), shortID(un.OrgID), un.OrgID)
@@ -613,7 +616,8 @@ func statusDetailed(out io.Writer, o Options) {
 		// anything at or over the trigger), but the status column said
 		// "available" beside a 100% bar, which contradicted itself.
 		if avail == state.Available && acct.Last != nil {
-			if _, worst := acct.Last.Worst(); worst >= cfg.SwitchAt {
+			if _, worst, over := acct.Last.WorstAgainst(
+				cfg.TriggerFor(usage.FiveHourKey), cfg.TriggerFor(usage.SevenDayKey)); over >= 0 {
 				stateStr = fmt.Sprintf("no headroom (%.0f%%)", worst)
 			}
 		}
@@ -641,8 +645,8 @@ func statusDetailed(out io.Writer, o Options) {
 			fmt.Fprintf(out, "  %s %-31s %-31s %-9s %s\n", pad(a.Name()), "", "", "-", label)
 			continue
 		}
-		five := window(acct.Last.FiveHour, cfg.SwitchAt, a.Reserve)
-		seven := window(acct.Last.SevenDay, cfg.SwitchAt, a.Reserve)
+		five := window(acct.Last.FiveHour, cfg.TriggerFor(usage.FiveHourKey), a.Reserve)
+		seven := window(acct.Last.SevenDay, cfg.TriggerFor(usage.SevenDayKey), a.Reserve)
 		fmt.Fprintf(out, "  %s %-31s %-31s %-9s %s\n",
 			pad(a.Name()), five, seven, until(acct.Last.FiveHour.ResetsAt), stateStr)
 
@@ -678,8 +682,9 @@ func statusDetailed(out io.Writer, o Options) {
 	}
 
 	fmt.Fprintln(out)
-	fmt.Fprintf(out, "  thresholds  switch ≥%.0f%%   hard floor ≥%.0f%%   swap %s, forced after %s\n",
-		cfg.SwitchAt, cfg.HardFloor, cfg.SwitchWhen, cfg.MaxSwitchWait.Duration)
+	fmt.Fprintf(out, "  thresholds  switch ≥%.0f%% session / ≥%.0f%% weekly   hard floor ≥%.0f%%   swap %s, forced after %s\n",
+		cfg.TriggerFor(usage.FiveHourKey), cfg.TriggerFor(usage.SevenDayKey),
+		cfg.HardFloor, cfg.SwitchWhen, cfg.MaxSwitchWait.Duration)
 	if o.Budget != nil {
 		fmt.Fprintf(out, "  api budget  %d scheduled call(s) available now (%d per %s, one held for swaps)\n",
 			o.Budget.Remaining(), usage.DefaultAllowance, usage.DefaultWindow)
