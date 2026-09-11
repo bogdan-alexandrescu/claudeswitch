@@ -41,10 +41,15 @@ type Account struct {
 	// PrevWorst and PrevAt are the previous reading, kept so a burn rate can be
 	// computed. Utilization can move several points a minute under heavy use, so
 	// a reading is a lower bound on where the account actually is.
-	PrevWorst float64   `json:"prev_worst,omitempty"`
-	PrevAt    time.Time `json:"prev_at,omitzero"`
-	BurntTil  time.Time `json:"burnt_until,omitzero"`
-	BurntWin  string    `json:"burnt_window,omitempty"`
+	PrevWorst float64 `json:"prev_worst,omitempty"`
+	// LastRate is the most recent burn rate actually observed, in utilization
+	// points per minute. It is kept so a projection survives a spell where the
+	// poller cannot produce two distinct readings — which is exactly when the
+	// projection matters most.
+	LastRate float64   `json:"last_rate,omitempty"`
+	PrevAt   time.Time `json:"prev_at,omitzero"`
+	BurntTil time.Time `json:"burnt_until,omitzero"`
+	BurntWin string    `json:"burnt_window,omitempty"`
 
 	// RefreshExpiry is when this account's refresh token dies. Past that it
 	// needs an interactive login, and it cannot even be polled.
@@ -56,18 +61,44 @@ type Account struct {
 // as evidence of headroom.
 func (a *Account) BurnRate() float64 {
 	if a.Last == nil || a.PrevAt.IsZero() || a.LastAt.IsZero() {
-		return 0
+		return a.rememberedRate()
 	}
 	mins := a.LastAt.Sub(a.PrevAt).Minutes()
 	if mins <= 0 {
-		return 0
+		return a.rememberedRate()
 	}
 	_, worst := a.Last.Worst()
 	d := worst - a.PrevWorst
-	if d <= 0 {
+	if d < 0 {
+		// Utilization fell, so the window reset. Nothing is burning and any
+		// remembered rate describes a window that no longer exists.
 		return 0
 	}
+	if d == 0 {
+		// The pair carries no new information — most often because the poller
+		// is stuck and both readings are the same one. Falling back to zero here
+		// was the flaw: it made Projected() return the stale figure unchanged,
+		// so the daemon grew *more* confident the longer it was blind. It sat
+		// on a reading of 60% for two hours while the account reached 100%.
+		return a.rememberedRate()
+	}
 	return d / mins
+}
+
+// rememberedRate is the last rate actually observed, used when the current pair
+// of readings cannot produce one. It is only ever an estimate, but an estimate
+// from the last time we could see beats treating a frozen number as the truth.
+func (a *Account) rememberedRate() float64 {
+	if a.LastRate <= 0 {
+		return 0
+	}
+	// Do not extrapolate indefinitely. Past this the estimate says more about
+	// how long we have been blind than about the account, and a person should
+	// be looking at it anyway.
+	if !a.LastAt.IsZero() && time.Since(a.LastAt) > MaxProjection {
+		return 0
+	}
+	return a.LastRate
 }
 
 // Projected is the utilization now, allowing for what has probably been spent
@@ -88,6 +119,11 @@ func (a *Account) Projected(now time.Time) float64 {
 	}
 	return p
 }
+
+// MaxProjection bounds how far a remembered burn rate will be carried forward.
+// A projection is a stand-in for a reading, and one this old has stopped being
+// evidence about the account.
+const MaxProjection = 45 * time.Minute
 
 // HasReading reports whether there is anything to reason about. A nil account
 // and one that has never been polled are the same thing to a caller.

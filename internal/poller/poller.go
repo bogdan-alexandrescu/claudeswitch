@@ -125,7 +125,26 @@ func (p *Poller) Blind(limit time.Duration) (time.Duration, bool) {
 		p.lastOK = p.started
 	}
 	d := time.Since(p.lastOK)
-	return d, d > limit
+	if d <= limit {
+		return d, false
+	}
+
+	// Not reading because we are deliberately waiting is not blindness. The
+	// watchdog exists to catch a wedged daemon, and a daemon serving out a
+	// rate-limit lock is the opposite of wedged — it is doing exactly what it
+	// was told to do.
+	//
+	// Conflating the two built a machine that could not recover: the API asked
+	// for an hour, the watchdog gave up after ten minutes, the service manager
+	// restarted the process, and the fresh one inherited the same lock and was
+	// killed again. Twelve restarts in two hours, not one reading among them,
+	// while utilization went from 60% to 100% unseen.
+	if til, locked := p.budget.LockedUntil(); locked {
+		p.log.Debug("not reading, but deliberately: holding off until the lock expires",
+			"until", til.Format(time.Kitchen), "blind_for", d.Round(time.Second))
+		return d, false
+	}
+	return d, true
 }
 
 // Degraded reports whether predictive switching must be treated as unavailable.
@@ -383,11 +402,14 @@ func (p *Poller) schedule(id string, now time.Time, acct *state.Account) {
 }
 
 func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token string, priority bool) {
-	if priority {
-		if ok, reason := p.budget.Allow(true); !ok {
-			acct.LastErr = "not polled: " + string(reason)
-			return
-		}
+	// Ask every time, for every caller. This check used to run only for
+	// priority polls, so an ordinary one could reach the API while the budget
+	// was locked — collect a fresh Retry-After: 3600, and re-arm the very lock
+	// it had just ignored. That is how a transient refusal became a two-hour
+	// outage that renewed itself.
+	if ok, reason := p.budget.Allow(priority); !ok {
+		acct.LastErr = "not polled: " + string(reason)
+		return
 	}
 	u, err := p.client.Fetch(ctx, token)
 	if err != nil {
@@ -418,6 +440,14 @@ func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token strin
 		acct.PrevWorst, acct.PrevAt = prev, acct.LastAt
 	}
 	acct.Last = u
+	// Remember the rate while we can still see it. Once polling stalls the pair
+	// of readings goes flat and no rate can be derived from it, so the value
+	// captured here is what keeps the projection honest through the gap.
+	if r := acct.BurnRate(); r > 0 {
+		acct.LastRate = r
+	} else if _, w := u.Worst(); w < acct.PrevWorst {
+		acct.LastRate = 0 // window reset; the old rate describes a dead window
+	}
 	acct.LastAt = u.FetchedAt
 	acct.LastErr = ""
 	p.lastOK = u.FetchedAt

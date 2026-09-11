@@ -263,6 +263,13 @@ const MinBackoff = 60 * time.Second
 // hammering, short enough that recovery is not missed by an hour.
 const MaxBackoff = 16 * time.Minute
 
+// MaxLock bounds how long we will stop calling the API, whatever Retry-After
+// says. It exists so the pause can never outlast the watchdog that is supposed
+// to notice a daemon which has stopped seeing: if it could, the watchdog would
+// kill a healthy daemon mid-wait and the restart would inherit the same lock.
+// Anything that needs a longer pause than this needs a person, not a timer.
+const MaxLock = 20 * time.Minute
+
 // Penalize records a 429 and backs off, doubling each time the refusals keep
 // coming.
 //
@@ -274,6 +281,16 @@ func (b *Budget) Penalize(retryAfter time.Duration) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.withLedger(func(lf *ledgerFile) {
+		now := b.now()
+
+		// A refusal that arrives while we are already serving a lock says
+		// nothing new — it is the previous refusal echoing, usually because a
+		// call slipped past the budget. Re-arming the full penalty for it is
+		// how a lock renewed itself indefinitely and never ran down.
+		if now.Before(lf.LockedTil) {
+			return
+		}
+
 		lf.Strikes++
 		wait := retryAfter
 		// Double per consecutive refusal, starting at the minimum.
@@ -284,7 +301,14 @@ func (b *Budget) Penalize(retryAfter time.Duration) {
 		if wait < backoff {
 			wait = backoff
 		}
-		til := b.now().Add(wait)
+		// Cap what the API asks for, too. Retry-After: 3600 was being honoured
+		// literally, which is longer than any watchdog will wait — so the
+		// process was killed and restarted for the whole hour, seeing nothing.
+		// We come back early and, if the API still refuses, back off again.
+		if wait > MaxLock {
+			wait = MaxLock
+		}
+		til := now.Add(wait)
 		if til.After(lf.LockedTil) {
 			lf.LockedTil = til
 		}
@@ -297,7 +321,14 @@ func (b *Budget) Penalize(retryAfter time.Duration) {
 func (b *Budget) Succeeded() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.withLedger(func(lf *ledgerFile) { lf.Strikes = 0 })
+	b.withLedger(func(lf *ledgerFile) {
+		lf.Strikes = 0
+		// Release the lock too. A call that succeeded is proof the API is not
+		// refusing us, and holding a pause after that is just refusing
+		// ourselves — recovery waited out a penalty that reality had already
+		// lifted.
+		lf.LockedTil = time.Time{}
+	})
 }
 
 // CurrentBackoff reports the wait now in force, for display.

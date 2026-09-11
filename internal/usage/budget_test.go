@@ -124,6 +124,9 @@ func TestBackoffGrowsWithConsecutiveRefusals(t *testing.T) {
 func TestSuccessResetsTheBackoff(t *testing.T) {
 	b, now := fixedBudget(time.Now())
 	b.Penalize(0)
+	// Past the first lock, so this is a second refusal rather than an echo of
+	// the first. A refusal arriving while the lock still holds is ignored.
+	*now = now.Add(MinBackoff + time.Second)
 	b.Penalize(0)
 	if _, strikes := b.CurrentBackoff(); strikes != 2 {
 		t.Fatalf("expected 2 strikes, got %d", strikes)
@@ -146,5 +149,41 @@ func TestServerRetryAfterWinsWhenLonger(t *testing.T) {
 	b.Penalize(10 * time.Minute)
 	if d, _ := b.CurrentBackoff(); d < 10*time.Minute {
 		t.Fatalf("got %v, want at least the 10m the server asked for", d)
+	}
+}
+
+// A refusal that arrives while a lock is already held says nothing new — it is
+// almost always a call that slipped past the budget. Counting it re-armed the
+// full penalty, so the lock kept renewing itself and never ran down. Twelve
+// watchdog restarts in two hours came of this, with no reading in between.
+func TestARefusalDuringALockDoesNotExtendIt(t *testing.T) {
+	b, now := fixedBudget(time.Now())
+	b.Penalize(10 * time.Minute)
+	til, locked := b.LockedUntil()
+	if !locked {
+		t.Fatal("expected a lock after the first refusal")
+	}
+
+	*now = now.Add(time.Minute)
+	b.Penalize(10 * time.Minute)
+	after, _ := b.LockedUntil()
+	if !after.Equal(til) {
+		t.Errorf("the lock moved from %s to %s; a refusal during a lock must not extend it",
+			til.Format(time.Kitchen), after.Format(time.Kitchen))
+	}
+	if _, strikes := b.CurrentBackoff(); strikes != 1 {
+		t.Errorf("expected the echo not to count as a strike, got %d", strikes)
+	}
+}
+
+// Retry-After is advice, not a command. Honouring an hour literally meant the
+// watchdog killed the daemon six times over while it waited, and each restart
+// inherited the same lock.
+func TestRetryAfterIsCappedSoItCannotOutlastTheWatchdog(t *testing.T) {
+	b, _ := fixedBudget(time.Now())
+	b.Penalize(time.Hour)
+	d, _ := b.CurrentBackoff()
+	if d > MaxLock {
+		t.Fatalf("lock of %v exceeds the %v cap", d, MaxLock)
 	}
 }

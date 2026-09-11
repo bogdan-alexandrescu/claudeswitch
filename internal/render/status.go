@@ -186,6 +186,21 @@ func padderFor(accounts []config.Account) func(string) string {
 	}
 }
 
+// holdingOffReason describes a deliberate pause on calling the usage API, or ""
+// when there is none. The daemon backs off when the API refuses it, and during
+// that window every reading legitimately goes stale.
+func holdingOffReason(b *usage.Budget) string {
+	if b == nil {
+		return ""
+	}
+	til, locked := b.LockedUntil()
+	if !locked {
+		return ""
+	}
+	return fmt.Sprintf("holding off after the API refused us, resuming %s",
+		til.Local().Format("15:04"))
+}
+
 func statusCompact(out io.Writer, o Options) {
 	cfg, st := o.Cfg, o.St
 	fmt.Fprintln(out)
@@ -230,6 +245,7 @@ func statusCompact(out io.Writer, o Options) {
 	head = append(head, "STATE")
 	t := &table{head: head, right: right}
 	var warnings []string
+	holdingOff := holdingOffReason(o.Budget)
 
 	for _, a := range accounts {
 		acct := st.Accounts[a.ID]
@@ -325,6 +341,13 @@ func statusCompact(out io.Writer, o Options) {
 		// the one line that tells the reader what to do about it.
 		if age := time.Since(acct.LastAt); age > staleAfter(cfg, a.ID == st.Active) {
 			switch {
+			case holdingOff != "":
+				// Deliberately not polling is not the same as failing to keep
+				// up, and showing it as a fault sends the reader looking for a
+				// broken daemon. This is the one case where the figures being
+				// old is the system working.
+				warnings = append(warnings, fmt.Sprintf(
+					"%s reading is %s old — %s", a.ID, shortDur(age), holdingOff))
 			case acct.LastErr != "":
 				warnings = append(warnings, fmt.Sprintf("%s has not been readable for %s — %s",
 					a.ID, shortDur(age), firstLine(acct.LastErr)))
