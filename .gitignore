@@ -1,0 +1,6 @@
+# Built binary
+/bin/
+
+# The throwaway Python prototype that preceded the Go implementation.
+# Kept out of history: internal/usage supersedes it entirely.
+/prototype-status.py
