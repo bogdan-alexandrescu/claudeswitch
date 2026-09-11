@@ -400,8 +400,10 @@ func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token strin
 			if effective < usage.MinBackoff {
 				effective = usage.MinBackoff
 			}
-			p.log.Warn("usage API rate limited; backing off",
-				"account", acct.ID, "server_said", rl.RetryAfter, "backing_off", effective)
+			wait, strikes := p.budget.CurrentBackoff()
+			p.log.Warn("usage API refused us; backing off",
+				"account", acct.ID, "consecutive", strikes, "waiting", wait.Round(time.Second))
+			_ = effective
 			return
 		}
 		if usage.IsShapeError(err) {
@@ -419,6 +421,8 @@ func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token strin
 	acct.LastAt = u.FetchedAt
 	acct.LastErr = ""
 	p.lastOK = u.FetchedAt
+	// The server answered, so whatever was refusing us has stopped.
+	p.budget.Succeeded()
 	if u.OrgID != "" {
 		acct.OrgID = u.OrgID
 	}

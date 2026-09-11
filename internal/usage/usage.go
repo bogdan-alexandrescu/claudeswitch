@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -199,8 +200,70 @@ type Client struct {
 	HTTP *http.Client
 }
 
+// newTransport configures connection handling for a process that lives for days.
+//
+// The default transport keeps idle connections indefinitely, and a connection
+// that has gone stale — after a laptop sleeps, a network changes, or a NAT table
+// forgets it — is handed out anyway and fails at the TLS handshake. The daemon
+// spent tonight reporting "TLS handshake timeout" while curl answered the same
+// endpoint in 200ms, which is that bug exactly.
+//
+// Short idle timeouts cost a handshake now and then. That is far cheaper than a
+// daemon that cannot see.
+func newTransport() *http.Transport {
+	return &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		MaxIdleConns:          4,
+		MaxIdleConnsPerHost:   2,
+		IdleConnTimeout:       60 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 15 * time.Second,
+		ExpectContinueTimeout: time.Second,
+		ForceAttemptHTTP2:     true,
+	}
+}
+
 func NewClient() *Client {
-	return &Client{HTTP: &http.Client{Timeout: 20 * time.Second}}
+	return &Client{HTTP: &http.Client{Timeout: 20 * time.Second, Transport: newTransport()}}
+}
+
+// retryable reports whether an error is worth one more attempt on a fresh
+// connection: transport-level failures, never a response the server actually
+// sent. A 429 or a 401 means something and must not be retried away.
+func retryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+	s := err.Error()
+	for _, frag := range []string{
+		"TLS handshake timeout", "connection reset", "broken pipe",
+		"EOF", "unexpected EOF", "server closed idle connection",
+		"no such host", "connection refused",
+	} {
+		if strings.Contains(s, frag) {
+			return true
+		}
+	}
+	return false
+}
+
+// do sends a request, retrying once on a transport failure with the idle pool
+// cleared. A stale pooled connection fails instantly and the retry succeeds;
+// without this the daemon simply goes blind until someone restarts it.
+func (c *Client) do(req *http.Request) (*http.Response, error) {
+	resp, err := c.HTTP.Do(req)
+	if err == nil || !retryable(err) || req.Context().Err() != nil {
+		return resp, err
+	}
+	if tr, ok := c.HTTP.Transport.(*http.Transport); ok {
+		tr.CloseIdleConnections()
+	}
+	// The body is nil on these requests, so the request is reusable as-is.
+	return c.HTTP.Do(req.Clone(req.Context()))
 }
 
 // Fetch reads usage for whichever account owns accessToken.
@@ -213,7 +276,7 @@ func (c *Client) Fetch(ctx context.Context, accessToken string) (*Usage, error) 
 	req.Header.Set("anthropic-beta", betaHeader)
 	req.Header.Set("User-Agent", userAgent)
 
-	resp, err := c.HTTP.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("calling usage API: %w", err)
 	}
@@ -338,7 +401,7 @@ func (c *Client) FetchProfile(ctx context.Context, accessToken string) (*Profile
 	req.Header.Set("anthropic-beta", betaHeader)
 	req.Header.Set("User-Agent", userAgent)
 
-	resp, err := c.HTTP.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("calling profile API: %w", err)
 	}

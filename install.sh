@@ -43,6 +43,24 @@ fi
 
 
 if [ "$OS" = "Darwin" ]; then
+  # Force the Keychain prompt NOW, while someone is at the keyboard.
+  #
+  # macOS ties an item's access approval to the exact binary that was approved,
+  # so a rebuilt binary is a stranger and prompts again. A daemon under launchd
+  # has no GUI session to answer that prompt, and security(1) waits for an answer
+  # forever — leaving the daemon alive, silent, polling nothing. Asking here
+  # turns an invisible hang into one click.
+  echo
+  echo "checking Keychain access (macOS may ask — click Always Allow)…"
+  if "$BIN_DIR/claudeswitch" whoami >/dev/null 2>&1; then
+    echo "  ok"
+  else
+    echo "  could not read the credential. Run this once and approve the prompt:"
+    echo "      claudeswitch whoami"
+    echo "  then re-run ./install.sh"
+    exit 1
+  fi
+
   mkdir -p "$(dirname "$PLIST")"
   cat > "$PLIST" <<PLIST_EOF
 <?xml version="1.0" encoding="UTF-8"?>

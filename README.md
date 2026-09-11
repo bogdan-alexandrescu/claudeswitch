@@ -117,13 +117,13 @@ $ cs session
 
   ACCOUNT      TOKENS  SHARE  MESSAGES   ACTIVE
   personal      1.20B    56%      4276   5h4m0s
-  work-a    947.5M    44%      4115  2h56m0s
+  work-team    947.5M    44%      4115  2h56m0s
 
   total         2.15B             8391
               ↳ out 1.1M · thinking 131k
 
   1 switch(es) in this span:
-    15:55:30  personal → work-a   active account at 85%, over the 85% trigger
+    15:55:30  personal → work-team   active account at 85%, over the 85% trigger
 ```
 
 It joins the transcripts (per-message token counts and timestamps) with the audit

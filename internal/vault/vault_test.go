@@ -106,17 +106,17 @@ func TestForeignCredentialCarriesTheAccountItProtected(t *testing.T) {
 // replace one member's vaulted credential with another's.
 func TestForeignCredentialNamesTheSeatAndTheEmail(t *testing.T) {
 	err := error(&ForeignCredentialError{
-		AccountID: "work-a",
-		WantOrg:   "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", // alice, in one organization
-		GotOrg:    "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", // bob, in the same organization
-		GotEmail:  "bob@example.com",
+		AccountID: "work-team",
+		WantOrg:   "aaaaaaaa-aaaa-bbbb-cccc-dddddddddddd", // devops@ seat
+		GotOrg:    "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", // you@ seat
+		GotEmail:  "alice@example.com",
 	})
 	var foreign *ForeignCredentialError
 	if !errors.As(err, &foreign) {
 		t.Fatal("callers must still be able to distinguish this case")
 	}
 	msg := err.Error()
-	for _, want := range []string{"bob@example.com", "work-a", "not overwriting"} {
+	for _, want := range []string{"alice@example.com", "work-team", "not overwriting"} {
 		if !contains(msg, want) {
 			t.Errorf("message should name %q, got: %s", want, msg)
 		}
@@ -127,19 +127,19 @@ func TestForeignCredentialNamesTheSeatAndTheEmail(t *testing.T) {
 // so an identity check that compares organizations conflates them.
 func TestSeatsDifferWithinOneOrganization(t *testing.T) {
 	const org = "22222222-2222-2222-2222-222222222222"
-	alice := struct{ seat, org string }{"aaaaaaaa", org}
-	bob := struct{ seat, org string }{"bbbbbbbb", org}
+	devops := struct{ seat, org string }{"aaaaaaaa", org}
+	you := struct{ seat, org string }{"bbbbbbbb", org}
 
-	if alice.org != bob.org {
+	if devops.org != you.org {
 		t.Fatal("precondition: these two share an organization")
 	}
-	if alice.seat == bob.seat {
+	if devops.seat == you.seat {
 		t.Fatal("two members of one org must not share a seat uuid")
 	}
 	// The rule the code must follow: same org is NOT sufficient to conclude
 	// "same account".
-	sameAccountByOrg := alice.org == bob.org
-	sameAccountBySeat := alice.seat == bob.seat
+	sameAccountByOrg := devops.org == you.org
+	sameAccountBySeat := devops.seat == you.seat
 	if !sameAccountByOrg {
 		t.Fatal("precondition")
 	}
@@ -151,25 +151,25 @@ func TestSeatsDifferWithinOneOrganization(t *testing.T) {
 // A quota pool is one person within one organization. Neither half identifies it
 // alone, and conflating either way merges two real pools into one.
 func TestSeatIdentityNeedsBothPersonAndOrganization(t *testing.T) {
-	const orgShared = "22222222"
-	const orgPrivate = "11111111"
-	const alice = "aaaaaaaa"
-	const bob = "bbbbbbbb"
+	const orgAcme = "22222222"
+	const orgOwn = "11111111"
+	const devops = "aaaaaaaa"
+	const you = "bbbbbbbb"
 
 	seat := func(person, org string) string { return person + "@" + org }
 
 	// Two people in one organization: different subscriptions and plans, so
 	// different pools. Comparing organizations alone would merge them.
-	if seat(alice, orgShared) == seat(bob, orgShared) {
+	if seat(devops, orgAcme) == seat(you, orgAcme) {
 		t.Error("two people in one organization must be different seats")
 	}
 	// One person in two organizations: measured 0%/46% and 23%/19% at the same
 	// time. Comparing people alone would merge them.
-	if seat(alice, orgPrivate) == seat(alice, orgShared) {
+	if seat(devops, orgOwn) == seat(devops, orgAcme) {
 		t.Error("one person in two organizations must be different seats")
 	}
 	// The same person in the same organization is the same pool.
-	if seat(alice, orgShared) != seat(alice, orgShared) {
+	if seat(devops, orgAcme) != seat(devops, orgAcme) {
 		t.Error("identical pairs must match")
 	}
 }

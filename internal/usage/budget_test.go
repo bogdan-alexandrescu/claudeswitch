@@ -94,3 +94,57 @@ func TestPenalizeHonoursALongerRetryAfter(t *testing.T) {
 		t.Fatalf("a server-supplied backoff must not be shortened: got %v", got)
 	}
 }
+
+// A fixed backoff meant a sustained refusal was answered with one request a
+// minute for as long as it lasted — 224 of them in a night. Each consecutive
+// refusal must wait longer.
+func TestBackoffGrowsWithConsecutiveRefusals(t *testing.T) {
+	b, now := fixedBudget(time.Now())
+	var waits []time.Duration
+	for i := 0; i < 5; i++ {
+		b.Penalize(0)
+		d, strikes := b.CurrentBackoff()
+		if strikes != i+1 {
+			t.Fatalf("strike %d recorded as %d", i+1, strikes)
+		}
+		waits = append(waits, d)
+		*now = now.Add(d + time.Second) // wait it out, then be refused again
+	}
+	for i := 1; i < len(waits); i++ {
+		if waits[i] <= waits[i-1] {
+			t.Fatalf("backoff did not grow: %v then %v", waits[i-1], waits[i])
+		}
+	}
+	if waits[len(waits)-1] > MaxBackoff {
+		t.Fatalf("backoff %v exceeds the cap %v", waits[len(waits)-1], MaxBackoff)
+	}
+}
+
+// One refusal must not leave the backoff escalated for the rest of the day.
+func TestSuccessResetsTheBackoff(t *testing.T) {
+	b, now := fixedBudget(time.Now())
+	b.Penalize(0)
+	b.Penalize(0)
+	if _, strikes := b.CurrentBackoff(); strikes != 2 {
+		t.Fatalf("expected 2 strikes, got %d", strikes)
+	}
+	b.Succeeded()
+	if _, strikes := b.CurrentBackoff(); strikes != 0 {
+		t.Fatal("a successful call must clear the strike count")
+	}
+	*now = now.Add(MaxBackoff)
+	b.Penalize(0)
+	d, _ := b.CurrentBackoff()
+	if d > 2*MinBackoff {
+		t.Fatalf("after a reset the next backoff should start small, got %v", d)
+	}
+}
+
+// The server's own Retry-After still wins when it asks for longer.
+func TestServerRetryAfterWinsWhenLonger(t *testing.T) {
+	b, _ := fixedBudget(time.Now())
+	b.Penalize(10 * time.Minute)
+	if d, _ := b.CurrentBackoff(); d < 10*time.Minute {
+		t.Fatalf("got %v, want at least the 10m the server asked for", d)
+	}
+}

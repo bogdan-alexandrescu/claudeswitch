@@ -11,7 +11,7 @@ upgrade; these are all undocumented surfaces.
 ```
 $ security find-generic-password -s "Claude Code-credentials"
 keychain: "~/Library/Keychains/login.keychain-db"
-    "acct"<blob>="<your-unix-username>"          # the unix username, NOT the Claude account
+    "acct"<blob>="you"          # the unix username, NOT the Claude account
     "svce"<blob>="Claude Code-credentials"
 $ test -f ~/.claude/.credentials.json   # → absent
 ```
@@ -340,8 +340,8 @@ while nothing is using it, so it does not need frequent polling. Therefore:
 
 ```
 anthropic-organization-id: 11111111-1111-1111-1111-111111111111
-anthropic-workspace-id:    wrkspc_EXAMPLE
-request-id:                req_EXAMPLE
+anthropic-workspace-id:    wrkspc_019eDPbgLj5a8GkF18CmzPR3
+request-id:                req_011CesJnDQT57CnpqQBuFhyA
 ```
 
 `anthropic-organization-id` comes back on every 200 and identifies which account the
@@ -470,7 +470,7 @@ Keychain item will break the running session.
 
 ## 17. Vaulting whatever is live is easy to do by mistake
 
-`claudeswitch add work-a` was run without the intended `/login` having switched
+`claudeswitch add acme-work` was run without the intended `/login` having switched
 accounts. It succeeded, verified against the usage API, and produced a vault entry that
 looked entirely healthy — but its org id was the personal account's. The result is two
 names for one account: `status` would show two rotation targets, the policy engine would
@@ -571,8 +571,8 @@ Run against the vaulted Acme (SSO, team, `max_5x`) account while the live sessio
 a different account:
 
 ```
-$ claudeswitch refresh work-c
-  ✓ refreshed work-c
+$ claudeswitch refresh work-main-personal
+  ✓ refreshed work-main-personal
     org           22222222-2222-2222-2222-222222222222
     new expiry    in 8h0m0s
     access token  …GgAA → (new, stored)
@@ -595,11 +595,11 @@ https://platform.claude.com/v1/oauth/token` with `grant_type=refresh_token` and
 
 ```
 ACCOUNT      5-HOUR          7-DAY           STATE
-work-devops  28%  4h04m      16%  154h       available
+work-main  28%  4h04m      16%  154h       available
 personal     15%  2h54m      16%  154h       ACTIVE available
 ```
 
-`work-devops` was read using its vaulted token while the live session belonged to
+`work-main` was read using its vaulted token while the live session belonged to
 `personal`. This is the fact the entire predictive design rests on, and it is now
 demonstrated rather than inferred.
 
@@ -629,7 +629,7 @@ Three org ids are now known to exist under the single email `alice@example.com`:
 | org | name | tier | note |
 |---|---|---|---|
 | `11111111…` | alice@example.com's Organization | `max_20x` | vaulted as `personal` |
-| `22222222…` | Acme | `max_5x` (team) | vaulted as `work-devops` |
+| `22222222…` | Acme | `max_5x` (team) | vaulted as `work-main` |
 | `33333333…` | unknown | `max_20x` | exhausted until 09-13, not vaulted |
 
 This is further argument for org-id identity: the email distinguishes none of them.
@@ -728,11 +728,11 @@ Same lesson as Round 7, third instance: **observe continuously, not once.**
 
 # Round 10 — 2026-09-09. Reusing an id showed one account's usage under another's name
 
-Renaming `work-team` (organization `22222222…`) to `work-a`, and then giving the
+Renaming `work-team` (organization `22222222…`) to `work-team`, and then giving the
 freed name to a *different* account (`33333333…`), produced a display like this:
 
 ```
-work-a         30%  17%   available
+work-team         30%  17%   available
 work-team  30%  17%   available     <- not vaulted, and really at 100%
 ```
 
@@ -756,7 +756,7 @@ configured. A record that cannot be shown to describe the right account is throw
 rather than trusted.
 
 **Labels are gone.** An account had an id (`work-team`) and a display label
-(`work-a`); `status` showed the label, every command took the id, and a name that
+(`work-team`); `status` showed the label, every command took the id, and a name that
 looked free was already in use — which is what prompted this whole episode. One account,
 one name. A config that still sets a divergent `label` is now a validation error, and
 table columns size themselves to the widest id.
@@ -840,7 +840,7 @@ for organization `22222222` (the Acme team org), queried minutes apart:
 
 ```
 alice@example.com   5h 23%   7d 19%
-bob@example.com   5h  3%   7d  0%
+alice@example.com   5h  3%   7d  0%
 ```
 
 Same organization, entirely different utilization. A team organization has one **seat** per
@@ -854,7 +854,7 @@ an account. It does not.
 `GET /api/oauth/profile` supplies the real identity:
 
 ```json
-{ "account":      { "uuid": "bbbbbbbb-…", "email": "bob@example.com", "display_name": "Bob" },
+{ "account":      { "uuid": "bbbbbbbb-…", "email": "alice@example.com", "display_name": "Alice" },
   "organization": { "uuid": "22222222-…", "name": "Acme" },
   "application":  { "uuid": "9d1c250a-…", "name": "Claude Code" } }
 ```
@@ -865,13 +865,13 @@ people:
 | entry | seat | email | organization |
 |---|---|---|---|
 | `personal` | `aaaaaaaa` | alice@example.com | `11111111` |
-| `work-a` | `bbbbbbbb` | bob@example.com | `22222222` (Acme) |
-| `work-b` | `cccccccc` | bob@personal.example | `33333333` |
+| `work-team` | `bbbbbbbb` | alice@example.com | `22222222` (Acme) |
+| `personal` | `cccccccc` | bob@personal.example | `33333333` |
 
 ### What the wrong model caused
 
 - **`SyncActive` replaced one member's credential with another's.** A `/login` as
-  bob@example.com produced a token that differed from the vaulted one; the organization
+  alice@example.com produced a token that differed from the vaulted one; the organization
   matched, so it was recorded as "the same account, refreshed". The alice@example.com
   credential for that organization was overwritten and is gone.
 - **`add` refused legitimate accounts as duplicates.** Two members of one organization were
@@ -904,15 +904,15 @@ vaulted demonstrate both failure modes at once:
 
 | entry | person | organization |
 |---|---|---|
-| `work-a` | alice@example.com | `11111111` |
+| `work-team` | alice@example.com | `11111111` |
 | `work-main` | alice@example.com | `22222222` |
-| `work-b` | bob@example.com | `22222222` |
+| `personal` | alice@example.com | `22222222` |
 | `personal` | bob@personal.example | `33333333` |
 
 Rows 1–2 share a person; rows 2–3 share an organization. Comparing organizations alone
 merges 2 and 3; comparing people alone merges 1 and 2. Identity is `account.uuid@org.uuid`,
 and `work-main` could only be vaulted once that was true — the person-only check
-refused it as a duplicate of `work-a`.
+refused it as a duplicate of `work-team`.
 
 Accounts under one organization may also hold different subscriptions and plans, which is
 the same fact from the billing side.

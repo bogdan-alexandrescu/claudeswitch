@@ -330,7 +330,16 @@ func (e *NeedsLoginError) Error() string {
 type Client struct{ HTTP *http.Client }
 
 func NewClient() *Client {
-	return &Client{HTTP: &http.Client{Timeout: 30 * time.Second}}
+	return &Client{HTTP: &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			Proxy:               http.ProxyFromEnvironment,
+			MaxIdleConns:        2,
+			IdleConnTimeout:     60 * time.Second,
+			TLSHandshakeTimeout: 10 * time.Second,
+			ForceAttemptHTTP2:   true,
+		},
+	}}
 }
 
 // Refresh exchanges a refresh token for a new pair.

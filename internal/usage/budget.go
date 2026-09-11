@@ -54,6 +54,9 @@ type Budget struct {
 	ledger string
 	// lastCall is when this process last spent a call, for pacing.
 	lastCall time.Time
+	// strikes mirrors the ledger's consecutive-refusal count, so a budget with
+	// no file behind it behaves the same as one with.
+	strikes int
 }
 
 func NewBudget() *Budget {
@@ -106,6 +109,9 @@ func defaultLedgerPath() string {
 type ledgerFile struct {
 	Calls     []time.Time `json:"calls"`
 	LockedTil time.Time   `json:"locked_until,omitzero"`
+	// Strikes counts consecutive refusals, so the backoff can grow rather than
+	// retrying at a fixed interval forever.
+	Strikes int `json:"strikes,omitempty"`
 }
 
 // withLedger runs fn against the shared on-disk record, under an exclusive lock,
@@ -118,9 +124,9 @@ func (b *Budget) withLedger(fn func(*ledgerFile)) {
 	// process-local budget is the right failure: it is more conservative than
 	// no budget at all.
 	local := func() {
-		lf := &ledgerFile{Calls: b.calls, LockedTil: b.lockedTil}
+		lf := &ledgerFile{Calls: b.calls, LockedTil: b.lockedTil, Strikes: b.strikes}
 		fn(lf)
-		b.calls, b.lockedTil = lf.Calls, lf.LockedTil
+		b.calls, b.lockedTil, b.strikes = lf.Calls, lf.LockedTil, lf.Strikes
 	}
 	if b.ledger == "" {
 		local()
@@ -154,7 +160,7 @@ func (b *Budget) withLedger(fn func(*ledgerFile)) {
 		_, _ = f.Write(raw)
 	}
 	// Keep the in-memory copy in step, so Remaining() is close without a lock.
-	b.calls, b.lockedTil = lf.Calls, lf.LockedTil
+	b.calls, b.lockedTil, b.strikes = lf.Calls, lf.LockedTil, lf.Strikes
 }
 
 func (b *Budget) prune(now time.Time) {
@@ -253,19 +259,68 @@ func (b *Budget) Allow(priority bool) (bool, Reason) {
 // it (2026-09-09).
 const MinBackoff = 60 * time.Second
 
-// Penalize records a 429 so nothing is attempted until the API says it is safe.
+// MaxBackoff caps the wait after repeated refusals. Long enough to stop
+// hammering, short enough that recovery is not missed by an hour.
+const MaxBackoff = 16 * time.Minute
+
+// Penalize records a 429 and backs off, doubling each time the refusals keep
+// coming.
+//
+// A fixed sixty seconds meant a sustained refusal was met with one request a
+// minute, for as long as it lasted — 224 of them in one night. Backing off
+// further each time is both politer and likelier to recover, and a success
+// resets it.
 func (b *Budget) Penalize(retryAfter time.Duration) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if retryAfter < MinBackoff {
-		retryAfter = MinBackoff
-	}
-	til := b.now().Add(retryAfter)
 	b.withLedger(func(lf *ledgerFile) {
+		lf.Strikes++
+		wait := retryAfter
+		// Double per consecutive refusal, starting at the minimum.
+		backoff := MinBackoff << min(lf.Strikes-1, 6)
+		if backoff > MaxBackoff {
+			backoff = MaxBackoff
+		}
+		if wait < backoff {
+			wait = backoff
+		}
+		til := b.now().Add(wait)
 		if til.After(lf.LockedTil) {
 			lf.LockedTil = til
 		}
 	})
+}
+
+// Succeeded clears the consecutive-refusal count. Called after any call that
+// the server actually answered, so a single refusal does not leave the backoff
+// escalated for the rest of the day.
+func (b *Budget) Succeeded() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.withLedger(func(lf *ledgerFile) { lf.Strikes = 0 })
+}
+
+// CurrentBackoff reports the wait now in force, for display.
+func (b *Budget) CurrentBackoff() (time.Duration, int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var til time.Time
+	var strikes int
+	b.withLedger(func(lf *ledgerFile) { til, strikes = lf.LockedTil, lf.Strikes })
+	// The injected clock, not wall time: every other method here uses b.now(),
+	// and mixing the two makes the backoff unmeasurable in a test and slightly
+	// wrong in practice.
+	if d := til.Sub(b.now()); d > 0 {
+		return d, strikes
+	}
+	return 0, strikes
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // LockedUntil reports an active backoff, for display.

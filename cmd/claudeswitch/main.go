@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -60,6 +61,8 @@ func main() {
 		err = cmdInit(args)
 	case "config":
 		err = cmdConfig(args)
+	case "uninstall":
+		err = cmdUninstall(args)
 	case "add":
 		err = cmdAdd(args)
 	case "use":
@@ -117,6 +120,7 @@ func usageText() {
   setup      guided first run: vault your accounts, write the config, install
   config     show the settings in force, or change one
   init       write a starter config by hand instead
+  uninstall  stop the daemon and remove what claudeswitch installed
 
   login <id> sign in to an account and vault it, verifying it is the right one
              --direct leaves your live session untouched, whatever happens;
@@ -575,40 +579,53 @@ func cmdAudit(args []string) error {
 		return nil
 	}
 	fmt.Println()
-	for _, e := range events {
-		line := fmt.Sprintf("  %s  %-9s", e.At.Local().Format("01-02 15:04:05"), e.Kind)
+	t := render.NewTable([]string{"WHEN", "WHAT", "DETAIL"})
+	// Newest first: the reason for opening the log is almost always the most
+	// recent thing in it.
+	for i := len(events) - 1; i >= 0; i-- {
+		e := events[i]
+		kind, detail := e.Kind, ""
 		switch e.Kind {
 		case "switch":
-			line += fmt.Sprintf(" %s → %s", e.From, e.To)
+			kind = render.Good("switch")
+			detail = nonEmpty(e.From, "?") + " → " + render.Bold(e.To)
+			if e.Reason != "" {
+				detail += render.Grey("  " + truncateStr(e.Reason, 40))
+			}
 		case "rejection":
-			line += fmt.Sprintf(" %s refused on %s, clears %s", e.From, e.Window,
+			kind = render.Bad("refused")
+			detail = fmt.Sprintf("%s on %s, cleared %s", e.From, e.Window,
 				e.ResetsAt.Local().Format("15:04"))
 		case "decision":
-			line += fmt.Sprintf(" %s", e.Decision)
+			kind = render.Dim("decision")
+			detail = render.Dim(e.Decision)
 			if e.To != "" {
-				line += " → " + e.To
+				detail += render.Dim(" → " + e.To)
+			}
+			if e.Reason != "" {
+				detail += render.Grey("  " + truncateStr(e.Reason, 40))
 			}
 		case "severity":
+			kind = render.Warn("severity")
 			pct := ""
 			if e.Percent != nil {
 				pct = fmt.Sprintf(" at %.0f%%", *e.Percent)
 			}
-			line += fmt.Sprintf(" %s %s: %s → %s%s", e.Account, e.LimitKind,
+			detail = fmt.Sprintf("%s %s: %s → %s%s", e.Account, e.LimitKind,
 				e.FromSeverity, e.ToSeverity, pct)
 		case "error":
-			line += " " + e.Err
+			kind = render.Bad("error")
+			detail = truncateStr(e.Err, 56)
 		}
 		if e.DryRun {
-			line += "  [dry-run]"
+			detail += render.Dim("  [dry-run]")
 		}
 		if e.Forced {
-			line += "  [forced]"
+			detail += render.Warn("  [forced]")
 		}
-		fmt.Println(line)
-		if e.Reason != "" && e.Kind != "decision" {
-			fmt.Printf("  %-9s   ↳ %s\n", "", e.Reason)
-		}
+		t.Add(render.Grey(e.At.Local().Format("01-02 15:04")), kind, detail)
 	}
+	fmt.Print(t.Render("  "))
 	fmt.Println()
 	return nil
 }
@@ -623,12 +640,26 @@ func cmdHistory(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("\n  %d raw rejection records over %d days → %d real limit hits after dedupe\n\n",
-		raw, *days, len(hits))
-	for _, h := range hits {
-		fmt.Printf("  %-10s refused, window cleared %s\n",
-			h.Type, h.ResetsAt.Local().Format("2006-01-02 15:04"))
+	fmt.Printf("\n  %s\n\n", render.Grey(fmt.Sprintf(
+		"%d raw records over %d days → %d real limit hits after dedupe",
+		raw, *days, len(hits))))
+	if len(hits) == 0 {
+		fmt.Printf("  %s\n\n", render.Good("no refusals recorded"))
+		return nil
 	}
+	t := render.NewTable([]string{"WHEN", "WINDOW", "CLEARED"})
+	for i := len(hits) - 1; i >= 0; i-- {
+		h := hits[i]
+		window := h.Type
+		if window == "seven_day" {
+			window = render.Warn("weekly")
+		} else {
+			window = "5-hour"
+		}
+		t.Add(render.Grey(h.ResetsAt.Local().Format("Mon 02 Jan")), window,
+			h.ResetsAt.Local().Format("15:04"))
+	}
+	fmt.Print(t.Render("  "))
 	fmt.Println()
 	return nil
 }
@@ -3139,4 +3170,85 @@ func cmdTop(args []string) error {
 			draw()
 		}
 	}
+}
+
+// cmdUninstall removes what claudeswitch put on the machine.
+//
+// It leaves the vaulted credentials alone unless asked: they are the part that
+// took effort to obtain, and someone stopping the daemon usually wants it
+// stopped rather than their logins thrown away. It also never touches Claude
+// Code's own credential.
+func cmdUninstall(args []string) error {
+	fs := flag.NewFlagSet("uninstall", flag.ExitOnError)
+	cfgPath := fs.String("config", "", "path to config.toml")
+	creds := fs.Bool("credentials", false, "also delete the vaulted credentials")
+	yes := fs.Bool("yes", false, "do not ask")
+	parseInterleaved(fs, args)
+
+	cfg, _, _ := load(*cfgPath)
+	home, _ := os.UserHomeDir()
+	plist := filepath.Join(home, "Library", "LaunchAgents", "xyz.claudeswitch.daemon.plist")
+	unit := filepath.Join(home, ".config", "systemd", "user", "claudeswitch.service")
+	stateDir := filepath.Join(home, ".local", "state", "claudeswitch")
+
+	fmt.Printf("\n  This will remove:\n")
+	fmt.Printf("    · the daemon service and its logs\n")
+	fmt.Printf("    · %s\n", stateDir)
+	if *creds {
+		fmt.Printf("    · %s\n", render.Bad("every vaulted credential — you would have to sign in again"))
+	} else {
+		fmt.Printf("  Keeping:\n")
+		fmt.Printf("    · your vaulted credentials (pass --credentials to remove them too)\n")
+		fmt.Printf("    · your config at %s\n", cfg.Path)
+		fmt.Printf("    · Claude Code's own credential, always\n")
+	}
+	if !*yes {
+		if !isTerminal() {
+			return fmt.Errorf("pass --yes to uninstall without being asked")
+		}
+		if !askYes("\n  Go ahead", false) {
+			fmt.Printf("  nothing removed\n\n")
+			return nil
+		}
+	}
+
+	// Service first, so nothing is running while the rest goes.
+	if runtime.GOOS == "darwin" {
+		_ = exec.Command("launchctl", "unload", plist).Run()
+		if err := os.Remove(plist); err == nil {
+			fmt.Printf("  removed %s\n", plist)
+		}
+	} else {
+		_ = exec.Command("systemctl", "--user", "disable", "--now", "claudeswitch.service").Run()
+		if err := os.Remove(unit); err == nil {
+			fmt.Printf("  removed %s\n", unit)
+		}
+	}
+
+	if *creds {
+		v := vault.New(logger(false))
+		for _, a := range cfg.Accounts {
+			if !v.Has(a.ID) {
+				continue
+			}
+			if err := keychain.Delete(keychain.VaultService(a.ID)); err == nil {
+				fmt.Printf("  removed the credential for %s\n", a.ID)
+			}
+		}
+	}
+
+	if err := os.RemoveAll(stateDir); err == nil {
+		fmt.Printf("  removed %s\n", stateDir)
+	}
+
+	fmt.Printf("\n  Done. The binary is still at %s — delete it and the `cs` symlink\n", selfPathOrGuess())
+	fmt.Printf("  if you want it gone entirely.\n\n")
+	return nil
+}
+
+func selfPathOrGuess() string {
+	if p, err := os.Executable(); err == nil {
+		return p
+	}
+	return "~/.local/bin/claudeswitch"
 }
