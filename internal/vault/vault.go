@@ -44,7 +44,7 @@ func (v *Vault) fetch(ctx context.Context, token string) (*usage.Usage, error) {
 	v.budget.Pace(ctx)
 	if ok, reason := v.budget.Allow(true); !ok {
 		if til, locked := v.budget.LockedUntil(); locked {
-			return nil, &usage.RateLimitedError{RetryAfter: time.Until(til)}
+			return nil, &usage.RateLimitedError{RetryAfter: time.Until(til), Local: true}
 		}
 		return nil, fmt.Errorf("usage API call budget exhausted (%s); try again shortly", reason)
 	}

@@ -3,6 +3,7 @@ package usage
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -159,4 +160,29 @@ func keys(m map[string]bool) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// A pause this program imposes on itself must not be reported as the API
+// refusing us. The two have different fixes, and the log line is the only thing
+// telling whoever reads it which one they are looking at.
+func TestRateLimitedErrorNamesWhoImposedIt(t *testing.T) {
+	api := (&RateLimitedError{RetryAfter: 90 * time.Second}).Error()
+	if !strings.Contains(api, "usage API") {
+		t.Errorf("an API refusal must say so, got: %s", api)
+	}
+	local := (&RateLimitedError{RetryAfter: 90 * time.Second, Local: true}).Error()
+	if strings.Contains(local, "usage API") {
+		t.Errorf("a self-imposed pause must not blame the API, got: %s", local)
+	}
+}
+
+// An expired lock produced "retry in 0s", which reads as a broken number rather
+// than as permission to try again.
+func TestRateLimitedErrorOnAnExpiredLock(t *testing.T) {
+	for _, d := range []time.Duration{0, -5 * time.Second} {
+		got := (&RateLimitedError{RetryAfter: d}).Error()
+		if !strings.Contains(got, "retry now") {
+			t.Errorf("RetryAfter %s: want a retry-now phrasing, got: %s", d, got)
+		}
+	}
 }

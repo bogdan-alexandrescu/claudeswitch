@@ -171,10 +171,26 @@ func (u *Usage) Binding() *Limit {
 
 // RateLimitedError is returned on a 429. RetryAfter is authoritative: the API
 // does send retry-after on the 429 even though it sends nothing on a 200.
-type RateLimitedError struct{ RetryAfter time.Duration }
+type RateLimitedError struct {
+	RetryAfter time.Duration
+	// Local marks a pause this program imposed on itself rather than one the
+	// API asked for. The distinction matters to whoever reads the log: a local
+	// pause means the fix is in our own budget, and saying "usage API rate
+	// limited" for it sends them to look at the wrong thing entirely.
+	Local bool
+}
 
 func (e *RateLimitedError) Error() string {
-	return fmt.Sprintf("usage API rate limited, retry in %s", e.RetryAfter.Round(time.Second))
+	who := "usage API rate limited"
+	if e.Local {
+		who = "paused by our own call budget"
+	}
+	// A lock that has already expired reads as "retry in 0s", which looks like
+	// a broken number rather than "try again now".
+	if e.RetryAfter <= 0 {
+		return who + ", retry now"
+	}
+	return fmt.Sprintf("%s, retry in %s", who, e.RetryAfter.Round(time.Second))
 }
 
 // ShapeError means the response parsed as JSON but is not the shape we depend
