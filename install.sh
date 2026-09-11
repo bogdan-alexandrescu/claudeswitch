@@ -80,7 +80,11 @@ ${LIVE_ARG}
   <key>ThrottleInterval</key><integer>30</integer>
   <key>StandardOutPath</key><string>${STATE_DIR}/daemon.log</string>
   <key>StandardErrorPath</key><string>${STATE_DIR}/daemon.log</string>
-  <key>ProcessType</key><string>Background</string>
+  <!-- No ProcessType. "Background" looks right for a poller and is a trap: it
+       puts the job in launchd's background QoS band, where a `security`
+       child never gets far enough to read the keychain. Measured on macOS
+       15: a read that takes 0.1s from a shell and 2.1s from a plain agent
+       never completes at all under Background. -->
 </dict>
 </plist>
 PLIST_EOF

@@ -686,6 +686,15 @@ func cmdDoctor(args []string) error {
 		fmt.Printf("         └ fix: run `claudeswitch init`\n")
 	}
 
+	if problem := checkServiceQoS(); problem != "" {
+		fmt.Printf("  [%s] service qos     %s\n", ok(false), "throttled")
+		fmt.Printf("         └ %s\n", problem)
+		fmt.Printf("         └ fix: remove the ProcessType key and reload the agent,\n")
+		fmt.Printf("           or re-run install.sh\n")
+	} else {
+		fmt.Printf("  [%s] service qos     %s\n", ok(true), "not throttled")
+	}
+
 	blob, kerr := keychain.ReadLive()
 	fmt.Printf("  [%s] credentials     %s\n", ok(kerr == nil), keychain.Backend)
 	if kerr != nil {
@@ -3251,4 +3260,39 @@ func selfPathOrGuess() string {
 		return p
 	}
 	return "~/.local/bin/claudeswitch"
+}
+
+// checkServiceQoS catches the launchd setting that silently disables the whole
+// daemon. ProcessType Background reads as the obviously correct choice for a
+// poller — it is what the key is for — but in that QoS band a `security` child
+// never completes a keychain read. Measured on macOS 15: 0.1s from a shell,
+// 2.1s from a plain launchd agent, and never at all under Background. The
+// daemon then polls nothing while looking perfectly healthy, which cost a
+// night to find once and should never cost anyone a second one.
+//
+// It returns a description of the problem, or "" when there is none.
+func checkServiceQoS() string {
+	if runtime.GOOS != "darwin" {
+		return ""
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	plist := filepath.Join(home, "Library", "LaunchAgents", "xyz.claudeswitch.daemon.plist")
+	b, err := os.ReadFile(plist)
+	if err != nil {
+		return "" // not installed as a service; nothing to check
+	}
+	if !strings.Contains(string(b), "ProcessType") {
+		return ""
+	}
+	for _, band := range []string{"Background", "Adaptive"} {
+		if strings.Contains(string(b), ">"+band+"<") {
+			return fmt.Sprintf(
+				"%s sets ProcessType to %s — keychain reads never complete in that band",
+				plist, band)
+		}
+	}
+	return ""
 }

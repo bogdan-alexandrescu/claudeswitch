@@ -28,7 +28,10 @@ const Backend = "macOS Keychain"
 //
 // Observed for hours on 2026-09-11. A timeout turns a hang into an error, which
 // the rest of the program already knows how to report.
-const readTimeout = 10 * time.Second
+// A keychain read costs ~0.1s from a shell but ~2s from a launchd agent, and
+// spikes well above that under load. The timeout only exists to turn a hang
+// into a diagnosable error, so it is set far above any healthy read.
+const readTimeout = 30 * time.Second
 
 // Read returns the parsed blob for a service.
 func Read(service string) (*Blob, error) {
@@ -40,9 +43,12 @@ func Read(service string) (*Blob, error) {
 	if ctx.Err() == context.DeadlineExceeded {
 		return nil, fmt.Errorf(
 			"reading keychain item %q timed out after %s.\n"+
-				"  macOS is almost certainly asking to approve access and nobody can answer —\n"+
-				"  this happens after the binary is rebuilt, since approval is tied to the exact\n"+
-				"  binary. Run `claudeswitch status` in a terminal once and click Always Allow.",
+				"  The usual cause is a service definition with ProcessType set to\n"+
+				"  Background: in that QoS band a `security` child never completes a\n"+
+				"  read at all. Run `claudeswitch doctor` to check.\n"+
+				"  Failing that, macOS may be asking to approve access with nobody\n"+
+				"  there to answer — run `claudeswitch status` in a terminal once and\n"+
+				"  click Always Allow.",
 			service, readTimeout)
 	}
 	if err != nil {
