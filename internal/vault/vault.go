@@ -443,7 +443,7 @@ func (v *Vault) Refresh(ctx context.Context, accountID string, isActive, allowAc
 	// someone logs in by hand. That is not hypothetical — a keychain write that
 	// timed out under a throttled launchd job destroyed a working account here.
 	// So prove the store is writable first, while failing still costs nothing.
-	if err := keychain.CheckWritable(); err != nil {
+	if err := keychain.CheckWritable(keychain.VaultService(accountID)); err != nil {
 		return nil, fmt.Errorf("refusing to refresh %q: the credential store is not "+
 			"writable, and a refresh that cannot be stored destroys the account: %w",
 			accountID, err)

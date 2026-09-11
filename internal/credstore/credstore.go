@@ -154,29 +154,25 @@ func verifyWrite(service string, want *Blob) error {
 // machine to wait for, and only the caller knows which it can afford.
 var ErrUnavailable = errors.New("the credential store is not answering")
 
-// probeService is the sentinel item CheckWritable uses. It is namespaced like a
-// vault entry so anyone auditing their keychain sees where it came from, and it
-// never survives a successful check.
-const probeService = "claudeswitch:__writable_probe"
-
-// CheckWritable writes a sentinel, reads it back and removes it. A store that
-// silently drops writes, or that blocks long enough to time out, fails here —
-// which is the whole point: the caller is about to do something it cannot undo.
-func CheckWritable() error {
-	want := &Blob{ClaudeAIOAuth: &OAuth{
-		AccessToken: fmt.Sprintf("probe-%d", time.Now().UnixNano()),
-	}}
-	if err := Write(probeService, want); err != nil {
-		return fmt.Errorf("writing a probe item: %w", err)
-	}
-	defer func() { _ = Delete(probeService) }()
-
-	got, err := Read(probeService)
+// CheckWritable proves the store will accept a write for this exact item before
+// a caller does something irreversible that depends on it — a token refresh,
+// whose old pair is revoked the moment the server answers.
+//
+// It rewrites the item with the value it already holds. That is deliberate: the
+// obvious implementation writes a fresh sentinel item, and a fresh item has no
+// approval on macOS, so it prompts the user every time the daemon refreshes.
+// Rewriting what is already there proves the same thing about the one item that
+// matters and cannot prompt, because approval is already granted for it.
+//
+// A no-op write is also safe to lose: if it fails halfway, the stored value is
+// the value it was going to be anyway.
+func CheckWritable(service string) error {
+	cur, err := Read(service)
 	if err != nil {
-		return fmt.Errorf("reading the probe item back: %w", err)
+		return fmt.Errorf("reading %q before rewriting it: %w", service, err)
 	}
-	if got.ClaudeAIOAuth.AccessToken != want.ClaudeAIOAuth.AccessToken {
-		return fmt.Errorf("the probe item did not read back as written")
+	if err := Write(service, cur); err != nil {
+		return fmt.Errorf("rewriting %q with its current value: %w", service, err)
 	}
 	return nil
 }

@@ -5,38 +5,39 @@ import (
 	"testing"
 )
 
-// check runs the guard and separates the two ways it can fail. A hosted CI
-// runner has a login keychain that blocks every write on an approval nobody can
-// answer; that is the machine, not the code, and it surfaces as ErrUnavailable.
-// Anything else — a value that reads back wrong, a probe left behind — is a real
-// failure of the guard and has to be loud.
-//
-// Note that a read of a missing item still answers immediately on such a runner,
-// so there is no cheaper way to tell: the write has to be attempted.
-func check(t *testing.T) {
-	t.Helper()
-	err := CheckWritable()
-	if errors.Is(err, ErrUnavailable) {
-		t.Skipf("no usable credential store on this machine: %v", err)
+// A refresh revokes the old token the moment it succeeds, so the store has to
+// be proven writable *before* that call. This is the proof — and it must not
+// prompt, which is why it rewrites an existing item rather than creating one.
+func TestCheckWritableRewritesInPlace(t *testing.T) {
+	const svc = "claudeswitch:__test_rewrite"
+	want := &Blob{ClaudeAIOAuth: &OAuth{AccessToken: "value-under-test"}}
+	if err := Write(svc, want); err != nil {
+		if errors.Is(err, ErrUnavailable) {
+			t.Skipf("no usable credential store on this machine: %v", err)
+		}
+		t.Fatalf("setting up the item: %v", err)
 	}
-	if err != nil {
+	t.Cleanup(func() { _ = Delete(svc) })
+
+	if err := CheckWritable(svc); err != nil {
 		t.Fatalf("CheckWritable on a store that is answering: %v", err)
 	}
-}
-
-// A refresh revokes the old token the moment it succeeds, so the store has to
-// be proven writable *before* that call. This is the proof.
-func TestCheckWritableRoundTripsAndCleansUp(t *testing.T) {
-	check(t)
-	if _, err := Read(probeService); err == nil {
-		t.Fatal("the probe item survived the check; it must not be left behind")
+	// The point of a no-op rewrite is that it is a no-op.
+	got, err := Read(svc)
+	if err != nil {
+		t.Fatalf("reading back: %v", err)
+	}
+	if got.ClaudeAIOAuth.AccessToken != want.ClaudeAIOAuth.AccessToken {
+		t.Fatalf("the check altered the stored value: got %q",
+			got.ClaudeAIOAuth.AccessToken)
 	}
 }
 
-// Running it twice has to work: a probe left over from a previous call would
-// otherwise collide, and a refusal here would block every refresh.
-func TestCheckWritableIsRepeatable(t *testing.T) {
-	for i := 0; i < 3; i++ {
-		check(t)
+// A missing item must fail rather than be created: the caller is asking whether
+// an account it already has can be updated, and silently inventing one would
+// answer a different question.
+func TestCheckWritableRefusesAMissingItem(t *testing.T) {
+	if err := CheckWritable("claudeswitch:__definitely_not_present"); err == nil {
+		t.Fatal("expected an error for an item that does not exist")
 	}
 }
