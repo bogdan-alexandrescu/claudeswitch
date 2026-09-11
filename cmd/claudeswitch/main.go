@@ -37,7 +37,11 @@ import (
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/vault"
 )
 
-const version = "0.1.0-m1"
+// version is set at build time with -ldflags "-X main.version=…". It must stay
+// a var: -X silently does nothing to a const, so every release built so far
+// reported the hardcoded string instead of its tag, and there was no way to ask
+// a running daemon which build it was.
+var version = "dev"
 
 func main() {
 	if len(os.Args) < 2 {
