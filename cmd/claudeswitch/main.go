@@ -1859,7 +1859,8 @@ func cmdLogin(args []string) error {
 	cfgPath := fs.String("config", "", "path to config.toml")
 	sso := fs.Bool("sso", false, "use the SSO login flow")
 	direct := fs.Bool("direct", false,
-		"obtain the credential ourselves, pinned to the account's organization, without touching the live session")
+		"obtain the credential ourselves, without touching the live session. Which "+
+			"organization comes back is decided by the browser session, not by this flag")
 	code := fs.String("code", "",
 		"complete a --direct login started earlier, with the code from the callback page")
 	pinOrg := fs.Bool("pin-org", false,
@@ -2000,7 +2001,16 @@ func restoreActive(v *vault.Vault, st *state.State, to string) {
 	fmt.Printf("    switched back to %s\n", to)
 }
 
-// loginDirect runs the OAuth flow itself, pinned to the account's organization,
+// loginDirect runs the OAuth flow itself, without touching the live session.
+//
+// It cannot choose the organization. organization_uuid is accepted by the
+// authorize endpoint and then ignored — measured, see docs/GROUND_TRUTH.md —
+// so the credential that comes back belongs to whichever organization the
+// browser session is signed into. The parameter is still sent because it costs
+// nothing, but nothing may be promised on the strength of it, and what comes
+// back is verified against the account's seat before being vaulted.
+//
+// Originally
 // and vaults the result without ever installing it as the live credential.
 //
 // Delegating to `claude auth login` has two problems this avoids: it replaces
@@ -2037,18 +2047,24 @@ func loginDirect(cfg *config.Config, st *state.State, v *vault.Vault, id, wantOr
 		fmt.Printf("%s\n\n", flow.URL)
 	}
 	switch {
-	case pinOrg:
-		fmt.Printf("  It asks for organization %s specifically.\n", wantOrg)
 	case wantOrg == "":
 		fmt.Printf("  %q has no organization recorded yet, so whichever account your browser\n", id)
 		fmt.Printf("  session is signed into will be vaulted under that name, and its\n")
 		fmt.Printf("  organization recorded. An account already vaulted under another name is\n")
 		fmt.Printf("  refused, so you cannot file the same account twice.\n")
 	default:
-		fmt.Printf("  NOTE: the organization cannot be pinned — the authorize endpoint rejects\n")
-		fmt.Printf("  organization_uuid with \"invalid request format\". So this returns whichever\n")
-		fmt.Printf("  organization your browser session is in, and will only be vaulted if that\n")
-		fmt.Printf("  turns out to be %s.\n", wantOrg)
+		// Say this plainly. The help used to promise the organization was
+		// pinned, which it never was: organization_uuid is accepted and then
+		// ignored. Someone trusting that would sign in with whatever session
+		// their browser happened to hold and believe they had captured a
+		// different account.
+		fmt.Printf("  This wants organization %s.\n", wantOrg)
+		fmt.Printf("  The organization CANNOT be requested — the endpoint accepts the parameter\n")
+		fmt.Printf("  and ignores it — so you get whichever account your browser session is\n")
+		fmt.Printf("  signed into. Make sure that is the right one; use --browser to pick a\n")
+		fmt.Printf("  browser signed in as a different account.\n")
+		fmt.Printf("  What comes back is checked against the account's seat, and refused if it\n")
+		fmt.Printf("  does not match, so a wrong session cannot be filed under this name.\n")
 	}
 	if extra.Prompt != "" || extra.LoginHint != "" {
 		fmt.Printf("  Sending prompt=%s login_hint=%s — if the endpoint honours these you will\n",
