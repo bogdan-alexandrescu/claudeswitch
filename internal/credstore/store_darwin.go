@@ -48,8 +48,8 @@ func Read(service string) (*Blob, error) {
 				"  read at all. Run `claudeswitch doctor` to check.\n"+
 				"  Failing that, macOS may be asking to approve access with nobody\n"+
 				"  there to answer — run `claudeswitch status` in a terminal once and\n"+
-				"  click Always Allow.",
-			service, readTimeout)
+				"  click Always Allow: %w",
+			service, readTimeout, ErrUnavailable)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("reading keychain item %q (is it present, and did you approve access?): %w",
@@ -127,8 +127,9 @@ func Write(service string, b *Blob) error {
 	c.Stderr = &errb
 	if err := c.Run(); err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return fmt.Errorf("writing keychain item %q timed out — approval is probably being "+
-				"asked for; run a claudeswitch command in a terminal and click Always Allow", service)
+			return fmt.Errorf("writing keychain item %q timed out — approval is probably "+
+				"being asked for; run a claudeswitch command in a terminal and click "+
+				"Always Allow: %w", service, ErrUnavailable)
 		}
 		// Never include the payload in an error.
 		return fmt.Errorf("writing keychain item %q: %w (%s)", service, err, strings.TrimSpace(errb.String()))

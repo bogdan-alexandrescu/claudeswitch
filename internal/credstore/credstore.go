@@ -13,6 +13,7 @@ package credstore
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -145,6 +146,13 @@ func verifyWrite(service string, want *Blob) error {
 	}
 	return nil
 }
+
+// ErrUnavailable marks a store that did not answer at all — a keychain read or
+// write that ran out of time rather than returning something. It is worth its
+// own type because the two cases call for opposite responses: a store that
+// answered wrongly is a bug to fix, while one that is not answering is a
+// machine to wait for, and only the caller knows which it can afford.
+var ErrUnavailable = errors.New("the credential store is not answering")
 
 // probeService is the sentinel item CheckWritable uses. It is namespaced like a
 // vault entry so anyone auditing their keychain sees where it came from, and it

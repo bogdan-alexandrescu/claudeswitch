@@ -1,37 +1,33 @@
 package credstore
 
 import (
+	"errors"
 	"testing"
-	"time"
 )
 
-// storeUsable reports whether this machine has a credential store a test can
-// actually exercise. A hosted CI runner has a login keychain that blocks on an
-// approval nobody can answer, which is a property of the runner rather than a
-// bug in the code under test — so the tests below skip there instead of failing
-// and teaching everyone to ignore a red build.
-func storeUsable(t *testing.T) {
+// check runs the guard and separates the two ways it can fail. A hosted CI
+// runner has a login keychain that blocks every write on an approval nobody can
+// answer; that is the machine, not the code, and it surfaces as ErrUnavailable.
+// Anything else — a value that reads back wrong, a probe left behind — is a real
+// failure of the guard and has to be loud.
+//
+// Note that a read of a missing item still answers immediately on such a runner,
+// so there is no cheaper way to tell: the write has to be attempted.
+func check(t *testing.T) {
 	t.Helper()
-	start := time.Now()
-	_, err := Read("claudeswitch:__definitely_not_present")
-	if err == nil {
-		t.Fatal("a service that should not exist was readable")
+	err := CheckWritable()
+	if errors.Is(err, ErrUnavailable) {
+		t.Skipf("no usable credential store on this machine: %v", err)
 	}
-	// A working store answers "no such item" immediately. One that sits there
-	// until the timeout is not available to this process at all.
-	if time.Since(start) > 5*time.Second {
-		t.Skipf("no usable credential store here (a read of a missing item took %s)",
-			time.Since(start).Round(time.Second))
+	if err != nil {
+		t.Fatalf("CheckWritable on a store that is answering: %v", err)
 	}
 }
 
 // A refresh revokes the old token the moment it succeeds, so the store has to
 // be proven writable *before* that call. This is the proof.
 func TestCheckWritableRoundTripsAndCleansUp(t *testing.T) {
-	storeUsable(t)
-	if err := CheckWritable(); err != nil {
-		t.Fatalf("CheckWritable on a healthy store: %v", err)
-	}
+	check(t)
 	if _, err := Read(probeService); err == nil {
 		t.Fatal("the probe item survived the check; it must not be left behind")
 	}
@@ -40,10 +36,7 @@ func TestCheckWritableRoundTripsAndCleansUp(t *testing.T) {
 // Running it twice has to work: a probe left over from a previous call would
 // otherwise collide, and a refusal here would block every refresh.
 func TestCheckWritableIsRepeatable(t *testing.T) {
-	storeUsable(t)
 	for i := 0; i < 3; i++ {
-		if err := CheckWritable(); err != nil {
-			t.Fatalf("call %d: %v", i+1, err)
-		}
+		check(t)
 	}
 }
