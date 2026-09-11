@@ -1518,9 +1518,23 @@ func maintainVault(ctx context.Context, v *vault.Vault, st *state.State, cfg *co
 				// error, and it must not cause a write — but the daemon's idea
 				// of which account is live is now wrong, so drop it and let the
 				// next poll re-derive it from the credential itself.
-				log.Info("the live credential is a different account than we thought; re-deriving",
-					"was", st.Active, "live_org", foreign.GotOrg)
-				st.Active = ""
+				// The error carries the seat the live credential actually
+				// belongs to, so in almost every case we already know the right
+				// answer. Clearing to "" threw it away and left the daemon with
+				// no active account, whereupon the policy picked the first one
+				// in priority order — an account at 100% — swapped its
+				// credential in, and immediately rotated away again. That cycle
+				// repeated every sixteen minutes, and each turn of it performed
+				// two real credential swaps for no reason.
+				if owner := cfg.AccountBySeat(foreign.GotOrg); owner != "" {
+					log.Info("the live credential belongs to a different account than we thought",
+						"was", st.Active, "is", owner)
+					st.Active = owner
+				} else {
+					log.Info("the live credential is an account we do not know; clearing",
+						"was", st.Active, "live_seat", foreign.GotOrg)
+					st.Active = ""
+				}
 			} else {
 				log.Warn("could not sync the active account's vault entry",
 					"account", st.Active, "err", err)

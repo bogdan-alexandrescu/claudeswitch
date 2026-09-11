@@ -86,6 +86,22 @@ func (c *Config) SeatOf(accountID string) string {
 	return ""
 }
 
+// AccountBySeat is the reverse of SeatOf: which configured account owns this
+// quota pool, or "" if none does. Used when the live credential turns out to
+// belong to someone other than who state believed — the seat is the answer, and
+// this turns it back into a name we can act on.
+func (c *Config) AccountBySeat(seat string) string {
+	if seat == "" {
+		return ""
+	}
+	for _, a := range c.Accounts {
+		if a.Seat() == seat {
+			return a.ID
+		}
+	}
+	return ""
+}
+
 func (a Account) Seat() string {
 	if a.AccountUUID == "" || a.OrgID == "" {
 		return ""
