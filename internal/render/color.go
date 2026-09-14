@@ -87,6 +87,11 @@ func colorState(s string) string {
 	switch {
 	case strings.HasPrefix(s, "ACTIVE"):
 		return paint(bold, s)
+	case strings.Contains(s, "refills in"):
+		// Not red: red is reserved for "you have to do something about this",
+		// and an account that refills within the hour is the one case where
+		// doing nothing is a working plan.
+		return paint(yellow, s)
 	case strings.Contains(s, "no headroom"), strings.Contains(s, "refused"):
 		return paint(red, s)
 	case strings.Contains(s, "reserved"):

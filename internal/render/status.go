@@ -505,6 +505,47 @@ func shortReason(r string) string {
 	return r
 }
 
+// refillSoon is how near a reset has to be before "out" is better said as
+// "back shortly". An hour is the span over which waiting is a real option: it
+// is inside one sitting, and it is short enough that the number does not go
+// stale between two glances at the table.
+const refillSoon = time.Hour
+
+// refillsIn is how long until the window that put this account over its trigger
+// clears, and whether that is soon enough to be worth saying.
+//
+// Being over the trigger is not one fact but two. A five-hour window forty
+// minutes from resetting comes back on its own before you have finished what
+// you are doing; a weekly two days out does not. Both read "no headroom", in
+// red, and the only thing separating them was a "5h"/"7d" suffix that says
+// which window is full rather than when it empties. CLEARS carried the number
+// all along — but it is the first column dropped on a narrow terminal, and a
+// verdict that reads as terminal sends you hunting for another account you did
+// not need.
+//
+// The window asked about is the one that put the account over, not whichever
+// the API marks active: refilling the five-hour does nothing for an account
+// that is out on its weekly.
+func refillsIn(acct *state.Account, which string, now time.Time) (time.Duration, bool) {
+	if acct.Last == nil {
+		return 0, false
+	}
+	w := acct.Last.FiveHour
+	if which == usage.SevenDayKey {
+		w = acct.Last.SevenDay
+	}
+	if w.ResetsAt == nil {
+		return 0, false
+	}
+	// A reset already in the past means the reading has outlived its window;
+	// that is ExpiredAt's story to tell, and it is told before this is reached.
+	d := w.ResetsAt.Sub(now)
+	if d <= 0 || d > refillSoon {
+		return 0, false
+	}
+	return d, true
+}
+
 // stateOf is the one-phrase verdict for an account.
 func stateOf(acct *state.Account, a config.Account, cfg *config.Config, proj float64, which string, withBurn bool) string {
 	window := "5h"
@@ -526,6 +567,9 @@ func stateOf(acct *state.Account, a config.Account, cfg *config.Config, proj flo
 	case avail == state.Reserved:
 		return "reserved · " + window
 	case proj >= cfg.TriggerFor(which):
+		if d, ok := refillsIn(acct, which, time.Now()); ok {
+			return "refills in " + shortDur(d)
+		}
 		return "no headroom · " + window
 	}
 	s := string(avail)
@@ -637,9 +681,12 @@ func statusDetailed(out io.Writer, o Options) {
 		// anything at or over the trigger), but the status column said
 		// "available" beside a 100% bar, which contradicted itself.
 		if avail == state.Available && acct.Last != nil {
-			if _, worst, over := acct.Last.WorstAgainst(
+			if which, worst, over := acct.Last.WorstAgainst(
 				cfg.TriggerFor(usage.FiveHourKey), cfg.TriggerFor(usage.SevenDayKey)); over >= 0 {
 				stateStr = fmt.Sprintf("no headroom (%.0f%%)", worst)
+				if d, ok := refillsIn(acct, which, time.Now()); ok {
+					stateStr = fmt.Sprintf("refills in %s (%.0f%%)", shortDur(d), worst)
+				}
 			}
 		}
 		if a.ID == st.Active {
