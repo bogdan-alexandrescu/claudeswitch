@@ -11,8 +11,13 @@ import (
 
 // slTestCfg mirrors the shipped defaults: rotate at 85, swap mid-turn at 96.
 // (rotate_test.go already defines testCfg for this package.)
+// Pinned rather than taken from the defaults: these tests are about where the
+// bands fall relative to the thresholds, and the cases below name the boundary
+// numbers outright. Reading the thresholds from config.Default* made every one
+// of them fail the day a default moved, for no reason connected to what they
+// check.
 func slTestCfg() *config.Config {
-	return &config.Config{SwitchAt: config.DefaultSwitchAt, HardFloor: config.DefaultHardFloor}
+	return &config.Config{SwitchAt: 85, HardFloor: 96}
 }
 
 func TestSlBarClampsAndFills(t *testing.T) {

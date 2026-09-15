@@ -21,14 +21,21 @@ import (
 // BUILD_PROMPT.md) but must remain configurable and visible in `status`.
 const (
 	DefaultSwitchAt = 85.0 // session (5-hour) utilization % at which we rotate away
-	// DefaultSwitchAtWeekly is higher than the session trigger on purpose. The
-	// two windows cost different things to spend: 85% of a 5-hour window is
+	// DefaultSwitchAtWeekly is much higher than the session trigger on purpose.
+	// The two windows cost different things to spend: 85% of a 5-hour window is
 	// nearly gone and refills the same afternoon, while 85% of a weekly window
 	// still holds days of work. Judging both by one number retired accounts that
 	// had plenty left.
-	DefaultSwitchAtWeekly = 95.0
-	DefaultHardFloor      = 96.0 // above this, swap mid-turn rather than wait for idle
-	DefaultReserve        = 70.0 // personal is ineligible for overflow above this
+	//
+	// The remaining margin is small but not thin: the policy engine projects
+	// PollHot + MaxSwitchWait ahead at the observed burn rate, so a window is
+	// rotated out of before it is spent rather than after.
+	DefaultSwitchAtWeekly = 98.0
+	// DefaultHardFloor stays above both triggers. Below the weekly one it would
+	// be met by every weekly rotation, which silently turns off both the
+	// anti-flap cooldown and the preference for swapping between turns.
+	DefaultHardFloor = 99.0 // above this, swap mid-turn rather than wait for idle
+	DefaultReserve   = 70.0 // personal is ineligible for overflow above this
 )
 
 type Account struct {
@@ -247,6 +254,27 @@ func Load(path string) (*Config, error) {
 // it before writing rather than discovering the problem at next startup.
 func (c *Config) Validate() error { return c.validate() }
 
+// Warnings are configurations that load and run but do not do what their
+// numbers suggest. They are not errors: refusing to start over one would lock
+// someone out of their own accounts over a preference, and every combination
+// here is one a person could deliberately want.
+//
+// validate() only ever compared hard_floor against the session trigger, so a
+// floor beneath the weekly one passed in silence — and quietly disabled both
+// the cooldown and the idle-gap preference for every weekly rotation, since
+// each one clears the floor by definition.
+func (c *Config) Warnings() []string {
+	var out []string
+	if c.SwitchAtWeekly > 0 && c.HardFloor < c.SwitchAtWeekly {
+		out = append(out, fmt.Sprintf(
+			"hard_floor (%g) is below switch_at_weekly (%g), so every weekly rotation "+
+				"counts as forced: it skips the %s cooldown and swaps mid-turn rather "+
+				"than at an idle gap. Raise hard_floor above %g to keep both.",
+			c.HardFloor, c.SwitchAtWeekly, c.Cooldown.String(), c.SwitchAtWeekly))
+	}
+	return out
+}
+
 func (c *Config) validate() error {
 	if c.SwitchAt <= 0 || c.SwitchAt > 100 {
 		return fmt.Errorf("switch_at must be between 0 and 100, got %v", c.SwitchAt)
@@ -361,8 +389,23 @@ func (c *Config) Write(path string) error {
 	var b strings.Builder
 	b.WriteString("# claudeswitch — written by `cs setup`. Safe to edit.\n")
 	b.WriteString("# Thresholds are the tuning surface; `cs status` shows them.\n\n")
-	fmt.Fprintf(&b, "switch_at       = %g     # rotate away at this utilization\n", c.SwitchAt)
-	fmt.Fprintf(&b, "hard_floor      = %g     # above this, swap mid-turn rather than wait for idle\n", c.HardFloor)
+	// Thresholds are written at their effective values, not their raw ones. A
+	// Config built in code rather than loaded leaves them zero, and zero is not
+	// a threshold anyone means — written out literally it produces a file that
+	// will not load, which is the one thing a generated config must never do.
+	or := func(v, def float64) float64 {
+		if v <= 0 {
+			return def
+		}
+		return v
+	}
+	fmt.Fprintf(&b, "switch_at       = %g     # rotate away at this much of the 5-hour window\n",
+		or(c.SwitchAt, DefaultSwitchAt))
+	fmt.Fprintf(&b, "switch_at_weekly = %g    # and at this much of the weekly one — a weekly window\n",
+		or(c.SwitchAtWeekly, DefaultSwitchAtWeekly))
+	b.WriteString("                         # spent is gone for days, a session one refills today\n")
+	fmt.Fprintf(&b, "hard_floor      = %g     # above this, swap mid-turn rather than wait for idle\n",
+		or(c.HardFloor, DefaultHardFloor))
 	fmt.Fprintf(&b, "switch_when     = %q\n", c.SwitchWhen)
 	fmt.Fprintf(&b, "cooldown        = %q   # anti-flap\n", c.Cooldown.String())
 	fmt.Fprintf(&b, "max_switch_wait = %q   # stop waiting for an idle gap after this\n", c.MaxSwitchWait.String())

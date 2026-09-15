@@ -871,8 +871,10 @@ func cmdInit(args []string) error {
 		return err
 	}
 	tmpl := `# claudeswitch. Thresholds are the tuning surface; status shows them.
-switch_at   = 85    # rotate away while this much of the window remains unused
-hard_floor  = 96    # above this, swap mid-turn rather than wait for an idle gap
+switch_at        = 85    # rotate away at this much of the 5-hour window
+switch_at_weekly = 98    # and at this much of the weekly one — a weekly window
+                         # spent is gone for days, a session one refills today
+hard_floor       = 99    # above this, swap mid-turn rather than wait for an idle gap
 switch_when = "idle"
 cooldown    = "10m"
 
@@ -3019,7 +3021,10 @@ func settings() []setting {
 	return []setting{
 		{"switch_at", func(c *config.Config) string { return fmt.Sprintf("%g", c.SwitchAt) },
 			pctSetter(func(c *config.Config) *float64 { return &c.SwitchAt }),
-			"rotate away at this utilization"},
+			"rotate away at this much of the 5-hour window"},
+		{"switch_at_weekly", func(c *config.Config) string { return fmt.Sprintf("%g", c.SwitchAtWeekly) },
+			pctSetter(func(c *config.Config) *float64 { return &c.SwitchAtWeekly }),
+			"...and at this much of the weekly one"},
 		{"hard_floor", func(c *config.Config) string { return fmt.Sprintf("%g", c.HardFloor) },
 			pctSetter(func(c *config.Config) *float64 { return &c.HardFloor }),
 			"above this, swap mid-turn rather than wait for an idle gap"},

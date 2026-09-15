@@ -99,3 +99,33 @@ func TestTheCountdownComesFromTheWindowThatBlocked(t *testing.T) {
 		t.Errorf("want the weekly verdict:\n%s", row)
 	}
 }
+
+// A configuration that does not do what its numbers say has to be visible where
+// the numbers are. The footer prints both thresholds side by side, so without
+// this the contradiction is on screen with no hint of its consequence.
+func TestAContradictoryConfigIsWarnedAboutInStatus(t *testing.T) {
+	far := time.Now().Add(72 * time.Hour)
+	cfg := &config.Config{
+		SwitchAt: 85, SwitchAtWeekly: 98, HardFloor: 96,
+		Cooldown:   config.Duration{Duration: 10 * time.Minute},
+		PollActive: config.Duration{Duration: time.Minute},
+		PollIdle:   config.Duration{Duration: 10 * time.Minute},
+		Accounts:   []config.Account{{ID: "work-a"}},
+		Priority:   []string{"work-a"},
+	}
+	st := &state.State{Active: "work-a", Accounts: map[string]*state.Account{
+		"work-a": {Last: &usage.Usage{
+			FiveHour: usage.Window{Utilization: ptr(10), ResetsAt: &far},
+			SevenDay: usage.Window{Utilization: ptr(20), ResetsAt: &far},
+		}, LastAt: time.Now()},
+	}}
+	var buf bytes.Buffer
+	Status(&buf, Options{Cfg: cfg, St: st, DaemonOwns: true})
+	out := buf.String()
+	if !strings.Contains(out, "WARNINGS") || !strings.Contains(out, "hard_floor (96)") {
+		t.Errorf("the mismatch must be reported where the thresholds are shown:\n%s", out)
+	}
+	if !strings.Contains(out, "switch ≥85% session / ≥98% weekly") {
+		t.Errorf("footer must quote the configured thresholds:\n%s", out)
+	}
+}

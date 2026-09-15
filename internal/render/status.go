@@ -423,6 +423,11 @@ func statusCompact(out io.Writer, o Options) {
 		fmt.Fprint(out, st.render("  "))
 	}
 
+	// A configuration that does not do what its numbers say belongs here rather
+	// than in a log nobody reads: the footer prints both thresholds side by
+	// side, so the contradiction is on screen already and only the consequence
+	// is missing.
+	warnings = append(warnings, cfg.Warnings()...)
 	if o.Degraded {
 		warnings = append(warnings,
 			"usage API shape changed — predictive switching DISABLED, reactive only: "+truncate(o.DegradedWhy, 50))
