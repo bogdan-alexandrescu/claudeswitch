@@ -36,3 +36,35 @@ jobs:
         with:
           files: dist/*
           generate_release_notes: true
+
+      # The upload races GitHub making the release discoverable by its tag. On
+      # v0.3.11 the action retried, got the four tarballs up, then took a hard
+      # 404 on checksums.txt — so the release was published without the file
+      # people verify a download against, and the job's failure said nothing
+      # about which artifact was missing.
+      #
+      # So: check what actually landed, put back anything that did not, and
+      # fail loudly if it still will not stick. A release missing an artifact
+      # should never be a quiet outcome.
+      - name: Verify every artifact is attached
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          version="${GITHUB_REF_NAME}"
+          for attempt in 1 2 3; do
+            missing=""
+            attached="$(gh release view "$version" --json assets -q '.assets[].name')"
+            for f in dist/*; do
+              name="$(basename "$f")"
+              printf '%s\n' "$attached" | grep -qxF "$name" || missing="$missing $name"
+            done
+            [ -z "$missing" ] && { echo "all artifacts attached"; exit 0; }
+            echo "attempt $attempt: missing$missing"
+            for name in $missing; do
+              gh release upload "$version" "dist/$name" --clobber || true
+            done
+            sleep 5
+          done
+          echo "::error::release $version is still missing:$missing"
+          exit 1

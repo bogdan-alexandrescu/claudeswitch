@@ -51,15 +51,19 @@ func TestStaysWhenActiveHasHeadroom(t *testing.T) {
 	}
 }
 
-func TestSwitchesAtTheTriggerInPriorityOrder(t *testing.T) {
+// At the trigger it rotates to whichever eligible account has the most room —
+// including a personal one. Room is the whole rule now: position in the
+// priority list orders candidates for tie-breaking, it does not hold an account
+// back. `reserve`, or a scope the directory disallows, is what does that.
+func TestSwitchesAtTheTriggerToTheEmptiest(t *testing.T) {
 	in := Input{Cfg: cfg(), Now: now, St: st("work-a", map[string]*state.Account{
 		"work-a":   reading(91, 30, now.Add(time.Hour)),
 		"work-b":   reading(12, 20, now.Add(time.Hour)),
 		"personal": reading(5, 5, now.Add(time.Hour)),
 	})}
 	d := Decide(in)
-	if d.Kind != Switch || d.Target != "work-b" {
-		t.Fatalf("got %v, want switch to work-b (priority order, personal is last)", d)
+	if d.Kind != Switch || d.Target != "personal" {
+		t.Fatalf("got %v, want switch to personal (5%% beats work-b's 20%%)", d)
 	}
 	if d.Forced {
 		t.Error("91%% is over the trigger but under the hard floor: must not be forced")
@@ -259,18 +263,39 @@ func TestAnAlmostSpentAccountLosesToAFreshOne(t *testing.T) {
 	}
 }
 
-// Scope order outranks room. A personal account held back on purpose is
-// usually the emptiest precisely because it is held back, so ordering purely by
-// room would spend it first and invert the instruction that put it last.
-func TestScopeOrderOutranksHeadroom(t *testing.T) {
+// Being last in the priority list does not hold an account back, and an account
+// held back for other reasons is usually the emptiest — so it becomes the
+// preferred target the moment it is eligible. Recorded deliberately: it is the
+// consequence of ordering by room alone, and the thing to reach for instead is
+// `reserve` or a scope the directory disallows.
+func TestBeingLastInPriorityDoesNotHoldAnAccountBack(t *testing.T) {
 	in := Input{Cfg: cfg(), Now: now, St: st("work-a", map[string]*state.Account{
 		"work-a":   reading(91, 30, now.Add(time.Hour)),
 		"work-b":   reading(60, 30, now.Add(time.Hour)),
 		"personal": reading(1, 1, now.Add(time.Hour)),
 	})}
+	if d := Decide(in); d.Kind != Switch || d.Target != "personal" {
+		t.Fatalf("got %v, want switch to personal (emptiest, whatever its "+
+			"position in the priority list)", d)
+	}
+}
+
+// `reserve` is what actually holds an account back, and it still does: above it
+// the account is ineligible however much room the raw figures suggest.
+func TestAReserveStillHoldsAnAccountBack(t *testing.T) {
+	c := cfg()
+	for i := range c.Accounts {
+		if c.Accounts[i].ID == "personal" {
+			c.Accounts[i].Reserve = 0.5 // ineligible above 0.5% used
+		}
+	}
+	in := Input{Cfg: c, Now: now, St: st("work-a", map[string]*state.Account{
+		"work-a":   reading(91, 30, now.Add(time.Hour)),
+		"work-b":   reading(60, 30, now.Add(time.Hour)),
+		"personal": reading(1, 1, now.Add(time.Hour)),
+	})}
 	if d := Decide(in); d.Kind != Switch || d.Target != "work-b" {
-		t.Fatalf("got %v, want switch to work-b (personal is a later scope, "+
-			"however empty it is)", d)
+		t.Fatalf("got %v, want switch to work-b (personal is over its reserve)", d)
 	}
 }
 

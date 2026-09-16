@@ -246,22 +246,18 @@ func find(all []candidate, id string) (candidate, bool) {
 // at 97% against a 98% weekly trigger, sitting first in priority while a pool
 // that had just reset to 0% sat third.
 //
-// Two things still outrank headroom, because both express which account SHOULD
-// serve rather than how much is left in it:
+// Only a project's scope preference outranks room, because that says which
+// accounts may serve this directory at all rather than how much is left in
+// them. Everything else is decided by headroom, with the configured priority
+// surviving as the tie-break: candidates arrive in that order and only a
+// strictly better one displaces the incumbent.
 //
-//   - a project's scope preference, which says what may serve this directory;
-//   - the scope's own position in the priority list. Putting "personal" last is
-//     how someone says "do not spend my own account while work accounts have
-//     room", and that is not a statement about headroom — a personal account is
-//     usually the emptiest precisely because it is the one held back. Ordering
-//     purely by room would spend it first, which inverts the instruction.
-//
-// So headroom decides between accounts of the same scope, and the configured
-// order decides between scopes. Within a group the priority order survives as
-// the tie-break: candidates arrive in that order and only a strictly better one
-// displaces the incumbent.
+// Note what this means for an account placed last on purpose. A held-back
+// account is usually the emptiest precisely because it is held back, so it
+// becomes the preferred target as soon as it is eligible. Position in the
+// priority list no longer keeps it in reserve; use `reserve` for that, or a
+// scope the working directory does not allow.
 func bestEligible(all []candidate, in Input) (candidate, bool) {
-	tier := scopeTiers(all)
 	var best candidate
 	found := false
 	for _, c := range all {
@@ -277,7 +273,7 @@ func bestEligible(all []candidate, in Input) (candidate, bool) {
 		if !in.Cfg.ScopeAllowed(c.acct.Scope, in.Dir) {
 			continue
 		}
-		if found && !better(c, best, in, tier) {
+		if found && !better(c, best, in) {
 			continue
 		}
 		best, found = c, true
@@ -294,27 +290,12 @@ func bestEligible(all []candidate, in Input) (candidate, bool) {
 // "in order" while ordering them by something else is worse than not saying so:
 // it showed an account with one point of room at the top, marked ready, when a
 // pool that had just reset would actually have been chosen.
-func better(a, b candidate, in Input, tier map[string]int) bool {
+func better(a, b candidate, in Input) bool {
 	if ra, rb := scopeRank(a, in), scopeRank(b, in); ra != rb {
 		return ra < rb
 	}
-	if ta, tb := tier[a.acct.Scope], tier[b.acct.Scope]; ta != tb {
-		return ta < tb
-	}
+	// exceedance is points PAST the trigger, so it falls as room grows.
 	return a.exceedance < b.exceedance
-}
-
-// scopeTiers ranks each scope by where it first appears in the configured
-// order, so "work" before "personal" falls out of the priority list itself
-// rather than from any meaning attached to those particular words.
-func scopeTiers(all []candidate) map[string]int {
-	tier := map[string]int{}
-	for _, c := range all {
-		if _, seen := tier[c.acct.Scope]; !seen {
-			tier[c.acct.Scope] = len(tier)
-		}
-	}
-	return tier
 }
 
 // scopeRank is which of a project's preferred scopes an account belongs to,
@@ -480,12 +461,11 @@ func Explain(in Input) (Decision, []Verdict) {
 // stable for ties because sort.SliceStable preserves the configured priority.
 func explainOrder(all []candidate, in Input) []candidate {
 	out := append([]candidate(nil), all...)
-	tier := scopeTiers(all)
 	sort.SliceStable(out, func(i, j int) bool {
 		if a := out[i].acct.ID == in.St.Active; a != (out[j].acct.ID == in.St.Active) {
 			return a
 		}
-		return better(out[i], out[j], in, tier)
+		return better(out[i], out[j], in)
 	})
 	return out
 }
