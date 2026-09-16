@@ -20,6 +20,25 @@ jobs:
           set -eu
           version="${GITHUB_REF_NAME}"
           mkdir -p dist
+
+          # Build the archive the same way twice and you get the same bytes.
+          # The binary already did: -trimpath and CGO_ENABLED=0 make the Go
+          # build reproducible, and re-cutting v0.3.11 proved it — identical
+          # binary, different tarball. Both tar and gzip embed modification
+          # times, so the envelope changed while the program did not, and every
+          # published checksum moved with it.
+          #
+          # Pinning the times to the tagged commit's own date keeps a rebuild
+          # verifiable against what was published: --mtime for the file times,
+          # gzip -n for the one gzip writes into its header, and fixed
+          # ownership and sort order so the runner's environment cannot leak in
+          # either.
+          # HEAD, not the tag name: checkout leaves the tagged commit checked
+          # out, and a shallow clone need not have the tag ref itself.
+          SOURCE_DATE_EPOCH="$(git log -1 --pretty=%ct HEAD)"
+          export SOURCE_DATE_EPOCH
+          echo "source date epoch: $SOURCE_DATE_EPOCH"
+
           for target in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do
             os="${target%/*}"; arch="${target#*/}"
             echo "building $os/$arch"
@@ -27,11 +46,34 @@ jobs:
               -trimpath \
               -ldflags "-s -w -X main.version=${version}" \
               -o "dist/claudeswitch" ./cmd/claudeswitch
-            tar -czf "dist/claudeswitch_${version}_${os}_${arch}.tar.gz" \
-              -C dist claudeswitch -C .. LICENSE README.md
+            tar --sort=name --format=gnu \
+              --owner=0 --group=0 --numeric-owner \
+              --mtime="@${SOURCE_DATE_EPOCH}" \
+              -cf - -C dist claudeswitch -C .. LICENSE README.md \
+              | gzip -n -9 > "dist/claudeswitch_${version}_${os}_${arch}.tar.gz"
             rm dist/claudeswitch
           done
           (cd dist && shasum -a 256 *.tar.gz > checksums.txt)
+
+          # Prove it here rather than discovering later that a flag was wrong:
+          # rebuild one target and require the bytes to match.
+          echo "checking the archive is reproducible"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+            -trimpath -ldflags "-s -w -X main.version=${version}" \
+            -o "dist/claudeswitch" ./cmd/claudeswitch
+          tar --sort=name --format=gnu \
+            --owner=0 --group=0 --numeric-owner \
+            --mtime="@${SOURCE_DATE_EPOCH}" \
+            -cf - -C dist claudeswitch -C .. LICENSE README.md \
+            | gzip -n -9 > /tmp/recheck.tar.gz
+          rm dist/claudeswitch
+          a="$(shasum -a 256 < "dist/claudeswitch_${version}_linux_amd64.tar.gz" | cut -d" " -f1)"
+          b="$(shasum -a 256 < /tmp/recheck.tar.gz | cut -d" " -f1)"
+          if [ "$a" != "$b" ]; then
+            echo "::error::the archive is not reproducible: $a vs $b"
+            exit 1
+          fi
+          echo "reproducible: $a"
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
