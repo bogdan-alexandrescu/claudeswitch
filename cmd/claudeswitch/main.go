@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -902,6 +903,7 @@ reserve = 70        # never auto-used above this utilization
 func cmdAdd(args []string) error {
 	fs := flag.NewFlagSet("add", flag.ExitOnError)
 	cfgPath := fs.String("config", "", "path to config.toml")
+	scope := fs.String("scope", "work", `which projects may use it: "work" or "personal"`)
 	positional := parseInterleaved(fs, args)
 	if len(positional) != 1 {
 		return fmt.Errorf("usage: claudeswitch add <account-id>\n\n" +
@@ -967,22 +969,110 @@ func cmdAdd(args []string) error {
 	}
 	fmt.Printf("    mcpOAuth      not copied into the vault (it belongs to the machine, not the account)\n")
 	if !known {
-		// Pinned on the seat, not the organization. An organization does not
-		// identify an account — a team has one seat per member, each with its
-		// own limits — and config.Account.Seat() returns empty unless BOTH
-		// fields are set. Since every integrity check in State.Reconcile is
-		// gated on a non-empty seat, the org-only block printed here used to
-		// switch off the detection of a credential filed under the wrong name:
-		// the exact failure that took out three accounts on 2026-09-11.
-		fmt.Printf("\n  add this to %s:\n\n    [[account]]\n    id           = %q\n"+
-			"    scope        = \"work\"        # or \"personal\" — which projects may use it\n"+
-			"    account_uuid = %q\n    org_id       = %q\n",
-			cfg.Path, id, e.AccountUUID, e.OrgID)
-		fmt.Printf("\n    Then put %q in the priority list where you want it spent.\n"+
-			"    Without that it still rotates, but last.\n", id)
+		offerConfigBlock(cfg.Path, id, *scope, e)
 	}
 	fmt.Println()
 	return nil
+}
+
+// offerConfigBlock closes the gap between vaulting a credential and being able
+// to use it. Until it existed, `add` stored the credential and then left the
+// account in limbo: `login` refused it for not being in the config, `accounts`
+// did not list it, and the observation `add` had just written was discarded by
+// the next command that read the state file.
+//
+// Everything in the block is already in hand here, and setup has always written
+// its own config for the reason given above it: a seat uuid is only knowable
+// after signing in, so this is not a file a person can correctly write in
+// advance. Printing it and asking them to retype it is how the organization-only
+// pin survived as long as it did.
+func offerConfigBlock(path, id, scope string, e *vault.Entry) {
+	block := fmt.Sprintf("\n[[account]]\nid           = %q\nscope        = %q\n"+
+		"account_uuid = %q\norg_id       = %q\n", id, scope, e.AccountUUID, e.OrgID)
+
+	fmt.Printf("\n  %s is not in %s yet:\n\n", id, path)
+	for _, line := range strings.Split(strings.Trim(block, "\n"), "\n") {
+		fmt.Printf("    %s\n", line)
+	}
+
+	// Never prompt when nobody is there to answer. A pipe reaches EOF
+	// immediately, and askYes would read that as the default — writing to
+	// someone's config because their terminal was not attached.
+	if !stdinIsTerminal() {
+		fmt.Printf("\n    Add that block, then put %q in the priority list where you\n"+
+			"    want it spent. Without that it still rotates, but last.\n", id)
+		return
+	}
+	fmt.Println()
+	if !askYes("  write it, and add "+id+" to the priority list?", true) {
+		fmt.Printf("\n    Left alone. Add the block yourself when you are ready.\n")
+		return
+	}
+	if err := appendAccount(path, id, block); err != nil {
+		fmt.Printf("\n  ⚠ could not write %s: %v\n", path, err)
+		fmt.Printf("    The credential is vaulted; add the block above by hand.\n")
+		return
+	}
+	fmt.Printf("\n  ✓ %s now lists %s, last in the priority order.\n", path, id)
+	fmt.Printf("    Move it earlier in `priority` to spend it sooner.\n")
+}
+
+func stdinIsTerminal() bool {
+	fi, err := os.Stdin.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+}
+
+// priorityLine matches the rotation order when it is written on one line, which
+// is how this program writes it. Anything else is left alone rather than
+// guessed at.
+var priorityLine = regexp.MustCompile(`(?m)^priority\s*=\s*\[([^\]]*)\]`)
+
+// appendAccount adds the block to the config and names the account in the
+// priority list, last — the position it already occupies implicitly, since
+// Ordered() puts unlisted accounts at the end. Being explicit costs nothing and
+// makes the order something you can see and edit.
+//
+// The edit is textual so the rest of the file survives byte for byte: comments
+// included, which a regenerated config would lose. It is then parsed back
+// before being moved into place, so a config this could not produce cleanly is
+// never the one left on disk.
+func appendAccount(path, id, block string) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	out := strings.TrimRight(string(raw), "\n") + "\n" + block
+
+	if m := priorityLine.FindSubmatchIndex([]byte(out)); m != nil {
+		inner := strings.TrimSpace(out[m[2]:m[3]])
+		sep := ", "
+		if inner == "" {
+			sep = ""
+		}
+		out = out[:m[3]] + sep + strconv.Quote(id) + out[m[3]:]
+	}
+
+	tmp := path + ".claudeswitch-new"
+	if err := os.WriteFile(tmp, []byte(out), 0o600); err != nil {
+		return err
+	}
+	// Parse what we are about to install, not what we meant to write.
+	cfg, err := config.Load(tmp)
+	if err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("the edit would not load, so it was discarded: %w", err)
+	}
+	found := false
+	for _, a := range cfg.Accounts {
+		if a.ID == id {
+			found = true
+		}
+	}
+	if !found {
+		os.Remove(tmp)
+		return fmt.Errorf("the edit parsed but %q was not in it; discarded", id)
+	}
+	return os.Rename(tmp, path)
 }
 
 func nonEmpty(s, alt string) string {
