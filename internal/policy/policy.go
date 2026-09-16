@@ -7,6 +7,7 @@ package policy
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -128,7 +129,7 @@ func Decide(in Input) Decision {
 
 	// With no active account yet, take the first eligible one.
 	if !hasActive {
-		if c, ok := firstEligible(all, in); ok {
+		if c, ok := bestEligible(all, in); ok {
 			return Decision{Kind: Switch, Target: c.acct.ID, Reason: "no active account yet"}
 		}
 		return waiting(all, in, "no account is currently usable")
@@ -161,7 +162,7 @@ func Decide(in Input) Decision {
 		}
 	}
 
-	c, ok := firstEligible(all, in)
+	c, ok := bestEligible(all, in)
 	if !ok {
 		why := fmt.Sprintf("active account at %.0f%% and nothing else is usable", active.worst)
 		if activeBurnt {
@@ -233,12 +234,37 @@ func find(all []candidate, id string) (candidate, bool) {
 	return candidate{}, false
 }
 
-// firstEligible walks priority order and returns the first account that is
-// usable: readable, not burnt, not over its reserve, not itself already past the
-// trigger, and permitted in this directory.
-func firstEligible(all []candidate, in Input) (candidate, bool) {
-	ordered := preferredOrder(all, in)
-	for _, c := range ordered {
+// bestEligible returns the account worth rotating into: among those that are
+// usable — readable, not burnt, not over its reserve, not itself past the
+// trigger, and permitted in this directory — the one with the most room.
+//
+// It used to take the first such account in priority order, which treats one
+// point below the trigger as equivalent to ninety. That is how a rotation lands
+// on an account it must immediately leave: the swap happens, the point is
+// spent, the trigger is met, and the anti-flap cooldown then holds the session
+// there for its full duration with no headroom at all. Observed with an account
+// at 97% against a 98% weekly trigger, sitting first in priority while a pool
+// that had just reset to 0% sat third.
+//
+// Two things still outrank headroom, because both express which account SHOULD
+// serve rather than how much is left in it:
+//
+//   - a project's scope preference, which says what may serve this directory;
+//   - the scope's own position in the priority list. Putting "personal" last is
+//     how someone says "do not spend my own account while work accounts have
+//     room", and that is not a statement about headroom — a personal account is
+//     usually the emptiest precisely because it is the one held back. Ordering
+//     purely by room would spend it first, which inverts the instruction.
+//
+// So headroom decides between accounts of the same scope, and the configured
+// order decides between scopes. Within a group the priority order survives as
+// the tie-break: candidates arrive in that order and only a strictly better one
+// displaces the incumbent.
+func bestEligible(all []candidate, in Input) (candidate, bool) {
+	tier := scopeTiers(all)
+	var best candidate
+	found := false
+	for _, c := range all {
 		if c.acct.ID == in.St.Active {
 			continue
 		}
@@ -251,36 +277,61 @@ func firstEligible(all []candidate, in Input) (candidate, bool) {
 		if !in.Cfg.ScopeAllowed(c.acct.Scope, in.Dir) {
 			continue
 		}
-		return c, true
+		if found && !better(c, best, in, tier) {
+			continue
+		}
+		best, found = c, true
 	}
-	return candidate{}, false
+	return best, found
 }
 
-// preferredOrder applies a project's scope preference ahead of the global
-// priority, without forbidding anything the rule allows. A stable partition
-// rather than a sort, so the configured order survives within each group.
-func preferredOrder(all []candidate, in Input) []candidate {
-	pr, ok := in.Cfg.ProjectFor(in.Dir)
-	if !ok || len(pr.Prefer) == 0 {
-		return all
+// better reports whether a ranks ahead of b for selection: preferred scope
+// first, then scope order, then room. Equal on all three means the configured
+// priority decides, which is the order candidates already arrive in — so this
+// answers false for a tie and the incumbent keeps its place.
+//
+// bestEligible and Explain share it, because `why` claiming to list accounts
+// "in order" while ordering them by something else is worse than not saying so:
+// it showed an account with one point of room at the top, marked ready, when a
+// pool that had just reset would actually have been chosen.
+func better(a, b candidate, in Input, tier map[string]int) bool {
+	if ra, rb := scopeRank(a, in), scopeRank(b, in); ra != rb {
+		return ra < rb
 	}
-	rank := map[string]int{}
-	for i, scope := range pr.Prefer {
-		rank[scope] = i
+	if ta, tb := tier[a.acct.Scope], tier[b.acct.Scope]; ta != tb {
+		return ta < tb
 	}
-	groups := make([][]candidate, len(pr.Prefer)+1)
+	return a.exceedance < b.exceedance
+}
+
+// scopeTiers ranks each scope by where it first appears in the configured
+// order, so "work" before "personal" falls out of the priority list itself
+// rather than from any meaning attached to those particular words.
+func scopeTiers(all []candidate) map[string]int {
+	tier := map[string]int{}
 	for _, c := range all {
-		if i, named := rank[c.acct.Scope]; named {
-			groups[i] = append(groups[i], c)
-		} else {
-			groups[len(pr.Prefer)] = append(groups[len(pr.Prefer)], c)
+		if _, seen := tier[c.acct.Scope]; !seen {
+			tier[c.acct.Scope] = len(tier)
 		}
 	}
-	out := make([]candidate, 0, len(all))
-	for _, g := range groups {
-		out = append(out, g...)
+	return tier
+}
+
+// scopeRank is which of a project's preferred scopes an account belongs to,
+// lower being more preferred. A scope the project does not name ranks after
+// every scope it does, so an unlisted account is a fallback rather than a
+// forbidden one — ScopeAllowed is what forbids.
+func scopeRank(c candidate, in Input) int {
+	pr, ok := in.Cfg.ProjectFor(in.Dir)
+	if !ok || len(pr.Prefer) == 0 {
+		return 0
 	}
-	return out
+	for i, scope := range pr.Prefer {
+		if c.acct.Scope == scope {
+			return i
+		}
+	}
+	return len(pr.Prefer)
 }
 
 // scopeBlocked names an account that would otherwise have served, but is not
@@ -371,7 +422,7 @@ type Verdict struct {
 func Explain(in Input) (Decision, []Verdict) {
 	dec := Decide(in)
 	all := gather(in)
-	ordered := preferredOrder(all, in)
+	ordered := explainOrder(all, in)
 
 	out := make([]Verdict, 0, len(ordered))
 	for _, c := range ordered {
@@ -421,6 +472,22 @@ func Explain(in Input) (Decision, []Verdict) {
 		out = append(out, v)
 	}
 	return dec, out
+}
+
+// explainOrder lists accounts the way the chooser weighs them, so "considered,
+// in order" is a true statement. The active account stays first — it is the one
+// the reader is asking about — and the rest follow in selection order, which is
+// stable for ties because sort.SliceStable preserves the configured priority.
+func explainOrder(all []candidate, in Input) []candidate {
+	out := append([]candidate(nil), all...)
+	tier := scopeTiers(all)
+	sort.SliceStable(out, func(i, j int) bool {
+		if a := out[i].acct.ID == in.St.Active; a != (out[j].acct.ID == in.St.Active) {
+			return a
+		}
+		return better(out[i], out[j], in, tier)
+	})
+	return out
 }
 
 // windowName is how a window is referred to in something a person reads.

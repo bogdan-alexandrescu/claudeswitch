@@ -303,6 +303,15 @@ func (s *State) Drop(id string) {
 	s.dropped[id] = true
 }
 
+// Unattributed is the id readings are filed under when the live credential
+// matches no configured account. It is a pseudo-account: it holds an
+// observation so the tool can say "something is signed in that you have not
+// pinned", and it must never be treated as one of the configured accounts.
+//
+// It lived as a private constant in two other packages, and the code here —
+// which owns the map it is stored in — knew about neither.
+const Unattributed = "active"
+
 // Reconcile discards observations that cannot be trusted:
 //
 //   - records for accounts no longer in the config
@@ -314,16 +323,7 @@ func (s *State) Drop(id string) {
 // the policy engine would then treat an exhausted account as having headroom
 // and rotate into it. Observed 2026-09-09 after a rename.
 //
-// pinned maps account id to its configured org id ("" when unpinned).
-// Unattributed is the id readings are filed under when the live credential
-// matches no configured account. It is a pseudo-account: it holds an
-// observation so the tool can say "something is signed in that you have not
-// pinned", and it must never be treated as one of the configured accounts.
-//
-// It lived as a private constant in two other packages, and the code here —
-// which owns the map it is stored in — knew about neither.
-const Unattributed = "active"
-
+// pinned maps account id to its configured SEAT ("" when unpinned).
 func (s *State) Reconcile(pinned map[string]string) []string {
 	var dropped []string
 	for id, a := range s.Accounts {
@@ -342,10 +342,15 @@ func (s *State) Reconcile(pinned map[string]string) []string {
 			dropped = append(dropped, id+" (not in config)")
 		case want != "" && a.Seat != "" && a.Seat != want:
 			dropped = append(dropped, fmt.Sprintf("%s (record is seat %s, config pins %s)",
-				id, short(a.Seat), short(want)))
+				id, usage.ShortSeat(a.Seat), usage.ShortSeat(want)))
 		case want != "" && a.Seat == "" && a.OrgID != "" && !strings.HasSuffix(want, "@"+a.OrgID):
+			// An older record with no seat, so the organization is all there is
+			// to compare. It must be compared against the configured seat's
+			// ORGANIZATION: this used to abbreviate the whole seat, which
+			// yields the person, and then announce that an organization "is
+			// not" someone's account uuid.
 			dropped = append(dropped, fmt.Sprintf("%s (record is organization %s, which is not %s)",
-				id, short(a.OrgID), short(want)))
+				id, short(a.OrgID), short(orgOf(want))))
 		default:
 			continue
 		}
@@ -357,6 +362,15 @@ func (s *State) Reconcile(pinned map[string]string) []string {
 		}
 	}
 	return dropped
+}
+
+// orgOf is the organization half of a seat, for comparing against a record that
+// predates seats and knows only an organization.
+func orgOf(seat string) string {
+	if _, org, ok := strings.Cut(seat, "@"); ok {
+		return org
+	}
+	return seat
 }
 
 func short(s string) string {

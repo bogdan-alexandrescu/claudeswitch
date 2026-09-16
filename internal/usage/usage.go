@@ -423,6 +423,34 @@ func (p *Profile) Seat() string {
 	return p.Account.UUID + "@" + p.Organization.UUID
 }
 
+// ShortSeat abbreviates person@organization without losing either half, and is
+// the only correct way to shorten a seat for display.
+//
+// It lives here, in the package that defines what a seat is, because the
+// alternative was tried: the same six lines were written locally the first time
+// this bug was fixed, and three more copies of the bug survived in other
+// packages — including the guard that refuses to refresh a mis-filed credential,
+// whose entire job is to name two seats that differ. A seat put through a plain
+// eight-character truncation comes out as the account uuid alone, so a message
+// contrasting two of them names the half that matches and discards the half
+// that differs.
+func ShortSeat(seat string) string {
+	person, org, ok := strings.Cut(seat, "@")
+	if !ok {
+		return shortID(seat)
+	}
+	return shortID(person) + "@" + shortID(org)
+}
+
+// shortID is the first eight characters, which is enough to recognise a uuid
+// and short enough to sit in a table.
+func shortID(s string) string {
+	if len(s) > 8 {
+		return s[:8]
+	}
+	return s
+}
+
 // Describe renders the seat for a human: the email plus the organization, since
 // the same address can own several pools.
 func (p *Profile) Describe() string {

@@ -216,13 +216,61 @@ func TestPinSuspendsRotation(t *testing.T) {
 	}
 }
 
-func TestNoActiveAccountTakesTheFirstEligible(t *testing.T) {
+// Within one scope the emptiest account wins, priority order being the
+// tie-break rather than the rule. This used to take the first eligible account
+// in priority order, which treats one point of room as equivalent to ninety.
+func TestNoActiveAccountTakesTheEmptiestEligible(t *testing.T) {
 	in := Input{Cfg: cfg(), Now: now, St: st("", map[string]*state.Account{
 		"work-a": reading(20, 20, now.Add(time.Hour)),
 		"work-b": reading(10, 10, now.Add(time.Hour)),
 	})}
+	if d := Decide(in); d.Kind != Switch || d.Target != "work-b" {
+		t.Fatalf("got %v, want switch to work-b (more room than work-a)", d)
+	}
+}
+
+// Equal room falls back to the configured order, so priority still decides
+// where nothing else does.
+func TestEqualRoomFallsBackToPriorityOrder(t *testing.T) {
+	in := Input{Cfg: cfg(), Now: now, St: st("", map[string]*state.Account{
+		"work-a": reading(20, 20, now.Add(time.Hour)),
+		"work-b": reading(20, 20, now.Add(time.Hour)),
+	})}
 	if d := Decide(in); d.Kind != Switch || d.Target != "work-a" {
-		t.Fatalf("got %v, want switch to work-a (first in priority)", d)
+		t.Fatalf("got %v, want switch to work-a (first in priority on a tie)", d)
+	}
+}
+
+// The case this changed for: an account a point below its trigger is not
+// equivalent to one that has just reset. Rotating into it spends the point,
+// meets the trigger, and then the anti-flap cooldown holds the session there
+// with no headroom at all.
+func TestAnAlmostSpentAccountLosesToAFreshOne(t *testing.T) {
+	in := Input{Cfg: cfg(), Now: now, St: st("work-a", map[string]*state.Account{
+		"work-a": reading(91, 30, now.Add(time.Hour)), // over the 85 trigger
+		"work-b": reading(84, 30, now.Add(time.Hour)), // one point of room
+		"work-c": reading(2, 2, now.Add(time.Hour)),   // just reset
+	})}
+	in.Cfg.Accounts = append(in.Cfg.Accounts, config.Account{ID: "work-c", Scope: "work"})
+	in.Cfg.Priority = []string{"work-a", "work-b", "work-c", "personal"}
+
+	if d := Decide(in); d.Kind != Switch || d.Target != "work-c" {
+		t.Fatalf("got %v, want switch to work-c (work-b has one point left)", d)
+	}
+}
+
+// Scope order outranks room. A personal account held back on purpose is
+// usually the emptiest precisely because it is held back, so ordering purely by
+// room would spend it first and invert the instruction that put it last.
+func TestScopeOrderOutranksHeadroom(t *testing.T) {
+	in := Input{Cfg: cfg(), Now: now, St: st("work-a", map[string]*state.Account{
+		"work-a":   reading(91, 30, now.Add(time.Hour)),
+		"work-b":   reading(60, 30, now.Add(time.Hour)),
+		"personal": reading(1, 1, now.Add(time.Hour)),
+	})}
+	if d := Decide(in); d.Kind != Switch || d.Target != "work-b" {
+		t.Fatalf("got %v, want switch to work-b (personal is a later scope, "+
+			"however empty it is)", d)
 	}
 }
 

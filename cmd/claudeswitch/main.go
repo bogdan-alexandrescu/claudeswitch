@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -1826,6 +1827,37 @@ func cachedIdentity() (email, orgName, orgID string) {
 // Deliberately explicit rather than automatic-only: the refresh path rotates and
 // revokes a real credential, so its first exercise should be a decision someone
 // made on purpose, on an account where failure is cheap.
+// reportUnrenewable handles the one refresh failure that is not transient: the
+// credential cannot be renewed at all, and only an interactive login fixes it.
+// It reports false for every other error, leaving it to the caller.
+//
+// Split out from cmdRefresh because that function reads flags, the keychain and
+// the config before reaching this point, none of which a test can supply — so
+// the branch that matters was the one part with no coverage.
+//
+// Recording it matters as much as printing it. The daemon's refresher writes
+// the same field, and telling the person here while leaving `status` saying
+// something else makes the two disagree about the single condition that needs
+// acting on, with whichever ran more recently deciding what gets believed. A
+// successful poll clears it either way, so a failure that turns out to have
+// been someone else rotating the token retracts itself.
+func reportUnrenewable(out io.Writer, st *state.State, id string, err error) bool {
+	var needsLogin *oauth.NeedsLoginError
+	if !errors.As(err, &needsLogin) {
+		return false
+	}
+	fmt.Fprintf(out, "\n  ✗ %s cannot be refreshed.\n", id)
+	fmt.Fprintf(out, "    %v\n", err)
+	fmt.Fprintf(out, "\n    This is the answer to whether this account can be kept alive:\n")
+	fmt.Fprintf(out, "    it cannot, and it will need `claude auth login` each time its\n")
+	fmt.Fprintf(out, "    access token expires.\n\n")
+	st.Get(id).LastErr = err.Error()
+	if serr := st.Save(); serr != nil {
+		fmt.Fprintf(out, "    note: could not record that: %v\n", serr)
+	}
+	return true
+}
+
 func cmdRefresh(args []string) error {
 	fs := flag.NewFlagSet("refresh", flag.ExitOnError)
 	cfgPath := fs.String("config", "", "path to config.toml")
@@ -1837,7 +1869,7 @@ func cmdRefresh(args []string) error {
 	}
 	id := positional[0]
 
-	cfg, _, err := load(*cfgPath)
+	cfg, st, err := load(*cfgPath)
 	if err != nil {
 		return err
 	}
@@ -1866,13 +1898,7 @@ func cmdRefresh(args []string) error {
 	before, _ := v.Load(id)
 	e, err := v.Refresh(ctx, id, cfg.SeatOf(id), isActive, *allowActive)
 	if err != nil {
-		var needsLogin *oauth.NeedsLoginError
-		if errors.As(err, &needsLogin) {
-			fmt.Printf("\n  ✗ %s cannot be refreshed.\n", id)
-			fmt.Printf("    %v\n", err)
-			fmt.Printf("\n    This is the answer to whether this account can be kept alive:\n")
-			fmt.Printf("    it cannot, and it will need `claude auth login` each time its\n")
-			fmt.Printf("    access token expires.\n\n")
+		if reportUnrenewable(os.Stdout, st, id, err) {
 			return nil
 		}
 		return err
@@ -1931,8 +1957,10 @@ func cmdRename(args []string) error {
 			"  launchctl unload ~/Library/LaunchAgents/xyz.claudeswitch.daemon.plist")
 	}
 
-	// Copy the credential under the new name, keeping the organization
-	// annotation so the identity guards keep working.
+	// Copy the credential under the new name, keeping the whole annotation —
+	// the seat included, not just the organization — so the identity guards
+	// keep working. They are gated on the seat, so carrying the organization
+	// alone would silently switch them off.
 	blob, err := keychain.Read(keychain.VaultService(oldID))
 	if err != nil {
 		return err
@@ -2053,7 +2081,7 @@ func cmdLogin(args []string) error {
 		// it an organization made the refusal that follows read as nonsense,
 		// since the same person in two organizations differs only in the half
 		// the label denied was there.
-		fmt.Printf("  That account is seat %s — one person in one organization,\n", shortSeat(wantOrg))
+		fmt.Printf("  That account is seat %s — one person in one organization,\n", usage.ShortSeat(wantOrg))
 		fmt.Printf("  which is what owns a quota pool.\n")
 		fmt.Printf("  The login lands on whichever organization your BROWSER is currently in\n")
 		fmt.Printf("  and cannot be asked for one, so switch claude.ai to that organization\n")
@@ -2332,7 +2360,10 @@ func cmdIdentify(args []string) error {
 			fmt.Printf("  %-16s could not identify: %v\n", id, err)
 			continue
 		}
-		fmt.Printf("  %-16s %s  %s  (seat %s)\n", id, pr.Account.Email, pr.Plan(), shortID(pr.Account.UUID))
+		// The seat, not the person. `identify` exists to report exactly this
+		// distinction and was labelling the account uuid alone as the seat.
+		fmt.Printf("  %-16s %s  %s  (seat %s)\n", id, pr.Account.Email, pr.Plan(),
+			usage.ShortSeat(pr.Seat()))
 	}
 	if len(deferred) > 0 {
 		fmt.Printf("\n  %v not done yet: the usage API call budget is spent.\n", deferred)
@@ -3589,23 +3620,8 @@ func checkDuplicateCredentials(cfg *config.Config, st *state.State) string {
 		if want != "" && b.Meta != nil && b.Meta.Seat() != "" && b.Meta.Seat() != want {
 			problems = append(problems, fmt.Sprintf(
 				"%s holds a credential for seat %s, but is pinned to %s",
-				id, shortSeat(b.Meta.Seat()), shortSeat(want)))
+				id, usage.ShortSeat(b.Meta.Seat()), usage.ShortSeat(want)))
 		}
 	}
 	return strings.Join(problems, "; ")
-}
-
-// shortSeat abbreviates person@organization without discarding either half.
-//
-// This used to take the first eight characters of the whole seat, which is the
-// account uuid and nothing else — so the one message whose entire purpose is to
-// contrast two seats rendered as "holds a credential for seat bbbbbbbb, but is
-// pinned to bbbbbbbb" whenever the difference was the organization. Which is
-// the common case: the same person in two organizations is two quota pools.
-func shortSeat(seat string) string {
-	person, org, ok := strings.Cut(seat, "@")
-	if !ok {
-		return shortID(seat)
-	}
-	return shortID(person) + "@" + shortID(org)
 }

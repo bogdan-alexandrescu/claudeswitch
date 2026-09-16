@@ -3,6 +3,8 @@ package vault
 import (
 	"strings"
 	"testing"
+
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/usage"
 )
 
 // The message exists to contrast two seats. Put through short(), a seat comes
@@ -31,15 +33,15 @@ func TestAWrongOrgErrorNamesTheOrganizationNotJustThePerson(t *testing.T) {
 	}
 }
 
-func TestShortSeatKeepsBothHalves(t *testing.T) {
-	got := shortSeat("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa@bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+func TestWrongOrgErrorRendersBothHalvesOfASeat(t *testing.T) {
+	got := usage.ShortSeat("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa@bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
 	if got != "aaaaaaaa@bbbbbbbb" {
 		t.Errorf("want aaaaaaaa@bbbbbbbb, got %q", got)
 	}
 	// Two seats differing only in organization must render differently, which
 	// is the property that was broken.
-	a := shortSeat("same-person-uuid@org-one-uuid")
-	b := shortSeat("same-person-uuid@org-two-uuid")
+	a := usage.ShortSeat("same-person-uuid@org-one-uuid")
+	b := usage.ShortSeat("same-person-uuid@org-two-uuid")
 	if a == b {
 		t.Errorf("seats differing by organization must render differently: %q", a)
 	}
@@ -47,7 +49,7 @@ func TestShortSeatKeepsBothHalves(t *testing.T) {
 
 // Not every value is a seat; a bare uuid must still abbreviate sensibly.
 func TestShortSeatToleratesAPlainID(t *testing.T) {
-	if got := shortSeat("11111111-1111-1111-1111-111111111111"); got != "11111111" {
+	if got := usage.ShortSeat("11111111-1111-1111-1111-111111111111"); got != "11111111" {
 		t.Errorf("want 11111111, got %q", got)
 	}
 }

@@ -15,7 +15,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/keychain"
@@ -481,7 +480,7 @@ func (v *Vault) Refresh(ctx context.Context, accountID, wantSeat string, isActiv
 			"refusing to refresh %q: its stored credential belongs to seat %s, not the %s this "+
 				"account is pinned to. Refreshing would revoke another account's token. "+
 				"Re-add it with `claudeswitch add %s` while the right account is signed in",
-			accountID, short(blob.Meta.Seat()), short(wantSeat), accountID)
+			accountID, usage.ShortSeat(blob.Meta.Seat()), usage.ShortSeat(wantSeat), accountID)
 	}
 	if cur.RefreshDead() {
 		return nil, &oauth.NeedsLoginError{Detail: "the stored refresh token expired on " +
@@ -690,7 +689,7 @@ func (e *ForeignCredentialError) Error() string {
 	}
 	return fmt.Sprintf(
 		"the live credential belongs to %s, but vault entry %q is a different account (%s); "+
-			"not overwriting it", who, e.AccountID, shortSeat(e.WantOrg))
+			"not overwriting it", who, e.AccountID, usage.ShortSeat(e.WantOrg))
 }
 
 func short(s string) string {
@@ -698,22 +697,6 @@ func short(s string) string {
 		return s[:8]
 	}
 	return s
-}
-
-// shortSeat abbreviates person@organization without losing either half.
-//
-// A seat put through short() comes out as the account uuid alone, because that
-// is what the first eight characters are. So the messages whose entire job is
-// to contrast two seats rendered as "signed in as … but pinned to seat
-// bbbbbbbb" — naming the person as the discrepancy when the person was the one
-// thing that matched. The same person in two organizations is two quota pools,
-// and the organization is the half that was being cut off.
-func shortSeat(seat string) string {
-	person, org, ok := strings.Cut(seat, "@")
-	if !ok {
-		return short(seat)
-	}
-	return short(person) + "@" + short(org)
 }
 
 // Verify reports whether a vault entry's stored credential actually belongs to
@@ -778,5 +761,5 @@ func (e *WrongOrgError) Error() string {
 			"  different quota pool, so this is not the one you asked for.\n"+
 			"  The login lands on whichever organization the browser is in and cannot be\n"+
 			"  asked for one: switch claude.ai to it, or use --sso if it is SSO-backed.",
-		who, e.AccountID, shortSeat(e.WantOrg))
+		who, e.AccountID, usage.ShortSeat(e.WantOrg))
 }
