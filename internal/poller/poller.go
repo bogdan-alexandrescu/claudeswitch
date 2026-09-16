@@ -244,7 +244,7 @@ func (p *Poller) attribute(orgID string) string {
 
 // Unattributed is the id used when the live credential cannot be matched to a
 // configured account.
-const Unattributed = "active"
+const Unattributed = state.Unattributed
 
 // RefreshStale reads any account whose figure is older than maxAge, and reports
 // how many it managed. It is what `cs status` calls: an explicit request for the

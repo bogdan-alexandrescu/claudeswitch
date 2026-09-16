@@ -57,7 +57,12 @@ func (v *Vault) fetch(ctx context.Context, token string, p usage.Priority) (*usa
 
 // Entry is what the vault knows about a stored account.
 type Entry struct {
-	AccountID     string
+	AccountID string
+	// AccountUUID is the seat: the thing that actually owns a quota pool. It
+	// was always read during Store and written into the keychain annotation,
+	// but never handed back — so `add`, which had it in memory, told people to
+	// pin their config on the organization alone.
+	AccountUUID   string
 	OrgID         string
 	Expiry        time.Time
 	RefreshExpiry time.Time
@@ -214,6 +219,7 @@ func (v *Vault) Store(ctx context.Context, accountID, expectSeat string, conflic
 	}
 	return &Entry{
 		AccountID:      accountID,
+		AccountUUID:    pr.Account.UUID,
 		OrgID:          orgID,
 		Expiry:         o.Expiry(),
 		RefreshExpiry:  o.RefreshExpiry(),
@@ -330,6 +336,7 @@ func (v *Vault) StoreTokens(ctx context.Context, accountID, expectSeat string, t
 		"email", pr.Account.Email, "seat", pr.Account.UUID, "org", u.OrgID)
 	return &Entry{
 		AccountID:      accountID,
+		AccountUUID:    pr.Account.UUID,
 		OrgID:          u.OrgID,
 		Expiry:         cred.Expiry(),
 		RefreshExpiry:  cred.RefreshExpiry(),

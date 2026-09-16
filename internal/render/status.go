@@ -767,7 +767,7 @@ func statusDetailed(out io.Writer, o Options) {
 
 // Unattributed mirrors poller.Unattributed. Kept here to avoid an import cycle
 // between rendering and polling.
-const Unattributed = "active"
+const Unattributed = state.Unattributed
 
 func shortID(s string) string {
 	if len(s) > 8 {

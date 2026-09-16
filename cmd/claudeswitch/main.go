@@ -967,8 +967,19 @@ func cmdAdd(args []string) error {
 	}
 	fmt.Printf("    mcpOAuth      not copied into the vault (it belongs to the machine, not the account)\n")
 	if !known {
-		fmt.Printf("\n  add this to %s:\n\n    [[account]]\n    id     = %q\n    org_id = %q\n",
-			cfg.Path, id, e.OrgID)
+		// Pinned on the seat, not the organization. An organization does not
+		// identify an account — a team has one seat per member, each with its
+		// own limits — and config.Account.Seat() returns empty unless BOTH
+		// fields are set. Since every integrity check in State.Reconcile is
+		// gated on a non-empty seat, the org-only block printed here used to
+		// switch off the detection of a credential filed under the wrong name:
+		// the exact failure that took out three accounts on 2026-09-11.
+		fmt.Printf("\n  add this to %s:\n\n    [[account]]\n    id           = %q\n"+
+			"    scope        = \"work\"        # or \"personal\" — which projects may use it\n"+
+			"    account_uuid = %q\n    org_id       = %q\n",
+			cfg.Path, id, e.AccountUUID, e.OrgID)
+		fmt.Printf("\n    Then put %q in the priority list where you want it spent.\n"+
+			"    Without that it still rotates, but last.\n", id)
 	}
 	fmt.Println()
 	return nil

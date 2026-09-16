@@ -300,9 +300,27 @@ func (s *State) Drop(id string) {
 // and rotate into it. Observed 2026-09-09 after a rename.
 //
 // pinned maps account id to its configured org id ("" when unpinned).
+// Unattributed is the id readings are filed under when the live credential
+// matches no configured account. It is a pseudo-account: it holds an
+// observation so the tool can say "something is signed in that you have not
+// pinned", and it must never be treated as one of the configured accounts.
+//
+// It lived as a private constant in two other packages, and the code here —
+// which owns the map it is stored in — knew about neither.
+const Unattributed = "active"
+
 func (s *State) Reconcile(pinned map[string]string) []string {
 	var dropped []string
 	for id, a := range s.Accounts {
+		// The unattributed record is not an account and was never in the
+		// config — that is the whole point of it. Reconcile deleted it on every
+		// CLI invocation, which both defeated the feature that reports a live
+		// credential you have not pinned yet and printed "discarded stale
+		// observation for active (not in config)" at someone who had configured
+		// nothing of the sort.
+		if id == Unattributed {
+			continue
+		}
 		want, known := pinned[id]
 		switch {
 		case !known:
