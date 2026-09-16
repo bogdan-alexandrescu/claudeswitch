@@ -1617,7 +1617,7 @@ func cmdStatusline(args []string) error {
 	// A stopped poller otherwise looks exactly like a healthy account: the
 	// figures simply stop moving, and nothing on the line says so.
 	if !a.LastAt.IsZero() {
-		if age := now.Sub(a.LastAt); age > 10*time.Minute {
+		if age := now.Sub(a.LastAt); age > staleReadingAfter {
 			parts = append(parts, slPaint(ansiYellow, "· read "+slAge(age)+" ago", colour))
 		}
 	}
@@ -2930,9 +2930,9 @@ func cmdSetup(args []string) error {
 		}
 	}
 	if !pluginInstalled() {
-		fmt.Printf("\n  For quota context and /claudeswitch:* skills inside Claude Code:\n")
+		fmt.Printf("\n  For quota context and /cs skills inside Claude Code:\n")
 		fmt.Printf("    /plugin marketplace add https://github.com/bogdan-alexandrescu/claudeswitch\n")
-		fmt.Printf("    /plugin install claudeswitch@claudeswitch\n")
+		fmt.Printf("    /plugin install cs@claudeswitch\n")
 	}
 
 	fmt.Printf("\n  Next:  cs status     what every account has left\n")

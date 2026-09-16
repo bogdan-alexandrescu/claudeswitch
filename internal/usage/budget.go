@@ -2,6 +2,8 @@ package usage
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"os"
@@ -74,16 +76,13 @@ type Budget struct {
 	allowance int
 	window    time.Duration
 	calls     []time.Time
-	lockedTil time.Time // set when the API tells us to back off
+	locks     map[string]accountLock // set when the API tells us to back off
 	now       func() time.Time
 	// ledger is the file backing this budget across processes. Empty keeps it
 	// process-local, which is what the tests want.
 	ledger string
 	// lastCall is when this process last spent a call, for pacing.
 	lastCall time.Time
-	// strikes mirrors the ledger's consecutive-refusal count, so a budget with
-	// no file behind it behaves the same as one with.
-	strikes int
 }
 
 func NewBudget() *Budget {
@@ -133,12 +132,54 @@ func defaultLedgerPath() string {
 }
 
 // ledgerFile is the cross-process record of recent calls.
+//
+// Calls is one window for every account: it is the burst guard, and it stays
+// machine-wide because nothing has shown the burst limit to be anything else.
+// Locks are per credential. A 429 is the API refusing one account, and the
+// account most often refused is the live one, whose allowance Claude Code
+// spends too (it calls the same endpoint with the same token). A single lock
+// for everything turned that into a pause on reading every other account —
+// exactly the ones a rotation needs current figures for (observed 2026-09-16:
+// every refusal of the day landed on whichever account was live).
 type ledgerFile struct {
-	Calls     []time.Time `json:"calls"`
-	LockedTil time.Time   `json:"locked_until,omitzero"`
+	Calls []time.Time `json:"calls"`
+	// Locks is keyed by lockKey, a digest of the credential, so the file never
+	// holds a token.
+	Locks map[string]accountLock `json:"locks,omitempty"`
+}
+
+type accountLock struct {
+	Until time.Time `json:"until,omitzero"`
 	// Strikes counts consecutive refusals, so the backoff can grow rather than
 	// retrying at a fixed interval forever.
 	Strikes int `json:"strikes,omitempty"`
+}
+
+// lockKey names a credential in the ledger without storing it. Keying on the
+// token rather than an account id is what makes the live credential one entry
+// however it was reached — polled as its vault entry, or as the live item
+// before attribution. A refreshed token starts a fresh entry, which at worst
+// costs one extra call.
+func lockKey(cred string) string {
+	if cred == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(cred))
+	return hex.EncodeToString(sum[:8])
+}
+
+// forgetLocksAfter is how long an expired lock's strike count is kept once its
+// lock has run out with no success recorded. Past it the entry most likely
+// belongs to a token that has since been refreshed, and nothing will ever
+// clear it.
+const forgetLocksAfter = time.Hour
+
+func (lf *ledgerFile) gc(now time.Time) {
+	for k, l := range lf.Locks {
+		if now.Sub(l.Until) > forgetLocksAfter {
+			delete(lf.Locks, k)
+		}
+	}
 }
 
 // withLedger runs fn against the shared on-disk record, under an exclusive lock,
@@ -151,9 +192,10 @@ func (b *Budget) withLedger(fn func(*ledgerFile)) {
 	// process-local budget is the right failure: it is more conservative than
 	// no budget at all.
 	local := func() {
-		lf := &ledgerFile{Calls: b.calls, LockedTil: b.lockedTil, Strikes: b.strikes}
+		lf := &ledgerFile{Calls: b.calls, Locks: b.locks}
 		fn(lf)
-		b.calls, b.lockedTil, b.strikes = lf.Calls, lf.LockedTil, lf.Strikes
+		lf.gc(b.now())
+		b.calls, b.locks = lf.Calls, lf.Locks
 	}
 	if b.ledger == "" {
 		local()
@@ -180,6 +222,7 @@ func (b *Budget) withLedger(fn func(*ledgerFile)) {
 		_ = json.Unmarshal(raw, &lf)
 	}
 	fn(&lf)
+	lf.gc(b.now())
 
 	if raw, err := json.Marshal(lf); err == nil {
 		_ = f.Truncate(0)
@@ -187,7 +230,7 @@ func (b *Budget) withLedger(fn func(*ledgerFile)) {
 		_, _ = f.Write(raw)
 	}
 	// Keep the in-memory copy in step, so Remaining() is close without a lock.
-	b.calls, b.lockedTil, b.strikes = lf.Calls, lf.LockedTil, lf.Strikes
+	b.calls, b.locks = lf.Calls, lf.Locks
 }
 
 func (b *Budget) prune(now time.Time) {
@@ -238,10 +281,11 @@ func (b *Budget) Pace(ctx context.Context) {
 	}
 }
 
-// Allow reserves a call if one is available. priority marks a call that may
-// spend the reserved slot — used for the pre-switch verification, never for
-// scheduled polling.
-func (b *Budget) Allow(p Priority) (bool, Reason) {
+// Allow reserves a call with credential cred if one is available. priority
+// marks a call that may spend the reserved slot — used for the pre-switch
+// verification, never for scheduled polling. A lock refuses only calls with the
+// credential it was armed against.
+func (b *Budget) Allow(cred string, p Priority) (bool, Reason) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	now := b.now()
@@ -270,7 +314,7 @@ func (b *Budget) Allow(p Priority) (bool, Reason) {
 			ok, reason = true, ReasonOK
 			return
 		}
-		if now.Before(lf.LockedTil) {
+		if now.Before(lf.Locks[lockKey(cred)].Until) {
 			ok, reason = false, ReasonLockout
 			return
 		}
@@ -319,24 +363,30 @@ const MaxLock = 20 * time.Minute
 // minute, for as long as it lasted — 224 of them in one night. Backing off
 // further each time is both politer and likelier to recover, and a success
 // resets it.
-func (b *Budget) Penalize(retryAfter time.Duration) {
+func (b *Budget) Penalize(cred string, retryAfter time.Duration) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	key := lockKey(cred)
 	b.withLedger(func(lf *ledgerFile) {
 		now := b.now()
+		if lf.Locks == nil {
+			lf.Locks = map[string]accountLock{}
+		}
+		l := lf.Locks[key]
+		defer func() { lf.Locks[key] = l }()
 
 		// A refusal that arrives while we are already serving a lock says
 		// nothing new — it is the previous refusal echoing, usually because a
 		// call slipped past the budget. Re-arming the full penalty for it is
 		// how a lock renewed itself indefinitely and never ran down.
-		if now.Before(lf.LockedTil) {
+		if now.Before(l.Until) {
 			return
 		}
 
-		lf.Strikes++
+		l.Strikes++
 		wait := retryAfter
 		// Double per consecutive refusal, starting at the minimum.
-		backoff := MinBackoff << min(lf.Strikes-1, 6)
+		backoff := MinBackoff << min(l.Strikes-1, 6)
 		if backoff > MaxBackoff {
 			backoff = MaxBackoff
 		}
@@ -351,8 +401,8 @@ func (b *Budget) Penalize(retryAfter time.Duration) {
 			wait = MaxLock
 		}
 		til := now.Add(wait)
-		if til.After(lf.LockedTil) {
-			lf.LockedTil = til
+		if til.After(l.Until) {
+			l.Until = til
 		}
 	})
 }
@@ -360,26 +410,28 @@ func (b *Budget) Penalize(retryAfter time.Duration) {
 // Succeeded clears the consecutive-refusal count. Called after any call that
 // the server actually answered, so a single refusal does not leave the backoff
 // escalated for the rest of the day.
-func (b *Budget) Succeeded() {
+func (b *Budget) Succeeded(cred string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.withLedger(func(lf *ledgerFile) {
-		lf.Strikes = 0
-		// Release the lock too. A call that succeeded is proof the API is not
-		// refusing us, and holding a pause after that is just refusing
-		// ourselves — recovery waited out a penalty that reality had already
-		// lifted.
-		lf.LockedTil = time.Time{}
+		// Strikes and lock together. A call that succeeded is proof the API is
+		// not refusing this account, and holding a pause after that is just
+		// refusing ourselves — recovery waited out a penalty that reality had
+		// already lifted.
+		delete(lf.Locks, lockKey(cred))
 	})
 }
 
-// CurrentBackoff reports the wait now in force, for display.
-func (b *Budget) CurrentBackoff() (time.Duration, int) {
+// CurrentBackoff reports the wait now in force for a credential, for display.
+func (b *Budget) CurrentBackoff(cred string) (time.Duration, int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	var til time.Time
 	var strikes int
-	b.withLedger(func(lf *ledgerFile) { til, strikes = lf.LockedTil, lf.Strikes })
+	b.withLedger(func(lf *ledgerFile) {
+		l := lf.Locks[lockKey(cred)]
+		til, strikes = l.Until, l.Strikes
+	})
 	// The injected clock, not wall time: every other method here uses b.now(),
 	// and mixing the two makes the backoff unmeasurable in a test and slightly
 	// wrong in practice.
@@ -396,16 +448,38 @@ func min(a, b int) int {
 	return b
 }
 
-// LockedUntil reports an active backoff, for display.
-func (b *Budget) LockedUntil() (time.Time, bool) {
+// LockedUntil reports a backoff in force for a credential.
+func (b *Budget) LockedUntil(cred string) (time.Time, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	var til time.Time
-	b.withLedger(func(lf *ledgerFile) { til = lf.LockedTil })
+	b.withLedger(func(lf *ledgerFile) { til = lf.Locks[lockKey(cred)].Until })
 	if b.now().Before(til) {
 		return til, true
 	}
 	return time.Time{}, false
+}
+
+// AnyLocked reports how many credentials are backing off, and when the last of
+// those locks ends. It is for display and for the watchdog, neither of which
+// knows credentials.
+func (b *Budget) AnyLocked() (time.Time, int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	now := b.now()
+	var last time.Time
+	n := 0
+	b.withLedger(func(lf *ledgerFile) {
+		for _, l := range lf.Locks {
+			if now.Before(l.Until) {
+				n++
+				if l.Until.After(last) {
+					last = l.Until
+				}
+			}
+		}
+	})
+	return last, n
 }
 
 // Remaining is how many scheduled (non-priority) calls are available now.

@@ -209,3 +209,21 @@ func TestContextBeforeSetup(t *testing.T) {
 		t.Errorf("no reading: %s", out)
 	}
 }
+
+// A routine backoff on the active account must not reach every session; a
+// poller that has stopped must.
+func TestContextStaleOnlyPastTenMinutes(t *testing.T) {
+	now := time.Now()
+	for _, tc := range []struct {
+		age  time.Duration
+		want bool
+	}{{4 * time.Minute, false}, {9 * time.Minute, false}, {12 * time.Minute, true}} {
+		st := &state.State{Active: "a", DaemonLive: true, Accounts: map[string]*state.Account{
+			"a": at(40, 30, now.Add(-tc.age)), "b": at(5, 5, now),
+		}}
+		out := renderContextString(testCfg(), st, now, true)
+		if got := strings.Contains(out, "reading "); got != tc.want {
+			t.Errorf("reading %s old: stale note = %v, want %v\n%s", tc.age, got, tc.want, out)
+		}
+	}
+}

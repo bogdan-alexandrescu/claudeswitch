@@ -43,7 +43,7 @@ claudeswitch setup
 ```
 
 It vaults each account, writes the config, and offers to install the daemon.
-Single accounts can be added later from here with `/claudeswitch:login`.
+Single accounts can be added later from here with `/cs:login`.
 
 ## 4. Check
 

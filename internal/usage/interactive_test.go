@@ -12,12 +12,12 @@ import (
 // merely delay the work, it discards it.
 func TestAnInteractiveCallIsNotRefusedByOurOwnLockout(t *testing.T) {
 	b := NewBudget()
-	b.Penalize(20 * time.Minute)
+	b.Penalize("tok", 20*time.Minute)
 
-	if ok, reason := b.Allow(Swap); ok || reason != ReasonLockout {
+	if ok, reason := b.Allow("tok", Swap); ok || reason != ReasonLockout {
 		t.Fatalf("precondition: a swap call should be locked out, got ok=%v %q", ok, reason)
 	}
-	if ok, reason := b.Allow(Interactive); !ok {
+	if ok, reason := b.Allow("tok", Interactive); !ok {
 		t.Errorf("an interactive call must go through a lockout, got %q", reason)
 	}
 }
@@ -27,12 +27,12 @@ func TestAnInteractiveCallIsNotRefusedByOurOwnLockout(t *testing.T) {
 func TestAnInteractiveCallIsNotRefusedByASpentAllowance(t *testing.T) {
 	b := NewBudget()
 	for i := 0; i < DefaultAllowance; i++ {
-		b.Allow(Swap)
+		b.Allow("tok", Swap)
 	}
-	if ok, _ := b.Allow(Swap); ok {
+	if ok, _ := b.Allow("tok", Swap); ok {
 		t.Fatal("precondition: the allowance should be spent")
 	}
-	if ok, reason := b.Allow(Interactive); !ok {
+	if ok, reason := b.Allow("tok", Interactive); !ok {
 		t.Errorf("an interactive call must go through a spent allowance, got %q", reason)
 	}
 }
@@ -43,7 +43,7 @@ func TestAnInteractiveCallIsNotRefusedByASpentAllowance(t *testing.T) {
 func TestAnInteractiveCallIsStillRecorded(t *testing.T) {
 	b := NewBudget()
 	before := len(b.calls)
-	if ok, _ := b.Allow(Interactive); !ok {
+	if ok, _ := b.Allow("tok", Interactive); !ok {
 		t.Fatal("should be allowed")
 	}
 	if len(b.calls) != before+1 {
@@ -56,14 +56,14 @@ func TestAnInteractiveCallIsStillRecorded(t *testing.T) {
 func TestOnlyScheduledPollingKeepsTheReserve(t *testing.T) {
 	b := NewBudget()
 	for i := 0; i < DefaultAllowance-ReservedForSwap; i++ {
-		if ok, _ := b.Allow(Scheduled); !ok {
+		if ok, _ := b.Allow("tok", Scheduled); !ok {
 			t.Fatalf("call %d should fit under the reserve", i)
 		}
 	}
-	if ok, reason := b.Allow(Scheduled); ok || reason != ReasonReserved {
+	if ok, reason := b.Allow("tok", Scheduled); ok || reason != ReasonReserved {
 		t.Errorf("scheduled polling must stop at the reserve, got ok=%v %q", ok, reason)
 	}
-	if ok, _ := b.Allow(Swap); !ok {
+	if ok, _ := b.Allow("tok", Swap); !ok {
 		t.Error("a swap call must be able to spend the reserve")
 	}
 }
@@ -81,7 +81,7 @@ func TestAnInteractiveCallPrunesExpiredEntries(t *testing.T) {
 		now.Add(-DefaultWindow - time.Second),
 		now.Add(-time.Second), // still in the window
 	}
-	if ok, _ := b.Allow(Interactive); !ok {
+	if ok, _ := b.Allow("tok", Interactive); !ok {
 		t.Fatal("an interactive call must be allowed")
 	}
 	// The one live entry, plus the call just made.

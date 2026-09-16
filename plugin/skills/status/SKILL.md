@@ -26,6 +26,6 @@ Summarise for the user in a few lines:
 
 Do not paste the whole table back unless asked — the user can read it in the
 tool output. If the command is not found, say claudeswitch is not installed and
-point to `/claudeswitch:setup`.
+point to `/cs:setup`.
 
-If the user then wants to move accounts, that is `/claudeswitch:switch`.
+If the user then wants to move accounts, that is `/cs:switch`.

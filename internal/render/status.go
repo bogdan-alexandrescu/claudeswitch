@@ -186,6 +186,22 @@ func padderFor(accounts []config.Account) func(string) string {
 	}
 }
 
+// lockedAccounts names how many accounts are backing off. The budget knows
+// credentials, not account names, and a count is all it can honestly give.
+func lockedAccounts(n int) string {
+	if n == 1 {
+		return "one account"
+	}
+	return fmt.Sprintf("%d accounts", n)
+}
+
+// backingOff reports whether an account's last error is a refusal it is now
+// waiting out. Locks are per account, so another account's lock does not
+// explain this one's old figures.
+func backingOff(lastErr string) bool {
+	return strings.Contains(lastErr, "rate limited") || strings.Contains(lastErr, "after a 429")
+}
+
 // holdingOffReason describes a deliberate pause on calling the usage API, or ""
 // when there is none. The daemon backs off when the API refuses it, and during
 // that window every reading legitimately goes stale.
@@ -193,12 +209,12 @@ func holdingOffReason(b *usage.Budget) string {
 	if b == nil {
 		return ""
 	}
-	til, locked := b.LockedUntil()
-	if !locked {
+	til, n := b.AnyLocked()
+	if n == 0 {
 		return ""
 	}
-	return fmt.Sprintf("holding off after the API refused us, resuming %s",
-		til.Local().Format("15:04"))
+	return fmt.Sprintf("holding off after the API refused %s, resuming by %s",
+		lockedAccounts(n), til.Local().Format("15:04"))
 }
 
 func statusCompact(out io.Writer, o Options) {
@@ -364,7 +380,7 @@ func statusCompact(out io.Writer, o Options) {
 				a.ID, fmt.Sprintf(fix, a.ID)))
 		} else if age := time.Since(acct.LastAt); age > staleAfter(cfg, a.ID == st.Active) {
 			switch {
-			case holdingOff != "":
+			case holdingOff != "" && backingOff(acct.LastErr):
 				// Deliberately not polling is not the same as failing to keep
 				// up, and showing it as a fault sends the reader looking for a
 				// broken daemon. This is the one case where the figures being
@@ -433,10 +449,10 @@ func statusCompact(out io.Writer, o Options) {
 			"usage API shape changed — predictive switching DISABLED, reactive only: "+truncate(o.DegradedWhy, 50))
 	}
 	if o.Budget != nil {
-		if til, locked := o.Budget.LockedUntil(); locked {
+		if til, n := o.Budget.AnyLocked(); n > 0 {
 			warnings = append(warnings, fmt.Sprintf(
-				"usage API rate limited; readings resume in %s (figures above are the last good ones)",
-				time.Until(til).Round(time.Second)))
+				"usage API refused %s; readings resume within %s (figures above are the last good ones)",
+				lockedAccounts(n), time.Until(til).Round(time.Second)))
 		}
 	}
 	if len(warnings) > 0 {
@@ -592,9 +608,9 @@ func warnings(out io.Writer, o Options) {
 		fmt.Fprintf(out, "    %s\n\n", o.DegradedWhy)
 	}
 	if o.Budget != nil {
-		if til, locked := o.Budget.LockedUntil(); locked {
-			fmt.Fprintf(out, "  ⚠ usage API rate limited; readings resume in %s (figures below are the last good ones)\n\n",
-				time.Until(til).Round(time.Second))
+		if til, n := o.Budget.AnyLocked(); n > 0 {
+			fmt.Fprintf(out, "  ⚠ usage API refused %s; readings resume within %s (figures below are the last good ones)\n\n",
+				lockedAccounts(n), time.Until(til).Round(time.Second))
 		}
 	}
 	if o.DaemonOwns {
@@ -636,9 +652,9 @@ func statusDetailed(out io.Writer, o Options) {
 		fmt.Fprintf(out, "    run `claudeswitch doctor` for the full picture.\n\n")
 	}
 	if o.Budget != nil {
-		if til, locked := o.Budget.LockedUntil(); locked {
-			fmt.Fprintf(out, "  ⚠ usage API rate limited; readings resume in %s (this is expected,\n",
-				time.Until(til).Round(time.Second))
+		if til, n := o.Budget.AnyLocked(); n > 0 {
+			fmt.Fprintf(out, "  ⚠ usage API refused %s; readings resume within %s (this is expected,\n",
+				lockedAccounts(n), time.Until(til).Round(time.Second))
 			fmt.Fprintf(out, "    not a failure — figures below are the last good ones).\n\n")
 		}
 	}

@@ -26,4 +26,4 @@ output suggests. If the daemon looks stuck, its log is at
 `~/.local/state/claudeswitch/daemon.log`; read the last lines with `tail -50`.
 
 Do not run `login`, `remove` or `forget` from here. Suggest
-`/claudeswitch:login` when an account needs signing in again.
+`/cs:login` when an account needs signing in again.

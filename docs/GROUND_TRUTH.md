@@ -1116,3 +1116,43 @@ the same trap one step earlier.
   switch it on claude.ai first, or use `--sso` for an SSO-backed org. That sentence is what
   the whole round turned on: the block was never the duplicate check, it was the login
   landing somewhere else.
+
+## 40. The refusals follow the live account, and the daemon was not in the shared budget
+
+On 2026-09-16 `daemon.log` held a steady "usage API refused us" through the day, every one a
+429 with `Retry-After: 0`. Grouped by hour and account, each landed on **whichever account
+was live**: `work-main` until it was swapped out at 08:38, `personal` (and the
+pre-attribution `active`, the same credential) from then on. The four idle accounts, polled
+every ten minutes, drew none.
+
+Claude Code itself calls the same endpoint with the same credential. Its binary
+(2.1.273) carries a `fetchUtilization` that issues `GET /api/oauth/usage` — plain, and
+with `?at_wall=1&skip_spend=1` — authenticated as the live account, from `/usage`, the
+extra-usage and usage-credit checks, two at-limit status reads and the purchase flow. So
+the live account's allowance is spent by callers this program cannot see. How often they
+call was not measured; that they call is established from the code.
+
+Reading the budget to explain it turned up two faults of our own:
+
+- **The poller never used the shared budget.** §34 made the budget a file shared across
+  processes and added `sharedBudgetFor()` to the poller — which nothing called.
+  `poller.New` still built a private `usage.NewBudget()`, so the daemon's polls, most of
+  the program's spend, never appeared in `api-calls.json`. Every other caller budgeted
+  against a ledger that left the daemon out.
+- **Every poll was counted twice.** `Tick`, `RefreshStale` and `RefreshCandidates` each
+  asked the budget before calling `fetchInto`, which asked again.
+
+And one fault of design: a 429 set **one** lock for every account. The account refused
+most is the live one, for the reason above, so each of its refusals also stopped the
+reading of every idle account — the figures a rotation decides on.
+
+### What changed
+
+- `poller.New` uses the shared budget. `fetchInto` is the only place a poll consults it.
+- The call window stays one for the machine: it is the burst guard. The lock is per
+  credential, keyed in the ledger by a digest of the token, so the live credential is one
+  entry however it was reached and the file never holds a token. A refused account waits;
+  the others are read on schedule. `Tick` moves on to the next due account instead of
+  ending the tick.
+- `status` and the session context say how many accounts are backing off rather than
+  implying they all are, and a stale row is blamed on a lock only when that row was refused.

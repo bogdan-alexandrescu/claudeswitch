@@ -244,6 +244,11 @@ into someone's config directory.
   `subagentStatusLine`), so the binary writes it: `statusline install`. It never
   replaces someone else's status line without `--force`, keeps a `.claudeswitch.bak`,
   and preserves key order in a hand-edited file.
+- **The plugin is called `cs`, as the binary's short name is.** Claude Code
+  already owns `/status`, `/login` and `/doctor`, so the skills need a
+  namespace; `/cs status` (a router skill) reads the same as `cs status` in a
+  terminal, and `/cs:status` names the skill directly. v0.4.0 shipped it as
+  `claudeswitch`; renamed in v0.4.1.
 - **The plugin's version is the binary's.** `plugin/.claude-plugin/plugin.json`
   carries the release version and is bumped with every release; Claude Code only
   offers an update when it changes.

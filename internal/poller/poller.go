@@ -102,10 +102,14 @@ func sharedBudgetFor(cfg *config.Config) *usage.Budget {
 
 func New(cfg *config.Config, st *state.State, log *slog.Logger) *Poller {
 	return &Poller{
-		cfg:          cfg,
-		st:           st,
-		client:       usage.NewClient(),
-		budget:       usage.NewBudget(),
+		cfg:    cfg,
+		st:     st,
+		client: usage.NewClient(),
+		// The shared, file-backed budget. It was meant to be this since the
+		// budget became cross-process on 2026-09-10, but the poller kept a
+		// private one: the daemon's polls, most of the program's spend, were
+		// invisible to every other caller and to api-calls.json.
+		budget:       sharedBudgetFor(cfg),
 		log:          log,
 		nextPoll:     map[string]time.Time{},
 		lastSeverity: map[string]string{},
@@ -139,9 +143,9 @@ func (p *Poller) Blind(limit time.Duration) (time.Duration, bool) {
 	// restarted the process, and the fresh one inherited the same lock and was
 	// killed again. Twelve restarts in two hours, not one reading among them,
 	// while utilization went from 60% to 100% unseen.
-	if til, locked := p.budget.LockedUntil(); locked {
+	if til, n := p.budget.AnyLocked(); n > 0 {
 		p.log.Debug("not reading, but deliberately: holding off until the lock expires",
-			"until", til.Format(time.Kitchen), "blind_for", d.Round(time.Second))
+			"until", til.Format(time.Kitchen), "locked", n, "blind_for", d.Round(time.Second))
 		return d, false
 	}
 	return d, true
@@ -267,11 +271,14 @@ func (p *Poller) RefreshStale(ctx context.Context, maxAge time.Duration) (int, e
 			acct.LastErr = "no stored credential"
 			continue
 		}
-		if ok, _ := p.budget.Allow(usage.Scheduled); !ok {
-			break // out of budget; the rest keep what they had
-		}
 		p.budget.Pace(ctx)
-		p.fetchInto(ctx, acct, tok, usage.Scheduled)
+		switch p.fetchInto(ctx, acct, tok, usage.Scheduled) {
+		case usage.ReasonOK:
+		case usage.ReasonLockout:
+			continue // this account is backing off; the others are not
+		default:
+			return done, nil // out of budget; the rest keep what they had
+		}
 		if acct.Last != nil {
 			done++
 		}
@@ -309,12 +316,15 @@ func (p *Poller) RefreshCandidates(ctx context.Context, olderThan time.Duration)
 		if err != nil {
 			continue
 		}
-		if ok, _ := p.budget.Allow(usage.Scheduled); !ok {
-			break
-		}
 		p.budget.Pace(ctx)
-		p.fetchInto(ctx, acct, tok, usage.Scheduled)
-		done++
+		switch p.fetchInto(ctx, acct, tok, usage.Scheduled) {
+		case usage.ReasonOK:
+			done++
+		case usage.ReasonLockout:
+			continue
+		default:
+			return done
+		}
 	}
 	return done
 }
@@ -335,15 +345,22 @@ func (p *Poller) Tick(ctx context.Context) {
 			p.nextPoll[a.ID] = now.Add(IdleInterval) // do not retry in a tight loop
 			continue
 		}
-		ok, reason := p.budget.Allow(usage.Scheduled)
-		if !ok {
+		acct := p.st.Get(a.ID)
+		switch reason := p.fetchInto(ctx, acct, tok, usage.Scheduled); reason {
+		case usage.ReasonOK:
+			p.schedule(a.ID, now, acct)
+			return // one API call per tick keeps the budget honest
+		case usage.ReasonLockout:
+			// Only this account is backing off. Come back to it when its lock
+			// ends, and give the tick to the next account that is due.
+			if til, locked := p.budget.LockedUntil(tok); locked {
+				p.nextPoll[a.ID] = til
+			}
+			continue
+		default:
 			p.log.Debug("skipping scheduled poll", "account", a.ID, "reason", string(reason))
 			return
 		}
-		acct := p.st.Get(a.ID)
-		p.fetchInto(ctx, acct, tok, usage.Scheduled)
-		p.schedule(a.ID, now, acct)
-		return // one API call per tick keeps the budget honest
 	}
 }
 
@@ -401,20 +418,26 @@ func (p *Poller) schedule(id string, now time.Time, acct *state.Account) {
 	p.nextPoll[id] = now.Add(iv)
 }
 
-func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token string, priority usage.Priority) {
+// fetchInto reads one account's usage into acct. It reports ReasonOK when a call
+// was made, whatever its outcome, and otherwise why the budget refused it.
+//
+// The budget is consulted here and only here. Callers used to ask it first and
+// then call this, which asked again — so every poll was recorded twice, and the
+// window allowed half the calls its allowance says.
+func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token string, priority usage.Priority) usage.Reason {
 	// Ask every time, for every caller. This check used to run only for
 	// priority polls, so an ordinary one could reach the API while the budget
 	// was locked — collect a fresh Retry-After: 3600, and re-arm the very lock
 	// it had just ignored. That is how a transient refusal became a two-hour
 	// outage that renewed itself.
-	if ok, reason := p.budget.Allow(priority); !ok {
+	if ok, reason := p.budget.Allow(token, priority); !ok {
 		acct.LastErr = "not polled: " + string(reason)
-		return
+		return reason
 	}
 	u, err := p.client.Fetch(ctx, token)
 	if err != nil {
 		if rl, ok := usage.IsRateLimited(err); ok {
-			p.budget.Penalize(rl.RetryAfter)
+			p.budget.Penalize(token, rl.RetryAfter)
 			acct.LastErr = rl.Error()
 			// Report the backoff actually applied, not the header value: the
 			// endpoint sends Retry-After: 0, and logging that was misleading.
@@ -422,17 +445,17 @@ func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token strin
 			if effective < usage.MinBackoff {
 				effective = usage.MinBackoff
 			}
-			wait, strikes := p.budget.CurrentBackoff()
+			wait, strikes := p.budget.CurrentBackoff(token)
 			p.log.Warn("usage API refused us; backing off",
 				"account", acct.ID, "consecutive", strikes, "waiting", wait.Round(time.Second))
 			_ = effective
-			return
+			return usage.ReasonOK
 		}
 		if usage.IsShapeError(err) {
 			p.degrade(err.Error())
 		}
 		acct.LastErr = err.Error()
-		return
+		return usage.ReasonOK
 	}
 	// Keep the previous reading so a burn rate can be computed.
 	if acct.Last != nil && !acct.LastAt.IsZero() {
@@ -452,7 +475,7 @@ func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token strin
 	acct.LastErr = ""
 	p.lastOK = u.FetchedAt
 	// The server answered, so whatever was refusing us has stopped.
-	p.budget.Succeeded()
+	p.budget.Succeeded(token)
 	if u.OrgID != "" {
 		acct.OrgID = u.OrgID
 	}
@@ -467,6 +490,7 @@ func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token strin
 		acct.BurntWin = ""
 	}
 	p.noteSeverity(acct.ID, u)
+	return usage.ReasonOK
 }
 
 // noteSeverity records transitions in the API's own severity field. Every

@@ -48,6 +48,13 @@ func cmdContext(args []string) error {
 	return nil
 }
 
+// staleReadingAfter is when the status line and the session context call a
+// reading old. It is deliberately longer than the daemon's own staleness test:
+// that one decides whether to act, while these are read by a person, and a
+// routine minute-long backoff on the active account is not worth their notice.
+// A poller that has actually stopped still shows within ten minutes.
+const staleReadingAfter = 10 * time.Minute
+
 // renderContext is cmdContext without the I/O, so the wording can be tested.
 //
 // Every line is prefixed so that, among other hooks' output, it is obvious
@@ -73,7 +80,7 @@ func renderContext(w io.Writer, cfg *config.Config, st *state.State, now time.Ti
 		st.Active,
 		a.Last.FiveHour.Pct(), slUntil(a.Last.FiveHour.ResetsAt, now),
 		a.Last.SevenDay.Pct(), slUntil(a.Last.SevenDay.ResetsAt, now))
-	if age := now.Sub(a.LastAt); !a.LastAt.IsZero() && age > staleDecisionAfter(cfg) {
+	if age := now.Sub(a.LastAt); !a.LastAt.IsZero() && age > staleReadingAfter {
 		line += fmt.Sprintf(" · reading %s old", age.Round(time.Minute))
 	}
 	fmt.Fprintln(w, p+line)
@@ -358,7 +365,9 @@ func pluginInstalled() bool {
 		return false
 	}
 	for k := range v.Plugins {
-		if strings.HasPrefix(k, "claudeswitch@") {
+		// Keyed plugin@marketplace. Matching the marketplace rather than the
+		// plugin keeps this true across the rename from claudeswitch to cs.
+		if strings.HasSuffix(k, "@claudeswitch") {
 			return true
 		}
 	}

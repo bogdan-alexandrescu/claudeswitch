@@ -42,15 +42,17 @@ func (v *Vault) SetBudgetAllowance(n int) { v.budget.SetAllowance(n) }
 // but it does spend from the shared budget, and it honours a 429.
 func (v *Vault) fetch(ctx context.Context, token string, p usage.Priority) (*usage.Usage, error) {
 	v.budget.Pace(ctx)
-	if ok, reason := v.budget.Allow(p); !ok {
-		if til, locked := v.budget.LockedUntil(); locked {
+	if ok, reason := v.budget.Allow(token, p); !ok {
+		if til, locked := v.budget.LockedUntil(token); locked {
 			return nil, &usage.RateLimitedError{RetryAfter: time.Until(til), Local: true}
 		}
 		return nil, fmt.Errorf("usage API call budget exhausted (%s); try again shortly", reason)
 	}
 	u, err := v.client.Fetch(ctx, token)
 	if rl, ok := usage.IsRateLimited(err); ok {
-		v.budget.Penalize(rl.RetryAfter)
+		v.budget.Penalize(token, rl.RetryAfter)
+	} else if err == nil {
+		v.budget.Succeeded(token)
 	}
 	return u, err
 }
@@ -113,7 +115,7 @@ func (v *Vault) PlanOf(accountID string) string {
 // budget for one program is the only kind that holds across processes.
 func (v *Vault) identify(ctx context.Context, token string, p usage.Priority) (*usage.Profile, error) {
 	v.budget.Pace(ctx)
-	if ok, reason := v.budget.Allow(p); !ok {
+	if ok, reason := v.budget.Allow(token, p); !ok {
 		return nil, fmt.Errorf("cannot identify this credential: %s", reason)
 	}
 	return v.client.FetchProfile(ctx, token)

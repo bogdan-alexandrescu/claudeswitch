@@ -6,9 +6,9 @@
   },
   "plugins": [
     {
-      "name": "claudeswitch",
+      "name": "cs",
       "source": "./plugin",
-      "description": "Quota context at session start, and /claudeswitch:* skills to check usage, explain rotation, and switch or add accounts.",
+      "description": "claudeswitch for Claude Code: quota context at session start, and /cs skills to check usage, explain rotation, and switch or add accounts.",
       "category": "productivity"
     }
   ]

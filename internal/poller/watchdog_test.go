@@ -19,6 +19,7 @@ import (
 // hours, without a single reading.
 func TestTheWatchdogDoesNotFireWhileDeliberatelyWaiting(t *testing.T) {
 	p := New(&config.Config{}, &state.State{Accounts: map[string]*state.Account{}}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	p.budget = usage.NewBudget() // never the real ledger
 	p.started = time.Now().Add(-time.Hour)
 	p.lastOK = time.Now().Add(-time.Hour)
 
@@ -26,12 +27,12 @@ func TestTheWatchdogDoesNotFireWhileDeliberatelyWaiting(t *testing.T) {
 		t.Fatal("an hour with no reading and no lock must trip the watchdog")
 	}
 
-	p.budget.Penalize(usage.MaxLock)
+	p.budget.Penalize("tok", usage.MaxLock)
 	if _, tooLong := p.Blind(10 * time.Minute); tooLong {
 		t.Error("the watchdog must not fire while the budget is deliberately locked")
 	}
 
-	p.budget.Succeeded()
+	p.budget.Succeeded("tok")
 	if _, tooLong := p.Blind(10 * time.Minute); !tooLong {
 		t.Error("once the lock clears, real blindness must trip the watchdog again")
 	}
