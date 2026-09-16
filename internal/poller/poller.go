@@ -190,7 +190,7 @@ func (p *Poller) PollActive(ctx context.Context) (*state.Account, error) {
 	// Read into a scratch record first: until the org id comes back we do not
 	// know which configured account this credential belongs to.
 	scratch := &state.Account{ID: "active"}
-	p.fetchInto(ctx, scratch, blob.ClaudeAIOAuth.AccessToken, true)
+	p.fetchInto(ctx, scratch, blob.ClaudeAIOAuth.AccessToken, usage.Swap)
 
 	if scratch.Last == nil && scratch.OrgID == "" {
 		// We could not read the credential's organization, so we cannot say
@@ -267,11 +267,11 @@ func (p *Poller) RefreshStale(ctx context.Context, maxAge time.Duration) (int, e
 			acct.LastErr = "no stored credential"
 			continue
 		}
-		if ok, _ := p.budget.Allow(false); !ok {
+		if ok, _ := p.budget.Allow(usage.Scheduled); !ok {
 			break // out of budget; the rest keep what they had
 		}
 		p.budget.Pace(ctx)
-		p.fetchInto(ctx, acct, tok, false)
+		p.fetchInto(ctx, acct, tok, usage.Scheduled)
 		if acct.Last != nil {
 			done++
 		}
@@ -309,11 +309,11 @@ func (p *Poller) RefreshCandidates(ctx context.Context, olderThan time.Duration)
 		if err != nil {
 			continue
 		}
-		if ok, _ := p.budget.Allow(false); !ok {
+		if ok, _ := p.budget.Allow(usage.Scheduled); !ok {
 			break
 		}
 		p.budget.Pace(ctx)
-		p.fetchInto(ctx, acct, tok, false)
+		p.fetchInto(ctx, acct, tok, usage.Scheduled)
 		done++
 	}
 	return done
@@ -335,13 +335,13 @@ func (p *Poller) Tick(ctx context.Context) {
 			p.nextPoll[a.ID] = now.Add(IdleInterval) // do not retry in a tight loop
 			continue
 		}
-		ok, reason := p.budget.Allow(false)
+		ok, reason := p.budget.Allow(usage.Scheduled)
 		if !ok {
 			p.log.Debug("skipping scheduled poll", "account", a.ID, "reason", string(reason))
 			return
 		}
 		acct := p.st.Get(a.ID)
-		p.fetchInto(ctx, acct, tok, false)
+		p.fetchInto(ctx, acct, tok, usage.Scheduled)
 		p.schedule(a.ID, now, acct)
 		return // one API call per tick keeps the budget honest
 	}
@@ -401,7 +401,7 @@ func (p *Poller) schedule(id string, now time.Time, acct *state.Account) {
 	p.nextPoll[id] = now.Add(iv)
 }
 
-func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token string, priority bool) {
+func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token string, priority usage.Priority) {
 	// Ask every time, for every caller. This check used to run only for
 	// priority polls, so an ordinary one could reach the API while the budget
 	// was locked — collect a fresh Retry-After: 3600, and re-arm the very lock

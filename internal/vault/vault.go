@@ -40,9 +40,9 @@ func (v *Vault) SetBudgetAllowance(n int) { v.budget.SetAllowance(n) }
 // fetch is the only way this package talks to the usage API. Everything here is
 // either user-initiated or swap-critical, so it spends the reserved slot —
 // but it does spend from the shared budget, and it honours a 429.
-func (v *Vault) fetch(ctx context.Context, token string) (*usage.Usage, error) {
+func (v *Vault) fetch(ctx context.Context, token string, p usage.Priority) (*usage.Usage, error) {
 	v.budget.Pace(ctx)
-	if ok, reason := v.budget.Allow(true); !ok {
+	if ok, reason := v.budget.Allow(p); !ok {
 		if til, locked := v.budget.LockedUntil(); locked {
 			return nil, &usage.RateLimitedError{RetryAfter: time.Until(til), Local: true}
 		}
@@ -103,9 +103,12 @@ func (v *Vault) PlanOf(accountID string) string {
 }
 
 // identify reads the seat behind a token, through the shared call budget.
-func (v *Vault) identify(ctx context.Context, token string) (*usage.Profile, error) {
+// identify reads the profile endpoint, which is not the usage endpoint and has
+// its own limits — but it is paced and counted with everything else, since one
+// budget for one program is the only kind that holds across processes.
+func (v *Vault) identify(ctx context.Context, token string, p usage.Priority) (*usage.Profile, error) {
 	v.budget.Pace(ctx)
-	if ok, reason := v.budget.Allow(true); !ok {
+	if ok, reason := v.budget.Allow(p); !ok {
 		return nil, fmt.Errorf("cannot identify this credential: %s", reason)
 	}
 	return v.client.FetchProfile(ctx, token)
@@ -132,15 +135,24 @@ func (v *Vault) Store(ctx context.Context, accountID, expectSeat string, conflic
 	if err != nil {
 		return nil, err
 	}
-	u, err := v.fetch(ctx, live.ClaudeAIOAuth.AccessToken)
-	if err != nil {
-		if _, ok := usage.IsRateLimited(err); ok {
-			return nil, fmt.Errorf("%w — wait it out and try again; the credential was NOT vaulted", err)
+	// The usage read is a liveness check, not the thing being stored: the only
+	// value taken from it is the organization id, which the profile carries
+	// too. So it disqualifies a credential only when it says the credential is
+	// bad. Being rate limited says close to the opposite — the token reached
+	// the API and was recognised — and refusing on it threw away the
+	// interactive login that produced the credential, at the exact moment more
+	// capacity was being added because the existing accounts had none.
+	u, uerr := v.fetch(ctx, live.ClaudeAIOAuth.AccessToken, usage.Interactive)
+	if uerr != nil {
+		if _, rateLimited := usage.IsRateLimited(uerr); !rateLimited {
+			return nil, fmt.Errorf("the live credential could not read its own usage, so it is not worth vaulting: %w", uerr)
 		}
-		return nil, fmt.Errorf("the live credential could not read its own usage, so it is not worth vaulting: %w", err)
+		v.log.Warn("vaulting without a usage reading: the API is rate limiting these calls, "+
+			"which says nothing about this credential",
+			"account", accountID, "detail", uerr)
 	}
 
-	pr, perr := v.identify(ctx, live.ClaudeAIOAuth.AccessToken)
+	pr, perr := v.identify(ctx, live.ClaudeAIOAuth.AccessToken, usage.Interactive)
 	if perr != nil {
 		return nil, fmt.Errorf("cannot identify whose credential this is: %w", perr)
 	}
@@ -170,12 +182,20 @@ func (v *Vault) Store(ctx context.Context, accountID, expectSeat string, conflic
 		}
 	}
 
+	// Both sources agree where they overlap, and elsewhere in this file the
+	// profile is already the one used. Preferring the usage header keeps the
+	// stored value identical to what the poller will later write.
+	orgID := pr.Organization.UUID
+	if u != nil && u.OrgID != "" {
+		orgID = u.OrgID
+	}
+
 	// Vault the account credential alone. mcpOAuth belongs to the machine, not
 	// to any one account, and is never copied into a vault entry.
 	entry := &keychain.Blob{
 		ClaudeAIOAuth: live.ClaudeAIOAuth,
 		Meta: &keychain.Meta{
-			OrgID:       u.OrgID,
+			OrgID:       orgID,
 			AccountUUID: pr.Account.UUID,
 			Email:       pr.Account.Email,
 			Plan:        pr.Plan(),
@@ -194,7 +214,7 @@ func (v *Vault) Store(ctx context.Context, accountID, expectSeat string, conflic
 	}
 	return &Entry{
 		AccountID:      accountID,
-		OrgID:          u.OrgID,
+		OrgID:          orgID,
 		Expiry:         o.Expiry(),
 		RefreshExpiry:  o.RefreshExpiry(),
 		Tier:           o.RateLimitTier,
@@ -210,7 +230,7 @@ func (v *Vault) RecordIdentity(ctx context.Context, accountID string) (*usage.Pr
 	if err != nil {
 		return nil, err
 	}
-	pr, err := v.identify(ctx, b.ClaudeAIOAuth.AccessToken)
+	pr, err := v.identify(ctx, b.ClaudeAIOAuth.AccessToken, usage.Swap)
 	if err != nil {
 		return nil, err
 	}
@@ -234,14 +254,21 @@ func (v *Vault) RecordIdentity(ctx context.Context, accountID string) (*usage.Pr
 
 // Identify reads the seat behind a token: the account uuid and email, which is
 // what actually owns a quota pool.
+//
+// Interactive, like FetchLive, because the only callers are `whoami`, `doctor`
+// and `setup` — each one a command a person types once and waits on, and each
+// one something they reach for precisely when the accounts are in trouble. A
+// lockout armed by that same trouble used to refuse all three, which left the
+// recovery tools broken exactly when they were needed. Neither is a loop, and
+// `status` reaches for neither: it reads the state file.
 func (v *Vault) Identify(ctx context.Context, token string) (*usage.Profile, error) {
-	return v.identify(ctx, token)
+	return v.identify(ctx, token, usage.Interactive)
 }
 
 // FetchLive reads usage for an arbitrary token through the shared budget. It is
 // how callers ask "whose credential is this?" without going around the limit.
 func (v *Vault) FetchLive(ctx context.Context, token string) (*usage.Usage, error) {
-	return v.fetch(ctx, token)
+	return v.fetch(ctx, token, usage.Interactive)
 }
 
 // StoreTokens vaults a credential obtained directly, without it ever having
@@ -263,11 +290,11 @@ func (v *Vault) StoreTokens(ctx context.Context, accountID, expectSeat string, t
 		ExpiresAt:    tok.ExpiresAtMillis(time.Now()),
 		Scopes:       oauth.Scopes,
 	}
-	u, err := v.fetch(ctx, cred.AccessToken)
+	u, err := v.fetch(ctx, cred.AccessToken, usage.Interactive)
 	if err != nil {
 		return nil, fmt.Errorf("the new credential could not read its own usage, so it is not worth vaulting: %w", err)
 	}
-	pr, perr := v.identify(ctx, cred.AccessToken)
+	pr, perr := v.identify(ctx, cred.AccessToken, usage.Interactive)
 	if perr != nil {
 		return nil, fmt.Errorf("cannot identify whose credential this is: %w", perr)
 	}
@@ -363,7 +390,7 @@ func (v *Vault) SwapTo(ctx context.Context, accountID, expectOrg string) (*SwapR
 		return nil, fmt.Errorf("swap aborted before it took effect: %w", err)
 	}
 
-	u, verr := v.fetch(ctx, incoming.AccessToken)
+	u, verr := v.fetch(ctx, incoming.AccessToken, usage.Swap)
 	switch {
 	case verr != nil:
 		if _, ok := usage.IsRateLimited(verr); ok {
@@ -505,7 +532,7 @@ func (v *Vault) Refresh(ctx context.Context, accountID, wantSeat string, isActiv
 	}
 
 	// Step 4. Prove it works.
-	u, verr := v.fetch(ctx, next.AccessToken)
+	u, verr := v.fetch(ctx, next.AccessToken, usage.Swap)
 	if verr != nil {
 		if _, rl := usage.IsRateLimited(verr); rl {
 			v.log.Warn("refreshed but could not verify: usage API rate limited", "account", accountID)
@@ -603,7 +630,7 @@ func (v *Vault) SyncActive(ctx context.Context, accountID, wantSeat string) (boo
 	// exactly that: two accounts in one organization ended up holding the same
 	// credential and reporting identical utilization, which quietly turned a
 	// rotation between them into a no-op.
-	pr, err := v.identify(ctx, live.ClaudeAIOAuth.AccessToken)
+	pr, err := v.identify(ctx, live.ClaudeAIOAuth.AccessToken, usage.Swap)
 	if err != nil {
 		return false, fmt.Errorf("cannot verify which account the live credential belongs to: %w", err)
 	}
@@ -675,7 +702,7 @@ func (v *Vault) Verify(ctx context.Context, accountID string) error {
 		return err
 	}
 	claimed := v.OrgOf(accountID)
-	u, err := v.fetch(ctx, o.AccessToken)
+	u, err := v.fetch(ctx, o.AccessToken, usage.Swap)
 	if err != nil {
 		return err
 	}

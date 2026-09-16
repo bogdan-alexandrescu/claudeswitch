@@ -42,6 +42,33 @@ const (
 	ReservedForSwap  = 1
 )
 
+// Priority says what a call is worth, and therefore what it is allowed to
+// spend. The two windows of protection here — the per-window allowance and the
+// lockout armed after a 429 — are both our own bookkeeping, and there is one
+// kind of call they must never refuse.
+type Priority int
+
+const (
+	// Scheduled is the daemon polling on its own cadence. It leaves the
+	// reserve alone, so a rotation can always be checked.
+	Scheduled Priority = iota
+	// Swap is a call a rotation depends on. It may spend the reserve.
+	Swap
+	// Interactive is a call a person is waiting on, having just done something
+	// that cannot be cheaply repeated — an interactive login, in the one case
+	// that exists today. It is never refused by our own bookkeeping.
+	//
+	// The lockout is armed by a 429 against whichever token happened to be
+	// polling, but the rate limit it reflects belongs to that account, not to
+	// this program. Applied to a credential that has made no calls at all it is
+	// not a safety measure, it is a guess carried over from someone else — and
+	// it produced a deadlock: accounts run out of quota, the 429s arm a
+	// twenty-minute lockout, and `add`, the one command that fixes the
+	// shortage, is refused for the whole of it. The login it threw away was the
+	// expensive part (observed 2026-09-16).
+	Interactive
+)
+
 type Budget struct {
 	mu        sync.Mutex
 	allowance int
@@ -214,12 +241,20 @@ func (b *Budget) Pace(ctx context.Context) {
 // Allow reserves a call if one is available. priority marks a call that may
 // spend the reserved slot — used for the pre-switch verification, never for
 // scheduled polling.
-func (b *Budget) Allow(priority bool) (bool, Reason) {
+func (b *Budget) Allow(p Priority) (bool, Reason) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	now := b.now()
 	ok, reason := false, ReasonOK
 	b.withLedger(func(lf *ledgerFile) {
+		// Recorded, so it still counts against the window and still paces —
+		// but never refused. See Interactive.
+		if p == Interactive {
+			lf.Calls = append(lf.Calls, now)
+			b.lastCall = now
+			ok, reason = true, ReasonOK
+			return
+		}
 		if now.Before(lf.LockedTil) {
 			ok, reason = false, ReasonLockout
 			return
@@ -234,12 +269,12 @@ func (b *Budget) Allow(priority bool) (bool, Reason) {
 		lf.Calls = keep
 
 		limit := b.allowance
-		if !priority {
+		if p == Scheduled {
 			limit -= ReservedForSwap
 		}
 		if len(lf.Calls) >= limit {
 			switch {
-			case priority, len(lf.Calls) >= b.allowance:
+			case p != Scheduled, len(lf.Calls) >= b.allowance:
 				ok, reason = false, ReasonBudget
 			default:
 				ok, reason = false, ReasonReserved
