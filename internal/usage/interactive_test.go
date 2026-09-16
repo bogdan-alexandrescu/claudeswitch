@@ -67,3 +67,25 @@ func TestOnlyScheduledPollingKeepsTheReserve(t *testing.T) {
 		t.Error("a swap call must be able to spend the reserve")
 	}
 }
+
+// The ledger is a file on disk, and an interactive call used to append to it
+// without ever dropping expired entries — the branch returned before the prune,
+// so only a scheduled call trimmed it. Everything that counts filters by the
+// window, so the arithmetic was never wrong; the file just grew forever.
+func TestAnInteractiveCallPrunesExpiredEntries(t *testing.T) {
+	b := NewBudget()
+	now := time.Now()
+	b.now = func() time.Time { return now }
+	b.calls = []time.Time{
+		now.Add(-2 * DefaultWindow), // expired
+		now.Add(-DefaultWindow - time.Second),
+		now.Add(-time.Second), // still in the window
+	}
+	if ok, _ := b.Allow(Interactive); !ok {
+		t.Fatal("an interactive call must be allowed")
+	}
+	// The one live entry, plus the call just made.
+	if len(b.calls) != 2 {
+		t.Errorf("expired entries must be dropped, got %d: %v", len(b.calls), b.calls)
+	}
+}

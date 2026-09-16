@@ -978,3 +978,141 @@ so it said nothing at all while doing it.
 It now warns when the reading behind a decision is older than three poll intervals, naming
 the age and the last error. A daemon that cannot see should say so rather than carry on
 quietly.
+
+---
+
+# Round 13 — 2026-09-16. The seat rule was written down, and still not applied
+
+§33 settled that a quota pool is one person **within** one organization, and that identity
+is `account.uuid@org.uuid`. Six days later, five separate places were still storing,
+comparing, or displaying one half of that. None of what follows is a new discovery about
+the API; it is the cost of a rule being known and not enforced.
+
+(Account names have been reused across rounds. §33's `personal` is this round's
+`work-team`; the uuids are the stable identifiers.)
+
+## 36. Our own backoff refused the commands that end the shortage arming it
+
+Every account was exhausted. The 429s that produced armed a twenty-minute lockout shared by
+every caller — and `add`, the command that relieves a shortage by adding capacity, was
+refused for the whole of it:
+
+```
+claudeswitch: paused by our own call budget, retry in 15m1s
+              — wait it out and try again; the credential was NOT vaulted
+```
+
+Worse than a delay: the credential `add` vaults comes from an interactive login, so the
+refusal discarded the expensive step and the login had to be done again. `whoami`, `doctor`
+and `setup` were refused on the same grounds — the whole recovery toolkit, disabled by the
+condition it exists to recover from.
+
+The lockout is armed by a 429 against whichever token happened to be polling, but the rate
+limit behind it belongs to **that account**. Applied to a credential that has made no calls
+at all it is not a safety measure, it is a guess carried over from someone else.
+
+### What changed
+
+- Calls carry a priority rather than a bool. `Scheduled` polling keeps a call in reserve,
+  `Swap` may spend it, `Interactive` is never refused by our own bookkeeping.
+- Interactive calls are still paced and still recorded against the window, so a bypass
+  cannot hide spend from the daemon. A burst of them defers scheduled polling by up to one
+  window, which is the intended trade.
+- `add` no longer refuses a credential because the *usage* endpoint is rate limited. That
+  read is a liveness check, and a 429 shows the token reached the API and was recognised —
+  nearly the opposite of a reason to reject it. The only value taken from it is the
+  organization id, which the profile carries too.
+
+## 37. The config block `add` recommended switched off every seat check
+
+The block `add` printed pinned on the organization alone:
+
+```
+    [[account]]
+    id     = "personal"
+    org_id = "44444444-4444-4444-4444-444444444444"
+```
+
+`config.Account.Seat()` returns empty unless **both** fields are set, and every integrity
+check in `State.Reconcile` is gated on a non-empty seat. So pasting the recommended block
+did not pin loosely — it disabled the detection of a credential filed under the wrong name
+outright, which is the failure that took out three accounts on 2026-09-11.
+
+The seat was read during `Store` and written into the keychain annotation all along.
+`Entry` simply never carried it back out, so the command held the right answer in memory
+while printing the wrong one.
+
+### What changed
+
+- `add` prints a complete, seat-pinned block and offers to write it, with the priority
+  entry, rather than asking for it to be retyped. A seat uuid is only knowable after
+  signing in, so this was never a file anyone could write correctly in advance — which is
+  why `setup` has always written its own.
+- The edit is textual, so a hand-maintained config keeps its comments byte for byte. It is
+  parsed back before replacing the original, and nothing is prompted when stdin is not a
+  terminal: a pipe reaches EOF immediately and a yes/no default would have written to
+  someone's config because their terminal was not attached.
+
+## 38. Two names for one pool, and a `remove` that could not undo it
+
+`add` will vault an account the config does not list, and says so while doing it. The
+duplicate-credential checks enumerated the **config**. So the entries `add` itself created
+were invisible to the one check that exists to stop a second name being given to a pool
+that already has one:
+
+```
+cs add work-team       # not in config — vaulted anyway, and invisible to the check
+cs add personal   # same seat, no conflict reported
+```
+
+Both then report identical utilization, so rotating between them does nothing, and because
+a refresh revokes the token it was given, refreshing one destroys the other.
+
+Repair was impossible by the command that repairs things. `remove` refuses to delete the
+entry holding the live credential, and liveness is decided by comparing access tokens — so
+two entries holding one credential are **both** live at once. Switching to the other could
+not release the first, because the other held the identical token:
+
+```
+cs remove work-team    → "work-team" holds the credential Claude Code is using right now
+cs use personal   → ✓ now using personal
+cs remove work-team    → "work-team" holds the credential Claude Code is using right now
+```
+
+### What changed
+
+- Vaulted ids are recorded in the state file as they are stored. The keychain cannot be
+  enumerated without a dump that prompts for every item, so what we store is what we
+  remember storing. `Reconcile` leaves that record alone: "not in the config" is precisely
+  the case it exists to remember.
+- Both `doctor`'s check and `add`'s conflict check now consider the union of configured and
+  vaulted ids.
+- `remove` allows deleting one copy of a duplicate — the credential stays vaulted under the
+  other name, the live session is untouched, and it is the only way out — and it names the
+  entry keeping the credential rather than quietly proceeding.
+
+## 39. Abbreviating a seat keeps the half that matches
+
+A seat is `person@organization`, and `short()` takes the first eight characters — which is
+the person and nothing else. So the messages whose entire purpose is to contrast two seats
+named the half that matched and cut off the half that differed:
+
+```
+work-team holds a credential for seat bbbbbbbb, but is pinned to bbbbbbbb
+the account currently signed in is alice@example.com, but "work-team" is pinned to seat bbbbbbbb
+```
+
+Both read as self-contradictions, and they did it in the ordinary case rather than a corner
+one: §33's whole point is that the same person in two organizations is two pools, so the
+organization is exactly what such a message is contrasting — and exactly what was being
+discarded. `login`'s pre-flight warning called a seat an "organization" outright, setting
+the same trap one step earlier.
+
+### What changed
+
+- `shortSeat()` abbreviates both halves: `bbbbbbbb@22222222`.
+- The refusal now says how to land on the organization you want, which it never did. Per
+  §24 the login follows the browser's active organization and cannot be asked for one, so
+  switch it on claude.ai first, or use `--sso` for an SSO-backed org. That sentence is what
+  the whole round turned on: the block was never the duplicate check, it was the login
+  landing somewhere else.

@@ -1699,6 +1699,29 @@ func maintainVault(ctx context.Context, v *vault.Vault, st *state.State, cfg *co
 				log.Error("account needs an interactive login", "account", a.ID, "detail", err)
 				nt.Send("relogin:"+a.ID, a.ID+" needs a login",
 					"its refresh token is spent; run `cs login "+a.ID+" --direct`")
+				// Record it where `status` looks. A spent refresh token is the
+				// one condition here a person has to act on, and it was only
+				// ever logged: the row went on showing whatever the last poll
+				// said — a stale rate-limit message, or "window reset ·
+				// re-reading" forever — while the account could not be renewed
+				// at all. stateOf checks needsLogin first, but only ever sees
+				// LastErr, so an error that is not written there is invisible.
+				//
+				// Safe to write on the first failure because a successful poll
+				// clears LastErr. invalid_grant does not always mean the token
+				// is spent — a refresh revokes the token it was given, so one
+				// made with a copy that another process has already rotated
+				// fails the same way while the account is perfectly healthy.
+				// Observed here: three of these two minutes apart, then the
+				// account polled fine and went back to "available" on its own.
+				// Surfacing it and letting the next good poll retract it beats
+				// staying quiet, since the alternative failure is someone
+				// spending an interactive login they did not need.
+				st.Get(a.ID).LastErr = err.Error()
+				if serr := st.Save(); serr != nil {
+					log.Warn("could not record that an account needs a login",
+						"account", a.ID, "err", serr)
+				}
 				continue
 			}
 			log.Warn("refresh failed", "account", a.ID, "err", err, "why", why)

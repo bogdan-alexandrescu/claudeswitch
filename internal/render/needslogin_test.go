@@ -118,3 +118,28 @@ func rowFor(out, account string) string {
 	}
 	return ""
 }
+
+// The refresher discovers a spent refresh token, and it is the one condition
+// here a person must act on: no amount of waiting renews it. It was logged and
+// notified but never written to LastErr, which is the only thing stateOf reads
+// — so the row went on showing whatever the last poll had said. In practice
+// that was a stale rate-limit message, or "window reset · re-reading" forever,
+// both of which read as transient.
+func TestASpentRefreshTokenOutranksAStaleTransientError(t *testing.T) {
+	const spent = "this account needs an interactive login (`claude` then /login): " +
+		`{"error": "invalid_grant", "error_description": "Refresh token not found or invalid"}`
+
+	out := statusFor(t, spent, time.Now())
+	if !strings.Contains(out, "needs login") {
+		t.Errorf("a spent refresh token must show in the state column:\n%s", out)
+	}
+	if strings.Contains(out, "window reset") {
+		t.Errorf("it must not be reported as a window that will re-read:\n%s", out)
+	}
+
+	// And a merely rate-limited account is not told to sign in.
+	out = statusFor(t, "usage API rate limited, retry in 52m50s", time.Now())
+	if strings.Contains(out, "needs login") {
+		t.Errorf("a transient refusal is not a login problem:\n%s", out)
+	}
+}

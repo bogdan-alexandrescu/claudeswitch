@@ -247,6 +247,21 @@ func (b *Budget) Allow(p Priority) (bool, Reason) {
 	now := b.now()
 	ok, reason := false, ReasonOK
 	b.withLedger(func(lf *ledgerFile) {
+		// Pruning first, for every caller. An earlier version of the
+		// interactive branch below returned before reaching this, so an
+		// interactive call appended without ever dropping expired entries and
+		// the ledger grew without bound — only a scheduled call ever trimmed
+		// it. Harmless to the arithmetic, since everything that counts filters
+		// by the window anyway, but it is a file on disk.
+		cut := now.Add(-b.window)
+		keep := lf.Calls[:0]
+		for _, t := range lf.Calls {
+			if t.After(cut) {
+				keep = append(keep, t)
+			}
+		}
+		lf.Calls = keep
+
 		// Recorded, so it still counts against the window and still paces —
 		// but never refused. See Interactive.
 		if p == Interactive {
@@ -259,14 +274,6 @@ func (b *Budget) Allow(p Priority) (bool, Reason) {
 			ok, reason = false, ReasonLockout
 			return
 		}
-		cut := now.Add(-b.window)
-		keep := lf.Calls[:0]
-		for _, t := range lf.Calls {
-			if t.After(cut) {
-				keep = append(keep, t)
-			}
-		}
-		lf.Calls = keep
 
 		limit := b.allowance
 		if p == Scheduled {
