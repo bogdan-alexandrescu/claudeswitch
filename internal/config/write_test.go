@@ -1,8 +1,10 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -73,5 +75,78 @@ func TestWrittenConfigIsPrivate(t *testing.T) {
 	}
 	if fi.Mode().Perm() != 0o600 {
 		t.Fatalf("config should be 0600, got %o", fi.Mode().Perm())
+	}
+}
+
+// `cs config` changes a setting by loading the file, setting one field and
+// writing it all back. Anything Write leaves out is therefore deleted by any
+// change at all — poll_active was set, reported as written, and gone
+// (observed 2026-09-16). This fills every field the file can carry and
+// requires all of it to survive.
+func TestWriteKeepsEverySetting(t *testing.T) {
+	on, off := true, false
+	in := &Config{
+		SwitchAt: 80, SwitchAtWeekly: 95, HardFloor: 99, SwitchWhen: "immediate",
+		Cooldown:      Duration{7 * time.Minute},
+		MaxSwitchWait: Duration{45 * time.Second},
+		AutoRefresh:   &off,
+		RefreshWindow: Duration{2 * time.Hour},
+		RefreshProbe:  Duration{12 * time.Hour},
+		PollActive:    Duration{2 * time.Minute},
+		PollHot:       Duration{time.Minute},
+		PollIdle:      Duration{15 * time.Minute},
+		APIBudget:     10,
+		Priority:      []string{"work", "personal"},
+		Accounts: []Account{
+			{ID: "work", Scope: "work", AccountUUID: "seat-1",
+				OrgID: "org-1", Reserve: 60, Enabled: &on},
+			{ID: "personal", Scope: "personal", AccountUUID: "seat-2",
+				OrgID: "org-2", Reserve: 70, Enabled: &off},
+		},
+		Projects: map[string]Project{
+			"~/work/*":     {Eligible: []string{"work"}, Prefer: []string{"work"}},
+			"/tmp/a b/[x]": {Eligible: []string{"work", "personal"}, Prefer: []string{"personal"}},
+		},
+	}
+	requireEveryFieldSet(t, reflect.ValueOf(*in), "Config")
+	for i, a := range in.Accounts {
+		requireEveryFieldSet(t, reflect.ValueOf(a), fmt.Sprintf("Accounts[%d]", i))
+	}
+
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := in.Write(path); err != nil {
+		t.Fatal(err)
+	}
+	out, err := Load(path)
+	if err != nil {
+		raw, _ := os.ReadFile(path)
+		t.Fatalf("what we wrote does not load: %v\n%s", err, raw)
+	}
+	out.Path = ""
+	if !reflect.DeepEqual(in, out) {
+		raw, _ := os.ReadFile(path)
+		t.Errorf("settings changed on the way through the file:\n in: %+v\nout: %+v\n%s", *in, *out, raw)
+	}
+}
+
+// requireEveryFieldSet fails for any field the file carries that the fixture
+// left zero. A field added later is then untested until someone sets it here,
+// which is the prompt to make Write handle it.
+func requireEveryFieldSet(t *testing.T, v reflect.Value, where string) {
+	t.Helper()
+	for i := 0; i < v.NumField(); i++ {
+		f := v.Type().Field(i)
+		if tag := f.Tag.Get("toml"); tag == "" || tag == "-" {
+			continue
+		}
+		switch f.Name {
+		case "Accounts":
+			continue // checked element by element
+		case "Label":
+			continue // retired: Load refuses a config that sets it
+		}
+		if v.Field(i).IsZero() {
+			t.Errorf("%s.%s is zero in the fixture; set it so Write is tested on it", where, f.Name)
+		}
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -412,8 +413,33 @@ func (c *Config) Write(path string) error {
 	b.WriteString("\n# Keeping vaulted credentials alive. Refreshing revokes the previous token,\n")
 	b.WriteString("# so a stored credential goes stale on its own without this.\n")
 	fmt.Fprintf(&b, "refresh_window  = %q\n", c.RefreshWindow.String())
-	fmt.Fprintf(&b, "refresh_probe   = %q   # catch a dead refresh token before you need the account\n\n",
+	fmt.Fprintf(&b, "refresh_probe   = %q   # catch a dead refresh token before you need the account\n",
 		c.RefreshProbe.String())
+	if c.AutoRefresh != nil {
+		fmt.Fprintf(&b, "auto_refresh    = %t\n", *c.AutoRefresh)
+	}
+	b.WriteString("\n")
+
+	// Polling is written only when set: a Config built in code (as `setup`
+	// builds one) leaves it zero, and zero written out would be a real value
+	// rather than "use the default". Everything `cs config` can change must be
+	// written here, or changing one setting silently deletes the others.
+	if c.PollActive.Duration > 0 || c.PollHot.Duration > 0 || c.PollIdle.Duration > 0 || c.APIBudget > 0 {
+		b.WriteString("# Polling cadence and the usage API call budget.\n")
+		if c.PollActive.Duration > 0 {
+			fmt.Fprintf(&b, "poll_active     = %q\n", c.PollActive.String())
+		}
+		if c.PollHot.Duration > 0 {
+			fmt.Fprintf(&b, "poll_hot        = %q\n", c.PollHot.String())
+		}
+		if c.PollIdle.Duration > 0 {
+			fmt.Fprintf(&b, "poll_idle       = %q\n", c.PollIdle.String())
+		}
+		if c.APIBudget > 0 {
+			fmt.Fprintf(&b, "api_budget      = %d\n", c.APIBudget)
+		}
+		b.WriteString("\n")
+	}
 
 	b.WriteString("# Rotation order. Earlier accounts are spent first.\n")
 	b.WriteString("priority = [")
@@ -434,6 +460,9 @@ func (c *Config) Write(path string) error {
 		}
 		b.WriteString("[[account]]\n")
 		fmt.Fprintf(&b, "id           = %q\n", a.ID)
+		if a.Enabled != nil {
+			fmt.Fprintf(&b, "enabled      = %t\n", *a.Enabled)
+		}
 		if a.Scope != "" {
 			fmt.Fprintf(&b, "scope        = %q\n", a.Scope)
 		}
@@ -448,11 +477,41 @@ func (c *Config) Write(path string) error {
 		}
 	}
 
+	patterns := make([]string, 0, len(c.Projects))
+	for pattern := range c.Projects {
+		patterns = append(patterns, pattern)
+	}
+	sort.Strings(patterns)
+	for _, pattern := range patterns {
+		pr := c.Projects[pattern]
+		fmt.Fprintf(&b, "\n[project.%s]\n", tomlKey(pattern))
+		if len(pr.Eligible) > 0 {
+			fmt.Fprintf(&b, "eligible = %s\n", tomlStrings(pr.Eligible))
+		}
+		if len(pr.Prefer) > 0 {
+			fmt.Fprintf(&b, "prefer   = %s\n", tomlStrings(pr.Prefer))
+		}
+	}
+
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(b.String()), 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// tomlKey quotes a table key. A project key is a path, and a path is full of
+// characters a bare TOML key cannot hold.
+func tomlKey(k string) string {
+	return strconv.Quote(k)
+}
+
+func tomlStrings(v []string) string {
+	q := make([]string, len(v))
+	for i, s := range v {
+		q[i] = strconv.Quote(s)
+	}
+	return "[" + strings.Join(q, ", ") + "]"
 }
 
 // Project is a rule about which accounts may serve a directory.

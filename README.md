@@ -60,7 +60,7 @@ macOS and Linux on amd64 and arm64, and a `checksums.txt`. The archives are
 reproducible: the same tag always produces the same bytes.
 
 ```sh
-VERSION=v0.4.1
+VERSION=v0.4.2
 TARGET=darwin_arm64            # darwin_amd64, linux_amd64, linux_arm64
 curl -LO "https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION/claudeswitch_${VERSION}_${TARGET}.tar.gz"
 curl -LO "https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION/checksums.txt"
