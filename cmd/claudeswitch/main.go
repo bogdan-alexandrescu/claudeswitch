@@ -122,7 +122,7 @@ func main() {
 }
 
 func usageText() {
-	fmt.Fprint(os.Stderr, `claudeswitch `+version+` — quota-aware account observer (M1: no switching yet)
+	fmt.Fprint(os.Stderr, `claudeswitch `+version+` — keeps Claude Code on an account that still has quota
 
   status     what every configured account's quota looks like right now
   watch      run the daemon (dry-run by default; --live to act)
