@@ -123,3 +123,42 @@ func TestAppendAccountLeavesTheOriginalAloneWhenTheResultWillNotLoad(t *testing.
 		t.Error("the temporary file must be cleaned up")
 	}
 }
+
+// Liveness is decided by comparing access tokens, so two entries holding one
+// credential are both "live" at once. `remove` refused a live entry, and no
+// account could be switched to that released it — the other copy held the
+// identical token — so the duplicate state `doctor` calls corrupted could not
+// be repaired by the command that repairs it.
+func TestFindTwinSpotsTwoNamesForOneCredential(t *testing.T) {
+	tokens := map[string]string{
+		"work-a": "shared-token", "work-b": "shared-token", "work-c": "its-own-token",
+	}
+	ids := []string{"work-a", "work-b", "work-c", "never-vaulted"}
+	tokenOf := func(id string) string { return tokens[id] }
+
+	if got := findTwin("work-a", ids, tokenOf); got != "work-b" {
+		t.Errorf("work-a shares its credential with work-b, got %q", got)
+	}
+	if got := findTwin("work-b", ids, tokenOf); got != "work-a" {
+		t.Errorf("the relationship is symmetric, got %q", got)
+	}
+	if got := findTwin("work-c", ids, tokenOf); got != "" {
+		t.Errorf("an account holding its own credential has no twin, got %q", got)
+	}
+}
+
+// An unvaulted account has no token, and an empty string must not match every
+// other unvaulted one — that would report a twin for accounts holding nothing
+// and let a live entry be deleted on the strength of it.
+func TestFindTwinTreatsAnUnvaultedAccountAsNoMatch(t *testing.T) {
+	tokens := map[string]string{"work-a": "a-token"}
+	ids := []string{"work-a", "never-vaulted", "also-never-vaulted"}
+	tokenOf := func(id string) string { return tokens[id] }
+
+	if got := findTwin("never-vaulted", ids, tokenOf); got != "" {
+		t.Errorf("two accounts with no credential are not twins, got %q", got)
+	}
+	if got := findTwin("work-a", ids, tokenOf); got != "" {
+		t.Errorf("a sole credential has no twin, got %q", got)
+	}
+}

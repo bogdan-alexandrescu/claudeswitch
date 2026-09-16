@@ -2348,9 +2348,20 @@ func cmdRemove(args []string) error {
 
 	who := v.DescribeOf(id)
 	_, org := v.IdentityOf(id)
-	if v.IsLive(id) {
+	twin := otherHoldingSameCredential(cfg, st, id)
+	if v.IsLive(id) && twin == "" {
 		return fmt.Errorf("%q holds the credential Claude Code is using right now.\n"+
 			"  Switch to another account first (`claudeswitch use <other>`), then remove it", id)
+	}
+	if v.IsLive(id) && twin != "" {
+		// The one case where removing a live entry is safe, and the only way
+		// out of the state `doctor` calls corrupted. Liveness is decided by
+		// comparing access tokens, so two entries sharing one token are both
+		// "live" at once: switching to the other cannot release this one,
+		// because the other holds the identical token. Refusing here left the
+		// duplicate impossible to delete by the command that deletes things.
+		fmt.Printf("\n  note: %s holds this same credential, so deleting this copy leaves it\n", twin)
+		fmt.Printf("        vaulted under that name. The live session is unaffected.\n")
 	}
 
 	if err := keychain.Delete(keychain.VaultService(id)); err != nil {
@@ -2377,6 +2388,54 @@ func cmdRemove(args []string) error {
 	}
 	fmt.Println()
 	return nil
+}
+
+// otherHoldingSameCredential returns another vaulted id whose stored access
+// token is byte-identical to this one's, or "" when this entry is the only copy.
+//
+// Two names for one credential is a corrupt state rather than a supported one —
+// both report the same utilization, so rotating between them does nothing, and
+// refreshing one revokes the other. But while it exists it has to be
+// repairable, and repair means deleting one of them.
+func otherHoldingSameCredential(cfg *config.Config, st *state.State, id string) string {
+	var configured []string
+	if cfg != nil {
+		for _, a := range cfg.Accounts {
+			configured = append(configured, a.ID)
+		}
+	}
+	ids := configured
+	if st != nil {
+		ids = st.KnownAccounts(configured)
+	}
+	return findTwin(id, ids, vaultedToken)
+}
+
+// vaultedToken is the stored access token for an id, empty when there is none.
+func vaultedToken(id string) string {
+	b, err := keychain.Read(keychain.VaultService(id))
+	if err != nil || b.ClaudeAIOAuth == nil {
+		return ""
+	}
+	return b.ClaudeAIOAuth.AccessToken
+}
+
+// findTwin is the comparison on its own, with the keychain passed in, so the
+// rule can be tested without one.
+func findTwin(id string, ids []string, tokenOf func(string) string) string {
+	mine := tokenOf(id)
+	if mine == "" {
+		return ""
+	}
+	for _, other := range ids {
+		if other == id {
+			continue
+		}
+		if tokenOf(other) == mine {
+			return other
+		}
+	}
+	return ""
 }
 
 func humanTokens(n int64) string {
