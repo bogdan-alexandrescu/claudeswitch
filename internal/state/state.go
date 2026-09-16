@@ -228,6 +228,21 @@ type State struct {
 	DaemonLive  bool      `json:"daemon_live"`
 	DaemonSince time.Time `json:"daemon_since,omitzero"`
 	SavedAt     time.Time `json:"saved_at"`
+	// Vaulted is every account id this program has stored a credential for,
+	// including ones the config does not mention — `add` will vault an account
+	// that is not configured, and says so while it does it.
+	//
+	// It exists because the duplicate-credential checks enumerated the CONFIG,
+	// so an entry `add` had just created outside the config was invisible to
+	// them. Two names then came to hold one quota pool undetected, which is the
+	// state those checks exist to prevent: both report the same utilization, so
+	// rotating between them does nothing, and refreshing one revokes the other.
+	// The keychain cannot be listed without a dump that prompts for every item,
+	// so what we stored is recorded here as we store it.
+	//
+	// Reconcile must never prune this: "not in the config" is precisely the
+	// case it is here to remember.
+	Vaulted []string `json:"vaulted,omitempty"`
 
 	path string
 
@@ -349,6 +364,48 @@ func short(s string) string {
 		return s[:8]
 	}
 	return s
+}
+
+// AddVaulted records that a credential is stored under this id.
+func (s *State) AddVaulted(id string) {
+	for _, v := range s.Vaulted {
+		if v == id {
+			return
+		}
+	}
+	s.Vaulted = append(s.Vaulted, id)
+}
+
+// DropVaulted forgets an id whose credential has been deleted.
+func (s *State) DropVaulted(id string) {
+	out := s.Vaulted[:0]
+	for _, v := range s.Vaulted {
+		if v != id {
+			out = append(out, v)
+		}
+	}
+	s.Vaulted = out
+}
+
+// KnownAccounts is every id worth checking for integrity: the configured ones
+// plus anything vaulted outside the config, in config order first so messages
+// name accounts in the order a person sees them.
+func (s *State) KnownAccounts(configured []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(configured)+len(s.Vaulted))
+	for _, id := range configured {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	for _, id := range s.Vaulted {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 func (s *State) Get(id string) *Account {

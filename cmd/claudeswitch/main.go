@@ -691,7 +691,8 @@ func cmdDoctor(args []string) error {
 		fmt.Printf("         └ fix: run `claudeswitch init`\n")
 	}
 
-	if dup := checkDuplicateCredentials(cfg); dup != "" {
+	dupState, _ := state.Load("")
+	if dup := checkDuplicateCredentials(cfg, dupState); dup != "" {
 		fmt.Printf("  [%s] vault entries   %s\n", ok(false), "corrupted")
 		fmt.Printf("         └ %s\n", dup)
 		fmt.Printf("         └ fix: re-add the affected accounts while each is signed in\n")
@@ -930,18 +931,24 @@ func cmdAdd(args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	var others []string
+	var configured []string
 	expectSeat := ""
 	for _, a := range cfg.Accounts {
-		others = append(others, a.ID)
+		configured = append(configured, a.ID)
 		if a.ID == id {
 			expectSeat = a.Seat()
 		}
 	}
+	// Check against everything we have actually stored, not only what the config
+	// mentions. This command will vault an account the config does not list —
+	// it says so as it does it — and those entries used to be invisible here, so
+	// a second name could be given to a pool that already had one.
+	others := st.KnownAccounts(configured)
 	e, err := v.Store(ctx, id, expectSeat, others)
 	if err != nil {
 		return err
 	}
+	st.AddVaulted(id)
 	acct := st.Get(id)
 	acct.OrgID = e.OrgID
 	acct.RefreshExpiry = e.RefreshExpiry
@@ -2019,10 +2026,16 @@ func cmdLogin(args []string) error {
 	fmt.Println()
 	if wantOrg != "" {
 		fmt.Printf("  About to sign in and vault it as %q.\n\n", id)
-		fmt.Printf("  That account is organization %s.\n", wantOrg)
-		fmt.Printf("  The login lands on whichever organization your BROWSER is currently in,\n")
-		fmt.Printf("  so switch claude.ai to that organization first, or the login will bring\n")
-		fmt.Printf("  back the wrong one and nothing will be stored.\n\n")
+		// A seat, not an organization: one person in one organization. Calling
+		// it an organization made the refusal that follows read as nonsense,
+		// since the same person in two organizations differs only in the half
+		// the label denied was there.
+		fmt.Printf("  That account is seat %s — one person in one organization,\n", shortSeat(wantOrg))
+		fmt.Printf("  which is what owns a quota pool.\n")
+		fmt.Printf("  The login lands on whichever organization your BROWSER is currently in\n")
+		fmt.Printf("  and cannot be asked for one, so switch claude.ai to that organization\n")
+		fmt.Printf("  first, or nothing will be stored. For an SSO-backed organization,\n")
+		fmt.Printf("  `claudeswitch login %s --sso` is what reaches it.\n\n", id)
 	}
 	fmt.Printf("  Press enter to run the login, or Ctrl-C to stop: ")
 	_, _ = fmt.Scanln()
@@ -2044,17 +2057,19 @@ func cmdLogin(args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	defer cancel()
 
-	var others []string
+	var configuredIDs []string
 	for _, a := range cfg.Accounts {
-		others = append(others, a.ID)
+		configuredIDs = append(configuredIDs, a.ID)
 	}
-	e, serr := v.Store(ctx, id, wantOrg, others)
+	// Including what was vaulted outside the config — see cmdAdd.
+	e, serr := v.Store(ctx, id, wantOrg, st.KnownAccounts(configuredIDs))
 	if serr != nil {
 		fmt.Printf("\n  ✗ not vaulted.\n     %v\n", serr)
 		restoreActive(v, st, restoreTo)
 		return nil
 	}
 
+	st.AddVaulted(id)
 	acct := st.Get(id)
 	acct.OrgID, acct.RefreshExpiry = e.OrgID, e.RefreshExpiry
 	st.SetActive(id)
@@ -2342,6 +2357,7 @@ func cmdRemove(args []string) error {
 		return err
 	}
 	st.Drop(id)
+	st.DropVaulted(id)
 	if err := st.Save(); err != nil {
 		fmt.Fprintf(os.Stderr, "note: %v\n", err)
 	}
@@ -3453,31 +3469,61 @@ func checkServiceQoS() string {
 // refresh revokes the token it was given, refreshing one destroys the other.
 // That is how three accounts here came to need an interactive login on the same
 // morning. It is cheap to detect and was never being looked for.
-func checkDuplicateCredentials(cfg *config.Config) string {
+func checkDuplicateCredentials(cfg *config.Config, st *state.State) string {
 	if cfg == nil {
 		return ""
 	}
+	pin := map[string]string{}
+	var configured []string
+	for _, a := range cfg.Accounts {
+		configured = append(configured, a.ID)
+		pin[a.ID] = a.Seat()
+	}
+	// Anything `add` vaulted outside the config counts too. Enumerating only the
+	// config is what let two names come to hold one quota pool here: `add` will
+	// vault an unconfigured account, and the entry it created was then invisible
+	// to the check meant to catch exactly that.
+	ids := configured
+	if st != nil {
+		ids = st.KnownAccounts(configured)
+	}
+
 	seen := map[string]string{} // access token -> first account id holding it
 	var problems []string
-	for _, a := range cfg.Accounts {
-		b, err := keychain.Read(keychain.VaultService(a.ID))
+	for _, id := range ids {
+		b, err := keychain.Read(keychain.VaultService(id))
 		if err != nil || b.ClaudeAIOAuth == nil {
 			continue // not vaulted, or unreadable; other checks cover that
 		}
 		if tok := b.ClaudeAIOAuth.AccessToken; tok != "" {
 			if other, dup := seen[tok]; dup {
 				problems = append(problems,
-					fmt.Sprintf("%s and %s hold the same credential", other, a.ID))
+					fmt.Sprintf("%s and %s hold the same credential", other, id))
 			} else {
-				seen[tok] = a.ID
+				seen[tok] = id
 			}
 		}
-		want := a.Seat()
+		want := pin[id]
 		if want != "" && b.Meta != nil && b.Meta.Seat() != "" && b.Meta.Seat() != want {
 			problems = append(problems, fmt.Sprintf(
 				"%s holds a credential for seat %s, but is pinned to %s",
-				a.ID, b.Meta.Seat()[:8], want[:8]))
+				id, shortSeat(b.Meta.Seat()), shortSeat(want)))
 		}
 	}
 	return strings.Join(problems, "; ")
+}
+
+// shortSeat abbreviates person@organization without discarding either half.
+//
+// This used to take the first eight characters of the whole seat, which is the
+// account uuid and nothing else — so the one message whose entire purpose is to
+// contrast two seats rendered as "holds a credential for seat bbbbbbbb, but is
+// pinned to bbbbbbbb" whenever the difference was the organization. Which is
+// the common case: the same person in two organizations is two quota pools.
+func shortSeat(seat string) string {
+	person, org, ok := strings.Cut(seat, "@")
+	if !ok {
+		return shortID(seat)
+	}
+	return shortID(person) + "@" + shortID(org)
 }
