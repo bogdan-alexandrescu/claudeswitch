@@ -1,0 +1,15 @@
+{
+  "name": "claudeswitch",
+  "description": "Claude Code integration for claudeswitch: quota context at session start and skills to check, explain and switch accounts.",
+  "owner": {
+    "name": "claudeswitch"
+  },
+  "plugins": [
+    {
+      "name": "claudeswitch",
+      "source": "./plugin",
+      "description": "Quota context at session start, and /claudeswitch:* skills to check usage, explain rotation, and switch or add accounts.",
+      "category": "productivity"
+    }
+  ]
+}

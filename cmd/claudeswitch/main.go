@@ -98,7 +98,13 @@ func main() {
 	case "login":
 		err = cmdLogin(args)
 	case "statusline":
-		err = cmdStatusline(args)
+		if len(args) > 0 && (args[0] == "install" || args[0] == "uninstall") {
+			err = cmdStatuslineManage(args[0], args[1:])
+		} else {
+			err = cmdStatusline(args)
+		}
+	case "context":
+		err = cmdContext(args)
 	case "whoami":
 		err = cmdWhoami(args)
 	case "refresh":
@@ -142,6 +148,8 @@ func usageText() {
   remove     delete an account's vault entry and observations
   rename     give a vaulted account a different id, keeping its credential
   statusline one compact line for Claude Code's status line (read-only)
+             install / uninstall set it in ~/.claude/settings.json
+  context    quota context for a Claude Code session start (read-only)
   whoami     which Claude account is live right now
   identify   record which seat each vaulted credential belongs to
   refresh    renew a vaulted account's credential (never the live one)
@@ -825,6 +833,16 @@ func cmdDoctor(args []string) error {
 			countVaulted(cfg))
 	}
 	fmt.Printf("  [ok  ] switching       live rotation is wired; `cs plan` says what it would do\n")
+	if ok, path := statuslineInstalled(); ok {
+		fmt.Printf("  [ok  ] status line     set in %s\n", path)
+	} else {
+		fmt.Printf("  [info] status line     not set; `cs statusline install` adds it\n")
+	}
+	if pluginInstalled() {
+		fmt.Printf("  [ok  ] claude plugin   installed\n")
+	} else {
+		fmt.Printf("  [info] claude plugin   not installed; see README, \"Inside Claude Code\"\n")
+	}
 	fmt.Println()
 	return nil
 }
@@ -2904,6 +2922,17 @@ func cmdSetup(args []string) error {
 	} else {
 		fmt.Printf("\n  When you are ready:  ./install.sh          (dry-run)\n")
 		fmt.Printf("                       ./install.sh --live   (acts)\n")
+	}
+
+	if ok, _ := statuslineInstalled(); !ok && askYes("\n  Show quota in Claude Code's status line", true) {
+		if err := cmdStatuslineManage("install", nil); err != nil {
+			fmt.Printf("    %v\n", err)
+		}
+	}
+	if !pluginInstalled() {
+		fmt.Printf("\n  For quota context and /claudeswitch:* skills inside Claude Code:\n")
+		fmt.Printf("    /plugin marketplace add https://github.com/bogdan-alexandrescu/claudeswitch\n")
+		fmt.Printf("    /plugin install claudeswitch@claudeswitch\n")
 	}
 
 	fmt.Printf("\n  Next:  cs status     what every account has left\n")

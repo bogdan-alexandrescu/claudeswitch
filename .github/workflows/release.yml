@@ -15,6 +15,18 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23'
+      # Claude Code offers a plugin update only when plugin.json's version
+      # changes, so a release that forgets the bump ships new skills nobody
+      # receives. Refuse it before anything is built.
+      - name: Plugin version matches the tag
+        run: |
+          set -eu
+          want="${GITHUB_REF_NAME#v}"
+          got="$(jq -r .version plugin/.claude-plugin/plugin.json)"
+          if [ "$got" != "$want" ]; then
+            echo "::error::plugin/.claude-plugin/plugin.json is version $got, tag is $want"
+            exit 1
+          fi
       - name: Build every supported target
         run: |
           set -eu

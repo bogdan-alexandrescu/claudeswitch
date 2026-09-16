@@ -135,7 +135,10 @@ account was live when it was written. No network calls, so it costs no quota.
 
 `claudeswitch statusline` prints one compact line and is strictly read-only —
 no polling, no API calls, no state writes — so it is safe to run on every
-render. Add to `~/.claude/settings.json`:
+render. `claudeswitch statusline install` adds it to `~/.claude/settings.json`
+(`setup` offers to), keeping a backup and leaving an existing status line alone
+unless you pass `--force`; `uninstall` removes it only if it is claudeswitch's.
+By hand, it is:
 
 ```json
 "statusLine": { "type": "command", "command": "claudeswitch statusline" }
@@ -143,6 +146,42 @@ render. Add to `~/.claude/settings.json`:
 
 It renders as `personal 56% · 7d 33%`, gains a `!` at the switch threshold and
 `!!` past the hard floor, and reads `personal BURNT until 14:30` after a refusal.
+
+## Inside Claude Code
+
+A Claude Code plugin ships in this repository. It needs the binary installed.
+
+```
+/plugin marketplace add https://github.com/bogdan-alexandrescu/claudeswitch
+/plugin install claudeswitch@claudeswitch
+```
+
+At the start of every session it tells Claude where quota stands, so a long task
+is not started on an account about to run out:
+
+```
+[claudeswitch] active personal · session 24% (resets 3h47m) · week 44% (resets 4d15h)
+[claudeswitch] rotates at session 85% / week 98%, mid-turn at 99% · daemon running, rotates automatically
+```
+
+That comes from `claudeswitch context`, which reads saved state only: no
+keychain, no API calls. Lines beyond these two mean something needs attention: a
+refusal, a daemon that is stopped or in dry-run, or a switch that is due.
+
+Skills, invoked by name or picked up from what you ask:
+
+| skill | does | changes anything |
+|---|---|---|
+| `/claudeswitch:status` | quota on every account | no |
+| `/claudeswitch:why` | why it did or did not rotate | no |
+| `/claudeswitch:session` | usage across accounts for a span of work | no |
+| `/claudeswitch:doctor` | diagnose the install, explain fixes | no |
+| `/claudeswitch:switch` | swap to a named account, or the one with most room | yes, without asking: a swap is hot and reversible |
+| `/claudeswitch:login` | sign in to and vault an account (`--direct`) | yes, after confirming |
+| `/claudeswitch:setup` | check the binary, install the status line, run doctor | settings.json, after confirming a replacement |
+
+First-time account setup stays in a terminal (`claudeswitch setup`); it is
+interactive in ways a skill cannot be.
 
 ## Notifications
 
@@ -229,4 +268,5 @@ internal/state        durable observations (the 7-day window outlives restarts)
 internal/keychain     credential read, mcpOAuth-aware
 internal/config       declarative accounts
 internal/render       the status view
+plugin/               the Claude Code plugin: SessionStart hook and skills
 ```

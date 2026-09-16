@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "claudeswitch",
+  "version": "0.4.0",
+  "description": "Quota context at session start, and skills to check usage, explain rotation, and switch or add accounts. Requires the claudeswitch binary.",
+  "author": {
+    "name": "claudeswitch"
+  },
+  "homepage": "https://github.com/bogdan-alexandrescu/claudeswitch",
+  "repository": "https://github.com/bogdan-alexandrescu/claudeswitch",
+  "license": "MIT"
+}

@@ -224,6 +224,30 @@ up as the daemon's entire CPU cost, pegged in `lstat`. The watcher already recei
 write event for every transcript change, so activity is now tracked from those, with one
 walk at startup. CPU went from spinning to 0.0%.
 
+### 4.11 Claude Code integration is a plugin over the CLI
+
+Decided 2026-09-16. The integration with Claude Code is a plugin (`plugin/`,
+listed by `.claude-plugin/marketplace.json` at the repo root) rather than
+gstack-style symlinks into `~/.claude/skills`: installing and updating goes
+through Claude Code's own mechanism, and claudeswitch does not write skills
+into someone's config directory.
+
+- **The plugin holds no logic.** Skills and the hook call the binary. What a
+  reading means is decided in one place, and a plugin cannot disagree with it.
+- **The SessionStart hook is read-only.** `claudeswitch context` reads
+  state.json only. A hook that raised a keychain prompt on every session start
+  would be worse than no hook. It always exits 0, and says so in one line when
+  the binary is missing or too old.
+- **Switching needs no confirmation; login does.** `use` is hot, verified and
+  reversible. `login` writes a credential to the vault.
+- **A plugin cannot set `statusLine`** (plugin settings only accept `agent` and
+  `subagentStatusLine`), so the binary writes it: `statusline install`. It never
+  replaces someone else's status line without `--force`, keeps a `.claudeswitch.bak`,
+  and preserves key order in a hand-edited file.
+- **The plugin's version is the binary's.** `plugin/.claude-plugin/plugin.json`
+  carries the release version and is bumped with every release; Claude Code only
+  offers an update when it changes.
+
 ## 5. Failure modes, and what happens
 
 | What breaks | What the daemon does |
