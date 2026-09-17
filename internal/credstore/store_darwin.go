@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -98,43 +99,90 @@ func Write(service string, b *Blob) error {
 	if err != nil {
 		return err
 	}
-	// -T names an application allowed to read this item without prompting.
+	// -T names an application allowed to read this item without prompting. It
+	// is set when a vault item is CREATED, and never when one is updated.
 	//
-	// Without it, macOS asks for approval on every read from a binary it does
-	// not recognise — and a daemon under launchd has no GUI session to answer,
-	// so the read hangs until it times out and the daemon is left blind. The
-	// approval is matched on path for an unsigned binary, so naming the install
-	// path survives rebuilds, which is exactly what kept breaking.
+	// Passing it on an update changes the item's access list, and changing an
+	// access list always asks for approval. After a rebuild that meant a
+	// prompt on every token refresh — at 23:53 on 2026-09-16 with nobody
+	// there. The write timed out, which reported a stored token as lost, and
+	// the unanswered prompt left securityd at its thread limit, so no keychain
+	// read on the machine completed for the next hour (ground truth §41).
+	//
+	// Updating the content alone raises no prompt: reads go through
+	// /usr/bin/security, which is what the access list is checked against, and
+	// the log that night showed no read prompts at all.
 	//
 	// This applies only to claudeswitch's own vault items. Claude Code's live
 	// credential is left alone: rewriting its access control to suit us could
 	// break Claude Code's own access, which is not ours to risk.
 	trust := ""
-	if IsVaultService(service) {
-		if self := selfPath(); self != "" {
-			trust = " -T " + escapeForSecurity(self)
-		}
+	if IsVaultService(service) && !itemExists(service) {
+		trust = selfPath()
 	}
-	cmd := fmt.Sprintf("add-generic-password -U -s %s -a %s%s -w %s\n",
-		escapeForSecurity(service), escapeForSecurity(currentUser()), trust,
-		escapeForSecurity(string(payload)))
-
-	ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
-	defer cancel()
-	c := exec.CommandContext(ctx, "security", "-i")
-	c.Stdin = strings.NewReader(cmd)
-	var errb bytes.Buffer
-	c.Stderr = &errb
-	if err := c.Run(); err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
+	timedOut, stderr, err := runSecurity(addCommand(service, currentUser(), trust, string(payload)))
+	if err != nil {
+		if timedOut {
+			// The content can be stored even though the command never
+			// returned — observed: the token landed and only a later step was
+			// left waiting. Check before calling the credential lost, because
+			// "lost" sends someone to log in again for nothing.
+			if readBack(service, b) == nil {
+				return nil
+			}
 			return fmt.Errorf("writing keychain item %q timed out — approval is probably "+
 				"being asked for; run a claudeswitch command in a terminal and click "+
 				"Always Allow: %w", service, ErrUnavailable)
 		}
 		// Never include the payload in an error.
-		return fmt.Errorf("writing keychain item %q: %w (%s)", service, err, strings.TrimSpace(errb.String()))
+		return fmt.Errorf("writing keychain item %q: %w (%s)", service, err, stderr)
 	}
-	return verifyWrite(service, b)
+	return readBack(service, b)
+}
+
+// addCommand is the security(1) interactive command that stores payload. An
+// empty trust leaves the item's access list as it is.
+func addCommand(service, account, trust, payload string) string {
+	t := ""
+	if trust != "" {
+		t = " -T " + escapeForSecurity(trust)
+	}
+	return fmt.Sprintf("add-generic-password -U -s %s -a %s%s -w %s\n",
+		escapeForSecurity(service), escapeForSecurity(account), t, escapeForSecurity(payload))
+}
+
+// Seams, so tests never reach the real keychain: a test that did would raise
+// the very prompts this file exists to avoid.
+var (
+	itemExists  = securityItemExists
+	runSecurity = runSecurityInteractive
+	readBack    = verifyWrite
+)
+
+// securityItemExists reports whether an item is already stored. It reads
+// attributes only, which needs no approval. Anything but a clear "not found"
+// counts as present, since the cost of wrongly thinking so is only a missing
+// -T, while the cost of wrongly thinking otherwise is a prompt.
+func securityItemExists(service string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
+	defer cancel()
+	err := exec.CommandContext(ctx, "security", "find-generic-password", "-s", service).Run()
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 44 { // errSecItemNotFound
+		return false
+	}
+	return true
+}
+
+func runSecurityInteractive(stdin string) (timedOut bool, stderr string, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
+	defer cancel()
+	c := exec.CommandContext(ctx, "security", "-i")
+	c.Stdin = strings.NewReader(stdin)
+	var errb bytes.Buffer
+	c.Stderr = &errb
+	err = c.Run()
+	return ctx.Err() == context.DeadlineExceeded, strings.TrimSpace(errb.String()), err
 }
 
 // Delete removes an item. Missing is not an error.

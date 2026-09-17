@@ -1156,3 +1156,50 @@ reading of every idle account — the figures a rotation decides on.
   ending the tick.
 - `status` and the session context say how many accounts are backing off rather than
   implying they all are, and a stale row is blamed on a lock only when that row was refused.
+
+## 41. A token refresh raised a prompt nobody saw, and the keychain stopped answering for an hour
+
+After the daemon was rebuilt on 2026-09-16, it refreshed two idle accounts overnight
+(`work-team` at 23:53, `personal` at 03:46). Both logged:
+
+```
+CREDENTIAL AT RISK: refreshed "work-team" but could not store the new token
+(writing keychain item "claudeswitch:work-team" timed out — approval is probably
+being asked for …). The old token is now revoked; run `claude` and /login for this account
+```
+
+Both accounts went on polling successfully with their vaulted tokens — `work-team`
+still at 04:44, five hours after a refresh triggered by the old token being within an hour
+of expiry. The stored token was the new one. The unified log says why:
+
+```
+23:53:29.877 security   SecACLSetSimpleContents
+23:53:29.886 security   SecKeychainItemModifyContent        ← the token, stored
+23:53:29.915 security   SecACLSetSimpleContents
+23:53:29.918 securityd  displaying keychain prompt for /usr/bin/security(60438); ACL: …
+```
+
+`credstore.Write` passed `-T <claudeswitch path>` on every write. On an existing item that
+is an access-list change, and an access-list change always asks. The content was written
+first; the process then waited on the prompt, was killed at the 30-second timeout, and the
+caller reported the whole write as failed.
+
+Between 19:40 and 04:50 securityd displayed five prompts, every one an access-list change
+on a write. None was for a read: reads go through `/usr/bin/security`, and that is the
+program the access list is checked against, not claudeswitch.
+
+The unanswered prompt did more than mislabel a credential. From 00:02 securityd logged
+`securityd has reached its thread limit (100) - service deadlock is possible`, and no
+`SecKeychainItemCopyContent` from any `security` process completed until 01:06. The daemon
+could not read the live credential, went blind, and the watchdog restarted it three times
+(00:13, 00:38, 01:06). Every other keychain user on the machine — Claude Code included — was
+equally unable to read for that hour. The link from the pending prompt to the thread limit
+is inferred from the timing; the thread-limit messages and the hour without a read are
+logged.
+
+### What changed
+
+- A vault item is given `-T` when it is created, never when it is updated. Refreshing a
+  token changes only its content, which raises no prompt.
+- A write that times out is read back before being reported. If the new token is there,
+  the write succeeded, whatever happened to the command afterwards.
