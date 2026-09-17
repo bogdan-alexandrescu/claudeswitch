@@ -279,3 +279,28 @@ func TestExpiredLocksAreForgotten(t *testing.T) {
 		t.Errorf("stale lock kept: %v", b.locks)
 	}
 }
+
+// The account in use backs off no further than MaxLiveBackoff, however long the
+// refusals go on; an idle one keeps doubling.
+func TestTheLiveAccountBacksOffLessFar(t *testing.T) {
+	b, now := fixedBudget(time.Now())
+	var live, idle time.Duration
+	for i := 0; i < 8; i++ {
+		b.PenalizeLive("live", 0)
+		b.Penalize("idle", 0)
+		live, _ = b.CurrentBackoff("live")
+		idle, _ = b.CurrentBackoff("idle")
+		*now = now.Add(MaxBackoff + time.Second)
+	}
+	if live > MaxLiveBackoff {
+		t.Errorf("live backoff reached %v, cap is %v", live, MaxLiveBackoff)
+	}
+	if idle <= MaxLiveBackoff {
+		t.Errorf("idle backoff stopped at %v; only the live account is capped", idle)
+	}
+	b2, _ := fixedBudget(time.Now())
+	b2.PenalizeLive("live", 10*time.Minute)
+	if d, _ := b2.CurrentBackoff("live"); d < 10*time.Minute {
+		t.Errorf("a server Retry-After of 10m was cut to %v", d)
+	}
+}

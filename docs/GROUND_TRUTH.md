@@ -1203,3 +1203,19 @@ logged.
   token changes only its content, which raises no prompt.
 - A write that times out is read back before being reported. If the new token is there,
   the write succeeded, whatever happened to the command afterwards.
+
+### The day after, and the proof
+
+The fix shipped as v0.4.3 but the daemon still ran the build before it, and on 2026-09-17
+the same thing happened for longer: an access-list prompt at 09:04 went unanswered,
+securityd reached its thread limit at 09:16, and the keychain barely answered until 16:53,
+when four prompts were approved in a row and four refreshes completed. For those seven and
+a half hours the watchdog restarted a blind daemon every 25–35 minutes.
+
+With v0.4.3 installed, `cs refresh work-team` at 17:51:52 — the same vault update the daemon
+performs — logged one `SecKeychainItemModifyContent`, no `SecACLSetSimpleContents`, and no
+`displaying keychain prompt`. It finished in a second.
+
+The live account then drew five refusals in a row, and doubling put its next read 16 minutes
+away: 25 minutes unread at 61%. The account in use now backs off no further than four
+minutes (`MaxLiveBackoff`); idle accounts still go to sixteen.

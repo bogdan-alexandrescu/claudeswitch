@@ -349,6 +349,14 @@ const MinBackoff = 60 * time.Second
 // hammering, short enough that recovery is not missed by an hour.
 const MaxBackoff = 16 * time.Minute
 
+// MaxLiveBackoff caps it for the account in use. That account is the one a
+// rotation decides on, and it is also the one refused most, because Claude Code
+// spends its allowance too — five straight refusals left it unread for 25
+// minutes at 61% (2026-09-17), long enough to cross the trigger unseen. Idle
+// accounts can wait; this one cannot. A longer Retry-After from the server is
+// still honoured.
+const MaxLiveBackoff = 4 * time.Minute
+
 // MaxLock bounds how long we will stop calling the API, whatever Retry-After
 // says. It exists so the pause can never outlast the watchdog that is supposed
 // to notice a daemon which has stopped seeing: if it could, the watchdog would
@@ -364,6 +372,15 @@ const MaxLock = 20 * time.Minute
 // further each time is both politer and likelier to recover, and a success
 // resets it.
 func (b *Budget) Penalize(cred string, retryAfter time.Duration) {
+	b.penalize(cred, retryAfter, MaxBackoff)
+}
+
+// PenalizeLive is Penalize for the credential currently in use.
+func (b *Budget) PenalizeLive(cred string, retryAfter time.Duration) {
+	b.penalize(cred, retryAfter, MaxLiveBackoff)
+}
+
+func (b *Budget) penalize(cred string, retryAfter, maxBackoff time.Duration) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	key := lockKey(cred)
@@ -387,8 +404,8 @@ func (b *Budget) Penalize(cred string, retryAfter time.Duration) {
 		wait := retryAfter
 		// Double per consecutive refusal, starting at the minimum.
 		backoff := MinBackoff << min(l.Strikes-1, 6)
-		if backoff > MaxBackoff {
-			backoff = MaxBackoff
+		if backoff > maxBackoff {
+			backoff = maxBackoff
 		}
 		if wait < backoff {
 			wait = backoff

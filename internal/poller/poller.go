@@ -437,7 +437,13 @@ func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token strin
 	u, err := p.client.Fetch(ctx, token)
 	if err != nil {
 		if rl, ok := usage.IsRateLimited(err); ok {
-			p.budget.Penalize(token, rl.RetryAfter)
+			if acct.ID == p.st.Active || acct.ID == "active" {
+				// "active" is PollActive's scratch record: the live
+				// credential before it is attributed.
+				p.budget.PenalizeLive(token, rl.RetryAfter)
+			} else {
+				p.budget.Penalize(token, rl.RetryAfter)
+			}
 			acct.LastErr = rl.Error()
 			// Report the backoff actually applied, not the header value: the
 			// endpoint sends Retry-After: 0, and logging that was misleading.

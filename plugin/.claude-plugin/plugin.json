@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "cs",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "claudeswitch for Claude Code: quota context at session start, and /cs skills to check usage, explain rotation, and switch or add accounts. Requires the claudeswitch binary.",
   "author": {
     "name": "claudeswitch"
