@@ -13,7 +13,7 @@ import (
 func TestEveryConfigSettingIsWritten(t *testing.T) {
 	values := map[string]string{
 		"switch_at": "80", "switch_at_weekly": "95", "hard_floor": "99",
-		"switch_when": "immediate", "max_switch_wait": "45s", "cooldown": "7m0s",
+		"switch_when": "immediate", "hot_threshold": "88", "max_switch_wait": "45s", "cooldown": "7m0s",
 		"poll_active": "2m0s", "poll_hot": "1m0s", "poll_idle": "15m0s",
 		"api_budget": "10", "refresh_window": "2h0m0s", "refresh_probe": "12h0m0s",
 	}

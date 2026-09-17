@@ -32,7 +32,8 @@ const (
 	ActiveInterval    = 4 * time.Minute
 	ActiveHotInterval = 90 * time.Second // once the active account nears the trigger
 	IdleInterval      = 20 * time.Minute
-	// HotThreshold is where close watching begins. Well below the trigger,
+	// HotThreshold is the default for config's hot_threshold, used when a Config
+	// does not set one. It is where close watching begins. Well below the trigger,
 	// because the decision needs to be taken before the line is crossed, not
 	// after — and a fast burn covers the gap between 60 and 85 in minutes.
 	HotThreshold = 60.0
@@ -407,7 +408,11 @@ func (p *Poller) schedule(id string, now time.Time, acct *state.Account) {
 			// regardless of level: at 3 points a minute a four-minute gap is
 			// twelve points of drift, which is enough to sail past the trigger
 			// between polls.
-			if worst >= HotThreshold || acct.BurnRate() >= FastBurn {
+			hot := p.cfg.HotThreshold
+			if hot <= 0 {
+				hot = HotThreshold
+			}
+			if worst >= hot || acct.BurnRate() >= FastBurn {
 				iv = p.cfg.PollHot.Duration
 				if iv <= 0 {
 					iv = ActiveHotInterval

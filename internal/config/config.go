@@ -37,6 +37,12 @@ const (
 	// anti-flap cooldown and the preference for swapping between turns.
 	DefaultHardFloor = 99.0 // above this, swap mid-turn rather than wait for idle
 	DefaultReserve   = 70.0 // personal is ineligible for overflow above this
+	// DefaultHotThreshold is where close watching begins, as a percentage of
+	// whichever window is worse. It is far below either trigger on purpose:
+	// watching starts before the decision matters. Raise it when the active
+	// account's own allowance is under pressure — at 20-second polling one
+	// account can spend more than the whole call budget (2026-09-17).
+	DefaultHotThreshold = 60.0
 )
 
 type Account struct {
@@ -145,10 +151,13 @@ type Config struct {
 	SwitchAt float64 `toml:"switch_at"`
 	// SwitchAtWeekly is the same idea for the seven-day window. Kept separate
 	// because the two windows recover on completely different timescales.
-	SwitchAtWeekly float64  `toml:"switch_at_weekly"`
-	HardFloor      float64  `toml:"hard_floor"`
-	SwitchWhen     string   `toml:"switch_when"`
-	Cooldown       Duration `toml:"cooldown"`
+	SwitchAtWeekly float64 `toml:"switch_at_weekly"`
+	HardFloor      float64 `toml:"hard_floor"`
+	// HotThreshold is the utilization at which the active account is polled at
+	// PollHot rather than PollActive.
+	HotThreshold float64  `toml:"hot_threshold"`
+	SwitchWhen   string   `toml:"switch_when"`
+	Cooldown     Duration `toml:"cooldown"`
 	// MaxSwitchWait bounds how long a wanted switch will hold out for an idle
 	// gap. Preferring to swap between turns is right; waiting indefinitely is
 	// not, because during continuous heavy use — precisely when a limit is
@@ -228,6 +237,7 @@ func Load(path string) (*Config, error) {
 		SwitchAt:       DefaultSwitchAt,
 		SwitchAtWeekly: DefaultSwitchAtWeekly,
 		HardFloor:      DefaultHardFloor,
+		HotThreshold:   DefaultHotThreshold,
 		SwitchWhen:     "idle",
 		Cooldown:       Duration{10 * time.Minute},
 		MaxSwitchWait:  Duration{30 * time.Second},
@@ -285,6 +295,9 @@ func (c *Config) validate() error {
 	}
 	if c.HardFloor < c.SwitchAt {
 		return fmt.Errorf("hard_floor (%v) must be at or above switch_at (%v)", c.HardFloor, c.SwitchAt)
+	}
+	if c.HotThreshold < 0 || c.HotThreshold > 100 {
+		return fmt.Errorf("hot_threshold must be between 0 and 100, got %v", c.HotThreshold)
 	}
 	if c.RefreshWindow.Duration < 0 || c.RefreshProbe.Duration < 0 {
 		return fmt.Errorf("refresh_window and refresh_probe cannot be negative")
@@ -408,6 +421,8 @@ func (c *Config) Write(path string) error {
 	fmt.Fprintf(&b, "hard_floor      = %g     # above this, swap mid-turn rather than wait for idle\n",
 		or(c.HardFloor, DefaultHardFloor))
 	fmt.Fprintf(&b, "switch_when     = %q\n", c.SwitchWhen)
+	fmt.Fprintf(&b, "hot_threshold   = %g     # poll every poll_hot above this, rather than poll_active\n",
+		or(c.HotThreshold, DefaultHotThreshold))
 	fmt.Fprintf(&b, "cooldown        = %q   # anti-flap\n", c.Cooldown.String())
 	fmt.Fprintf(&b, "max_switch_wait = %q   # stop waiting for an idle gap after this\n", c.MaxSwitchWait.String())
 	b.WriteString("\n# Keeping vaulted credentials alive. Refreshing revokes the previous token,\n")

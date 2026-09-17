@@ -87,6 +87,7 @@ func TestWriteKeepsEverySetting(t *testing.T) {
 	on, off := true, false
 	in := &Config{
 		SwitchAt: 80, SwitchAtWeekly: 95, HardFloor: 99, SwitchWhen: "immediate",
+		HotThreshold:  88,
 		Cooldown:      Duration{7 * time.Minute},
 		MaxSwitchWait: Duration{45 * time.Second},
 		AutoRefresh:   &off,

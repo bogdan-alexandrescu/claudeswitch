@@ -60,7 +60,7 @@ macOS and Linux on amd64 and arm64, and a `checksums.txt`. The archives are
 reproducible: the same tag always produces the same bytes.
 
 ```sh
-VERSION=v0.4.4
+VERSION=v0.4.5
 TARGET=darwin_arm64            # darwin_amd64, linux_amd64, linux_arm64
 curl -LO "https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION/claudeswitch_${VERSION}_${TARGET}.tar.gz"
 curl -LO "https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION/checksums.txt"
@@ -380,6 +380,7 @@ switch_at        = 85     # rotate away at this session (5-hour) utilization
 switch_at_weekly = 98     # ...and at this weekly utilization
 hard_floor       = 99     # above this, swap mid-turn rather than wait for an idle gap
 switch_when      = "idle"
+hot_threshold    = 60     # above this, the account in use is polled every poll_hot
 cooldown         = "10m"
 max_switch_wait  = "30s"  # how long a due switch waits for an idle gap
 
