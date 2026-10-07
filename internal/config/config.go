@@ -85,6 +85,27 @@ func (c *Config) CallsPerWindow() float64 {
 	return calls
 }
 
+// DefaultPollHot is the hot polling cadence. UsageBurstCalls is roughly how
+// many usage calls one account's allowance absorbs in a burst before refusing,
+// recovering over 10-15 minutes (GROUND_TRUTH §42, multi-instance). At 20s a
+// hot account emptied it in about 8 minutes.
+const (
+	DefaultPollHot  = 60 * time.Second
+	UsageBurstCalls = 25
+	// DefaultPollHotSetting is DefaultPollHot as a person would type it.
+	DefaultPollHotSetting = "60s"
+)
+
+// HotDrainMinutes is how long a hot cadence takes to spend an account's burst
+// allowance, and whether it is faster than the default — the threshold at
+// which doctor and status warn. Zero means unset, which is the default.
+func HotDrainMinutes(pollHot time.Duration) (int, bool) {
+	if pollHot <= 0 || pollHot >= DefaultPollHot {
+		return 0, false
+	}
+	return int((time.Duration(UsageBurstCalls) * pollHot).Round(time.Minute) / time.Minute), true
+}
+
 // RefreshEnabled reports whether vaulted credentials should be kept alive.
 func (c *Config) RefreshEnabled() bool { return c.AutoRefresh == nil || *c.AutoRefresh }
 
@@ -244,10 +265,13 @@ func Load(path string) (*Config, error) {
 		RefreshWindow:  Duration{time.Hour},
 		RefreshProbe:   Duration{24 * time.Hour},
 		PollActive:     Duration{60 * time.Second},
-		PollHot:        Duration{20 * time.Second},
-		PollIdle:       Duration{10 * time.Minute},
-		APIBudget:      12,
-		Path:           path,
+		// 60s, not 20s: the usage endpoint allows about 25 calls per account in
+		// a burst and takes 10-15 minutes to recover, so 20-second hot polling
+		// emptied it in about 8 minutes (GROUND_TRUTH §42, multi-instance).
+		PollHot:   Duration{DefaultPollHot},
+		PollIdle:  Duration{10 * time.Minute},
+		APIBudget: 12,
+		Path:      path,
 	}
 	if _, err := toml.DecodeFile(path, c); err != nil {
 		if os.IsNotExist(err) {
@@ -276,6 +300,12 @@ func (c *Config) Validate() error { return c.validate() }
 // each one clears the floor by definition.
 func (c *Config) Warnings() []string {
 	var out []string
+	if mins, fast := HotDrainMinutes(c.PollHot.Duration); fast {
+		out = append(out, fmt.Sprintf(
+			"poll_hot (%s) drains an account's ~%d-call usage allowance in ~%d min, and it takes "+
+				"10-15 min to recover. Fix: cs config set poll_hot %s",
+			c.PollHot.Duration, UsageBurstCalls, mins, DefaultPollHotSetting))
+	}
 	if c.SwitchAtWeekly > 0 && c.HardFloor < c.SwitchAtWeekly {
 		out = append(out, fmt.Sprintf(
 			"hard_floor (%g) is below switch_at_weekly (%g), so every weekly rotation "+

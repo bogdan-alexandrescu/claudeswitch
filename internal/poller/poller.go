@@ -120,6 +120,27 @@ func New(cfg *config.Config, st *state.State, log *slog.Logger) *Poller {
 
 func (p *Poller) Budget() *usage.Budget { return p.budget }
 
+// SetConfig replaces the config the poller schedules from, for a daemon that
+// reloaded it. An added account has no schedule yet, which makes it due on the
+// next tick; a removed one loses its schedule. Must be called from the goroutine
+// that drives the poller — there is no locking here, as there is none anywhere
+// else in it.
+func (p *Poller) SetConfig(cfg *config.Config) {
+	p.cfg = cfg
+	if cfg.APIBudget > 0 {
+		p.budget.SetAllowance(cfg.APIBudget)
+	}
+	keep := map[string]bool{}
+	for _, a := range cfg.Accounts {
+		keep[a.ID] = true
+	}
+	for id := range p.nextPoll {
+		if !keep[id] {
+			delete(p.nextPoll, id)
+		}
+	}
+}
+
 // Blind reports how long it has been since any poll succeeded, and whether that
 // is long enough to be a fault rather than a hiccup. Zero duration means a poll
 // has succeeded recently.

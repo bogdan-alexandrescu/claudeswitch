@@ -60,7 +60,7 @@ macOS and Linux on amd64 and arm64, and a `checksums.txt`. The archives are
 reproducible: the same tag always produces the same bytes.
 
 ```sh
-VERSION=v0.4.8
+VERSION=v0.4.9
 TARGET=darwin_arm64            # darwin_amd64, linux_amd64, linux_arm64
 curl -LO "https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION/claudeswitch_${VERSION}_${TARGET}.tar.gz"
 curl -LO "https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION/checksums.txt"
@@ -150,8 +150,8 @@ claudeswitch audit --kind switch --since 24h
 
 ```sh
 claudeswitch use <id>            # swap onto a vaulted account (hot; no restart)
-claudeswitch login <id> --direct # sign in to an account and vault it
-claudeswitch add <id>            # vault the credential that is live right now
+claudeswitch login <id> --direct # sign in to an account, vault it, add it to the config
+claudeswitch add [<id>]          # vault the credential that is live right now (after /login)
 claudeswitch refresh <id>        # renew a vaulted credential (never the live one)
 ```
 
@@ -192,11 +192,29 @@ Most read commands take `--json`.
 
 ## Adding an account
 
+The quickest way, if you can sign in through Claude Code:
+
 ```sh
-claudeswitch login work-a --direct                     # sign in, verify, vault
-claudeswitch login work-a --direct --browser Safari    # ...in a browser signed into that account
-claudeswitch login work-a --code <code>                # finish, with the code the browser shows
-claudeswitch login work-a --sso                        # an SSO-backed organization
+# in Claude Code: /login, as the account you want to add
+cs add              # suggests a name from the account, asks you to confirm it
+cs add work-b       # or name it yourself
+```
+
+That is all: the credential is verified and vaulted, and the account is added
+to your config — pinned to its seat, scope `work` (`--scope personal` for the
+other kind), last in `priority`. A running daemon notices the config change and
+starts polling the new account without a restart. Running `add` again for the
+same account refreshes its stored credential in place.
+
+To add an account **without** touching the session you are working in, sign in
+to it directly instead. Any name works, including one your config has never
+seen; it is written in, pinned to whichever seat actually signed in:
+
+```sh
+cs login work-b --direct                     # sign in, verify, vault, add to config
+cs login work-b --direct --browser Safari    # ...in a browser signed into that account
+cs login work-b --code <code>                # finish, with the code the browser shows
+cs login work-b --sso                        # an SSO-backed organization
 ```
 
 A login returns a credential for **whichever account your browser is signed
@@ -204,14 +222,18 @@ into**; nothing in the request can override that. So sign in using a browser
 that holds the account you want — separate browser applications keep separate
 cookies, which is what `--browser` is for.
 
-`login` checks the part that is easy to get wrong. It verifies the credential
-that came back against the seat pinned in your config, refuses to store a
-mismatch, and names the account it actually got. `--direct` obtains the
-credential without touching your live session at all; without it, `login` signs
-in through Claude Code and puts your previous account back afterwards.
+`login` and `add` check the part that is easy to get wrong. If your config
+already pins the name to a seat, the credential that came back is verified
+against it and a mismatch is refused, naming the account actually got. A seat
+already vaulted under a **different** name is refused too, and nothing is
+written. `--direct` obtains the credential without touching your live session
+at all; without it, `login` signs in through Claude Code and puts your previous
+account back afterwards.
 
-`claudeswitch add <id>` is the lower-level version: it vaults whatever is live
-right now, with the same verification.
+A token from `claude setup-token` cannot be used: it carries the
+`user:inference` scope only, and the usage endpoint refuses it with a 403
+(measured 2026-10-07), so there is nothing to rotate on. Sign in with
+`cs login <id> --direct` instead.
 
 Identity is the **seat** — one person within one organization — never the
 email. One address can belong to several organizations with separate quota
@@ -381,6 +403,7 @@ switch_at_weekly = 98     # ...and at this weekly utilization
 hard_floor       = 99     # above this, swap mid-turn rather than wait for an idle gap
 switch_when      = "idle"
 hot_threshold    = 60     # above this, the account in use is polled every poll_hot
+poll_hot         = "1m"   # the default; faster drains the usage API's burst allowance
 cooldown         = "10m"
 max_switch_wait  = "30s"  # how long a due switch waits for an idle gap
 

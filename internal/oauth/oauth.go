@@ -63,6 +63,7 @@ type pendingFlow struct {
 	AccountID string    `json:"account_id"`
 	OrgID     string    `json:"org_id"`
 	Pinned    bool      `json:"pinned"`
+	Scope     string    `json:"scope,omitempty"`
 	URL       string    `json:"url"`
 	Verifier  string    `json:"verifier"`
 	State     string    `json:"state"`
@@ -91,47 +92,58 @@ func pendingPath() (string, error) {
 	return filepath.Join(dir, "pending-login.json"), nil
 }
 
+// Pending is what a half-finished login was started for: the account name,
+// the seat it must turn out to be (empty when not yet known), and the scope to
+// give it if the config has no block for it yet.
+type Pending struct {
+	AccountID string
+	OrgID     string
+	Scope     string
+	Pinned    bool
+}
+
 // Save writes the flow so a later invocation can complete it. 0600, and
 // deliberately short-lived.
-func (f *AuthFlow) Save(accountID, orgID string, pinned bool) error {
-	p, err := pendingPath()
+func (f *AuthFlow) Save(p Pending) error {
+	path, err := pendingPath()
 	if err != nil {
 		return err
 	}
 	b, err := json.Marshal(pendingFlow{
-		AccountID: accountID, OrgID: orgID, Pinned: pinned, URL: f.URL,
+		AccountID: p.AccountID, OrgID: p.OrgID, Pinned: p.Pinned, Scope: p.Scope, URL: f.URL,
 		Verifier: f.verifier, State: f.state, StartedAt: time.Now(),
 	})
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(p, b, 0o600)
+	return os.WriteFile(path, b, 0o600)
 }
 
-// LoadPending returns a saved flow, the account it was started for, and its
-// organization. A stale or absent flow is an error, never a silent retry.
-func LoadPending() (*AuthFlow, string, string, bool, error) {
+// LoadPending returns a saved flow and what it was started for. A stale or
+// absent flow is an error, never a silent retry.
+func LoadPending() (*AuthFlow, Pending, error) {
 	p, err := pendingPath()
 	if err != nil {
-		return nil, "", "", false, err
+		return nil, Pending{}, err
 	}
 	b, err := os.ReadFile(p)
 	if os.IsNotExist(err) {
-		return nil, "", "", false, fmt.Errorf("no login is in progress; start one first")
+		return nil, Pending{}, fmt.Errorf("no login is in progress; start one first")
 	}
 	if err != nil {
-		return nil, "", "", false, err
+		return nil, Pending{}, err
 	}
 	var pf pendingFlow
 	if err := json.Unmarshal(b, &pf); err != nil {
-		return nil, "", "", false, fmt.Errorf("the pending login is unreadable: %w", err)
+		return nil, Pending{}, fmt.Errorf("the pending login is unreadable: %w", err)
 	}
 	if time.Since(pf.StartedAt) > PendingTTL {
 		_ = ClearPending()
-		return nil, "", "", false, fmt.Errorf("that login was started %s ago and has expired; start a new one",
+		return nil, Pending{}, fmt.Errorf("that login was started %s ago and has expired; start a new one",
 			time.Since(pf.StartedAt).Round(time.Minute))
 	}
-	return &AuthFlow{URL: pf.URL, verifier: pf.Verifier, state: pf.State}, pf.AccountID, pf.OrgID, pf.Pinned, nil
+	return &AuthFlow{URL: pf.URL, verifier: pf.Verifier, state: pf.State},
+		Pending{AccountID: pf.AccountID, OrgID: pf.OrgID, Scope: pf.Scope, Pinned: pf.Pinned}, nil
 }
 
 // ClearPending removes a saved flow. Called as soon as it is used or abandoned,

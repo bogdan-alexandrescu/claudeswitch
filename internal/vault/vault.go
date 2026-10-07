@@ -138,6 +138,15 @@ func (v *Vault) OrgOf(accountID string) string {
 // It verifies the credential works before storing it, so a broken entry never
 // enters the vault.
 func (v *Vault) Store(ctx context.Context, accountID, expectSeat string, conflictCheck []string) (*Entry, error) {
+	return v.StoreGuarded(ctx, accountID, expectSeat, conflictCheck, nil)
+}
+
+// StoreGuarded is Store with a last check: once the live credential is known to
+// be the right seat and no duplicate, guard sees it and the entry it would
+// replace (nil when there is none), and an error from it stores nothing. It is
+// how `add` refuses to overwrite a vaulted credential with a staler one.
+func (v *Vault) StoreGuarded(ctx context.Context, accountID, expectSeat string, conflictCheck []string,
+	guard func(live, vaulted *keychain.OAuth) error) (*Entry, error) {
 	live, err := keychain.ReadLive()
 	if err != nil {
 		return nil, err
@@ -190,6 +199,16 @@ func (v *Vault) Store(ctx context.Context, accountID, expectSeat string, conflic
 	orgID := pr.Organization.UUID
 	if u != nil && u.OrgID != "" {
 		orgID = u.OrgID
+	}
+
+	if guard != nil {
+		var vaulted *keychain.OAuth
+		if b, err := keychain.Read(keychain.VaultService(accountID)); err == nil {
+			vaulted = b.ClaudeAIOAuth
+		}
+		if err := guard(live.ClaudeAIOAuth, vaulted); err != nil {
+			return nil, err
+		}
 	}
 
 	// Vault the account credential alone. mcpOAuth belongs to the machine, not
