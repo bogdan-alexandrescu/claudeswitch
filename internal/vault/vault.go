@@ -180,12 +180,7 @@ func (v *Vault) Store(ctx context.Context, accountID, expectSeat string, conflic
 			continue
 		}
 		if seat, _ := v.IdentityOf(other); seat != "" && seat == pr.Seat() {
-			return nil, fmt.Errorf(
-				"this is the same account AND organization already vaulted as %q — %s.\n"+
-					"  Nothing was stored. A quota pool is one person in one organization, so to\n"+
-					"  add a different pool you need a different person, a different organization,\n"+
-					"  or both.",
-				other, pr.Describe())
+			return nil, &DuplicateSeatError{Other: other, Who: pr.Describe()}
 		}
 	}
 
@@ -317,11 +312,7 @@ func (v *Vault) StoreTokens(ctx context.Context, accountID, expectSeat string, t
 			continue
 		}
 		if seat, _ := v.IdentityOf(other); seat != "" && seat == pr.Seat() {
-			return nil, fmt.Errorf(
-				"that is the same account AND organization already vaulted as %q — %s.\n"+
-					"  Nothing was stored. A quota pool is one person in one organization, so to add\n"+
-					"  a different pool you need a different person, a different organization, or both.",
-				other, pr.Describe())
+			return nil, &DuplicateSeatError{Other: other, Who: pr.Describe()}
 		}
 	}
 
@@ -742,6 +733,24 @@ func (v *Vault) IsLive(accountID string) bool {
 		return false
 	}
 	return cur.AccessToken == live.ClaudeAIOAuth.AccessToken
+}
+
+// DuplicateSeatError means the credential belongs to a seat already vaulted
+// under another name. It is a type so the caller can say what to do next: only
+// it knows whether the credential was whatever happened to be live (`add`) or
+// one that was just signed in to (`login`).
+type DuplicateSeatError struct {
+	Other string // the name it is already vaulted as
+	Who   string // the person and organization, as Describe gives them
+}
+
+func (e *DuplicateSeatError) Error() string {
+	return fmt.Sprintf(
+		"this is the same account AND organization already vaulted as %q — %s.\n"+
+			"  Nothing was stored. A quota pool is one person in one organization, so to\n"+
+			"  add a different pool you need a different person, a different organization,\n"+
+			"  or both.",
+		e.Other, e.Who)
 }
 
 // WrongOrgError means the live credential does not belong to the organization

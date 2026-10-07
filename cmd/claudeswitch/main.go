@@ -965,7 +965,7 @@ func cmdAdd(args []string) error {
 	others := st.KnownAccounts(configured)
 	e, err := v.Store(ctx, id, expectSeat, others)
 	if err != nil {
-		return err
+		return addError(id, err)
 	}
 	st.AddVaulted(id)
 	acct := st.Get(id)
@@ -1012,6 +1012,21 @@ func cmdAdd(args []string) error {
 // after signing in, so this is not a file a person can correctly write in
 // advance. Printing it and asking them to retype it is how the organization-only
 // pin survived as long as it did.
+// addError explains a duplicate in terms of what `add` does. It saves the
+// credential that is live, so meeting an account already vaulted almost always
+// means the person is still signed in as it and wanted to add a different one —
+// which is a sign-in, and `add` never signs in.
+func addError(id string, err error) error {
+	var dup *vault.DuplicateSeatError
+	if !errors.As(err, &dup) {
+		return err
+	}
+	return fmt.Errorf("the credential live right now is already vaulted as %q (%s).\n"+
+		"  Nothing was stored. `add` saves whatever Claude Code is signed in to.\n"+
+		"  To add a different account, sign in to it:\n"+
+		"      cs login %s", dup.Other, dup.Who, id)
+}
+
 func offerConfigBlock(path, id, scope string, e *vault.Entry) {
 	block := fmt.Sprintf("\n[[account]]\nid           = %q\nscope        = %q\n"+
 		"account_uuid = %q\norg_id       = %q\n", id, scope, e.AccountUUID, e.OrgID)
