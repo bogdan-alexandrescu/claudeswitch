@@ -1805,7 +1805,9 @@ func cmdWhoami(args []string) error {
 		return nil
 	}
 
+	seat := ""
 	if pr, perr := vault.New(logger(false)).Identify(ctx, blob.ClaudeAIOAuth.AccessToken); perr == nil {
+		seat = pr.Seat()
 		fmt.Printf("  signed in as  %s (%s)\n", pr.Account.Email, pr.Account.Name)
 		fmt.Printf("  account uuid  %s   <- this is the quota pool, not the org\n", pr.Account.UUID)
 		fmt.Printf("  organization  %s  %s\n", pr.Organization.Name, shortID(pr.Organization.UUID))
@@ -1819,21 +1821,54 @@ func cmdWhoami(args []string) error {
 		fmt.Printf("    account block does not move when the credential is swapped.\n")
 	}
 
-	known := ""
-	for _, c := range cfg.Accounts {
-		if c.OrgID != "" && c.OrgID == u.OrgID {
-			known = c.Name()
-		}
-	}
 	fmt.Println()
-	if known != "" {
-		fmt.Printf("  → known to claudeswitch as %q.\n", known)
-	} else {
-		fmt.Printf("  → this organization is NOT in your config: a new account.\n")
-		fmt.Printf("    Vault it with:  claudeswitch add <name>\n")
-	}
+	fmt.Print(whoamiVerdict(cfg, seat, u.OrgID))
 	fmt.Println()
 	return nil
+}
+
+// whoamiVerdict says which configured account the live credential is. Only a
+// seat — this person in this organization — can say that: a team organization
+// has a pool per member, so matching the organization alone named a colleague's
+// account as the one signed in. Org-only entries and a missing seat are reported
+// as candidates, with what would settle it, never as a match.
+func whoamiVerdict(cfg *config.Config, seat, orgID string) string {
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
+	if id := cfg.AccountBySeat(seat); id != "" {
+		return fmt.Sprintf("  → known to claudeswitch as %q.\n", id)
+	}
+	var sameOrg []string
+	for _, c := range cfg.Accounts {
+		if c.OrgID != "" && c.OrgID == orgID {
+			sameOrg = append(sameOrg, c.Name())
+		}
+	}
+	quoted := func(ids []string) string {
+		q := make([]string, len(ids))
+		for i, id := range ids {
+			q[i] = strconv.Quote(id)
+		}
+		return strings.Join(q, ", ")
+	}
+	var b strings.Builder
+	switch {
+	case len(sameOrg) == 0:
+		b.WriteString("  → this organization is NOT in your config: a new account.\n")
+		b.WriteString("    Vault it with:  claudeswitch add <name>\n")
+	case seat == "":
+		fmt.Fprintf(&b, "  → cannot tell which person this is: the profile could not be read, and\n"+
+			"    %s in this organization may be someone else's seat.\n", quoted(sameOrg))
+	default:
+		person, _, _ := strings.Cut(seat, "@")
+		fmt.Fprintf(&b, "  → this seat (%s) is not in your config.\n", person)
+		fmt.Fprintf(&b, "    %s share its organization, but a team organization has a\n", quoted(sameOrg))
+		b.WriteString("    separate quota pool per person. If one of them is this seat, pin it with\n")
+		fmt.Fprintf(&b, "      account_uuid = %q\n", person)
+		b.WriteString("    otherwise vault it with:  claudeswitch add <name>\n")
+	}
+	return b.String()
 }
 
 // cachedIdentity reads what Claude Code believes about the signed-in account.
