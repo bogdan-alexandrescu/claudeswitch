@@ -1,5 +1,6 @@
 ---
 name: session
+user-invocable: false
 description: Report token usage for a span of work across every Claude account it touched, since rotation splits one session over several accounts. Use when asked "how much have I used today", "what did this session cost", or "usage across accounts".
 allowed-tools:
   - Bash(claudeswitch session:*)

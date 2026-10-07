@@ -1,5 +1,6 @@
 ---
 name: switch
+user-invocable: false
 description: Switch Claude Code to another claudeswitch account, hot and without a restart. Use when asked to "switch accounts", "move me to X", "use the account with the most room", or when the active account is at its limit.
 allowed-tools:
   - Bash(claudeswitch why:*)
@@ -42,7 +43,7 @@ One line: from which account to which, with the new account's session and
 weekly utilization from the output.
 
 If `use` fails because the account is not in the vault, or its credential no
-longer works, suggest `/cs:login <id>`. Do not start a login yourself.
+longer works, suggest `/cs login <id>`. Do not start a login yourself.
 
 A running daemon may rotate again on its own. A manual switch gets a cooldown,
 so this is rare, but mention it if the user seems to expect the choice to stick

@@ -1,5 +1,6 @@
 ---
 name: setup
+user-invocable: false
 description: Set up claudeswitch for Claude Code — check the binary is installed, add the quota status line to Claude Code's settings, and check the installation. Use after installing the claudeswitch plugin, or when asked to "set up claudeswitch" or "add the status line".
 allowed-tools:
   - Bash(command -v claudeswitch:*)
@@ -43,7 +44,7 @@ claudeswitch setup
 ```
 
 It vaults each account, writes the config, and offers to install the daemon.
-Single accounts can be added later from here with `/cs:login`.
+Single accounts can be added later from here with `/cs login`.
 
 ## 4. Check
 

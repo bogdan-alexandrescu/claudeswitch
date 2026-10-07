@@ -247,8 +247,12 @@ into someone's config directory.
 - **The plugin is called `cs`, as the binary's short name is.** Claude Code
   already owns `/status`, `/login` and `/doctor`, so the skills need a
   namespace; `/cs status` (a router skill) reads the same as `cs status` in a
-  terminal, and `/cs:status` names the skill directly. v0.4.0 shipped it as
-  `claudeswitch`; renamed in v0.4.1.
+  terminal. v0.4.0 shipped it as `claudeswitch`; renamed in v0.4.1.
+- **`/cs <command>` is the only slash form** (decided 2026-10-07). The
+  per-command skills are `user-invocable: false`: they stay out of the slash
+  menu, so `/cs:status` and `/cs status` no longer appear side by side, but
+  Claude still picks them when asked in words, and the router still invokes
+  them.
 - **The plugin's version is the binary's.** `plugin/.claude-plugin/plugin.json`
   carries the release version and is bumped with every release; Claude Code only
   offers an update when it changes.

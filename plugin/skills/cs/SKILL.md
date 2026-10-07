@@ -1,6 +1,6 @@
 ---
 name: cs
-description: Short form for every claudeswitch skill, like the `cs` command in a terminal. `/cs status`, `/cs why`, `/cs switch <id>`.
+description: The claudeswitch command, like `cs` in a terminal. `/cs status`, `/cs why`, `/cs switch <id>`.
 argument-hint: "[status|why|session|doctor|switch|login|setup] [args]"
 disable-model-invocation: true
 allowed-tools:

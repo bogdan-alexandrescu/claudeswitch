@@ -60,7 +60,7 @@ macOS and Linux on amd64 and arm64, and a `checksums.txt`. The archives are
 reproducible: the same tag always produces the same bytes.
 
 ```sh
-VERSION=v0.4.5
+VERSION=v0.4.6
 TARGET=darwin_arm64            # darwin_amd64, linux_amd64, linux_arm64
 curl -LO "https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION/claudeswitch_${VERSION}_${TARGET}.tar.gz"
 curl -LO "https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION/checksums.txt"
@@ -294,21 +294,21 @@ the normal case; anything more needs attention:
 ### Skills
 
 `/cs` works like `cs` in a terminal: `/cs status`, `/cs why`,
-`/cs switch work-a`. With no command it shows status. Each command is also a
-skill of its own, and you can simply ask — Claude picks the matching one.
+`/cs switch work-a`. With no command it shows status. It is the plugin's only
+slash command. You can also simply ask, and Claude runs the matching command.
 
-| command | skill | ask something like | changes anything |
-|---|---|---|---|
-| `/cs status` | `/cs:status` | "how much quota is left?" | no |
-| `/cs why` | `/cs:why` | "why didn't it switch?" | no |
-| `/cs session` | `/cs:session` | "how much have I used today?" | no |
-| `/cs doctor` | `/cs:doctor` | "claudeswitch isn't polling" | no |
-| `/cs switch <id>` | `/cs:switch` | "move me to the account with most room" | yes, without asking: a swap is hot and reversible |
-| `/cs login <id>` | `/cs:login` | "add my work account" | yes, after confirming account and browser |
-| `/cs setup` | `/cs:setup` | "set up claudeswitch" | settings.json; asks before replacing a status line |
+| command | ask something like | changes anything |
+|---|---|---|
+| `/cs status` | "how much quota is left?" | no |
+| `/cs why` | "why didn't it switch?" | no |
+| `/cs session` | "how much have I used today?" | no |
+| `/cs doctor` | "claudeswitch isn't polling" | no |
+| `/cs switch <id>` | "move me to the account with most room" | yes, without asking: a swap is hot and reversible |
+| `/cs login <id>` | "add my work account" | yes, after confirming account and browser |
+| `/cs setup` | "set up claudeswitch" | settings.json; asks before replacing a status line |
 
 `/status`, `/login` and `/doctor` belong to Claude Code itself, which is why the
-plugin's skills live under `cs`.
+plugin's commands live under `/cs`.
 
 A switch made from a skill takes effect from Claude's next request, in the
 current session included. First-time account setup stays in a terminal

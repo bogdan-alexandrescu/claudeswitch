@@ -1,5 +1,6 @@
 ---
 name: login
+user-invocable: false
 description: Sign in to a Claude account and store it in the claudeswitch vault, verifying it is the right account — for adding an account or renewing one whose credential died. Use when asked to "add an account", "log in to X", or when doctor/switch reports a credential that needs signing in again.
 allowed-tools:
   - Bash(claudeswitch login:*)

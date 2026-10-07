@@ -1,5 +1,6 @@
 ---
 name: doctor
+user-invocable: false
 description: Diagnose a claudeswitch installation — config, vault, keychain access, usage API, daemon, refresh policy, status line and plugin — and explain how to fix what fails. Use when claudeswitch misbehaves, a command errors, or accounts are not polling.
 allowed-tools:
   - Bash(claudeswitch doctor:*)
@@ -26,4 +27,4 @@ output suggests. If the daemon looks stuck, its log is at
 `~/.local/state/claudeswitch/daemon.log`; read the last lines with `tail -50`.
 
 Do not run `login`, `remove` or `forget` from here. Suggest
-`/cs:login` when an account needs signing in again.
+`/cs login` when an account needs signing in again.

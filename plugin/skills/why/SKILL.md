@@ -1,5 +1,6 @@
 ---
 name: why
+user-invocable: false
 description: Explain claudeswitch's rotation decision — why it did or did not switch accounts, account by account. Use when asked "why didn't it switch", "why did it switch to X", "what will it do next", or when rotation looks wrong.
 allowed-tools:
   - Bash(claudeswitch why:*)
