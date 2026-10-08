@@ -554,16 +554,6 @@ enum FakeAppCLI {
         #expect(r.failureHint == "set one up with: cs chrome add work-2")
         #expect(cli.chromeOpen("--all").failureCode == "usage")
     }
-
-    /// Opens the account's Chrome profile, setting it up first when it has none.
-    @Test func testOpenOrAdd() throws {
-        try FakeAppCLI.reply(dir, fixture: "cli-chrome-add")
-        _ = cli.chromeOpenOrAdd("work-2", known: ChromeList(data: try fixture("cli-chrome-list.json")))
-        #expect(lastCall() == ["chrome", "add", "work-2", "--json"])
-        try FakeAppCLI.reply(dir, fixture: "cli-chrome-open")
-        _ = cli.chromeOpenOrAdd("work-1", known: ChromeList(data: try fixture("cli-chrome-list-some.json")))
-        #expect(lastCall() == ["chrome", "open", "work-1", "--json"])
-    }
 }
 
 @Suite struct EmailsFromStateTests {

@@ -286,12 +286,12 @@ func statusCompact(out io.Writer, o Options) {
 	}
 	head = append(head, "5H")
 	right[len(head)-1] = true
-	if lay.bars {
+	if lay.dots > 0 {
 		head = append(head, "")
 	}
 	head = append(head, "7D")
 	right[len(head)-1] = true
-	if lay.bars {
+	if lay.dots > 0 {
 		head = append(head, "")
 	}
 	if lay.clears {
@@ -311,7 +311,7 @@ func statusCompact(out io.Writer, o Options) {
 		nameCell := a.Name()
 		if a.ID == o.active() {
 			// Which account you are on should be visible without reading words.
-			marker = paint(green, "▸")
+			marker = paint(glacier, "▸")
 			nameCell = paint(bold, nameCell)
 		}
 
@@ -330,11 +330,11 @@ func statusCompact(out io.Writer, o Options) {
 				row = append(row, plan)
 			}
 			row = append(row, "-")
-			if lay.bars {
+			if lay.dots > 0 {
 				row = append(row, "")
 			}
 			row = append(row, "-")
-			if lay.bars {
+			if lay.dots > 0 {
 				row = append(row, "")
 			}
 			if lay.clears {
@@ -369,7 +369,7 @@ func statusCompact(out io.Writer, o Options) {
 		// The marker says which account is active, so STATE no longer has to.
 		state := stateOf(acct, a, cfg, proj, which, lay.burn)
 		if bill := acct.Last.Billing(); bill != "" {
-			state += " · " + paint(yellow, bill)
+			state += " · " + paint(amber, bill)
 		}
 
 		// Figures for an account that cannot be read again are leftovers. They
@@ -381,10 +381,8 @@ func statusCompact(out io.Writer, o Options) {
 			five, seven = paint(grey, stripColor(five)), paint(grey, stripColor(seven))
 		}
 		bar := func(pctVal, trigger float64, which string) string {
-			if frozen {
-				return paint(grey, miniBar(pctVal))
-			}
-			return paint(levelFor(pctVal, trigger, severityName(acct.Last, which)), miniBar(pctVal))
+			return dotBar(pctVal, trigger, lay.dots,
+				levelFor(pctVal, trigger, severityName(acct.Last, which)), frozen)
 		}
 
 		row := []string{marker, nameCell}
@@ -392,11 +390,11 @@ func statusCompact(out io.Writer, o Options) {
 			row = append(row, plan)
 		}
 		row = append(row, five)
-		if lay.bars {
+		if lay.dots > 0 {
 			row = append(row, bar(acct.Last.FiveHour.Pct(), cfg.TriggerFor(usage.FiveHourKey), "five_hour"))
 		}
 		row = append(row, seven)
-		if lay.bars {
+		if lay.dots > 0 {
 			row = append(row, bar(acct.Last.SevenDay.Pct(), cfg.TriggerFor(usage.SevenDayKey), "seven_day"))
 		}
 		if lay.clears {
@@ -558,7 +556,7 @@ func headline(o Options) string {
 	case o.Decision == nil:
 		return head
 	case o.Decision.Kind == "switch":
-		return head + paint(grey, " · ") + paint(green, "rotating to "+o.Decision.Target)
+		return head + paint(grey, " · ") + paint(glacier, "rotating to "+o.Decision.Target)
 	case o.Decision.Kind == "wait" && !o.Decision.RecoversAt.IsZero():
 		return head + paint(grey, " · ") +
 			paint(red, "every account is out") +
@@ -702,7 +700,7 @@ func legend(out io.Writer) {
 		// a label and separators they run together into "ok climbing close act
 		// now", which is what the line looks like the moment colour is stripped
 		// — by a pipe, a paste, or a terminal that does not support it.
-		legend += "\n  colour:  " + paint(green, "ok") + "  ·  " + paint(yellow, "climbing") +
+		legend += "\n  colour:  " + paint(meltwater, "ok") + "  ·  " + paint(amber, "climbing") +
 			"  ·  " + paint(orange, "close") + "  ·  " + paint(red, "act now")
 	}
 	fmt.Fprintln(out, legend)

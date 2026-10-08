@@ -91,7 +91,7 @@ func TestFrozenFiguresAreGreyed(t *testing.T) {
 	dead := statusFor(t, "usage API rejected the token (401): may need a re-login", time.Now())
 	live := statusFor(t, "", time.Now())
 
-	const greyCode = "\033[90m"
+	greyCode := pal.Grey
 	deadRow := rowFor(dead, "work-a")
 	liveRow := rowFor(live, "work-a")
 	if !strings.Contains(deadRow, greyCode) {
@@ -112,7 +112,7 @@ func TestFrozenFiguresAreGreyed(t *testing.T) {
 func rowFor(out, account string) string {
 	for _, line := range strings.Split(out, "\n") {
 		// The table row, not the headline: only the row carries the bars.
-		if strings.Contains(line, account) && strings.ContainsAny(line, "▰▱") {
+		if strings.Contains(line, account) && strings.ContainsAny(line, dotLit+dotThreshold) {
 			return line
 		}
 	}

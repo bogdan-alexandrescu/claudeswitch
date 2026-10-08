@@ -50,6 +50,12 @@ cp "$BIN" "$APP/Contents/MacOS/ClaudeSwitch"
 sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" \
   "$HERE/Resources/Info.plist" > "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
+# The Twin rings icon (scripts/make-icon.sh draws it; drawn here when the
+# committed copy is missing) and the wordmark's face, Geist SemiBold, with
+# its SIL OFL licence, which the app registers at launch.
+[ -f "$HERE/Resources/AppIcon.icns" ] || "$HERE/scripts/make-icon.sh" >&2
+cp "$HERE/Resources/AppIcon.icns" "$HERE/Resources/Geist-SemiBold.otf" "$HERE/Resources/Geist-OFL.txt" \
+  "$APP/Contents/Resources/"
 
 codesign --force --sign - --timestamp=none "$APP" >&2
 codesign --verify "$APP" >&2

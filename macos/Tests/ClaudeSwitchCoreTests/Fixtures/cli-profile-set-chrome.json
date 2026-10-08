@@ -1,0 +1,8 @@
+{
+  "effective": "Profile 1",
+  "key": "chrome",
+  "name": "Work",
+  "override": "Profile 1",
+  "path": "/tmp/config.toml",
+  "profile": "work"
+}

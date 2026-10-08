@@ -1,0 +1,13 @@
+{
+  "account": "work-team",
+  "email": "team@example.com",
+  "name": "Work",
+  "opened": true,
+  "profile": "work",
+  "profile_dir": "Profile 1",
+  "rule": "profile",
+  "urls": [
+    "https://claude.ai/login",
+    "https://chromewebstore.google.com/detail/fcoeoabgfenejglbffodgkkbkcdhcgfn"
+  ]
+}

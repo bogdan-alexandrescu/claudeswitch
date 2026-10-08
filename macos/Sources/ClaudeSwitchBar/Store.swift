@@ -139,6 +139,23 @@ final class Store: ObservableObject {
     @Published var terminal: TerminalApp {
         didSet { defaults.set(terminal.rawValue, forKey: Keys.terminal) }
     }
+    /// System, Light or Dark, for the popover and every window.
+    @Published var appearance: AppearancePref {
+        didSet {
+            guard !preview else { return }
+            AppPrefs(defaults).appearance = appearance
+            applyAppearance()
+        }
+    }
+    /// Dials or bars in the popover.
+    @Published var usageMode: UsageMode {
+        didSet { if !preview { AppPrefs(defaults).usageMode = usageMode } }
+    }
+
+    /// Sets NSApp.appearance: nil follows the system.
+    func applyAppearance() {
+        NSApp?.appearance = appearance.appearance
+    }
 
     private enum Keys {
         static let compact = "compactMenuBar"
@@ -179,6 +196,8 @@ final class Store: ObservableObject {
         configuredBinary = defaults.string(forKey: Keys.binary) ?? ""
         menuProfile = defaults.string(forKey: Keys.menuProfile)
         terminal = defaults.string(forKey: Keys.terminal).flatMap(TerminalApp.init(rawValue:)) ?? .default
+        appearance = AppPrefs(defaults).appearance
+        usageMode = AppPrefs(defaults).usageMode
         if CommandLine.arguments.contains("--render") { return }
         DispatchQueue.main.async { [weak self] in self?.start() }
     }
@@ -190,6 +209,8 @@ final class Store: ObservableObject {
         configuredBinary = ""
         menuProfile = nil
         terminal = .default
+        appearance = .system
+        usageMode = .dials
         snapshot = preview
         fixedNow = preview?.now
         data = AppData(binaryPath: binaryPath, binaryVersion: binaryPath == nil ? nil : CLI.minimumVersion,
@@ -204,6 +225,7 @@ final class Store: ObservableObject {
 
     func start() {
         guard timer == nil else { return }
+        applyAppearance()
         // Which window the person is acting in: Settings (or a sheet or
         // dialog on it), else the popover.
         keyObserver = NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification,
@@ -407,15 +429,90 @@ final class Store: ObservableObject {
         }
     }
 
-    /// "Open Chrome for this account" (lane 13): its Chrome profile, set up
-    /// first when it has none.
+    /// "Open Chrome for this account" (lane 13): its resolved Chrome profile
+    /// (C2: its own, its profile's, or Chrome's last used). It never creates
+    /// one; Settings → Accounts does, when asked.
     /// `card` is the popover card it was asked from, if any.
     func openChrome(_ account: String, card: String? = nil) {
-        let known = chrome
         act("chrome:\(account)", title: "Could not open Chrome for \(account)", card: card,
-            { $0.chromeOpenOrAdd(account, known: known) }) { [weak self] r in
-            self?.note = r.opened ? "Opened Chrome for \(r.account)" : "Chrome for \(r.account) is set up"
+            { $0.chromeOpen(account) }) { [weak self] r in
+            self?.note = "Opened Chrome for \(r.account)"
         }
+    }
+
+    // MARK: your own Chrome profiles (C2)
+
+    /// `chrome profiles --json`: Chrome's profiles, for the pickers. Read
+    /// when Settings opens and after a Chrome change.
+    @Published private(set) var chromeProfiles: ChromeProfiles?
+
+    func loadChromeProfiles() {
+        guard !preview else { return }
+        Task {
+            if case .success(let p) = await call("load:chromeProfiles", { $0.chromeProfiles() }) { chromeProfiles = p }
+        }
+    }
+
+    /// A profile's Chrome profile: a folder, or nil for Chrome's last used.
+    func setProfileChrome(_ profile: String, folder: String?) {
+        act("chrome-profile:\(profile)", title: "Could not set \(profile)'s Chrome profile", profiles: true,
+            { $0.profileSet(profile, "chrome", folder ?? "") }) { [weak self] r in
+            guard let self else { return }
+            self.note = r.override.map { "\(profile) uses the Chrome profile \(self.chromeProfiles?.label($0) ?? $0)" }
+                ?? "\(profile) uses Chrome's last-used profile"
+            self.loadChromeProfiles()
+        }
+    }
+
+    /// An account's Chrome choice: the profile's (forget its own), one of
+    /// the person's Chrome profiles, or a new one.
+    func setAccountChrome(_ account: String, _ choice: AccountChromeChoice) {
+        let key = "chrome:\(account)"
+        switch choice {
+        case .sameAsProfile:
+            act(key, title: "Could not change \(account)'s Chrome profile", { $0.chromeForget(account) }) { [weak self] _ in
+                self?.note = "\(account) uses its profile's Chrome profile"
+                self?.loadChromeProfiles()
+            }
+        case .existing(let folder):
+            act(key, title: "Could not change \(account)'s Chrome profile",
+                { $0.chromeAddExisting(account, folder) }) { [weak self] r in
+                self?.note = "\(account) uses the Chrome profile \(r.name ?? r.profileDir); sign Claude in Chrome in there as \(account)"
+                self?.loadChromeProfiles()
+            }
+        case .createNew:
+            act(key, title: "Could not create a Chrome profile for \(account)", { $0.chromeAdd(account) }) { [weak self] r in
+                self?.note = r.created ? "Opened a new Chrome profile for \(r.account)" : "Opened \(r.account)'s Chrome profile"
+                self?.loadChromeProfiles()
+            }
+        }
+    }
+
+    /// "Sign in as <account>": opens the resolved Chrome profile at the
+    /// sign-in pages. The notice is dismissed with it.
+    func chromeSignin(_ account: String, card: String? = nil, notice: String? = nil) {
+        if let k = notice { dismissChromeNotice(k) }
+        act("chrome:\(account)", title: "Could not open Chrome to sign in as \(account)", card: card,
+            { $0.chromeSignin(account) }) { [weak self] r in
+            self?.note = "In Chrome (\(r.label)), sign claude.ai and Claude in Chrome in as \(r.email ?? r.account)"
+        }
+    }
+
+    /// Sign-in notices dismissed, one key per rotation; kept across launches.
+    @Published private(set) var dismissedChromeNotices: Set<String> =
+        Set(UserDefaults.standard.stringArray(forKey: "dismissedChromeNotices") ?? [])
+
+    func dismissChromeNotice(_ key: String) {
+        dismissedChromeNotices.insert(key)
+        guard !preview else { return }
+        // Only the recent ones matter: each rotation brings a new key.
+        defaults.set(Array(dismissedChromeNotices.sorted().suffix(50)), forKey: "dismissedChromeNotices")
+    }
+
+    /// The sign-in notice for a card, if it has one.
+    func chromeNotice(for card: ProfileCard) -> ChromeSignInNotice? {
+        guard let live = chrome?.live(in: card.name), live.account == card.active?.id else { return nil }
+        return live.signInNotice(dismissed: dismissedChromeNotices)
     }
 
     // MARK: Settings reads
@@ -424,6 +521,7 @@ final class Store: ObservableObject {
     func loadSettings() {
         guard !preview else { return }
         refresh(full: true, profiles: true)
+        loadChromeProfiles()
         Task {
             async let s = call("load:schema") { $0.configSchema() }
             async let v = call("load:values") { $0.configValues() }
@@ -473,6 +571,13 @@ final class Store: ObservableObject {
         guard let b = card.best, !card.alreadyOnBest else { return }
         use(b.id, profile: card.name)
     }
+}
+
+/// What an account's "Chrome profile" choice sets (C2).
+enum AccountChromeChoice: Equatable {
+    case sameAsProfile
+    case existing(String)
+    case createNew
 }
 
 /// Fixture data for --render.

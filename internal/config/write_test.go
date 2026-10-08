@@ -114,7 +114,7 @@ func TestWriteKeepsEverySetting(t *testing.T) {
 		Profiles: []Profile{
 			{Name: "work", Dir: "~/.claude-work", Pool: []string{"work"},
 				SwitchAt: 75, SwitchAtWeekly: 90, HardFloor: 97, LandingMargin: &workMargin,
-				Models: []string{"Othermodel"}},
+				Models: []string{"Othermodel"}, Chrome: "Profile 1"},
 			{Name: "default", Pool: []string{"personal"}}, // no dir: CLAUDE_CONFIG_DIR unset
 		},
 	}

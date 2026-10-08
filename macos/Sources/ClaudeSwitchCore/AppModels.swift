@@ -239,6 +239,10 @@ public struct ProfileInfo: Equatable, Identifiable {
     public var signedIn: String
     public var overrides: [String: String]
     public var thresholds: Thresholds
+    /// The Chrome profile folder this profile names (C2); nil is Chrome's
+    /// last-used profile. Its display name when Chrome lists it.
+    public var chrome: String?
+    public var chromeName: String?
 
     init?(_ j: JSON) {
         guard let name = j["name"].string else { return nil }
@@ -257,6 +261,8 @@ public struct ProfileInfo: Equatable, Identifiable {
         }
         overrides = o
         thresholds = Thresholds(j["thresholds"])
+        chrome = nonEmpty(j["chrome"])
+        chromeName = nonEmpty(j["chrome_name"])
     }
 }
 

@@ -95,8 +95,13 @@ every config edit up without a restart (D21).
 `claudeswitch config --json` — every setting's value, as strings:
 
 ```json
-{"path": "/…/config.toml", "switch_at": "85", "poll_hot": "1m0s", "models": "", …}
+{"path": "/…/config.toml", "switch_at": "85", "poll_hot": "1m0s", "models": "", …,
+ "chrome": {"default": null, "work": "Profile 1"}}
 ```
+
+`chrome` (C2, additive) is the one value that is not a string: each
+profile's Chrome profile folder, `null` for Chrome's last used. It has no
+global value and is not in `config schema`.
 
 `claudeswitch config schema --json` — every setting `cs config` knows,
 generated from the same table, in its order:
@@ -125,7 +130,15 @@ rules (`hard_floor` at or above `switch_at`; the poll cadence fitting
 ```
 
 With `--profile`, `value` is the value in force there and `override` the
-profile's own (`null`: it inherits). (This `scope` is where a setting is set, global or
+profile's own (`null`: it inherits).
+
+`config get chrome --profile P --json` (C2) →
+`{"key": "chrome", "value": "Profile 1", "scope": "profile", "profile": "work",
+"override": "Profile 1", "name": "Work"}`: `value` is `""` and `override`
+`null` when the profile names none (Chrome's last used); `name` is Chrome's
+name for the folder, `null` when Local State does not list it. Without
+`--profile`, and for `config set chrome`, it is `usage`: chrome is set with
+`profile set`. (This `scope` is where a setting is set, global or
 per profile; it is not the account scope contract 2 removed.)
 
 `claudeswitch config set <key> <value> --json`:
@@ -166,7 +179,10 @@ saying what would go. Errors also: `no_config`, `config_invalid`.
   {"name": "work", "dir": "~/.claude-work", "from_env": false, "declared": true,
    "pool": ["w1", "w2"], "listed": ["w1", "w2"], "live": "w1", "pinned": null, "signed_in": "yes",
    "overrides": {"switch_at": "75"},
-   "thresholds": {"switch_at": 75, "switch_at_weekly": 98, "hard_floor": 99, "landing_margin": 10}}],
+   "thresholds": {"switch_at": 75, "switch_at_weekly": 98, "hard_floor": 99, "landing_margin": 10},
+   "chrome": "Profile 1", "chrome_name": "Work",
+   "chrome_resolved": {"account": "w1", "profile": "work", "profile_dir": "Profile 1", "name": "Work",
+                       "rule": "profile"}}],
  "ghosts": [{"profile": "old", "account": "a3", "why": "removed", "since": "…"}]}
 ```
 
@@ -175,6 +191,12 @@ unset). `pool` is the effective pool (D6 included); `listed` is what the
 config's `pool` lists (lane 15), so an account in `pool` but not `listed`
 is `default`'s by D6 alone and moves with `pool add`. `signed_in` is `yes`,
 `no` or `unknown` (the lookup failed). `live` is what state records.
+
+C2 (additive): `chrome` is the Chrome profile folder the profile names
+(`null`: Chrome's last used), `chrome_name` Chrome's name for it (`null` when
+unknown), and `chrome_resolved` the live account's Chrome profile as
+`chrome open` would resolve it (the shape is under chrome below), `null` with
+no live account. `chrome` is not in `overrides`.
 
 `claudeswitch profile create <name> [--dir PATH] [--pool a,b] [--seed ACCOUNT] --json`
 answers with the new profile as `list` reports it, plus `"seeded": "a1"`
@@ -258,6 +280,23 @@ for `models`, `none` is an empty list (count no model here) and
 
 Errors: `not_found` (unknown profile, an undeclared implicit profile, a
 key that is global only), `invalid_value`.
+
+`claudeswitch profile set <profile> chrome <folder|name|inherit> --json`
+(C2): the Chrome profile the profile's accounts use when they have none of
+their own. A name resolves to its folder through Chrome's Local State; the
+config stores the folder (`chrome = "Profile 1"` in the `[[profile]]`).
+`inherit` removes it (Chrome's last used):
+
+```json
+{"profile": "work", "key": "chrome", "override": "Profile 1", "effective": "Profile 1", "name": "Work",
+ "path": "/…/config.toml"}
+```
+
+`effective` is the folder in force (after `inherit`, Chrome's last-used
+folder, `null` when Local State cannot be read). Errors: `not_found` (a
+name Chrome does not list — the `hint` lists Chrome's profiles; an unknown
+or undeclared profile), `invalid_value` (a folder that could be read as a
+flag or a path, or a name two Chrome profiles share).
 
 ## account
 
@@ -507,18 +546,61 @@ offered:`). `best_why` is `null` when `best` is set with room to spare.
 
 ## chrome
 
+**C2: which Chrome profile.** One resolution serves `chrome open`, `chrome
+signin`, the notices and the JSON below. For an account in profile P: the
+account's own mapping (`rule` `account`), else P's `chrome` (`profile`), else
+Chrome's last-used profile (`last_used`); `none` when none of them is known
+(no mapping, no `chrome`, Local State unreadable). claudeswitch reads
+Chrome's `Local State` read-only for `profile.info_cache` (folder → name) and
+`profile.last_used`, and nothing else of Chrome's. A resolution is:
+
+```json
+{"account": "w2", "profile": "work", "profile_dir": "Profile 1", "name": "Work", "rule": "profile"}
+```
+
+`profile_dir` and `name` are `null` when unknown.
+
 `claudeswitch chrome list --json` — every account → Chrome profile mapping,
 by account, and whether this platform can open Chrome:
 
 ```json
 {"chrome_profiles": [
-  {"account": "w2", "profile_dir": "claudeswitch-w2", "added": "2026-10-07T12:00:00Z", "live_in": ["work"]}],
- "supported": true}
+  {"account": "w2", "profile_dir": "claudeswitch-w2", "added": "2026-10-07T12:00:00Z", "live_in": ["work"],
+   "existing": false, "name": null}],
+ "supported": true,
+ "live": [
+  {"account": "w1", "profile": "work", "profile_dir": "Profile 1", "name": "Work", "rule": "profile",
+   "last_from": "w2", "last_switch": "2026-10-08T11:00:00Z"}]}
 ```
 
 `live_in` is the Claude Code profiles the account is live in, `[]` when none.
 `added` is `null` for a mapping with no recorded time. `list` never launches
 anything and never reads the keychain, so the app may poll it.
+
+C2 (additive): `existing` is `true` for a Chrome profile the person already
+had (`add --existing`), `name` Chrome's name for the folder. `live` has, for
+each profile with a live account, that account's resolution plus the last
+rotation in the profile: `last_from` (the account it moved away from, state's
+`last_from`, recorded by the daemon and `cs use` since C2) and `last_switch`
+(UTC), each `null` when unknown. The app's card shows its sign-in notice when
+`rule` is `profile` and `last_from` is set and differs from `account`.
+
+`claudeswitch chrome profiles --json` (C2) — Chrome's profiles from Local
+State, in Chrome's order (Default, Profile 1, …), then any folder a profile
+or an account names that Chrome does not list (`in_chrome` false):
+
+```json
+{"chrome_profiles": [
+  {"folder": "Default", "name": "Person 1", "last_used": false, "in_chrome": true,
+   "used_by_profiles": ["default"], "used_by_accounts": []},
+  {"folder": "Profile 2", "name": "Work 2", "last_used": true, "in_chrome": true,
+   "used_by_profiles": [], "used_by_accounts": ["w3"]}],
+ "last_used": "Profile 2", "local_state": true, "supported": true}
+```
+
+`local_state` is `false` (and the list only what claudeswitch names) when
+Local State is missing or unreadable; `last_used` is then `null`. It never
+launches anything.
 
 `claudeswitch chrome add <account> --json` — opens Chrome on a profile
 directory derived from the account (`claudeswitch-<account>`) at the claude.ai
@@ -530,8 +612,22 @@ login and Claude in Chrome's Web Store page, and records the mapping:
  "urls": ["https://claude.ai/login", "https://chromewebstore.google.com/detail/fcoeoabgfenejglbffodgkkbkcdhcgfn"]}
 ```
 
-`created` is `false` when the account already had a profile: it is opened
-again and the mapping is unchanged. `email` is the one state.json recorded when
+`created` is `false` when the account already had a profile `add` made: it
+is opened again and the mapping is unchanged. An account mapped with
+`--existing` gets a new one (`created` `true`).
+
+`claudeswitch chrome add <account> --existing <folder|name> --json` (C2) —
+maps the account to a Chrome profile the person already has. It creates
+nothing and opens nothing:
+
+```json
+{"account": "w2", "profile_dir": "Profile 2", "name": "Work 2", "created": false, "existing": true,
+ "opened": false, "email": "w2@example.com", "urls": []}
+```
+
+A name resolves through Local State (the `hint` of a `not_found` lists
+Chrome's profiles); without Local State the value is taken as a folder.
+`--existing` with any other subcommand is `usage`. `email` is the one state.json recorded when
 the account was vaulted or identified (no keychain read) and is `null` when
 none was recorded. The mapping is
 recorded only once Chrome has been opened.
@@ -544,6 +640,25 @@ Claude Code profile (`CLAUDE_CONFIG_DIR` → profile → live account):
 {"account": "w2", "profile_dir": "claudeswitch-w2", "opened": true}
 ```
 
+C2: it opens the resolved Chrome profile, so an account with no mapping
+opens its profile's or Chrome's last used; the answer carries the
+resolution's keys too (`profile`, `name`, `rule`). With nothing resolved:
+`not_found`, the `hint` naming `cs profile set <p> chrome <name>` and
+`cs chrome add <account>`. It never creates a Chrome profile.
+
+`claudeswitch chrome signin [<account>] --json` (C2) — opens the resolved
+Chrome profile at the claude.ai login and Claude in Chrome's Web Store page,
+to sign both in as the account (an argv, never a shell; no keychain read):
+
+```json
+{"account": "w2", "profile": "work", "profile_dir": "Profile 1", "name": "Work", "rule": "profile",
+ "opened": true, "email": "w2@example.com",
+ "urls": ["https://claude.ai/login", "https://chromewebstore.google.com/detail/fcoeoabgfenejglbffodgkkbkcdhcgfn"]}
+```
+
+`email` is state's recorded email, `null` when none. Errors as for `open`,
+and `not_found` for an unknown account.
+
 `claudeswitch chrome forget <account> --json` — drops the mapping. The Chrome
 profile itself is not touched:
 
@@ -551,7 +666,7 @@ profile itself is not touched:
 {"account": "w2", "profile_dir": "claudeswitch-w2", "forgotten": true}
 ```
 
-Errors: `not_found` (no such account; no mapping for it, with a `hint` naming
+Errors: `not_found` (no such account; nothing to open for it, with a `hint` naming
 `cs chrome add <account>`; no live account in the caller's profile; no Chrome
 binary on Linux), `invalid_value` (the derived directory is not a valid name,
 e.g. an id over 51 characters, or a recorded one no longer is), `unsupported_platform` (neither macOS nor

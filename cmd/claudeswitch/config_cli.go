@@ -292,11 +292,18 @@ func runConfigCmd(w io.Writer, cfgPath string, positional []string, asJSON bool,
 	all := settings()
 
 	if len(positional) == 0 {
+		// IMPROVEMENTS C2: chrome is per profile only, so it is listed
+		// by profile after the settings.
+		chrome := map[string]any{}
+		for _, in := range cfg.EffectiveProfiles() {
+			chrome[in.Name] = orNull(cfg.ChromeFor(in.Name))
+		}
 		if asJSON {
 			m := map[string]any{"path": cfg.Path}
 			for _, s := range all {
 				m[s.name] = s.get(cfg)
 			}
+			m["chrome"] = chrome
 			return emitTo(w, m)
 		}
 		fmt.Fprintf(w, "\n  %s\n\n", cfg.Path)
@@ -307,7 +314,13 @@ func runConfigCmd(w io.Writer, cfgPath string, positional []string, asJSON bool,
 		for _, s := range all {
 			fmt.Fprintf(w, "  %-*s  %-8s  %s\n", wd, s.name, s.get(cfg), s.help)
 		}
-		fmt.Fprintf(w, "\n  change one with:  cs config <name> <value>\n\n")
+		fmt.Fprintf(w, "\n  change one with:  cs config <name> <value>\n")
+		local := readChromeLocal()
+		fmt.Fprintf(w, "\n  chrome, per profile (the Chrome profile Claude in Chrome is used from):\n")
+		for _, in := range cfg.EffectiveProfiles() {
+			fmt.Fprintf(w, "    %-*s  %s\n", wd-2, in.Name, chromeShow(local, cfg.ChromeFor(in.Name)))
+		}
+		fmt.Fprintf(w, "  change one with:  cs profile set <profile> chrome <name|folder|inherit>\n\n")
 		return nil
 	}
 
@@ -320,6 +333,9 @@ func runConfigCmd(w io.Writer, cfgPath string, positional []string, asJSON bool,
 		return appErr(codeUsage, configUsage, "name a setting")
 	}
 	name := positional[0]
+	if name == "chrome" {
+		return configChrome(w, cfg, verb, positional, profName, asJSON)
+	}
 	target, ok := findSetting(name)
 	if !ok {
 		return unknownSetting(name)
@@ -352,6 +368,29 @@ func configGet(w io.Writer, cfg *config.Config, s setting, profName string, asJS
 			"profile": profName, "override": orNull(override)})
 	}
 	fmt.Fprintln(w, eff)
+	return nil
+}
+
+// configChrome is `config get chrome --profile P` (IMPROVEMENTS C2). chrome
+// has no global value, so it is read per profile and set with `profile set`.
+func configChrome(w io.Writer, cfg *config.Config, verb string, positional []string, profName string, asJSON bool) error {
+	const hint = "chrome is per profile: cs config get chrome --profile <profile>; " +
+		"cs profile set <profile> chrome <name|folder|inherit>"
+	if verb == "set" || len(positional) != 1 {
+		return appErr(codeUsage, hint, "chrome is set per profile")
+	}
+	if profName == "" {
+		return appErr(codeUsage, hint, "name the profile with --profile")
+	}
+	if _, ok := cfg.ProfileNamed(profName); !ok {
+		return noSuchProfile(cfg, profName)
+	}
+	folder := cfg.ChromeFor(profName)
+	if asJSON {
+		return emitTo(w, map[string]any{"key": "chrome", "value": folder, "scope": "profile",
+			"profile": profName, "override": orNull(folder), "name": orNull(readChromeLocal().nameOf(folder))})
+	}
+	fmt.Fprintln(w, folder)
 	return nil
 }
 

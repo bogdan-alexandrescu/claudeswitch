@@ -118,10 +118,10 @@ func TestSlBandTracksConfiguredThresholds(t *testing.T) {
 		want string
 		name string
 	}{
-		{0, ansiGreen, "idle"},
-		{59.9, ansiGreen, "just under yellow"},
-		{60, ansiYellow, "yellow boundary"},
-		{84.9, ansiYellow, "just under switch"},
+		{0, ansiMeltwater, "idle"},
+		{59.9, ansiMeltwater, "just under yellow"},
+		{60, ansiAmber, "yellow boundary"},
+		{84.9, ansiAmber, "just under switch"},
 		{85, ansiOrange, "at switch_at"},
 		{95.9, ansiOrange, "just under hard floor"},
 		{96, ansiRed, "at hard_floor"},

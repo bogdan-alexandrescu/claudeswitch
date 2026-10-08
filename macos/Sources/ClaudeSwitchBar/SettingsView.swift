@@ -32,26 +32,33 @@ struct SettingsView: View {
     var renderSidebar = false
 
     var body: some View {
-        if renderSidebar {
-            HStack(spacing: 0) {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(Pane.allCases) { p in
-                        Label(p.rawValue, systemImage: p.symbol)
+        Group {
+            if renderSidebar {
+                HStack(spacing: 0) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Wordmark(size: 14, mark: 22).padding(.horizontal, 8).padding(.bottom, 12)
+                        ForEach(Pane.allCases) { p in
+                            Label {
+                                Text(p.rawValue).fontWeight(p == pane ? .semibold : .regular)
+                            } icon: {
+                                Image(systemName: p.symbol).foregroundStyle(p == pane ? Color.csAccent : Color.secondary)
+                            }
                             .padding(.horizontal, 8).padding(.vertical, 5)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(RoundedRectangle(cornerRadius: 6)
-                                .fill(p == pane ? Color.secondary.opacity(0.2) : Color.clear))
+                                .fill(p == pane ? Color.csAccent.opacity(0.14) : Color.clear))
+                        }
+                        Spacer()
                     }
-                    Spacer()
+                    .padding(.horizontal, 10).padding(.top, 40)
+                    .frame(width: 200)
+                    .background(Color.secondary.opacity(0.08))
+                    Divider()
+                    detail
                 }
-                .padding(.horizontal, 10).padding(.top, 40)
-                .frame(width: 200)
-                .background(Color.secondary.opacity(0.08))
-                Divider()
-                detail
+            } else {
+                split
             }
-        } else {
-            split
         }
     }
 
@@ -59,6 +66,11 @@ struct SettingsView: View {
         NavigationSplitView {
             List(Pane.allCases, selection: $pane) { p in
                 Label(p.rawValue, systemImage: p.symbol).tag(p)
+            }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Wordmark(size: 14, mark: 22)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 18).padding(.top, 4).padding(.bottom, 8)
             }
             .navigationSplitViewColumnWidth(min: 170, ideal: 190, max: 240)
         } detail: {
@@ -154,6 +166,7 @@ struct SchemaPane: View {
             }
         }
         .formStyle(.grouped)
+        .tint(.csAccent)
         }
     }
 }
@@ -330,7 +343,7 @@ struct DaemonPane: View {
                         } else {
                             Button("Install (dry run)") { store.setDaemon(.install(live: false), title: "Could not install the daemon") }
                             Button("Install live…") { goLive(install: true) }
-                                .buttonStyle(.borderedProminent)
+                                .buttonStyle(PrimaryButtonStyle())
                         }
                         if store.isBusy("daemon") { ProgressView().controlSize(.small) }
                     }
@@ -345,7 +358,7 @@ struct DaemonPane: View {
                         Spacer()
                         Button("Install (dry run)") { store.setDaemon(.install(live: false), title: "Could not install the daemon") }
                         Button("Install live…") { goLive(install: true) }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(PrimaryButtonStyle())
                     }
                     .disabled(store.isBusy("daemon") || store.binaryPath == nil)
                 }
@@ -361,6 +374,7 @@ struct DaemonPane: View {
             }
         }
         .formStyle(.grouped)
+        .tint(.csAccent)
         }
         .confirming($pending)
         .confirmationDialog("Uninstall the daemon?", isPresented: $confirmUninstall) {
@@ -382,10 +396,30 @@ struct AdvancedPane: View {
             .padding([.horizontal, .top], 24)
         Form {
             Section("This app") {
+                LabeledContent {
+                    Picker("Appearance", selection: $store.appearance) {
+                        ForEach(AppearancePref.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                } label: {
+                    described("Appearance", "System follows your Mac. Light or Dark keeps ClaudeSwitch in one "
+                              + "appearance whatever the system uses.")
+                }
+                LabeledContent {
+                    Picker("Usage in the popover", selection: $store.usageMode) {
+                        ForEach(UsageMode.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                } label: {
+                    described("Usage in the popover", "Dials or bars for session and week. The switch in the "
+                              + "popover changes this too.")
+                }
                 Picker("Open Claude Code in", selection: $store.terminal) {
                     ForEach(TerminalApp.allCases) { Text($0.rawValue).tag($0) }
                 }
-                Toggle("Icon only in the menu bar", isOn: $store.compact)
+                Toggle(isOn: $store.compact) {
+                    described("Icon only in the menu bar", "Hide the profile, account and percentage next to the rings.")
+                }
                 LabeledContent("claudeswitch") {
                     HStack {
                         Text(store.binaryPath.map { $0 + (store.binaryVersion.map { " · " + $0 } ?? "") } ?? "not found")
@@ -401,6 +435,16 @@ struct AdvancedPane: View {
             }
         }
         .formStyle(.grouped)
+        .tint(.csAccent)
+        }
+    }
+
+    /// A row's label with its description under it, as SettingRow has.
+    func described(_ title: String, _ detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+            Text(detail).font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

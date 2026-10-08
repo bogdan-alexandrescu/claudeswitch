@@ -179,19 +179,19 @@ struct AddAccountSheet: View {
             if busy { ProgressView().controlSize(.small) }
             Spacer()
             if added != nil {
-                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
             } else {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 if route == .browser {
                     if started == nil {
-                        Button("Open sign-in page", action: start).keyboardShortcut(.defaultAction)
+                        Button("Open sign-in page", action: start).keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
                             .disabled(name.isEmpty || busy)
                     } else {
-                        Button("Finish", action: finish).keyboardShortcut(.defaultAction)
+                        Button("Finish", action: finish).keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
                             .disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy)
                     }
                 } else {
-                    Button("Save", action: save).keyboardShortcut(.defaultAction)
+                    Button("Save", action: save).keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
                         .disabled((name.isEmpty && suggestion.suggested == nil) || busy)
                 }
             }
@@ -287,11 +287,11 @@ struct Step: View {
     var body: some View {
         HStack(spacing: 8) {
             ZStack {
-                Circle().fill(done ? Color.green : Color.accentColor).frame(width: 20, height: 20)
+                Circle().fill(done ? Color.green : Color.csAccent).frame(width: 20, height: 20)
                 if done {
                     Image(systemName: "checkmark").font(.caption2.bold()).foregroundStyle(.white)
                 } else {
-                    Text("\(n)").font(.caption.bold()).foregroundStyle(.white)
+                    Text("\(n)").font(.caption.bold()).foregroundStyle(Color.csOnAccent)
                 }
             }
             .accessibilityHidden(true)

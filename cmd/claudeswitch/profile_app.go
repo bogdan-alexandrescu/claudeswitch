@@ -61,6 +61,8 @@ func profileOverrideOK(cfg *config.Config, name, key string) (string, bool) {
 			return "", false
 		}
 		return strings.Join(in.Models, ","), true
+	case "chrome":
+		return in.Chrome, in.Chrome != ""
 	}
 	return "", false
 }
@@ -84,6 +86,16 @@ func profileSet(w io.Writer, cfgPath, name, key, value string, asJSON bool) erro
 		return err
 	}
 	i := declaredIndex(cfg, name)
+	if i < 0 && key == "chrome" {
+		if _, ok := cfg.ProfileNamed(name); ok {
+			return appErr(codeNotFound, "with no [[profile]] blocks, give accounts a Chrome profile of their own: "+
+				"cs chrome add <account> --existing <name>", "profile %q is not declared in the config", name)
+		}
+		return noSuchProfile(cfg, name)
+	}
+	if key == "chrome" {
+		return profileSetChrome(w, cfg, i, name, value, asJSON)
+	}
 	if i < 0 {
 		if _, ok := cfg.ProfileNamed(name); ok {
 			return appErr(codeNotFound, "with no [[profile]] blocks there are only the global settings: "+
@@ -409,6 +421,15 @@ func profileJSON(cfg *config.Config, st *state.State, in config.Profile) map[str
 	}
 	m["overrides"] = overrides
 	m["thresholds"] = thresholdsJSON(cfg.ForProfile(in.Name))
+	// IMPROVEMENTS C2: the Chrome profile this profile names (null: Chrome's
+	// last used), and the live account's resolved one.
+	local := readChromeLocal()
+	folder := cfg.ChromeFor(in.Name)
+	m["chrome"], m["chrome_name"] = orNull(folder), orNull(local.nameOf(folder))
+	m["chrome_resolved"] = nil
+	if live != "" {
+		m["chrome_resolved"] = resolveChrome(cfg, st, local, in.Name, live).json()
+	}
 	return m
 }
 

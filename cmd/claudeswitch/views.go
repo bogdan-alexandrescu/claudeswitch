@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -262,4 +263,39 @@ func statuslineView(cfg *config.Config, st *state.State) (profileView, error) {
 		return profileView{}, err
 	}
 	return viewOf(cfg, st, in), nil
+}
+
+// headerOn says whether to open a view with the brand header. Only on a
+// terminal: piped output and --json stay exactly as they were.
+var headerOn = func() bool { return isTTY(os.Stdout) }
+
+// printHeader writes the brand header for status, why and doctor, when
+// headerOn allows it.
+func printHeader(w io.Writer, st *state.State) {
+	if headerOn() {
+		fmt.Fprint(w, brandHeader(st, daemonRunning(), time.Now()))
+	}
+}
+
+// brandHeader is the header itself: version, the daemon's real state, and the
+// age of the newest reading of any account.
+func brandHeader(st *state.State, running bool, now time.Time) string {
+	daemon := "daemon not running"
+	var polled time.Time
+	if st != nil {
+		if running {
+			daemon = "daemon dry-run"
+			if st.DaemonLive {
+				daemon = "daemon live"
+			}
+		}
+		for _, a := range st.Accounts {
+			if a != nil && a.LastAt.After(polled) {
+				polled = a.LastAt
+			}
+		}
+	} else if running {
+		daemon = "daemon running"
+	}
+	return render.Header(version, daemon, polled, now)
 }

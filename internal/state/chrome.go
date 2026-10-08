@@ -5,13 +5,16 @@ import (
 	"time"
 )
 
-// ChromeProfile is the Chrome profile `cs chrome add` made for an account
-// (IMPROVEMENTS C1): a directory name passed to Chrome as
-// --profile-directory, inside Chrome's default user-data dir. claudeswitch
-// records the mapping here and never reads or writes Chrome's own files.
+// ChromeProfile is an account's own Chrome profile (IMPROVEMENTS C1, C2):
+// a directory name passed to Chrome as --profile-directory, inside Chrome's
+// default user-data dir. Either `cs chrome add` made it, or (Existing) it is
+// one the person already had, named with `cs chrome add --existing`.
+// claudeswitch records the mapping here and never writes Chrome's files.
 type ChromeProfile struct {
 	Dir   string    `json:"profile_dir"`
 	Added time.Time `json:"added,omitzero"`
+	// Existing marks a Chrome profile claudeswitch did not create.
+	Existing bool `json:"existing,omitempty"`
 }
 
 // ChromeEntry is one mapping, for listing.
@@ -27,6 +30,13 @@ func (s *State) SetChrome(account, dir string, at time.Time) {
 	}
 	s.Chrome[account] = &ChromeProfile{Dir: dir, Added: at}
 	s.touchChrome(account)
+}
+
+// SetChromeExisting records that account's Chrome profile as one the person
+// already had (IMPROVEMENTS C2).
+func (s *State) SetChromeExisting(account, dir string, at time.Time) {
+	s.SetChrome(account, dir, at)
+	s.Chrome[account].Existing = true
 }
 
 // DropChrome forgets an account's Chrome profile and says whether there was

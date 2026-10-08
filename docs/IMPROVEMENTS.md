@@ -214,6 +214,41 @@ cookies is ruled out.
   account" action. Automatic re-routing after a switch was confirmed on a real
   machine on 2026-10-08 (GROUND_TRUTH §45).
 
+- **C2. Use your own Chrome profiles: one per profile, overridable per account
+  (decided 2026-10-08).** The owner wants the app and the CLI to use Chrome
+  profiles he already has, not new ones: one for `default`, one for `work`.
+  The extension's login still cannot be moved (above), so per-profile routing
+  cannot follow a rotation by itself; per-account mappings can.
+  - **Config:** `[[profile]]` gains `chrome = "<Chrome profile folder>"`, set
+    with `cs profile set <name> chrome <folder|name|inherit>` and stored as the
+    folder (`Default`, `Profile 2`). An account's own mapping (state.json
+    `chrome_profiles`) can now point to an existing Chrome profile:
+    `cs chrome add <account> --existing <folder|name>`. Without `--existing`,
+    `add` still creates one.
+  - **Resolution** for the account live in profile P: the account's own
+    mapping, then P's `chrome`, then Chrome's last-used profile. claudeswitch
+    never creates a Chrome profile unless asked.
+  - **After a rotation** in P to account A:
+    - if A has its own mapping, the existing notice applies, and routing is
+      automatic (§45);
+    - if only P's `chrome` applies, the daemon, `cs use` and the app say
+      `Claude in Chrome in "<name>" is still signed in as <old>; sign it in as
+      <A>`, with an action that opens that Chrome profile at the claude.ai
+      login and the extension's sign-in.
+  - **Reading Chrome (owner decision, 2026-10-08):** claudeswitch may read
+    Chrome's `Local State`, read-only, for the profile list only
+    (`profile.info_cache` folder → name, and `profile.last_used`). It never
+    reads cookies, preferences or extension storage, and never writes
+    anything of Chrome's. `cs chrome profiles [--json]` lists them; on Linux
+    it reads the google-chrome and chromium paths.
+  - **App:**
+    - Settings → Profiles gets a "Chrome profile" picker per profile (names
+      from `cs chrome profiles --json`; "Chrome's last used" by default).
+    - Settings → Accounts gets a per-account "Chrome profile" choice: same as
+      the profile, one of yours, or create a new one.
+    - The popover card shows the sign-in notice with its button.
+    - The JSON forms are additive in docs/APP_CLI.md.
+
 - **I5a. Cadence trade-off (decided 2026-10-07).** An account refills ~28
   calls/h after Claude Code's own reads, so the active account cannot have both
   2-minute routine reads and a quickly rebuilt hot reserve. Chosen: routine
@@ -309,6 +344,36 @@ As built (lane 13, C1):
 - **Untested:** that Claude Code then reaches the right profile's extension
   by itself, and whether the two error phrases are the extension's exact
   wording. Verified only with the test shim's fake launchers.
+
+As built (C2):
+
+- `[[profile]] chrome = "<folder>"`, `cs profile set <p> chrome
+  <folder|name|inherit>` (a name resolves through Local State; unknown names
+  are refused with the list), shown by `cs config` and `cs config get chrome
+  --profile P`. There is no global `chrome`: with no `[[profile]]` blocks,
+  `profile set default chrome` is refused with a hint to use per-account
+  `--existing` mappings.
+- Local State (chrome_local.go) is read through one seam,
+  `chromeLocalStatePaths`, decoding only `profile.info_cache.*.name` and
+  `profile.last_used`; missing or unparseable is "no list".
+- `cs chrome profiles [--json]`; `cs chrome add <a> --existing
+  <folder|name>` (state `chrome_profiles.*.existing`; creates and opens
+  nothing; `add` without it replaces an existing-profile mapping with a new
+  one); `cs chrome signin [<a>]` (opens the claude.ai login and the Web Store
+  page: the extension's own sign-in page has no known URL).
+- One resolution (`resolveChrome`): account mapping, profile `chrome`,
+  Chrome's last used, else `none`. `cs chrome [open]` uses it, so an account
+  without a mapping opens its profile's or the last-used Chrome profile
+  instead of being refused. The plugin's hint names `cs chrome signin` when
+  the profile rule applies.
+- After a rotation where only the profile's `chrome` applies, the daemon
+  (log and notification) and `cs use` say `Claude in Chrome in "<name>" is
+  still signed in as <old>; sign it in as <new> (cs chrome signin <new>)`
+  (when the old account had its own Chrome profile, "may be signed in as
+  another account" instead). State records `last_from` with `last_switch`.
+- App: Profiles pane picker, Accounts ⋯ "Chrome profile" menu, the card's
+  amber notice with "Sign in as <new>" (dismissed per rotation, remembered in
+  the app's defaults). "Open Chrome" no longer creates a Chrome profile.
 
 ## Scope removed (decided 2026-10-08)
 

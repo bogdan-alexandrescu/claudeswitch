@@ -75,12 +75,13 @@ struct PopoverView: View {
     }
 
     var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text("ClaudeSwitch").font(.headline)
+        HStack(alignment: .center, spacing: 8) {
+            Wordmark()
             Spacer()
             if let s = store.snapshot {
                 DaemonBadge(daemon: s.daemon)
             }
+            UsageModeToggle(mode: $store.usageMode)
         }
     }
 
@@ -96,16 +97,30 @@ struct PopoverView: View {
             .buttonStyle(.borderless)
             // Accent only when it can be used: a disabled link in the accent
             // colour read as active (QA).
-            .foregroundStyle(canAdd ? Color.accentColor : Color.secondary)
+            .foregroundStyle(canAdd ? Color.csAccent : Color.secondary)
             .disabled(!canAdd)
             Spacer()
             Button("Settings…") { showSettings() }
                 .buttonStyle(.borderless)
                 .keyboardShortcut(",", modifiers: .command)
             Menu {
-                Button("Refresh") { store.refresh(full: true, profiles: true) }
+                Button("Refresh now") { store.refresh(full: true, profiles: true) }
+                    .keyboardShortcut("r", modifiers: .command)
+                Picker("Appearance", selection: $store.appearance) {
+                    ForEach(AppearancePref.allCases) { Text($0.label).tag($0) }
+                }
+                Picker("Show usage as", selection: $store.usageMode) {
+                    ForEach(UsageMode.allCases) { Text($0.label).tag($0) }
+                }
+                Divider()
+                Button("Settings…") { showSettings() }
+                Button("About ClaudeSwitch") {
+                    NSApp.activate(ignoringOtherApps: true)
+                    NSApp.orderFrontStandardAboutPanel(nil)
+                }
                 Divider()
                 Button("Quit ClaudeSwitch") { NSApp.terminate(nil) }
+                    .keyboardShortcut("q", modifiers: .command)
             } label: {
                 Image(systemName: "ellipsis.circle")
             }
@@ -163,8 +178,8 @@ struct MenuBarBadge: View {
             .labelStyle(.titleAndIcon)
             .font(.caption.weight(.semibold))
             .padding(.horizontal, 8).padding(.vertical, 2)
-            .background(Capsule().fill(Color.accentColor))
-            .foregroundStyle(.white)
+            .background(PillShape().fill(Color.csAccent))
+            .foregroundStyle(Color.csOnAccent)
             .accessibilityLabel("Shown in the menu bar")
     }
 }
@@ -189,10 +204,12 @@ struct ProfileCardView: View {
                 }
             }
             CardErrorView(card: card.name)
+            if let n = store.chromeNotice(for: card) {
+                ChromeSignInBanner(notice: n, card: card.name)
+            }
             if let a = card.active {
                 VStack(alignment: .leading, spacing: 8) {
-                    UsageBar(title: "Session", window: a.fiveHour, trigger: card.switchAt, now: now)
-                    UsageBar(title: "Week", window: a.sevenDay, trigger: card.switchAtWeekly, now: now)
+                    UsageView(account: a, card: card, now: now)
                     ForEach(Array(a.scopedWeekly.enumerated()), id: \.offset) { _, l in
                         ModelLimitRow(limit: l, level: card.level(of: l), now: now)
                     }
@@ -208,10 +225,9 @@ struct ProfileCardView: View {
                 Button {
                     store.openClaudeCode(card.name)
                 } label: {
-                    Text("Open Claude Code").lineLimit(1).frame(maxWidth: .infinity)
+                    Text("Open Claude Code").lineLimit(1).frame(maxWidth: .infinity, minHeight: 32)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+                .buttonStyle(PillButtonStyle(primary: false))
                 .disabled(store.binaryPath == nil || !card.canOpen)
                 .help(card.openBlocked ?? "Open Claude Code in \(card.name)")
                 BestButton(card: card)
@@ -241,7 +257,7 @@ struct ProfileCardView: View {
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
         .overlay(RoundedRectangle(cornerRadius: 10)
-            .strokeBorder(followed ? Color.accentColor : Color.secondary.opacity(0.25), lineWidth: followed ? 2 : 1))
+            .strokeBorder(followed ? Color.csAccent : Color.secondary.opacity(0.25), lineWidth: followed ? 2 : 1))
     }
 
     var titleRow: some View {
@@ -283,7 +299,7 @@ struct BestButton: View {
             store.switchToBest(card)
         } label: {
             if store.isBusy("use:\(card.name)") {
-                ProgressView().controlSize(.small).frame(maxWidth: .infinity)
+                ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 32)
             } else {
                 // Two lines, so a long id is never cut out of the verb.
                 VStack(spacing: 0) {
@@ -293,10 +309,11 @@ struct BestButton: View {
                             .lineLimit(1).truncationMode(.middle)
                     }
                 }
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, minHeight: 32)
             }
         }
-        .controlSize(.large)
+        // The primary action while it can be taken; a quiet pill when off.
+        .buttonStyle(PillButtonStyle(primary: card.best != nil && !card.alreadyOnBest))
         .disabled(card.best == nil || card.alreadyOnBest || store.binaryPath == nil
             || store.isBusy("use:\(card.name)"))
         .help(card.bestUnavailable ?? (card.alreadyOnBest
@@ -338,7 +355,7 @@ struct ModelLimitRow: View {
 
 func levelColor(_ l: Level?) -> Color {
     switch l {
-    case .ok?: return .accentColor
+    case .ok?: return .csAccent
     case .near?: return .orange
     case .over?: return .red
     case nil: return .clear
@@ -438,6 +455,7 @@ struct CompactCardView: View {
 
     var row: some View {
         HStack(spacing: 8) {
+            MiniRings(account: card.active, size: 24, dotRadius: 3)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
                     Text(card.name).font(.headline).lineLimit(1).truncationMode(.tail).help(card.name)
@@ -488,48 +506,43 @@ struct IconButton: View {
     }
 }
 
-/// "Session 62% · resets 2h 10m" over a bar with a tick at the threshold.
-struct UsageBar: View {
-    let title: String
-    let window: WindowReading?
-    let trigger: Double
-    let now: Date
+/// C2: the profile's Chrome profile is still signed in to the account before
+/// the last rotation. The amber warning tone, a brand pill to sign in, and a
+/// dismiss that lasts until the next rotation.
+struct ChromeSignInBanner: View {
+    @EnvironmentObject var store: Store
+    let notice: ChromeSignInNotice
+    let card: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(title)
-                Spacer()
-                Text(detail).foregroundStyle(.secondary).monospacedDigit()
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Text(notice.text).font(.caption).foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Button { store.dismissChromeNotice(notice.key) } label: { Image(systemName: "xmark") }
+                    .buttonStyle(.borderless)
+                    .help("Dismiss until the next rotation")
+                    .accessibilityLabel("Dismiss the Claude in Chrome notice")
             }
-            .font(.caption)
-            GeometryReader { g in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.secondary.opacity(0.18))
-                    Capsule().fill(color)
-                        .frame(width: g.size.width * CGFloat(min(max(pct ?? 0, 0), 100) / 100))
-                    // The switch threshold, so "near" is visible, not inferred.
-                    RoundedRectangle(cornerRadius: 1).fill(Color.primary.opacity(0.6))
-                        .frame(width: 2, height: 10)
-                        .offset(x: g.size.width * CGFloat(min(trigger, 100) / 100) - 1)
+            Button {
+                store.chromeSignin(notice.account, card: card, notice: notice.key)
+            } label: {
+                if store.isBusy("chrome:\(notice.account)") {
+                    ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 28)
+                } else {
+                    Text(notice.button).lineLimit(1).truncationMode(.middle).frame(maxWidth: .infinity, minHeight: 28)
                 }
             }
-            .frame(height: 6)
+            .buttonStyle(PillButtonStyle(primary: true))
+            .disabled(store.binaryPath == nil || store.isBusy("chrome:\(notice.account)"))
+            .help("Open \"\(notice.chromeName)\" at the claude.ai and Claude in Chrome sign-in")
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title): \(detail), switches at \(Int(trigger))%")
-    }
-
-    var pct: Double? { window?.utilization }
-
-    var detail: String {
-        let r = Format.resets(window?.resetsAt, now: now)
-        return Format.pct(pct) + (r.isEmpty ? "" : " · " + r)
-    }
-
-    var color: Color {
-        guard let p = pct else { return .clear }
-        return levelColor(Level.of(p, trigger: trigger))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.orange.opacity(0.5)))
     }
 }
 

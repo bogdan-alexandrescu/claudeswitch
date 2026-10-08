@@ -26,7 +26,9 @@ struct ClaudeSwitchBarApp: App {
         } label: {
             MenuBarLabel(title: MenuTitle.of(store.problem == .missing ? nil : store.snapshot,
                                              compact: store.compact, profile: store.menuProfile,
-                                             problem: store.problem))
+                                             problem: store.problem),
+                         glyph: GlyphReading.of(store.problem == .missing ? nil : store.snapshot,
+                                                profile: store.menuProfile))
         }
         .menuBarExtraStyle(.window)
 
@@ -48,7 +50,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // LSUIElement does this for the bundle; this covers `swift run`.
         NSApp.setActivationPolicy(.accessory)
+        BrandFont.register()
         let args = CommandLine.arguments
+        // --render-icon <dir.iconset>: the app icon at every iconset size
+        // (macos/scripts/make-icon.sh turns it into AppIcon.icns).
+        if let i = args.firstIndex(of: "--render-icon"), args.count > i + 1 {
+            let dir = args[i + 1]
+            try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+            for (name, px) in AppIcon.iconset {
+                guard let png = AppIcon.png(pixels: px) else {
+                    FileHandle.standardError.write(Data("could not draw \(name)\n".utf8))
+                    exit(1)
+                }
+                try? png.write(to: URL(fileURLWithPath: dir + "/" + name))
+            }
+            exit(0)
+        }
         if let i = args.firstIndex(of: "--render"), args.count > i + 2 {
             // --now 2026-10-08T02:45:41Z: the clock the fixtures were written at.
             let now = args.firstIndex(of: "--now").flatMap { j in
@@ -130,10 +147,21 @@ enum Render {
              to: out + "/popover-missing.png")
         for (name, compact) in [("label", false), ("label-compact", true)] {
             for p in snap.cards.map(\.name) {
-                save(MenuBarLabel(title: MenuTitle.of(snap, compact: compact, profile: p)).padding(4),
-                     size: nil, dark: false, to: out + "/\(name)-\(p).png")
+                for dark in [false, true] {
+                    save(MenuBarLabel(title: MenuTitle.of(snap, compact: compact, profile: p),
+                                      glyph: GlyphReading.of(snap, profile: p)).padding(4),
+                         size: nil, dark: dark, to: out + "/\(name)-\(p)\(dark ? "-dark" : "").png")
+                }
             }
         }
+        glyphStates(snap: snap, out: out)
+        // The bars view of the usage, for review.
+        store.usageMode = .bars
+        for dark in [false, true] {
+            save(PopoverView().environmentObject(store).environmentObject(login),
+                 size: nil, dark: dark, to: out + "/popover-bars\(dark ? "-dark" : "").png")
+        }
+        store.usageMode = .dials
     }
 
     /// The states the base set does not reach: every card expanded, the
@@ -178,6 +206,41 @@ enum Render {
              size: nil, dark: dark, to: out + "/add-account-from-accounts-pane\(sfx).png")
     }
 
+    /// The menu-bar glyph in each of its four states (the mockup's STATES)
+    /// and the fixture's own, on a light and a dark menu bar, in one sheet.
+    static func glyphStates(snap: Snapshot, out: String) {
+        func reading(_ state: GlyphState, _ w: Double, _ s: Double, _ sat: Double?) -> GlyphReading {
+            GlyphReading(state: state, week: w, session: s, satellite: sat, accessibility: "")
+        }
+        let live = MenuTitle.of(snap, compact: false, profile: nil).text
+        let rows: [(String, GlyphReading, String)] = [
+            ("Healthy", reading(.healthy, 0.41, 0.18, 0.41), "default · work-1 41%"),
+            ("Climbing", reading(.climbing, 0.52, 0.81, 0.52), "work · work-team 81%"),
+            ("Switching", reading(.switching, 0.12, 0.06, 0.62), "work · work-team 12%"),
+            ("Needs you", reading(.needsYou, 0.71, 1, nil), "default · research 100%!"),
+            ("This fixture", GlyphReading.of(snap, profile: nil), live),
+        ]
+        let sheet = VStack(alignment: .leading, spacing: 10) {
+            ForEach(rows, id: \.0) { r in
+                HStack(spacing: 14) {
+                    Text(r.0).frame(width: 90, alignment: .leading)
+                    ForEach([false, true], id: \.self) { dark in
+                        HStack(spacing: 4) {
+                            Image(nsImage: MenuGlyph.image(r.1)).renderingMode(.template)
+                            Text(r.2).monospacedDigit()
+                        }
+                        .font(.system(size: 13))
+                        .padding(.horizontal, 10).frame(height: 24)
+                        .foregroundStyle(dark ? Color(white: 0.95) : Color(white: 0.07))
+                        .background(RoundedRectangle(cornerRadius: 6).fill(dark ? Color(white: 0.17) : Color(white: 0.92)))
+                    }
+                }
+            }
+        }
+        .padding(16)
+        save(sheet, size: nil, dark: false, to: out + "/glyph-states.png")
+    }
+
     /// Draws a view through a real (off-screen) window, so AppKit-backed
     /// controls — lists, text fields, menus — render as they do on screen.
     static func save<V: View>(_ v: V, size: CGSize?, dark: Bool, to path: String) {
@@ -202,23 +265,37 @@ enum Render {
     }
 }
 
-/// The menu-bar item: a gauge whose needle tracks the binding window, and the
-/// followed profile's live account with its utilization. The menu bar draws
-/// template images in one colour, so nearness to the threshold is carried by
-/// the symbol and a trailing "!" rather than by colour alone.
+/// The menu-bar item: the Twin rings drawn live from the followed profile's
+/// week (outer) and session (inner), and its live account with its
+/// utilization. The glyph is a template image, so macOS tints it for every
+/// menu bar; trouble is carried by its warning mark and a trailing "!"
+/// rather than by colour. A missing or too-old binary shows a question mark.
+/// It is redrawn whenever the store changes and never animated, so Reduce
+/// Motion has nothing to stop.
 struct MenuBarLabel: View {
     let title: MenuTitle
+    let glyph: GlyphReading
 
-    /// Never empty: a symbol this system lacks falls back to another, and
-    /// to the text "cs" when none is there, so the item never has zero width.
+    /// Never empty: the rings are always there (empty rings before data).
     var body: some View {
-        let symbol = MenuBarIcon.symbol(title) { NSImage(systemSymbolName: $0, accessibilityDescription: nil) != nil }
-        let text = MenuBarIcon.text(title, symbol: symbol)
+        let text = MenuBarIcon.text(title, symbol: "rings")
         HStack(spacing: 3) {
-            if let s = symbol { Image(systemName: s) }
+            if title.problem {
+                Image(systemName: "questionmark.circle")
+            } else {
+                Image(nsImage: MenuGlyph.image(glyph))
+            }
             if !text.isEmpty { Text(text).monospacedDigit() }
         }
-        .accessibilityLabel(title.text.isEmpty ? "ClaudeSwitch" : "ClaudeSwitch, " + title.text)
-        .onAppear { menuBarLog.notice("status item label drawn: \(symbol ?? "no symbol", privacy: .public) \(text, privacy: .public)") }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .onAppear {
+            menuBarLog.notice("status item label drawn: \(String(describing: glyph.state), privacy: .public) \(text, privacy: .public)")
+        }
+    }
+
+    var label: String {
+        if title.problem { return title.text.isEmpty ? "ClaudeSwitch" : "ClaudeSwitch, " + title.text }
+        return glyph.accessibility
     }
 }

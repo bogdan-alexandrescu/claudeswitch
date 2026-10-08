@@ -15,7 +15,6 @@ struct ProfilesPane: View {
                 PaneHeader(title: "Profiles",
                            subtitle: "Each profile is a Claude Code setup with its own login and its own accounts.") {
                     Button("New profile") { creating = true }
-                        .buttonStyle(.borderedProminent)
                         .disabled(store.binaryPath == nil)
                 }
                 if let e = store.profilesError {
@@ -87,10 +86,13 @@ struct ProfileEditor: View {
 
     var removable: Bool { store.profiles.map { ProfileRemoval.canRemove($0, profile.name) } ?? false }
     var followed: Bool { store.snapshot?.followed(store.menuProfile) == profile.name }
+    /// The live account's readings, for the rings beside the name.
+    var live: AccountView? { profile.live.flatMap { id in store.snapshot?.accounts.first { $0.id == id } } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
+                MiniRings(account: live, size: 36, dotRadius: 2.4)
                 Text(profile.name).font(.headline).lineLimit(1).truncationMode(.tail).help(profile.name)
                 Text(profile.dir ?? "~/.claude").font(.caption).foregroundStyle(.secondary)
                     .lineLimit(1).truncationMode(.middle).help(profile.dir ?? "~/.claude")
@@ -118,6 +120,7 @@ struct ProfileEditor: View {
                 if profile.signedIn == "no" { SignInRow(profile: profile) }
                 PoolEditor(profile: profile)
                 OverridesEditor(profile: profile)
+                ProfileChromePicker(profile: profile)
             }
             HStack(spacing: 8) {
                 Button("Open Claude Code") { store.openClaudeCode(profile.name) }
@@ -133,6 +136,7 @@ struct ProfileEditor: View {
                     get: { followed },
                     set: { on in store.menuProfile = on ? profile.name : nil }))
                     .toggleStyle(.checkbox)
+                    .tint(.csAccent)
                     .disabled(followed && profile.name == StateFile.defaultProfile)
                     .help("The menu-bar title follows one profile")
                 Spacer()
@@ -144,7 +148,7 @@ struct ProfileEditor: View {
             }
         }
         .padding(16)
-        .background(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.secondary.opacity(0.25)))
+        .background(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.csAccent))
         .sheet(isPresented: $removing) { RemoveProfileSheet(profile: profile).environmentObject(store) }
     }
 }
@@ -339,9 +343,15 @@ struct PoolEditor: View {
                     }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
-                    .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(Capsule().fill(id == profile.live ? Color.accentColor.opacity(0.12) : Color.clear))
-                    .overlay(Capsule().strokeBorder(border(id),
+                    // The account's week and session beside its name.
+                    .padding(.leading, 24)
+                    .overlay(alignment: .leading) {
+                        MiniRings(account: store.snapshot?.accounts.first { $0.id == id }, size: 19, dotRadius: 3)
+                            .allowsHitTesting(false)
+                    }
+                    .padding(.leading, 6).padding(.trailing, 8).padding(.vertical, 5)
+                    .background(PillShape().fill(id == profile.live ? Color.csAccent.opacity(0.12) : Color.clear))
+                    .overlay(PillShape().strokeBorder(border(id),
                                                     style: StrokeStyle(lineWidth: 1, dash: implicit ? [3] : [])))
                     .help(implicit ? "\(id) is here because no profile lists it" : id)
                     .accessibilityLabel("\(chip(id)), \(id == profile.live ? "live, " : "")"
@@ -359,7 +369,7 @@ struct PoolEditor: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize()
                 .padding(.horizontal, 8).padding(.vertical, 4)
-                .overlay(Capsule().strokeBorder(Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [3])))
+                .overlay(PillShape().strokeBorder(Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [3])))
                 .accessibilityLabel("Add an account to \(profile.name)")
                 if store.isBusy(key) { ProgressView().controlSize(.small) }
             }
@@ -400,7 +410,7 @@ struct PoolEditor: View {
         default: break
         }
         if v?.lastError != nil { return .orange.opacity(0.7) }
-        return id == profile.live ? Color.accentColor.opacity(0.5) : Color.secondary.opacity(0.3)
+        return id == profile.live ? Color.csAccent.opacity(0.5) : Color.secondary.opacity(0.3)
     }
 }
 
@@ -478,6 +488,59 @@ struct OverrideField: View {
             case .failure(.app(let e)): cliError = e
             case .failure(let e): cliError = AppError(code: "failed", message: e.message, hint: e.hint)
             }
+        }
+    }
+}
+
+/// C2: the Chrome profile Claude in Chrome is used from in this profile,
+/// for its accounts without one of their own (`profile set <p> chrome`).
+/// Names come from `chrome profiles --json`; the default is Chrome's last
+/// used.
+struct ProfileChromePicker: View {
+    @EnvironmentObject var store: Store
+    let profile: ProfileInfo
+
+    struct Option: Identifiable {
+        let id: String
+        let label: String
+    }
+
+    /// Chrome's profiles, plus the one set here when Chrome no longer lists
+    /// it, so the picker can show it.
+    var options: [Option] {
+        var out = (store.chromeProfiles?.pickable ?? []).map { Option(id: $0.folder, label: $0.label) }
+        if let c = profile.chrome, !out.contains(where: { $0.id == c }) {
+            out.append(Option(id: c, label: profile.chromeName ?? c))
+        }
+        return out
+    }
+
+    var lastUsedTitle: String {
+        "Chrome's last used" + (store.chromeProfiles?.lastUsedLabel.map { " (\($0))" } ?? "")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("CLAUDE IN CHROME").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Picker("Chrome profile", selection: Binding(
+                    get: { profile.chrome ?? "" },
+                    set: { v in
+                        guard v != (profile.chrome ?? "") else { return }
+                        store.setProfileChrome(profile.name, folder: v.isEmpty ? nil : v)
+                    })) {
+                    Text(lastUsedTitle).tag("")
+                    ForEach(options) { o in Text(o.label).tag(o.id) }
+                }
+                .fixedSize()
+                .disabled(store.binaryPath == nil || store.chrome?.supported == false)
+                .accessibilityLabel("Chrome profile for \(profile.name)")
+                if store.isBusy("chrome-profile:\(profile.name)") { ProgressView().controlSize(.mini) }
+            }
+            Text("Accounts without a Chrome profile of their own use this one. It needs signing in again after "
+                 + "each rotation; give an account its own Chrome profile (Accounts) to have it follow by itself.")
+                .font(.caption2).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -568,7 +631,7 @@ struct NewProfileSheet: View {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Create") { ask() }
-                    .keyboardShortcut(.defaultAction)
+                    .keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
                     .disabled(name.isEmpty || store.isBusy("create"))
             }
         }

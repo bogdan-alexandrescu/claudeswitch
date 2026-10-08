@@ -1,9 +1,9 @@
 
   a at 40% of its 5-hour · 45 points before it rotates
 
-     ACCOUNT  PLAN      5H             7D         CLEARS  STATE    
-  ▸  a        -        40%  ▰▰▱▱▱     20%  ▰▱▱▱▱  2h 30m  available
-     b        -        10%  ▰▱▱▱▱      5%  ▱▱▱▱▱  2h 30m  available
+     ACCOUNT  PLAN      5H                    7D                CLEARS  STATE    
+  ▸  a        -        40%  ●●●●●·····◉·     20%  ●●·········◉  2h 30m  available
+     b        -        10%  ●·········◉·      5%  ●··········◉  2h 30m  available
 
   switch ≥85% session / ≥95% weekly  ·  hard floor ≥98%  ·  swap idle, forced after 30s
   ! flagged by the API  ·  ~ projected from an older reading

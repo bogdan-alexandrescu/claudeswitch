@@ -48,6 +48,10 @@ type Profile struct {
 	// Models overrides the global models list (IMPROVEMENTS I6). Nil
 	// inherits it; an empty list counts no model's limit in this profile.
 	Models []string `toml:"models"`
+	// Chrome is the Chrome profile folder ("Default", "Profile 2") Claude in
+	// Chrome is used from in this profile (IMPROVEMENTS C2), for accounts
+	// with no Chrome profile of their own. Empty: Chrome's last-used one.
+	Chrome string `toml:"chrome"`
 
 	// FromEnv marks the implicit profile of a config with no [[profile]]
 	// blocks. Its dir is whatever this process's CLAUDE_CONFIG_DIR says, which
@@ -182,6 +186,10 @@ func (c *Config) ForProfile(profile string) *Config {
 	return &cp
 }
 
+// ChromeFor is the Chrome profile folder a profile names, "" when none
+// (Chrome's last-used profile then applies). There is no global value.
+func (c *Config) ChromeFor(profile string) string { return c.declared(profile).Chrome }
+
 // ModelsFor is a profile's effective models list: its own when it declares
 // one, even empty, else the global one.
 func (c *Config) ModelsFor(profile string) []string {
@@ -256,6 +264,11 @@ func (c *Config) validateProfiles() error {
 		}
 		if err := validModels(fmt.Sprintf("profile %q: models", in.Name), in.Models); err != nil {
 			return err
+		}
+		if in.Chrome != "" {
+			if err := ValidChromeFolder(in.Chrome); err != nil {
+				return fmt.Errorf("profile %q: chrome: %v", in.Name, err)
+			}
 		}
 		if m := in.LandingMargin; m != nil && (*m < 0 || *m > MaxLandingMargin) {
 			return fmt.Errorf("profile %q: landing_margin must be between 0 and %g, got %v",
@@ -353,6 +366,9 @@ func (c *Config) writeProfiles(b *strings.Builder) {
 		// the two are written differently.
 		if in.Models != nil {
 			fmt.Fprintf(b, "models           = %s\n", tomlStrings(in.Models))
+		}
+		if in.Chrome != "" {
+			fmt.Fprintf(b, "chrome           = %q\n", in.Chrome)
 		}
 	}
 }

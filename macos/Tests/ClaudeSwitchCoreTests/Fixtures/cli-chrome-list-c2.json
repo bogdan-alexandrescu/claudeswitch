@@ -1,0 +1,43 @@
+{
+  "chrome_profiles": [
+    {
+      "account": "personal",
+      "added": null,
+      "existing": false,
+      "live_in": [
+        "default"
+      ],
+      "name": null,
+      "profile_dir": "claudeswitch-personal"
+    },
+    {
+      "account": "research",
+      "added": "2026-10-08T12:00:00Z",
+      "existing": true,
+      "live_in": [],
+      "name": "Work 2",
+      "profile_dir": "Profile 2"
+    }
+  ],
+  "live": [
+    {
+      "account": "personal",
+      "last_from": null,
+      "last_switch": null,
+      "name": null,
+      "profile": "default",
+      "profile_dir": "claudeswitch-personal",
+      "rule": "account"
+    },
+    {
+      "account": "work-team",
+      "last_from": "work-1",
+      "last_switch": "2026-10-08T11:00:00Z",
+      "name": "Work",
+      "profile": "work",
+      "profile_dir": "Profile 1",
+      "rule": "profile"
+    }
+  ],
+  "supported": true
+}

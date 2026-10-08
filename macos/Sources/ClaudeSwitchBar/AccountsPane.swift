@@ -24,7 +24,7 @@ struct AccountsPane: View {
                 Button("Add account") {
                     store.addAccount = AddAccountRequest(profile: AddForm.initialTarget(requested: nil, list: store.profiles))
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(PrimaryButtonStyle())
                 .disabled(store.binaryPath == nil)
             }
             .padding([.horizontal, .top], 24)
@@ -151,6 +151,7 @@ struct AccountRow: View {
     var body: some View {
         HStack(spacing: 16) {
             Image(systemName: "line.3.horizontal").foregroundStyle(.tertiary).accessibilityHidden(true)
+            MiniRings(account: view, size: 34)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
                     Text(id).bold().lineLimit(1).truncationMode(.middle).help(id)
@@ -216,13 +217,52 @@ struct AccountRow: View {
         Divider()
         Button("Open Chrome") { store.openChrome(id) }
             .disabled(store.chrome?.supported == false)
-        if store.chrome?.has(id) == true {
-            Button("Forget its Chrome profile") {
-                store.act("chrome:\(id)", title: "Could not forget \(id)'s Chrome profile", { $0.chromeForget(id) })
+        Menu("Chrome profile: " + chromeLabel) {
+            choiceItem("Same as its profile", selected: chromeChoice == .sameAsProfile) {
+                store.setAccountChrome(id, .sameAsProfile)
             }
+            let mine = store.chromeProfiles?.pickable ?? []
+            if !mine.isEmpty {
+                Section("Your Chrome profiles") {
+                    ForEach(mine) { p in
+                        choiceItem(p.label, selected: usesExisting(p.folder)) {
+                            store.setAccountChrome(id, .existing(p.folder))
+                        }
+                    }
+                }
+            }
+            if case .created(let f) = chromeChoice {
+                choiceItem("Its own (\(store.chromeProfiles?.label(f) ?? f))", selected: true) {}
+            }
+            Divider()
+            Button("Create a new one") { store.setAccountChrome(id, .createNew) }
         }
+        .disabled(store.binaryPath == nil || store.chrome?.supported == false)
         Divider()
         Button("Delete…", role: .destructive, action: delete)
+    }
+
+    /// C2: the account's Chrome choice, as the CLI last reported it.
+    var chromeChoice: AccountChrome { store.chrome?.choice(for: id) ?? .sameAsProfile }
+
+    func usesExisting(_ folder: String) -> Bool {
+        if case .existing(let f, _) = chromeChoice { return f == folder }
+        return false
+    }
+
+    var chromeLabel: String {
+        switch chromeChoice {
+        case .sameAsProfile: return "same as its profile"
+        case .existing(let f, let n): return n ?? store.chromeProfiles?.label(f) ?? f
+        case .created(let f): return store.chromeProfiles?.label(f) ?? f
+        }
+    }
+
+    /// A menu item with a checkmark when it is the current choice.
+    func choiceItem(_ title: String, selected: Bool, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            if selected { Label(title, systemImage: "checkmark") } else { Text(title) }
+        }
     }
 
     /// Profile, seat and figure: shortened in the middle when the row is
@@ -230,6 +270,7 @@ struct AccountRow: View {
     var details: String {
         var parts: [String] = []
         if let p = store.pool(of: id) { parts.append("profile " + p) }
+        if chromeChoice != .sameAsProfile { parts.append("Chrome " + chromeLabel) }
         if let s = record?.seat { parts.append("seat " + shortSeat(s)) }
         if let v = view, let p = v.bindingPct { parts.append(Format.pct(p) + " " + Format.window(v.bindingWindow)) }
         return parts.joined(separator: " · ")
@@ -271,7 +312,7 @@ struct StatusChip: View {
         Text(Format.status(status, now: now))
             .font(.caption2)
             .padding(.horizontal, 6).padding(.vertical, 1)
-            .background(Capsule().fill(color.opacity(0.18)))
+            .background(PillShape().fill(color.opacity(0.18)))
             .foregroundStyle(color)
     }
 
@@ -302,7 +343,7 @@ struct RenameSheet: View {
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Rename", action: save).keyboardShortcut(.defaultAction)
+                Button("Rename", action: save).keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
                     .disabled(name.isEmpty || name == old || store.isBusy("rename"))
             }
         }

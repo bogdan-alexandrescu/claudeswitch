@@ -346,6 +346,10 @@ type ProfileState struct {
 	Pinned string `json:"pinned,omitempty"`
 	// LastSwitch feeds the anti-flap cooldown across restarts.
 	LastSwitch time.Time `json:"last_switch,omitzero"`
+	// LastFrom is the account that switch moved away from (IMPROVEMENTS C2:
+	// the Chrome profile a profile names is still signed in as it). It is
+	// written with LastSwitch and travels with it.
+	LastFrom string `json:"last_from,omitempty"`
 	// ActiveAt is when Active was last *established* — by the daemon attributing
 	// the live credential, or by a swap that verified its organization. Active is
 	// an observation, not a preference, and both sides can legitimately make it;
@@ -797,7 +801,7 @@ func (s *State) SaveAs(as owner) error {
 				}
 				mine.Pinned = disk.Pinned
 				if disk.LastSwitch.After(mine.LastSwitch) {
-					mine.LastSwitch = disk.LastSwitch
+					mine.LastSwitch, mine.LastFrom = disk.LastSwitch, disk.LastFrom
 				}
 			})
 			// The CLI's list, as it is on disk.

@@ -9,6 +9,15 @@
   ],
   "profiles": [
     {
+      "chrome": null,
+      "chrome_name": null,
+      "chrome_resolved": {
+        "account": "work-1",
+        "name": "Work 2",
+        "profile": "default",
+        "profile_dir": "Profile 2",
+        "rule": "last_used"
+      },
       "declared": true,
       "dir": null,
       "from_env": false,
@@ -29,6 +38,15 @@
       }
     },
     {
+      "chrome": "Profile 1",
+      "chrome_name": "Work",
+      "chrome_resolved": {
+        "account": "personal",
+        "name": "Work",
+        "profile": "review",
+        "profile_dir": "Profile 1",
+        "rule": "profile"
+      },
       "declared": true,
       "dir": "~/.claude-review",
       "from_env": false,

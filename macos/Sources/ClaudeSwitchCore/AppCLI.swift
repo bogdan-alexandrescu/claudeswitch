@@ -382,6 +382,8 @@ public extension CLI {
         decode({ ["chrome", "add", try Argv.name(id, "account"), "--json"] }, ChromeAdded.init)
     }
 
+    /// Opens the account's resolved Chrome profile (C2: its own, its
+    /// profile's, or Chrome's last used). It never creates one.
     func chromeOpen(_ id: String) -> Result<ChromeOpened, CallError> {
         decode({ ["chrome", "open", try Argv.name(id, "account"), "--json"] }, ChromeOpened.init)
     }
@@ -391,10 +393,22 @@ public extension CLI {
         decode({ ["chrome", "forget", try Argv.name(id, "account"), "--json"] }) { $0["forgotten"].bool }
     }
 
-    /// "Open Chrome for this account": its profile, set up first when the
-    /// list says it has none (an unknown list counts as none).
-    func chromeOpenOrAdd(_ id: String, known: ChromeList?) -> Result<ChromeOpened, CallError> {
-        if known?.has(id) == true { return chromeOpen(id) }
-        return chromeAdd(id).map { ChromeOpened(account: $0.account, profileDir: $0.profileDir, opened: $0.opened) }
+    // MARK: your own Chrome profiles (C2)
+
+    /// Chrome's profiles, from its Local State (read by the CLI, read-only).
+    func chromeProfiles() -> Result<ChromeProfiles, CallError> {
+        decode({ ["chrome", "profiles", "--json"] }, ChromeProfiles.init)
+    }
+
+    /// Maps the account to one of the person's Chrome profiles; creates and
+    /// opens nothing.
+    func chromeAddExisting(_ id: String, _ folder: String) -> Result<ChromeAdded, CallError> {
+        decode({ ["chrome", "add", try Argv.name(id, "account"), try Argv.flag("existing", folder, "Chrome profile"),
+                  "--json"] }, ChromeAdded.init)
+    }
+
+    /// Opens the account's Chrome profile at the sign-in pages.
+    func chromeSignin(_ id: String) -> Result<ChromeSignedIn, CallError> {
+        decode({ ["chrome", "signin", try Argv.name(id, "account"), "--json"] }, ChromeSignedIn.init)
     }
 }

@@ -207,13 +207,22 @@ func usageText() {
              change a profile's pool (pools never overlap)
   profile set <name> <key> <value|inherit>
              a per-profile switch_at, switch_at_weekly, hard_floor,
-             landing_margin or models
+             landing_margin or models; or chrome, the Chrome profile
+             (name or folder) Claude in Chrome is used from
   run <profile> [-- claude args]
              start Claude Code in a profile (CLAUDE_CONFIG_DIR set for it)
-  chrome add <account>
-             open a Chrome profile for that account, for Claude in Chrome
+  chrome add <account> [--existing <name|folder>]
+             open a new Chrome profile for that account, for Claude in Chrome;
+             --existing uses one of your Chrome profiles instead
   chrome [open] [<account>]
-             open it (no account: the one live in this shell's profile)
+             open its Chrome profile (no account: the one live in this
+             shell's profile): its own, else its profile's chrome, else
+             Chrome's last used
+  chrome signin [<account>]
+             open that Chrome profile at the sign-in pages, to sign Claude
+             in Chrome in as the account
+  chrome profiles
+             your Chrome profiles, and which profiles and accounts use each
   chrome list | forget <account>
 
   Several Claude Code profiles ([[profile]] in the config): use, add, login,
@@ -379,6 +388,7 @@ func cmdStatus(args []string) error {
 	if *asJSON {
 		return emitJSON(statusJSON(cfg, st, p))
 	}
+	printHeader(os.Stdout, st)
 	vlt := vault.New(log)
 	vaulted := map[string]bool{}
 	plans := map[string]string{}
@@ -656,6 +666,10 @@ func cmdDoctor(args []string) error {
 	deep := fs.Bool("verify", false,
 		"also confirm every vaulted credential still authenticates (one API call each)")
 	parseInterleaved(fs, args)
+	if headerOn() {
+		st, _ := state.Load("")
+		printHeader(os.Stdout, st)
+	}
 	return runDoctor(os.Stdout, *cfgPath, *deep)
 }
 
@@ -1591,6 +1605,9 @@ func cmdUse(args []string) error {
 	// A deliberate manual switch gets the cooldown's protection too, so the
 	// daemon does not immediately rotate away from the account you just chose.
 	ist.LastSwitch = time.Now()
+	if from != id {
+		ist.LastFrom = from // IMPROVEMENTS C2: whom a shared Chrome profile is still signed in as
+	}
 	// And it belongs in the audit log. Recording only the daemon's switches made
 	// the history look stale and wrong: every manual swap was invisible.
 	// Only when it actually moved. Re-selecting the account already in use is
@@ -1627,7 +1644,7 @@ func cmdUse(args []string) error {
 		fmt.Printf("    installed, but usage could not be read to confirm it (rate limited)\n")
 	}
 	if from != id {
-		useChromeNote(os.Stdout, st, from, id)
+		useChromeNoteIn(os.Stdout, cfg, st, target.Name, from, id)
 	}
 	fmt.Printf("    your MCP logins were left untouched\n")
 	fmt.Printf("    no restart needed — running sessions pick this up going forward\n\n")
@@ -1941,15 +1958,23 @@ func slAge(d time.Duration) string {
 
 // Colour bands for the status line. These track what claudeswitch will actually
 // DO rather than arbitrary quartiles, so the colour and the appended words agree:
-// green is comfortable, yellow is worth knowing, orange means a rotation is
+// meltwater is comfortable, amber is worth knowing, orange means a rotation is
 // coming at cfg.SwitchAt, red means a mid-turn swap at cfg.HardFloor.
+//
+// The hues are the brand palette at the depth the terminal advertises
+// (render.DepthFromEnv). Claude Code runs the line through a pipe, so there is
+// no TTY to ask; COLORTERM and TERM are inherited from the terminal it runs in.
 const (
-	ansiReset  = "\033[0m"
-	ansiDim    = "\033[2m"
-	ansiGreen  = "\033[32m"
-	ansiYellow = "\033[33m"
-	ansiOrange = "\033[38;5;208m" // no orange in the 8-colour set; 256-colour cube
-	ansiRed    = "\033[31m"
+	ansiReset = "\033[0m"
+	ansiDim   = "\033[2m"
+)
+
+var (
+	slPalette     = render.PaletteFor(render.DepthFromEnv(os.Getenv))
+	ansiMeltwater = slPalette.Meltwater
+	ansiAmber     = slPalette.Amber
+	ansiOrange    = slPalette.Orange
+	ansiRed       = slPalette.Red
 )
 
 // slColorEnabled reports whether to emit escapes. Honours NO_COLOR (the de facto
@@ -1972,9 +1997,9 @@ func slBand(v float64, cfg *config.Config) string {
 	case v >= cfg.SwitchAt:
 		return ansiOrange
 	case v >= slYellowAt:
-		return ansiYellow
+		return ansiAmber
 	default:
-		return ansiGreen
+		return ansiMeltwater
 	}
 }
 
@@ -2069,7 +2094,7 @@ func cmdStatusline(args []string) error {
 	// running code that no longer matches what it is shown (owner decision,
 	// lane 6). Read-only, like the rest of the line.
 	if staleDaemonLine(st, currentBuild(), daemonRunning(), runtime.GOOS) != "" {
-		fmt.Print(slPaint(ansiYellow, "  "+outdatedMarker, slColorEnabled()))
+		fmt.Print(slPaint(ansiAmber, "  "+outdatedMarker, slColorEnabled()))
 	}
 	return err
 }
@@ -2205,7 +2230,7 @@ func statuslineBody(cfg *config.Config, st *state.State) error {
 	// figures simply stop moving, and nothing on the line says so.
 	if !a.LastAt.IsZero() {
 		if age := now.Sub(a.LastAt); age > staleReadingAfter {
-			parts = append(parts, slPaint(ansiYellow, "· read "+slAge(age)+" ago", colour))
+			parts = append(parts, slPaint(ansiAmber, "· read "+slAge(age)+" ago", colour))
 		}
 	}
 
@@ -4010,6 +4035,7 @@ func cmdWhy(args []string) error {
 	if *asJSON {
 		return emitJSON(whyJSON(cfg, st, time.Now(), *only))
 	}
+	printHeader(os.Stdout, st)
 	renderWhy(os.Stdout, cfg, st, time.Now(), *only)
 	return nil
 }

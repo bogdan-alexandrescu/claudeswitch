@@ -14,8 +14,9 @@ package main
 // --profile-directory: the native-messaging host manifests Claude in Chrome
 // needs are installed there, so a separate --user-data-dir would not see
 // them. claudeswitch records only the account → directory mapping, in its
-// own state. It never reads or writes Chrome's files (Preferences, Local
-// State, cookies, extension storage) and never decrypts anything. No `cs
+// own state. It never writes Chrome's files and reads only Local State's
+// profile list (C2, chrome_local.go): never Preferences, cookies or
+// extension storage, and it never decrypts anything. No `cs
 // chrome` command reads the keychain either: the email `add` names is the one
 // state.json recorded when the account was vaulted or identified.
 
@@ -57,7 +58,7 @@ var (
 // including one read back from state.json, which is an editable file: a name
 // starting with "-" would be a flag, and ".." would leave the user-data dir.
 func validChromeDir(dir string) *chromeError {
-	if err := config.ValidName("Chrome profile directory", dir); err != nil {
+	if err := config.ValidChromeFolder(dir); err != nil {
 		return chromeFail("invalid_value", "forget it and make it again: cs chrome forget <account>, "+
 			"then cs chrome add <account>", "%v", err)
 	}
@@ -105,12 +106,13 @@ func runChrome(stdout, stderr io.Writer, args []string) error {
 	fs.SetOutput(stderr)
 	cfgPath := fs.String("config", "", "path to config.toml")
 	asJSON := fs.Bool("json", false, "answer with one JSON object")
+	existing := fs.String("existing", "", "add: map the account to a Chrome profile you already have (folder or name)")
 	pos := parseInterleaved(fs, args)
 
 	sub := "open"
 	if len(pos) > 0 {
 		switch pos[0] {
-		case "add", "open", "list", "forget":
+		case "add", "open", "list", "forget", "profiles", "signin":
 			sub, pos = pos[0], pos[1:]
 		}
 	}
@@ -119,7 +121,11 @@ func runChrome(stdout, stderr io.Writer, args []string) error {
 		human = stderr
 	}
 	usageErr := func() error {
-		return chromeFail("usage", "", "usage: claudeswitch chrome [add|forget] <account> | chrome [<account>] | chrome list [--json]")
+		return chromeFail("usage", "", "usage: claudeswitch chrome add <account> [--existing <folder|name>] | "+
+			"chrome forget <account> | chrome [open|signin] [<account>] | chrome list|profiles [--json]")
+	}
+	if *existing != "" && sub != "add" {
+		return usageErr()
 	}
 
 	cfg, st, err := load(*cfgPath)
@@ -128,6 +134,11 @@ func runChrome(stdout, stderr io.Writer, args []string) error {
 	}
 
 	switch sub {
+	case "profiles":
+		if len(pos) != 0 {
+			return usageErr()
+		}
+		return chromeProfiles(stdout, cfg, st, *asJSON)
 	case "list":
 		if len(pos) != 0 {
 			return usageErr()
@@ -156,10 +167,13 @@ func runChrome(stdout, stderr io.Writer, args []string) error {
 		if len(pos) != 1 {
 			return usageErr()
 		}
+		if *existing != "" {
+			return chromeAddExisting(stdout, human, cfg, st, pos[0], *existing, *asJSON)
+		}
 		return chromeAdd(stdout, human, cfg, st, pos[0], *asJSON)
 	}
 
-	// open
+	// open and signin
 	if len(pos) > 1 {
 		return usageErr()
 	}
@@ -180,21 +194,27 @@ func runChrome(stdout, stderr io.Writer, args []string) error {
 		}
 		via = in.Name
 	}
-	cp := st.ChromeOf(id)
-	if cp == nil {
-		return chromeFail("not_found", "set one up with: cs chrome add "+id,
-			"account %q has no Chrome profile yet", id)
+	if sub == "signin" {
+		return chromeSignin(stdout, human, cfg, st, id, via, *asJSON)
 	}
-	if err := launchChrome(cp.Dir, nil); err != nil {
+	// IMPROVEMENTS C2: the account's own profile, its profile's, or
+	// Chrome's last used.
+	r := resolveChrome(cfg, st, readChromeLocal(), via, id)
+	if r.Rule == "none" {
+		return chromeNothingToOpen(r)
+	}
+	if err := launchChrome(r.Dir, nil); err != nil {
 		return err
 	}
 	if *asJSON {
-		return emitJSONTo(stdout, map[string]any{"account": id, "profile_dir": cp.Dir, "opened": true})
+		m := r.json()
+		m["opened"] = true
+		return emitJSONTo(stdout, m)
 	}
 	if via != "" {
-		fmt.Fprintf(human, "\n  opened Chrome profile %q: %s is live in profile %s\n\n", cp.Dir, id, via)
+		fmt.Fprintf(human, "\n  opened Chrome profile %q (%s): %s is live in profile %s\n\n", r.label(), r.why(), id, via)
 	} else {
-		fmt.Fprintf(human, "\n  opened Chrome profile %q for %s\n\n", cp.Dir, id)
+		fmt.Fprintf(human, "\n  opened Chrome profile %q for %s (%s)\n\n", r.label(), id, r.why())
 	}
 	return nil
 }
@@ -206,7 +226,9 @@ func chromeAdd(stdout, human io.Writer, cfg *config.Config, st *state.State, id 
 	}
 	dir := chromeDirPrefix + id
 	created := true
-	if cp := st.ChromeOf(id); cp != nil {
+	// A profile add made before is opened again; one the person had
+	// (--existing) is replaced by a new one, as asked.
+	if cp := st.ChromeOf(id); cp != nil && !cp.Existing {
 		dir, created = cp.Dir, false
 	}
 	if created {
@@ -253,6 +275,7 @@ func chromeAdd(stdout, human io.Writer, cfg *config.Config, st *state.State, id 
 
 func chromeList(stdout io.Writer, cfg *config.Config, st *state.State, asJSON bool) error {
 	entries := st.ChromeList()
+	local := readChromeLocal()
 	liveIn := func(id string) []string {
 		out := []string{}
 		for _, in := range cfg.EffectiveProfiles() {
@@ -270,10 +293,11 @@ func chromeList(stdout io.Writer, cfg *config.Config, st *state.State, asJSON bo
 				added = e.Added.UTC().Format(time.RFC3339)
 			}
 			list = append(list, map[string]any{"account": e.Account, "profile_dir": e.Dir,
-				"added": added, "live_in": liveIn(e.Account)})
+				"added": added, "live_in": liveIn(e.Account), "existing": e.Existing,
+				"name": orNull(local.nameOf(e.Dir))})
 		}
 		return emitJSONTo(stdout, map[string]any{"chrome_profiles": list,
-			"supported": chromeSupported(chromeGOOS)})
+			"supported": chromeSupported(chromeGOOS), "live": chromeLiveJSON(cfg, st, local)})
 	}
 	if len(entries) == 0 {
 		fmt.Fprintf(stdout, "\n  no Chrome profiles yet; make one with: cs chrome add <account>\n\n")
@@ -285,7 +309,7 @@ func chromeList(stdout io.Writer, cfg *config.Config, st *state.State, asJSON bo
 		if in := liveIn(e.Account); len(in) > 0 {
 			live = "  live in " + strings.Join(in, ", ")
 		}
-		fmt.Fprintf(stdout, "  %-16s %s%s\n", e.Account, e.Dir, live)
+		fmt.Fprintf(stdout, "  %-16s %s%s\n", e.Account, chromeShow(local, e.Dir), live)
 	}
 	fmt.Fprintln(stdout)
 	return nil
@@ -450,7 +474,11 @@ func runChromeHint(stdin io.Reader, stdout, stderr io.Writer, cfgPath string) in
 	}
 	msg := fmt.Sprintf("[claudeswitch] Claude in Chrome only answers Claude Code when both are signed in "+
 		"to the same claude.ai account, and Claude Code is on account %s%s. ", id, on)
-	if cp := st.ChromeOf(id); cp != nil {
+	if r := resolveChrome(cfg, st, readChromeLocal(), prof.Name, id); r.Rule == "profile" {
+		msg += fmt.Sprintf("The Chrome profile %q is used for this profile's accounts, and Claude in Chrome there "+
+			"may still be signed in to the account before the last rotation. Tell the user to run "+
+			"`cs chrome signin %s` and sign Claude in Chrome in as %s there, then retry.", r.label(), id, id)
+	} else if cp := st.ChromeOf(id); cp != nil {
 		msg += fmt.Sprintf("Tell the user to run `cs chrome %s`: it opens the Chrome profile whose "+
 			"extension is signed in to %s, then retry.", id, id)
 	} else {

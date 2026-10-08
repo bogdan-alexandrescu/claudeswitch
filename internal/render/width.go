@@ -1,8 +1,10 @@
 package render
 
 import (
+	"math"
 	"os"
 	"strconv"
+	"strings"
 
 	"golang.org/x/sys/unix"
 )
@@ -33,12 +35,26 @@ func terminalWidth() int {
 	return DefaultWidth
 }
 
+// MaxTable is the widest the status table is allowed to grow, whatever the
+// terminal. Past this the eye has to travel too far between a name and its
+// state, and a wide terminal is no reason to make every row longer.
+const MaxTable = 100
+
+// Dot bars come in two sizes. Twelve dots is the most two bars can have and
+// still leave a full table (plan, clears and a typical account name) inside
+// MaxTable; six is the narrow form, kept because a short bar still says how
+// worried to be at a glance, which the number alone does not.
+const (
+	barDots       = 12
+	barDotsNarrow = 6
+)
+
 // layout says which optional columns fit at a given width. Columns are dropped
 // in order of how much they earn their space: the bars and the plan are useful
 // but not essential, and the numbers never go.
 type layout struct {
 	width  int
-	bars   bool
+	dots   int // dots per bar; zero drops the bars
 	clears bool
 	plan   bool
 	burn   bool
@@ -53,8 +69,7 @@ func layoutFor(width, nameWidth int) layout {
 		indent = 2
 		gap    = 2
 		marker = 1
-		numCol = 5  // "100%!"
-		barCol = 5  // "▰▰▰▰▰"
+		numCol = 6  // "~100%!"
 		clearW = 6  // "2d 12h"
 		planW  = 11 // "Max 5x team"
 		stateW = 17 // "no headroom · 5h"
@@ -67,9 +82,18 @@ func layoutFor(width, nameWidth int) layout {
 		l.clears = true
 		need += gap + clearW
 	}
-	if width >= need+2*(gap+barCol) {
-		l.bars = true
-		need += 2 * (gap + barCol)
+	// The bars are held to MaxTable as well as to the terminal: they are the
+	// one column that would otherwise grow to fill whatever room there is.
+	room := width
+	if room > MaxTable {
+		room = MaxTable
+	}
+	for _, n := range []int{barDots, barDotsNarrow} {
+		if room >= need+2*(gap+n) {
+			l.dots = n
+			need += 2 * (gap + n)
+			break
+		}
 	}
 	if width >= need+gap+planW {
 		l.plan = true
@@ -89,24 +113,76 @@ func layoutFor(width, nameWidth int) layout {
 	return l
 }
 
-// miniBar is a five-cell gauge. A number states a value; a bar states how
-// worried to be about it without having to read the number at all.
-func miniBar(pct float64) string {
-	const cells = 5
-	filled := int(pct/100*cells + 0.5)
-	if filled > cells {
-		filled = cells
+// Dot bar glyphs. A lit dot is spent quota; the threshold dot is where the
+// profile rotates away. Without colour, bold cannot set the threshold apart
+// from a lit dot, so it gets a glyph of its own.
+const (
+	dotLit       = "●"
+	dotUnlit     = "·"
+	dotThreshold = "◉"
+)
+
+// dotBar is a gauge of n dots. A number states a value; a bar states how
+// worried to be about it without having to read the number at all, and the
+// threshold dot shows how far there is to go before the account rotates.
+//
+// tone is the reading's level from levelFor; a healthy reading is drawn in the
+// accent rather than meltwater, which is kept for the figures. frozen greys the
+// whole bar, for an account whose figures are leftovers.
+func dotBar(pct, threshold float64, n int, tone string, frozen bool) string {
+	lit := int(pct/100*float64(n) + 0.5)
+	if lit > n {
+		lit = n
 	}
-	if filled < 0 {
-		filled = 0
+	if lit < 0 {
+		lit = 0
 	}
-	out := make([]rune, 0, cells)
-	for i := 0; i < cells; i++ {
-		if i < filled {
-			out = append(out, '▰')
-		} else {
-			out = append(out, '▱')
+	// The threshold dot is the one whose span holds the trigger: at twelve
+	// dots, 85% falls in the eleventh.
+	thr := -1
+	if threshold > 0 {
+		thr = int(math.Ceil(threshold/100*float64(n))) - 1
+		if thr >= n {
+			thr = n - 1
+		}
+		if thr < 0 {
+			thr = 0
 		}
 	}
-	return string(out)
+	litTone := tone
+	switch {
+	case frozen:
+		litTone = grey
+	case tone == "" || tone == meltwater:
+		litTone = glacier
+	}
+
+	var b strings.Builder
+	run, runTone := "", ""
+	flush := func() {
+		b.WriteString(paint(runTone, run))
+		run = ""
+	}
+	for i := 0; i < n; i++ {
+		glyph, t := dotUnlit, dim
+		switch {
+		case i == thr:
+			flush()
+			if useColor {
+				b.WriteString(paint(bold, dotLit))
+			} else {
+				b.WriteString(dotThreshold)
+			}
+			continue
+		case i < lit:
+			glyph, t = dotLit, litTone
+		}
+		if t != runTone {
+			flush()
+			runTone = t
+		}
+		run += glyph
+	}
+	flush()
+	return b.String()
 }

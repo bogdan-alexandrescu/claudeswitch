@@ -7,7 +7,7 @@ stands, and hot-swaps Claude Code onto a fresh account before the current one
 hits its limit: no restart, no lost session. It ships as a Go CLI plus daemon
 (macOS and Linux), a native macOS menu-bar app and a Claude Code plugin.
 
-Latest release: **v0.5.2**
+Latest release: **v0.5.3**
 ([releases](https://github.com/bogdan-alexandrescu/claudeswitch/releases)).
 
 <p align="center"><img src="docs/images/popover.png" width="384" alt="The ClaudeSwitch menu-bar popover: the daemon is live, the default profile is on work-1 and the work profile is on work-team"></p>
@@ -113,7 +113,7 @@ arm64, and a `checksums.txt`. The archives are reproducible: the same tag
 always produces the same bytes.
 
 ```sh
-VERSION=v0.5.2
+VERSION=v0.5.3
 TARGET=darwin_arm64            # darwin_amd64, linux_amd64, linux_arm64
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 curl -LO "$BASE/claudeswitch_${VERSION}_${TARGET}.tar.gz"
@@ -139,7 +139,7 @@ cd claudeswitch
 symlink, and installs the daemon in dry-run (see [Daemon](#daemon)). To build
 the binary alone: `go build -o bin/claudeswitch ./cmd/claudeswitch`.
 
-**Verify it worked:** `cs version` prints `claudeswitch v0.5.2`. If the shell
+**Verify it worked:** `cs version` prints `claudeswitch v0.5.3`. If the shell
 cannot find `cs`, add `~/.local/bin` to your `PATH`.
 
 ### Daemon
@@ -207,7 +207,7 @@ Re-run it after pulling to update.
 From a release, as a universal build:
 
 ```sh
-VERSION=v0.5.2
+VERSION=v0.5.3
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 ZIP="ClaudeSwitch-${VERSION#v}-macos.zip"
 curl -LO "$BASE/$ZIP"
@@ -331,7 +331,7 @@ each action.
 
 ### Menu-bar label
 
-<p align="center"><img src="docs/images/menubar-label.png" width="154" alt="The menu-bar label: a gauge icon followed by &quot;default · work-1 41%&quot;"></p>
+<p align="center"><img src="docs/images/menubar-label.png" width="157" alt="The menu-bar label: a gauge icon followed by &quot;default · work-1 41%&quot;"></p>
 
 The label shows the live account of the profile you follow and its binding
 utilization, for example `default · work-1 41%` (no profile name when you have
@@ -363,7 +363,9 @@ followed profile's card is open and shows:
 The card's buttons are **Open Claude Code** (your terminal running
 `cs run <profile>`: Terminal, iTerm, Ghostty or Warp), **Switch to best**
 (which names the account it would move to and its utilization), the globe that
-opens the account's Chrome profile, and **Pin**. The other profiles are compact
+opens the account's Chrome profile, and **Pin**. When the profile's shared
+Chrome profile is still signed in to the account before a rotation, the card
+says so in amber with a **Sign in as ...** button. The other profiles are compact
 rows with a play button for Claude Code and a chevron that expands them.
 **+ Add account** and **Settings...** are at the foot.
 
@@ -396,7 +398,8 @@ to, so nothing can rotate there until you sign in to it again
   <tr>
     <td width="440"><img src="docs/images/settings-accounts.png" width="440" alt="Settings, Accounts pane: accounts in rotation order, dragged to reorder, and the recovery copies"></td>
     <td><b>Accounts.</b> Drag accounts to set the rotation order. Rename an
-    account, sign in to it again, open its Chrome profile, or delete it after
+    account, sign in to it again, open or choose its Chrome profile (its
+    profile's, one of yours, or a new one), or delete it after
     a confirmation that names the account and seat. Recovery copies (logins a
     swap kept aside) are listed here to restore or clear.</td>
   </tr>
@@ -434,8 +437,16 @@ with a stable `{"error": {"code", "message", "hint"}}` object.
 [docs/APP_CLI.md](docs/APP_CLI.md) is that contract, and `cs version --json`
 names its version.
 
+On a terminal, `status`, `why` and `doctor` open with one line: the version,
+whether a daemon is running (live or dry-run) and how long ago the newest
+reading was taken. Colour follows the terminal: truecolour when `COLORTERM`
+says so, 256 colours otherwise. Piped output, `--json` and `NO_COLOR` get
+plain text and no header.
+
 The screenshots below use made-up accounts (`work-1`, `work-team`,
 `personal`, `research`) in two profiles, `default` and `work`.
+
+Brand: the mark, palette and CLI colour rules are in [docs/BRAND.md](docs/BRAND.md).
 
 ### cs
 
@@ -446,8 +457,11 @@ With no command, `cs` lists every command.
 ### cs status
 
 Every profile, its pool and the utilization of each account in both windows.
-`▸` marks the live account. `--detail` adds reading age, burn rate and the
-binding limit. `cs top` is the same view, redrawn in place.
+`▸` marks the live account. Each window has a dot bar: lit dots are what has
+been used, and the bold dot is where the profile rotates away (`◉` without
+colour). Amber means climbing and red means refused or over the trigger.
+`--detail` adds reading age, burn rate and the binding limit. `cs top` is the
+same view, redrawn in place.
 
 <p align="center"><img src="docs/images/cli-status.svg" width="720" alt="Output of cs status: the default profile on personal at 44% of its weekly window with research refused until its session resets, and the work profile on work-1 at 87% of its 5-hour window, rotating to work-team"></p>
 
@@ -575,9 +589,12 @@ command in more depth: [docs/GUIDE.md → Commands](docs/GUIDE.md#commands).
 | `cs statusline` | one line for Claude Code's status line (read-only) |
 | `cs statusline install [--force]` / `cs statusline uninstall` | add it to or remove it from `~/.claude/settings.json` |
 | `cs context` | the quota summary the plugin gives each session (read-only) |
-| `cs chrome add <id>` | create a Chrome profile for an account, for Claude in Chrome |
+| `cs chrome add <id> [--existing <name>]` | give an account its own Chrome profile: a new one, or one you have |
 | `cs chrome [<id>]` | open an account's Chrome profile (no id: the account live in this shell's profile) |
-| `cs chrome list [--json]` / `cs chrome forget <id>` | which account has which Chrome profile; drop a mapping |
+| `cs chrome signin [<id>]` | open it at the sign-in pages, to sign Claude in Chrome in as the account |
+| `cs chrome profiles [--json]` | your Chrome profiles, and which profiles and accounts use each |
+| `cs profile set <p> chrome <name\|inherit>` | the Chrome profile a profile's accounts use (default: Chrome's last used) |
+| `cs chrome list [--json]` / `cs chrome forget <id>` | which account has its own Chrome profile; drop a mapping |
 
 ## Inside Claude Code
 
@@ -691,25 +708,31 @@ and [docs/PROFILES.md](docs/PROFILES.md).
 The Claude in Chrome extension keeps its own claude.ai login. After a rotation
 Claude Code is on another account, and the browser tools stop answering ("not
 connected", or "both must use the same claude.ai account"). claudeswitch
-cannot move the extension's login and does not try. Instead, give each account
-its own Chrome profile, signed in to claude.ai and to the extension as that
-account:
+cannot move the extension's login and does not try. It uses your Chrome
+profiles: one per profile, overridable per account.
 
 ```sh
-cs chrome add work-1     # a new Chrome profile for work-1, opened at the claude.ai
-                         # login and the extension's Web Store page
-cs chrome work-1         # open that profile again
-cs chrome                # open the profile of the account live in this shell's profile
+cs chrome profiles                       # your Chrome profiles
+cs profile set work chrome "Work"        # the work profile uses your "Work" Chrome profile
+cs chrome add work-1 --existing "Work 2" # work-1 uses "Work 2" instead
+cs chrome add work-2                     # or a new Chrome profile for work-2
+cs chrome work-1                         # open the Chrome profile work-1 uses
+cs chrome signin work-1                  # open it at the sign-in pages
 ```
 
-Browser tasks then follow rotation. After a switch, the daemon and `cs use`
-name the Chrome profile to open. When a browser tool fails with the
+An account uses its own Chrome profile, else its profile's, else Chrome's
+last-used one. **An account with its own Chrome profile routes by itself:**
+browser tasks follow rotation to it (confirmed on a real machine on
+2026-10-08). **A Chrome profile shared by a profile's accounts needs one
+sign-in per rotation**, because the extension there stays signed in to the
+account before: the daemon, `cs use` and the app's card say so and
+`cs chrome signin` opens the pages. When a browser tool fails with the
 same-account or not-connected error, the plugin tells Claude which account
-Claude Code is on and the command to run. This was confirmed on a real machine
-on 2026-10-08.
+Claude Code is on and the command to run.
 
-claudeswitch only records which account has which Chrome profile and never
-reads or writes Chrome's files. macOS and Linux. More in
+claudeswitch never writes Chrome's files. It reads only the profile list in
+Chrome's `Local State` (names, folders, last used), read-only. macOS and
+Linux. More in
 [docs/GUIDE.md → Claude in Chrome](docs/GUIDE.md#claude-in-chrome).
 
 ## Troubleshooting

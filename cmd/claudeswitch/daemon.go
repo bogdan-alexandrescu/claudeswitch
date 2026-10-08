@@ -572,6 +572,7 @@ func (d *daemon) evaluate(ctx context.Context, il *profileLoop, trigger string) 
 	il.wantSwitchSince = time.Time{}
 	ist.SetActive(dec.Target)
 	ist.LastSwitch = time.Now()
+	ist.LastFrom = from
 	if res.Usage != nil {
 		a := d.st.Get(dec.Target)
 		a.Last, a.LastAt, a.OrgID = res.Usage, res.Usage.FetchedAt, res.OrgID
@@ -587,7 +588,8 @@ func (d *daemon) evaluate(ctx context.Context, il *profileLoop, trigger string) 
 	}
 	d.nt.Switched(d.tag(il, from), dec.Target, dec.Reason, headroom)
 	// IMPROVEMENTS C1: the save above merged in the CLI's Chrome mappings.
-	if msg := chromeRotationNotice(d.st, from, dec.Target); msg != "" {
+	// C2: when only the profile's chrome applies, it asks for a sign-in.
+	if msg := chromeSwitchNotice(il.cfg, d.st, readChromeLocal(), il.name, from, dec.Target); msg != "" {
 		il.log.Info(msg)
 		d.nt.Send("chrome:"+il.name+":"+from+":"+dec.Target, "Claude in Chrome", msg)
 	}

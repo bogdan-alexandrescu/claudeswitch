@@ -8,6 +8,8 @@
 	<string>ClaudeSwitch</string>
 	<key>CFBundleExecutable</key>
 	<string>ClaudeSwitch</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>xyz.claudeswitch.menubar</string>
 	<key>CFBundleInfoDictionaryVersion</key>

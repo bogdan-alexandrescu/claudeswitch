@@ -4,17 +4,21 @@ A native macOS menu-bar app (SwiftUI `MenuBarExtra`, macOS 13 or later) that
 shows what claudeswitch knows and manages it all: profiles, accounts,
 settings and the daemon (IMPROVEMENTS M1, M3-M7).
 
-- **Menu bar:** the live account of the profile you choose to follow, and its
-  binding utilization, e.g. `work · work-1 41%` (no profile name with one
-  profile). The gauge icon moves as the binding window nears the switch
-  threshold (within 10 points), and turns into a warning triangle with a
-  trailing `!` once it is over it or the account needs a login. Icon only is
-  a setting (Advanced).
+- **Menu bar:** the Twin rings, drawn live from the followed profile's live
+  account (outer ring the week, inner ring the 5-hour session, the satellite
+  at the week's reading), then that account and its binding utilization,
+  e.g. `work · work-1 41%` (no profile name with one profile). While rotation
+  is switching, the satellite moves to the incoming account's week; when the
+  live account is refused or needs a login, a warning triangle replaces the
+  satellite and the text gets a trailing `!`. It is a template image, so
+  macOS tints it for every menu bar. Icon only is a setting (Advanced).
 - **Popover:** the daemon (live or dry run, how long since it polled, "not
   polling for 9m" when it has stopped) and a card per profile. The followed
   profile's card is open: its directory, the live account as a picker of the
-  profile's pool (`use <id> --profile P --json`), session and week bars with a
-  tick at that profile's own threshold, resets, per-model weekly limits,
+  profile's pool (`use <id> --profile P --json`), session and week as dot
+  dials or dot bars (the switch at the top right, also in Advanced and the ⋯
+  menu) with a larger dot at that profile's own threshold, resets, per-model
+  weekly limits,
   **Open Claude Code** (your terminal running `claudeswitch run <profile>`:
   Terminal, iTerm, Ghostty or Warp), **Switch account**, Open Chrome for the
   account (`chrome open`, or `chrome add` the first time), Pin (`account pin` /
@@ -44,11 +48,20 @@ settings and the daemon (IMPROVEMENTS M1, M3-M7).
 
 ## The menu-bar item
 
-- **Its label** is a gauge and the followed profile's live account with
-  its utilization. Before the first data arrives it shows the gauge with
+- **Its label** is the rings and the followed profile's live account with
+  its utilization. Before the first data arrives it shows empty rings with
   `cs …` (loading). The question mark appears only when the `claudeswitch`
   binary is missing or too old; another failed read keeps the last figures,
-  or shows `cs`.
+  or shows `cs`. VoiceOver reads the figures ("ClaudeSwitch: default ·
+  work-1, week 41%, session 18%") and the state. The glyph is redrawn on
+  every change and never animated.
+- **Appearance** (System, Light, Dark; Advanced → This app, or the ⋯ menu)
+  sets the whole app's appearance. The brand colours are dynamic, one value
+  for light and one for dark, and the accent marks selection, primary
+  buttons, switches and the followed card. The app icon is drawn by
+  `scripts/make-icon.sh`; the wordmark is Geist SemiBold (SIL OFL 1.1,
+  `Resources/Geist-OFL.txt`), registered at launch; the rest of the UI is SF
+  Pro.
 - **Placement and the notch.** macOS puts a new menu-bar item to the left
   of the others, and on a MacBook with a notch and a full menu bar that can
   be under the notch, where it is drawn but cannot be seen. So on its first
@@ -152,6 +165,9 @@ cd macos
 swift build                     # debug build
 scripts/test.sh                 # unit tests (swift test, with or without Xcode)
 scripts/build-app.sh            # macos/build/ClaudeSwitch.app
+scripts/make-icon.sh            # redraw Resources/AppIcon.icns from the mark
+scripts/render.sh /tmp/out      # every screen from each fixture set, plus
+                                # glyph-states.png and popover-bars*.png
 .build/debug/ClaudeSwitchBar --render Tests/ClaudeSwitchCoreTests/Fixtures /tmp/out
                                 # draw the popover, every Settings pane, the
                                 # add-account sheet and the label, light and

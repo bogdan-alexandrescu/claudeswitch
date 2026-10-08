@@ -306,31 +306,71 @@ account, and Claude Code finds it on a channel keyed by Claude Code's own
 account. After a rotation Claude Code is on another account, so the browser
 tools stop answering ("not connected", or "both must use the same claude.ai
 account"). claudeswitch cannot move the extension's login, and does not try:
-it gives each account a Chrome profile of its own and tells you which one to
-use.
+it says which Chrome profile Claude in Chrome needs, and opens it for you.
+
+Which Chrome profile an account uses is decided in this order:
+
+1. **the account's own Chrome profile**, if it has one — a new one
+   (`cs chrome add`) or one you already have (`cs chrome add --existing`);
+2. **its profile's Chrome profile**, if the profile names one
+   (`cs profile set <profile> chrome <name>`);
+3. **Chrome's last-used profile**.
+
+claudeswitch never creates a Chrome profile unless you run `cs chrome add`
+without `--existing`.
 
 ```sh
-cs chrome add work-a     # a new Chrome profile for work-a, opened at the
-                         # claude.ai login and the extension's Web Store page
-cs chrome work-a         # open that profile again
-cs chrome                # open the profile of the account live in this shell's profile
-cs chrome list [--json]  # which account has which profile
-cs chrome forget work-a  # drop the mapping (the Chrome profile itself stays)
+cs chrome profiles [--json]             # your Chrome profiles, and which profiles
+                                        # and accounts use each
+cs profile set work chrome "Work"       # the work profile's accounts use the
+                                        # Chrome profile called Work
+cs profile set work chrome inherit      # back to Chrome's last used
+cs chrome add work-a --existing "Work 2"  # work-a uses your "Work 2" profile
+cs chrome add work-a                    # a new Chrome profile for work-a, opened at
+                                        # the claude.ai login and the extension's
+                                        # Web Store page
+cs chrome work-a                        # open work-a's Chrome profile
+cs chrome                               # ... of the account live in this shell's profile
+cs chrome signin work-b                 # open it at the sign-in pages, to sign
+                                        # Claude in Chrome in as work-b
+cs chrome list [--json]                 # which account has its own Chrome profile
+cs chrome forget work-a                 # drop work-a's own (the Chrome profile stays)
 ```
 
-In the window `add` opens: sign in to claude.ai as that account, add (or
-enable) Claude in Chrome, and sign the extension in as the same account.
-Then:
+A Chrome profile is named by Chrome's name for it ("Work") or by its folder
+(`Default`, `Profile 2`); the config stores the folder. `cs config` lists each
+profile's `chrome`, and `cs config get chrome --profile work` prints it.
 
-- after a rotation to an account with a profile, the daemon and `cs use` say
-  `Claude in Chrome: use the work-b Chrome profile (cs chrome work-b)`; to one
-  without, once you have set up a profile for any account, they say
-  `Claude in Chrome: work-b has no Chrome profile — cs chrome add work-b`;
+**The honest limit.** The extension holds one login per Chrome profile and
+claudeswitch cannot move it. So:
+
+- **an account with its own Chrome profile routes by itself**: once that
+  profile's claude.ai and extension are signed in as the account, browser
+  tasks follow every rotation to it (confirmed 2026-10-08);
+- **a Chrome profile shared by a profile's accounts needs one sign-in per
+  rotation**: after a switch from work-a to work-b, the extension there is
+  still signed in as work-a until you sign it in as work-b
+  (`cs chrome signin work-b`, or the button on the app's card).
+
+In the window `add` or `signin` opens: sign in to claude.ai as that account,
+add (or enable) Claude in Chrome, and sign the extension in as the same
+account. Then:
+
+- after a rotation to an account with its own Chrome profile, the daemon and
+  `cs use` say `Claude in Chrome: use the work-b Chrome profile (cs chrome
+  work-b)`;
+- to one that uses its profile's Chrome profile, they say
+  `Claude in Chrome in "Work" is still signed in as work-a; sign it in as
+  work-b (cs chrome signin work-b)`, and the app's card shows the same with a
+  **Sign in as work-b** button (dismissable until the next rotation);
+- to one with neither, once you have set up a Chrome profile for any account,
+  they say `Claude in Chrome: work-b has no Chrome profile — cs chrome add
+  work-b`;
 - when a browser tool fails with the same-account or not-connected error, the
   plugin tells Claude which account Claude Code is on and the command, once
   per rotation (it looks only at failures, never at page content).
 
-The steps `add` prints name the account's email when claudeswitch recorded
+The steps `add` and `signin` print name the account's email when claudeswitch recorded
 one (at `add`, `login`, `setup` or `identify`); it never reads the keychain
 for it. Accounts vaulted before this release show their id until
 `cs identify` records the email. `cs rename` carries the mapping
@@ -339,9 +379,15 @@ over.
 The profiles live inside Chrome's normal user-data directory (chosen with
 `--profile-directory`), because Claude in Chrome's native-messaging host is
 registered there; a separate `--user-data-dir` would not find it.
-claudeswitch records only which account has which profile directory, in its
-own state. It never reads or writes Chrome's files (preferences, cookies,
-extension storage) and never decrypts anything.
+claudeswitch records which account has which profile directory in its own
+state, and a profile's `chrome` in the config. It never writes Chrome's files.
+The one thing of Chrome's it reads is the profile list in Chrome's `Local
+State` file (each profile's folder and name, and which was last used),
+read-only: on macOS `~/Library/Application Support/Google/Chrome/Local State`,
+on Linux `~/.config/google-chrome/Local State`, then
+`~/.config/chromium/Local State`. It never reads cookies, preferences or
+extension storage, and never decrypts anything. When `Local State` cannot be
+read, name Chrome profiles by folder.
 
 **Confirmed on a real machine (2026-10-08):** after a switch, browser tasks
 from Claude Code run in the new account's Chrome profile without you opening
@@ -355,8 +401,8 @@ The daemon sends a desktop notification when it switches accounts, when every
 account is burnt (naming which recovers first), and before an idle account's
 refresh token expires — a dead refresh token means that account can no longer
 be swapped to *or* polled. Once you use [Chrome profiles](#claude-in-chrome),
-a switch also says which profile Claude in Chrome needs, or that the new
-account has none yet. Nothing else notifies; `--quiet` disables them.
+a switch also says which profile Claude in Chrome needs, that the shared one
+needs signing in as the new account, or that the new account has none yet. Nothing else notifies; `--quiet` disables them.
 
 ## Running as a daemon
 

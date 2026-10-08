@@ -30,35 +30,166 @@ func detectColor() bool {
 }
 
 // SetColor overrides detection, for tests and for a future --color flag.
-func SetColor(on bool) { useColor = on }
+// Turning colour on uses the depth the environment supports.
+func SetColor(on bool) {
+	useColor = on
+	pal = PaletteFor(DepthFromEnv(os.Getenv))
+}
+
+// SetDepth turns colour on at a given depth, for tests and screenshots;
+// DepthNone turns it off.
+func SetDepth(d Depth) {
+	useColor = d != DepthNone
+	pal = PaletteFor(d)
+}
+
+// Depth is how many colours the terminal can show. The brand palette (see
+// docs/BRAND.md) is defined at every depth, so the same role reads the same
+// way whatever the terminal.
+type Depth int
 
 const (
-	reset  = "\033[0m"
-	bold   = "\033[1m"
-	dim    = "\033[2m"
-	green  = "\033[32m"
-	yellow = "\033[33m"
-	// 256-colour orange: the 8-colour palette has no orange, and the step from
-	// yellow straight to red loses the "getting close" band entirely.
-	orange = "\033[38;5;208m"
-	red    = "\033[31m"
-	grey   = "\033[90m"
+	DepthNone Depth = iota
+	Depth16
+	Depth256
+	DepthTrue
 )
 
-func paint(code, s string) string {
-	if !useColor || code == "" {
+func (d Depth) String() string {
+	switch d {
+	case Depth16:
+		return "16"
+	case Depth256:
+		return "256"
+	case DepthTrue:
+		return "truecolor"
+	}
+	return "none"
+}
+
+// DepthFromEnv is the colour depth a terminal advertises, ignoring whether
+// colour is wanted at all (that is NO_COLOR's and the TTY check's business).
+// COLORTERM is the one reliable truecolour signal; nearly everything else
+// handles the 256-colour cube, so that is the default, and only a TERM known to
+// stop at 16 colours gets the plain codes.
+func DepthFromEnv(getenv func(string) string) Depth {
+	switch strings.ToLower(getenv("COLORTERM")) {
+	case "truecolor", "24bit":
+		return DepthTrue
+	}
+	term := strings.ToLower(getenv("TERM"))
+	switch {
+	case strings.Contains(term, "256color"), strings.Contains(term, "direct"):
+		return Depth256
+	case term == "linux", term == "ansi", term == "cons25", term == "xterm-color",
+		term == "xterm-16color", strings.HasPrefix(term, "vt"):
+		return Depth16
+	}
+	return Depth256
+}
+
+// Palette is the brand's colour roles as escape codes at one depth.
+type Palette struct {
+	Glacier   string // the accent: the mark, the active account, healthy bars
+	Meltwater string // the second accent: healthy figures and outcomes
+	Amber     string // climbing
+	Orange    string // close to the trigger
+	Red       string // refused, over the limit, act now
+	Grey      string // secondary text
+}
+
+// PaletteFor returns the palette at a depth. The truecolour values are the
+// brand's own; the 256-colour ones are the nearest the cube has; the 16-colour
+// ones fall back to the colour each role is named for.
+func PaletteFor(d Depth) Palette {
+	switch d {
+	case DepthTrue:
+		return Palette{
+			Glacier:   "\033[38;2;143;211;255m", // #8fd3ff
+			Meltwater: "\033[38;2;182;240;220m", // #b6f0dc
+			Amber:     "\033[38;2;240;199;94m",  // #f0c75e
+			Orange:    "\033[38;2;255;160;102m", // #ffa066, between amber and red
+			Red:       "\033[38;2;255;122;122m", // #ff7a7a
+			Grey:      "\033[38;5;245m",
+		}
+	case Depth256:
+		return Palette{
+			Glacier:   "\033[38;5;117m",
+			Meltwater: "\033[38;5;158m",
+			Amber:     "\033[38;5;221m",
+			Orange:    "\033[38;5;215m",
+			Red:       "\033[38;5;203m",
+			Grey:      "\033[38;5;245m",
+		}
+	case Depth16:
+		return Palette{
+			Glacier:   "\033[36m",
+			Meltwater: "\033[32m",
+			Amber:     "\033[33m",
+			// No orange in sixteen colours: bold yellow keeps "close" apart
+			// from "climbing" without borrowing red, which means act now.
+			Orange: "\033[1;33m",
+			Red:    "\033[31m",
+			Grey:   "\033[90m",
+		}
+	}
+	return Palette{}
+}
+
+// pal is the palette in use. Every colour below goes through it, so changing
+// depth recolours the whole CLI at once.
+var pal = PaletteFor(DepthFromEnv(os.Getenv))
+
+const (
+	reset = "\033[0m"
+	bold  = "\033[1m"
+	dim   = "\033[2m"
+)
+
+// Roles, by what they mean rather than by hue. A string selector rather than
+// the code itself, so a depth change after start-up still applies.
+const (
+	glacier   = "glacier"
+	meltwater = "meltwater"
+	amber     = "amber"
+	orange    = "orange"
+	red       = "red"
+	grey      = "grey"
+)
+
+// code resolves a role or a literal SGR sequence to an escape code.
+func code(c string) string {
+	switch c {
+	case glacier:
+		return pal.Glacier
+	case meltwater:
+		return pal.Meltwater
+	case amber:
+		return pal.Amber
+	case orange:
+		return pal.Orange
+	case red:
+		return pal.Red
+	case grey:
+		return pal.Grey
+	}
+	return c
+}
+
+func paint(c, s string) string {
+	if !useColor || c == "" || s == "" {
 		return s
 	}
-	return code + s + reset
+	return code(c) + s + reset
 }
 
 // levelFor grades a utilization against the thresholds that actually govern
 // behaviour, rather than round numbers. Red means the daemon would act now;
-// orange means it is close; yellow means it has started climbing; green means
+// orange means it is close; amber means it has started climbing; meltwater means
 // there is plenty of room.
 //
 // Tying the bands to switch_at keeps them meaningful when someone changes it: a
-// trigger of 50 should make 45% orange, not green.
+// trigger of 50 should make 45% orange, not meltwater.
 func levelFor(v, switchAt float64, severity string) string {
 	switch strings.ToLower(severity) {
 	case "critical":
@@ -76,9 +207,9 @@ func levelFor(v, switchAt float64, severity string) string {
 	case v >= switchAt*0.85:
 		return orange
 	case v >= switchAt*0.6:
-		return yellow
+		return amber
 	}
-	return green
+	return meltwater
 }
 
 // colorState tints the verdict to match: anything that stops work is red, a
@@ -91,7 +222,7 @@ func colorState(s string) string {
 		// Not red: red is reserved for "you have to do something about this",
 		// and an account that refills within the hour is the one case where
 		// doing nothing is a working plan.
-		return paint(yellow, s)
+		return paint(amber, s)
 	case strings.Contains(s, "no headroom"), strings.Contains(s, "refused"):
 		return paint(red, s)
 	case strings.Contains(s, "reserved"):
@@ -182,13 +313,16 @@ func (t *table) Add(cells ...string) { t.add(cells...) }
 // Render writes the table with the given indent.
 func (t *table) Render(indent string) string { return t.render(indent) }
 
-// Dim, Bold, Grey and Good tint text with the same grammar status uses.
+// Dim, Bold, Grey, Good, Warn, Bad and Accent tint text with the same grammar status uses.
 func Dim(s string) string  { return paint(dim, s) }
 func Bold(s string) string { return paint(bold, s) }
 func Grey(s string) string { return paint(grey, s) }
-func Good(s string) string { return paint(green, s) }
+func Good(s string) string { return paint(meltwater, s) }
 func Warn(s string) string { return paint(orange, s) }
 func Bad(s string) string  { return paint(red, s) }
+func Accent(s string) string {
+	return paint(glacier, s)
+}
 
 // Level tints a utilization against the trigger, so a number means the same
 // thing wherever it appears.
@@ -255,4 +389,23 @@ func (t *table) render(indent string) string {
 		line(r, false)
 	}
 	return b.String()
+}
+
+// Mark is the brand mark in text: two concentric rings, as the app draws them.
+const Mark = "◎"
+
+// Header is the line `status`, `why` and `doctor` open with on a terminal:
+// which build is speaking, whether a daemon is acting on what it shows, and how
+// old the newest reading is. daemon is the phrase to show ("daemon live",
+// "daemon not running"); a zero polled means nothing has been read yet.
+func Header(version, daemon string, polled, now time.Time) string {
+	age := "not polled yet"
+	if !polled.IsZero() {
+		age = "polled " + shortDur(now.Sub(polled)) + " ago"
+		if now.Sub(polled) < time.Second {
+			age = "polled just now"
+		}
+	}
+	return "  " + paint(glacier, Mark+" claudeswitch") +
+		paint(dim, " "+version+" · "+daemon+" · "+age) + "\n"
 }

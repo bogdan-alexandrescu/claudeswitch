@@ -31,11 +31,11 @@ func Why(out io.Writer, o WhyOptions) {
 		if o.Decision.Forced {
 			verb = "switching immediately to"
 		}
-		fmt.Fprintf(out, "  %s %s\n", paint(green, verb), paint(bold, o.Decision.Target))
+		fmt.Fprintf(out, "  %s %s\n", paint(glacier, verb), paint(bold, o.Decision.Target))
 	case policy.Wait:
 		fmt.Fprintf(out, "  %s\n", paint(red, "nowhere to rotate to"))
 	default:
-		fmt.Fprintf(out, "  %s\n", paint(green, "staying put"))
+		fmt.Fprintf(out, "  %s\n", paint(meltwater, "staying put"))
 	}
 	fmt.Fprintf(out, "  %s\n", paint(grey, o.Decision.Reason))
 
@@ -51,9 +51,9 @@ func Why(out io.Writer, o WhyOptions) {
 		mark, name := " ", v.ID
 		switch {
 		case v.Active:
-			mark, name = paint(green, "▸"), paint(bold, v.ID)
+			mark, name = paint(glacier, "▸"), paint(bold, v.ID)
 		case v.Eligible:
-			mark = paint(green, "✓")
+			mark = paint(meltwater, "✓")
 		default:
 			mark = paint(red, "✗")
 		}

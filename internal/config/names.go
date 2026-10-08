@@ -127,3 +127,30 @@ func ValidName(kind, s string) error {
 	}
 	return nil
 }
+
+// MaxChromeFolderLen bounds a Chrome profile folder name.
+const MaxChromeFolderLen = 255
+
+// ValidChromeFolder checks a Chrome profile folder ("Default", "Profile 2",
+// "claudeswitch-work-1") before it is stored or reaches Chrome's argv as
+// --profile-directory. Chrome's own names have spaces, so this is looser
+// than ValidName, but nothing that could be read as a flag, leave the
+// user-data dir or carry a control character passes.
+func ValidChromeFolder(s string) error {
+	switch {
+	case s == "":
+		return fmt.Errorf("the Chrome profile folder is empty")
+	case len(s) > MaxChromeFolderLen:
+		return fmt.Errorf("the Chrome profile folder %q is longer than %d characters", s, MaxChromeFolderLen)
+	case s[0] == '-' || s[0] == '.' || s[0] == ' ':
+		return fmt.Errorf("the Chrome profile folder %q starts with %q", s, s[0])
+	case strings.ContainsAny(s, "/\\:"):
+		return fmt.Errorf("the Chrome profile folder %q contains a path separator", s)
+	}
+	for _, c := range s {
+		if c < 0x20 || c == 0x7f {
+			return fmt.Errorf("the Chrome profile folder %q contains a control character", s)
+		}
+	}
+	return nil
+}
