@@ -9,11 +9,17 @@
 <text x="20.0" y="61.2" fill="#5fd38d" textLength="7.8" lengthAdjust="spacingAndGlyphs">$</text>
 <text x="35.6" y="61.2" fill="#f4f5f7" font-weight="700" textLength="117.0" lengthAdjust="spacingAndGlyphs">cs profile list</text>
 <text x="35.6" y="98.9" textLength="54.6" lengthAdjust="spacingAndGlyphs">default</text>
-<text x="51.2" y="117.7" textLength="319.8" lengthAdjust="spacingAndGlyphs">dir   ~/.claude (CLAUDE_CONFIG_DIR unset)</text>
-<text x="51.2" y="136.6" textLength="187.2" lengthAdjust="spacingAndGlyphs">pool  personal, research</text>
-<text x="51.2" y="155.4" textLength="109.2" lengthAdjust="spacingAndGlyphs">live  personal</text>
+<text x="51.2" y="117.7" textLength="23.4" lengthAdjust="spacingAndGlyphs">dir</text>
+<text x="98.0" y="117.7" textLength="273.0" lengthAdjust="spacingAndGlyphs">~/.claude (CLAUDE_CONFIG_DIR unset)</text>
+<text x="51.2" y="136.6" textLength="31.2" lengthAdjust="spacingAndGlyphs">pool</text>
+<text x="98.0" y="136.6" textLength="140.4" lengthAdjust="spacingAndGlyphs">personal, research</text>
+<text x="51.2" y="155.4" textLength="31.2" lengthAdjust="spacingAndGlyphs">live</text>
+<text x="98.0" y="155.4" textLength="62.4" lengthAdjust="spacingAndGlyphs">personal</text>
 <text x="35.6" y="174.3" textLength="31.2" lengthAdjust="spacingAndGlyphs">work</text>
-<text x="51.2" y="193.1" textLength="156.0" lengthAdjust="spacingAndGlyphs">dir   ~/.claude-work</text>
-<text x="51.2" y="212.0" textLength="179.4" lengthAdjust="spacingAndGlyphs">pool  work-1, work-team</text>
-<text x="51.2" y="230.8" textLength="93.6" lengthAdjust="spacingAndGlyphs">live  work-1</text>
+<text x="51.2" y="193.1" textLength="23.4" lengthAdjust="spacingAndGlyphs">dir</text>
+<text x="98.0" y="193.1" textLength="109.2" lengthAdjust="spacingAndGlyphs">~/.claude-work</text>
+<text x="51.2" y="212.0" textLength="31.2" lengthAdjust="spacingAndGlyphs">pool</text>
+<text x="98.0" y="212.0" textLength="132.6" lengthAdjust="spacingAndGlyphs">work-1, work-team</text>
+<text x="51.2" y="230.8" textLength="31.2" lengthAdjust="spacingAndGlyphs">live</text>
+<text x="98.0" y="230.8" textLength="46.8" lengthAdjust="spacingAndGlyphs">work-1</text>
 </g></svg>

@@ -24,7 +24,7 @@ settings and the daemon (IMPROVEMENTS M1, M3-M7).
 - **Settings window:** Profiles (create with a directory, pool and seed
   account; add, remove and move pool accounts; the five per-profile
   overrides; forget old profiles' credentials), Accounts (drag to set the
-  rotation order; rename, scope, sign in again, Chrome, delete after a
+  rotation order; rename, sign in again, Chrome, delete after a
   confirmation naming account and seat; recovery copies), Rotation, Polling
   and Advanced (every `cs config` setting, generated from
   `config schema --json`, with inline validation and the CLI's own errors),

@@ -9,7 +9,9 @@
 <text x="20.0" y="61.2" fill="#5fd38d" textLength="7.8" lengthAdjust="spacingAndGlyphs">$</text>
 <text x="35.6" y="61.2" fill="#f4f5f7" font-weight="700" textLength="241.8" lengthAdjust="spacingAndGlyphs">cs use work-team --profile work</text>
 <text x="35.6" y="98.9" textLength="288.6" lengthAdjust="spacingAndGlyphs">✓ now using work-team in profile work</text>
-<text x="51.2" y="117.7" textLength="312.0" lengthAdjust="spacingAndGlyphs">5-hour 7.0%   7-day 22.0%   org 00000000</text>
+<text x="51.2" y="117.7" textLength="85.8" lengthAdjust="spacingAndGlyphs">5-hour 7.0%</text>
+<text x="160.4" y="117.7" textLength="85.8" lengthAdjust="spacingAndGlyphs">7-day 22.0%</text>
+<text x="269.6" y="117.7" textLength="93.6" lengthAdjust="spacingAndGlyphs">org 00000000</text>
 <text x="51.2" y="136.6" textLength="273.0" lengthAdjust="spacingAndGlyphs">your MCP logins were left untouched</text>
 <text x="51.2" y="155.4" textLength="491.4" lengthAdjust="spacingAndGlyphs">no restart needed — running sessions pick this up going forward</text>
 </g></svg>

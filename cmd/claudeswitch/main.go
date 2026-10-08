@@ -154,8 +154,11 @@ func usageText() {
   session    token usage across every account used in a span of work
   doctor     check the things that have to be true for this to work
   setup      guided first run: vault your accounts, write the config, install
-  config     show the settings in force, or change one; config clean removes
-             the scope lines and [project] tables older configs carry
+  config     show the settings in force, or change one: config <name> <value>,
+             or config get | set <name> [<value>] (get --profile P for a
+             profile's value); config schema describes every setting;
+             config clean removes the scope lines and [project] tables older
+             configs carry
   init       write a starter config by hand instead
   uninstall  stop the daemon and remove what claudeswitch installed
 
@@ -192,8 +195,12 @@ func usageText() {
              skills, commands and agents linked from ~/.claude, your MCP
              servers copied, its [[profile]] block; --seed signs it in with a
              vaulted account live nowhere else
+  profile seed <name> <account>
+             sign a profile with no credential in with a vaulted account
   profile list
              each profile's dir, pool and live account
+  profile remove <name> [--to <profile>]
+             remove a profile; its accounts join --to, or default
   profile forget <name>
              release the guard on a removed or re-pointed profile's old credential
   profile pool <name> add|remove <account> [--to <profile>]
@@ -205,7 +212,7 @@ func usageText() {
              start Claude Code in a profile (CLAUDE_CONFIG_DIR set for it)
   chrome add <account>
              open a Chrome profile for that account, for Claude in Chrome
-  chrome [<account>]
+  chrome [open] [<account>]
              open it (no account: the one live in this shell's profile)
   chrome list | forget <account>
 

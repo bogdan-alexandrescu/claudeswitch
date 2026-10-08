@@ -8,14 +8,23 @@
 <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="13.0" fill="#d5d8de" xml:space="preserve">
 <text x="20.0" y="61.2" fill="#5fd38d" textLength="7.8" lengthAdjust="spacingAndGlyphs">$</text>
 <text x="35.6" y="61.2" fill="#f4f5f7" font-weight="700" textLength="78.0" lengthAdjust="spacingAndGlyphs">cs session</text>
-<text x="35.6" y="98.9" textLength="210.6" lengthAdjust="spacingAndGlyphs">Thu 10:25 → 18:25  (8h 00m)</text>
+<text x="35.6" y="98.9" textLength="132.6" lengthAdjust="spacingAndGlyphs">Thu 10:25 → 18:25</text>
+<text x="183.8" y="98.9" textLength="62.4" lengthAdjust="spacingAndGlyphs">(8h 00m)</text>
 <text x="35.6" y="136.6" fill-opacity="0.62" textLength="54.6" lengthAdjust="spacingAndGlyphs">ACCOUNT</text>
 <text x="113.6" y="136.6" fill-opacity="0.62" textLength="46.8" lengthAdjust="spacingAndGlyphs">TOKENS</text>
 <text x="176.0" y="136.6" fill-opacity="0.62" textLength="39.0" lengthAdjust="spacingAndGlyphs">SHARE</text>
 <text x="230.6" y="136.6" fill-opacity="0.62" textLength="62.4" lengthAdjust="spacingAndGlyphs">MESSAGES</text>
 <text x="308.6" y="136.6" fill-opacity="0.62" textLength="46.8" lengthAdjust="spacingAndGlyphs">ACTIVE</text>
-<text x="35.6" y="155.4" textLength="319.8" lengthAdjust="spacingAndGlyphs">research  127.4M    63%       997  5h 03m</text>
-<text x="35.6" y="174.3" textLength="319.8" lengthAdjust="spacingAndGlyphs">personal   75.5M    37%       598  2h 56m</text>
+<text x="35.6" y="155.4" textLength="62.4" lengthAdjust="spacingAndGlyphs">research</text>
+<text x="113.6" y="155.4" textLength="46.8" lengthAdjust="spacingAndGlyphs">127.4M</text>
+<text x="191.6" y="155.4" textLength="23.4" lengthAdjust="spacingAndGlyphs">63%</text>
+<text x="269.6" y="155.4" textLength="23.4" lengthAdjust="spacingAndGlyphs">997</text>
+<text x="308.6" y="155.4" textLength="46.8" lengthAdjust="spacingAndGlyphs">5h 03m</text>
+<text x="35.6" y="174.3" textLength="62.4" lengthAdjust="spacingAndGlyphs">personal</text>
+<text x="121.4" y="174.3" textLength="39.0" lengthAdjust="spacingAndGlyphs">75.5M</text>
+<text x="191.6" y="174.3" textLength="23.4" lengthAdjust="spacingAndGlyphs">37%</text>
+<text x="269.6" y="174.3" textLength="23.4" lengthAdjust="spacingAndGlyphs">598</text>
+<text x="308.6" y="174.3" textLength="46.8" lengthAdjust="spacingAndGlyphs">2h 56m</text>
 <text x="35.6" y="193.1" fill="#f4f5f7" font-weight="700" textLength="39.0" lengthAdjust="spacingAndGlyphs">total</text>
 <text x="113.6" y="193.1" fill="#f4f5f7" font-weight="700" textLength="46.8" lengthAdjust="spacingAndGlyphs">202.9M</text>
 <text x="261.8" y="193.1" fill="#f4f5f7" font-weight="700" textLength="31.2" lengthAdjust="spacingAndGlyphs">1595</text>

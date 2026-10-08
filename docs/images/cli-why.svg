@@ -20,11 +20,14 @@
 <text x="59.0" y="230.8" fill="#f4f5f7" font-weight="700" textLength="62.4" lengthAdjust="spacingAndGlyphs">personal</text>
 <text x="137.0" y="230.8" textLength="195.0" lengthAdjust="spacingAndGlyphs">at 44%, 54 points of room</text>
 <text x="35.6" y="249.7" fill="#ff6b6b" textLength="7.8" lengthAdjust="spacingAndGlyphs">✗</text>
-<text x="59.0" y="249.7" textLength="319.8" lengthAdjust="spacingAndGlyphs">research  refused on its five_hour window</text>
+<text x="59.0" y="249.7" textLength="62.4" lengthAdjust="spacingAndGlyphs">research</text>
+<text x="137.0" y="249.7" textLength="241.8" lengthAdjust="spacingAndGlyphs">refused on its five_hour window</text>
 <text x="386.6" y="249.7" fill="#878d98" textLength="117.0" lengthAdjust="spacingAndGlyphs">· clears in 37m</text>
 <text x="35.6" y="287.4" fill-opacity="0.62" textLength="202.8" lengthAdjust="spacingAndGlyphs">WEEKLY, at the pace so far</text>
-<text x="59.0" y="306.2" textLength="647.4" lengthAdjust="spacingAndGlyphs">personal  44% used · 34% of the week gone · 10 points ahead · on pace to use it all</text>
-<text x="59.0" y="325.1" textLength="647.4" lengthAdjust="spacingAndGlyphs">research  71% used · 52% of the week gone · 19 points ahead · on pace to use it all</text>
+<text x="59.0" y="306.2" textLength="62.4" lengthAdjust="spacingAndGlyphs">personal</text>
+<text x="137.0" y="306.2" textLength="569.4" lengthAdjust="spacingAndGlyphs">44% used · 34% of the week gone · 10 points ahead · on pace to use it all</text>
+<text x="59.0" y="325.1" textLength="62.4" lengthAdjust="spacingAndGlyphs">research</text>
+<text x="137.0" y="325.1" textLength="569.4" lengthAdjust="spacingAndGlyphs">71% used · 52% of the week gone · 19 points ahead · on pace to use it all</text>
 <text x="35.6" y="381.6" fill="#f4f5f7" font-weight="700" textLength="54.6" lengthAdjust="spacingAndGlyphs">profile</text>
 <text x="98.0" y="381.6" fill="#f4f5f7" font-weight="700" textLength="31.2" lengthAdjust="spacingAndGlyphs">work</text>
 <text x="137.0" y="381.6" textLength="156.0" lengthAdjust="spacingAndGlyphs">(switch ≥85% / ≥98%)</text>
@@ -38,8 +41,11 @@
 <text x="59.0" y="513.6" fill="#f4f5f7" font-weight="700" textLength="46.8" lengthAdjust="spacingAndGlyphs">work-1</text>
 <text x="144.8" y="513.6" textLength="280.8" lengthAdjust="spacingAndGlyphs">at 87%, over the 85% session trigger</text>
 <text x="35.6" y="532.4" fill="#5fd38d" textLength="7.8" lengthAdjust="spacingAndGlyphs">✓</text>
-<text x="59.0" y="532.4" textLength="187.2" lengthAdjust="spacingAndGlyphs">work-team  at 22%, ready</text>
+<text x="59.0" y="532.4" textLength="70.2" lengthAdjust="spacingAndGlyphs">work-team</text>
+<text x="144.8" y="532.4" textLength="101.4" lengthAdjust="spacingAndGlyphs">at 22%, ready</text>
 <text x="35.6" y="570.1" fill-opacity="0.62" textLength="202.8" lengthAdjust="spacingAndGlyphs">WEEKLY, at the pace so far</text>
-<text x="59.0" y="589.0" textLength="741.0" lengthAdjust="spacingAndGlyphs">work-1     63% used · 68% of the week gone · 5 points behind · ~7% would expire unused at reset</text>
-<text x="59.0" y="607.8" textLength="748.8" lengthAdjust="spacingAndGlyphs">work-team  22% used · 27% of the week gone · 5 points behind · ~20% would expire unused at reset</text>
+<text x="59.0" y="589.0" textLength="46.8" lengthAdjust="spacingAndGlyphs">work-1</text>
+<text x="144.8" y="589.0" textLength="655.2" lengthAdjust="spacingAndGlyphs">63% used · 68% of the week gone · 5 points behind · ~7% would expire unused at reset</text>
+<text x="59.0" y="607.8" textLength="70.2" lengthAdjust="spacingAndGlyphs">work-team</text>
+<text x="144.8" y="607.8" textLength="663.0" lengthAdjust="spacingAndGlyphs">22% used · 27% of the week gone · 5 points behind · ~20% would expire unused at reset</text>
 </g></svg>

@@ -31,8 +31,10 @@
 <text x="261.8" y="212.0" fill="#5fd38d" textLength="39.0" lengthAdjust="spacingAndGlyphs">▰▱▱▱▱</text>
 <text x="339.8" y="212.0" fill="#5fd38d" textLength="23.4" lengthAdjust="spacingAndGlyphs">44%</text>
 <text x="378.8" y="212.0" fill="#5fd38d" textLength="39.0" lengthAdjust="spacingAndGlyphs">▰▰▱▱▱</text>
-<text x="433.4" y="212.0" textLength="132.6" lengthAdjust="spacingAndGlyphs">4d 14h  available</text>
-<text x="59.0" y="230.8" textLength="101.4" lengthAdjust="spacingAndGlyphs">research  Pro</text>
+<text x="433.4" y="212.0" textLength="46.8" lengthAdjust="spacingAndGlyphs">4d 14h</text>
+<text x="495.8" y="212.0" textLength="70.2" lengthAdjust="spacingAndGlyphs">available</text>
+<text x="59.0" y="230.8" textLength="62.4" lengthAdjust="spacingAndGlyphs">research</text>
+<text x="137.0" y="230.8" textLength="23.4" lengthAdjust="spacingAndGlyphs">Pro</text>
 <text x="207.2" y="230.8" fill="#ff6b6b" textLength="39.0" lengthAdjust="spacingAndGlyphs">100%!</text>
 <text x="261.8" y="230.8" fill="#ff6b6b" textLength="39.0" lengthAdjust="spacingAndGlyphs">▰▰▰▰▰</text>
 <text x="339.8" y="230.8" fill="#f0c75e" textLength="23.4" lengthAdjust="spacingAndGlyphs">71%</text>
@@ -70,15 +72,21 @@
 <text x="394.4" y="457.0" fill="#f0c75e" textLength="39.0" lengthAdjust="spacingAndGlyphs">▰▰▰▱▱</text>
 <text x="449.0" y="457.0" textLength="46.8" lengthAdjust="spacingAndGlyphs">2h 09m</text>
 <text x="511.4" y="457.0" fill="#ff6b6b" textLength="124.8" lengthAdjust="spacingAndGlyphs">no headroom · 5h</text>
-<text x="59.0" y="475.9" textLength="117.0" lengthAdjust="spacingAndGlyphs">work-team  Team</text>
+<text x="59.0" y="475.9" textLength="70.2" lengthAdjust="spacingAndGlyphs">work-team</text>
+<text x="144.8" y="475.9" textLength="31.2" lengthAdjust="spacingAndGlyphs">Team</text>
 <text x="246.2" y="475.9" fill="#5fd38d" textLength="15.6" lengthAdjust="spacingAndGlyphs">7%</text>
 <text x="277.4" y="475.9" fill="#5fd38d" textLength="39.0" lengthAdjust="spacingAndGlyphs">▱▱▱▱▱</text>
 <text x="355.4" y="475.9" fill="#5fd38d" textLength="23.4" lengthAdjust="spacingAndGlyphs">22%</text>
 <text x="394.4" y="475.9" fill="#5fd38d" textLength="39.0" lengthAdjust="spacingAndGlyphs">▰▱▱▱▱</text>
-<text x="456.8" y="475.9" textLength="124.8" lengthAdjust="spacingAndGlyphs">5d 1h  available</text>
+<text x="456.8" y="475.9" textLength="39.0" lengthAdjust="spacingAndGlyphs">5d 1h</text>
+<text x="511.4" y="475.9" textLength="70.2" lengthAdjust="spacingAndGlyphs">available</text>
 <text x="35.6" y="513.6" fill="#878d98" textLength="335.4" lengthAdjust="spacingAndGlyphs">a daemon is polling; these are its readings</text>
-<text x="35.6" y="532.4" textLength="405.6" lengthAdjust="spacingAndGlyphs">swap idle, forced after 30s  ·  11 api call(s) spare</text>
-<text x="35.6" y="551.3" textLength="452.4" lengthAdjust="spacingAndGlyphs">! flagged by the API  ·  ~ projected from an older reading</text>
+<text x="35.6" y="532.4" textLength="210.6" lengthAdjust="spacingAndGlyphs">swap idle, forced after 30s</text>
+<text x="261.8" y="532.4" textLength="7.8" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="285.2" y="532.4" textLength="156.0" lengthAdjust="spacingAndGlyphs">11 api call(s) spare</text>
+<text x="35.6" y="551.3" textLength="156.0" lengthAdjust="spacingAndGlyphs">! flagged by the API</text>
+<text x="207.2" y="551.3" textLength="7.8" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="230.6" y="551.3" textLength="257.4" lengthAdjust="spacingAndGlyphs">~ projected from an older reading</text>
 <text x="35.6" y="570.1" textLength="54.6" lengthAdjust="spacingAndGlyphs">colour:</text>
 <text x="105.8" y="570.1" fill="#5fd38d" textLength="15.6" lengthAdjust="spacingAndGlyphs">ok</text>
 <text x="137.0" y="570.1" textLength="7.8" lengthAdjust="spacingAndGlyphs">·</text>
