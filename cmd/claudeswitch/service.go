@@ -256,6 +256,9 @@ func cmdDaemon(args []string) error {
 	live := fs.Bool("live", false, "install: in live mode (it acts)")
 	dry := fs.Bool("dry-run", false, "install: in dry-run mode (it reports, changes nothing)")
 	fs.Bool("yes", false, "accepted for symmetry; nothing here asks")
+	// Accepted as by every command (docs/APP_CLI.md). The service file runs
+	// the binary with the default config, as install.sh's does.
+	fs.String("config", "", "accepted as by every command; the service runs the default config")
 	p, err := parseApp(fs, args, daemonUsage)
 	if err != nil {
 		return err

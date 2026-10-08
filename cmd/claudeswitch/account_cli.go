@@ -173,8 +173,13 @@ func accountPin(w io.Writer, cfgPath, id string, asJSON bool) error {
 	if !hasAccount(cfg, id) {
 		return appErr(codeNotFound, "", "no account %q in the config", id)
 	}
-	prof, _ := cfg.ProfileOf(id)
-	ps := st.Profile(nonEmpty(prof, config.DefaultProfile))
+	prof, ok := cfg.ProfileOf(id)
+	if !ok {
+		// Profiles declared, no default, a disabled account no pool lists:
+		// it can be live in no profile, so there is nothing to pin.
+		return appErr(codeNotActive, "", "%q is in no profile's pool, so it is live in no profile", id)
+	}
+	ps := st.Profile(prof)
 	if ps.Active != id {
 		return appErr(codeNotActive, fmt.Sprintf("switch to it first: claudeswitch use %s --profile %s", id, prof),
 			"%q is not the account live in profile %s, so pinning it would hold that profile on %s", id, prof,

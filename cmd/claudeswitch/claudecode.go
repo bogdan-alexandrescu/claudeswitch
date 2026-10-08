@@ -173,6 +173,7 @@ var ourStatusline = regexp.MustCompile(`(^|/)(claudeswitch|cs)\s+statusline\b`)
 func cmdStatuslineManage(verb string, args []string) error {
 	fs := flag.NewFlagSet("statusline "+verb, flag.ExitOnError)
 	force := fs.Bool("force", false, "replace a status line that is not claudeswitch's")
+	fs.String("config", "", "accepted as by every command; the status line is Claude Code's settings.json")
 	parseInterleaved(fs, args)
 
 	path, err := settingsPath()

@@ -11,6 +11,8 @@ from anyone's state.
                default by D6 alone, an empty profile, two ghosts
   one-profile  no [[profile]] blocks: the implicit default profile
   hero         two healthy profiles, no warnings: the README's hero image
+  tutorial     the CLI screenshots' story, after work rotated to work-team,
+               with the Chrome sign-in notice (README app section, TUTORIAL)
 
     python3 macos/scripts/gen-render-fixtures.py
 """
@@ -197,3 +199,82 @@ write("hero", {
         info("personal", "default", plan="Pro"),
         info("work-team", "work", "work", plan="Team", email="person2@example.com"),
         info("work-2", "work", plan="Max 5x")]}})
+
+# The tutorial (docs/TUTORIAL.md): the cs CLI screenshots' story, a moment
+# later. default runs personal with research refused until its session
+# resets; work has just rotated from work-1 (over its 85% session trigger)
+# to work-team, and work's Chrome profile ("Work") is still signed in as
+# work-1, so the work card asks to sign in again.
+IN37M = "2026-10-08T03:22:41Z"
+tut_accounts = {
+    "personal": rec("personal", 24, 44),
+    "research": rec("research", 100, 71, burnt=IN37M),
+    "work-1": rec("work-1", 88, 63),
+    "work-team": rec("work-team", 7, 22),
+}
+
+
+def tut_why(name, pool, active, reason, refused):
+    accts = []
+    for a in pool:
+        u = tut_accounts[a]["last_usage"]
+        fh, sd = u["five_hour"]["utilization"], u["seven_day"]["utilization"]
+        accts.append({"id": a, "active": a == active, "eligible": a not in refused,
+                      "utilization": max(fh, sd), "window": "seven_day" if sd >= fh else "five_hour",
+                      "why": refused.get(a, "at %d%%, ready" % max(fh, sd))})
+    return {"profile": name, "pool": pool, "accounts": accts,
+            "decision": {"kind": "stay", "reason": reason},
+            "current": name == "default", "best": None, "best_why": None,
+            "thresholds": {"switch_at": 85, "switch_at_weekly": 98, "hard_floor": 99, "landing_margin": 10}}
+
+
+tut_prof = [prof("default", ["personal", "research"], ["personal", "research"], live="personal", sa=85, sw=98),
+            prof("work", ["work-1", "work-team"], ["work-1", "work-team"], dir="~/.claude-work",
+                 live="work-team", sa=85, sw=98)]
+for p in tut_prof:
+    p["thresholds"]["hard_floor"] = 99
+    p["chrome"], p["chrome_name"] = ("Profile 1", "Work") if p["name"] == "work" else (None, None)
+write("tutorial", {
+    "state.json": {"version": 1, "accounts": tut_accounts,
+                   "profiles": {"default": {"active_account": "personal", "last_switch": NOW, "active_at": NOW},
+                                "work": {"active_account": "work-team", "last_switch": NOW, "active_at": NOW}},
+                   "emails": {"personal": "person1@example.com", "work-team": "person2@example.com"},
+                   "daemon_live": True, "daemon_since": "2026-10-08T01:00:00Z", "daemon_build_time": Z,
+                   "saved_at": NOW},
+    "cli-profile-list.json": {"profiles": tut_prof, "ghosts": []},
+    "why-profiles.json": {"dir": "/Users/example", "profiles": [
+        tut_why("default", ["personal", "research"], "personal",
+                "active account at 44%, under the 98% trigger",
+                {"research": "refused on its five_hour window"}),
+        tut_why("work", ["work-1", "work-team"], "work-team",
+                "active account at 22%, under the 98% trigger",
+                {"work-1": "at 88%, over the 85% session trigger"})]},
+    "cli-account-list.json": {"accounts": [
+        info("personal", "default", "default", plan="Max 5x", email="person1@example.com"),
+        info("research", "default", plan="Pro"),
+        info("work-1", "work", plan="Max 20x"),
+        info("work-team", "work", "work", plan="Team", email="person2@example.com")]},
+    # Read by --render only when present (App.swift's Render).
+    "render-chrome-list.json": {
+        "supported": True,
+        "chrome_profiles": [
+            {"account": "personal", "added": "2026-10-07T12:00:00Z", "existing": False,
+             "live_in": ["default"], "name": None, "profile_dir": "claudeswitch-personal"},
+            {"account": "research", "added": "2026-10-07T12:00:00Z", "existing": True,
+             "live_in": [], "name": "Research", "profile_dir": "Profile 2"}],
+        "live": [
+            {"account": "personal", "last_from": None, "last_switch": None, "name": None,
+             "profile": "default", "profile_dir": "claudeswitch-personal", "rule": "account"},
+            {"account": "work-team", "last_from": "work-1", "last_switch": NOW, "name": "Work",
+             "profile": "work", "profile_dir": "Profile 1", "rule": "profile"}]},
+    "render-chrome-profiles.json": {
+        "supported": True, "local_state": True, "last_used": "Default",
+        "chrome_profiles": [
+            {"folder": "Default", "in_chrome": True, "last_used": True, "name": "Person 1",
+             "used_by_accounts": [], "used_by_profiles": []},
+            {"folder": "Profile 1", "in_chrome": True, "last_used": False, "name": "Work",
+             "used_by_accounts": [], "used_by_profiles": ["work"]},
+            {"folder": "Profile 2", "in_chrome": True, "last_used": False, "name": "Research",
+             "used_by_accounts": ["research"], "used_by_profiles": []},
+            {"folder": "claudeswitch-personal", "in_chrome": True, "last_used": False, "name": None,
+             "used_by_accounts": ["personal"], "used_by_profiles": []}]}})

@@ -342,7 +342,7 @@ const DefaultProfile = "default"
 // a file from before profiles reads into this same struct (see UnmarshalJSON).
 type ProfileState struct {
 	Active string `json:"active_account,omitempty"`
-	// Pinned suspends automatic rotation until `claudeswitch auto` clears it.
+	// Pinned suspends automatic rotation until `claudeswitch account unpin` clears it.
 	Pinned string `json:"pinned,omitempty"`
 	// LastSwitch feeds the anti-flap cooldown across restarts.
 	LastSwitch time.Time `json:"last_switch,omitzero"`

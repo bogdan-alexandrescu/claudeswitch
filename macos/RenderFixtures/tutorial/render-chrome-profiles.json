@@ -1,0 +1,45 @@
+{
+ "chrome_profiles": [
+  {
+   "folder": "Default",
+   "in_chrome": true,
+   "last_used": true,
+   "name": "Person 1",
+   "used_by_accounts": [],
+   "used_by_profiles": []
+  },
+  {
+   "folder": "Profile 1",
+   "in_chrome": true,
+   "last_used": false,
+   "name": "Work",
+   "used_by_accounts": [],
+   "used_by_profiles": [
+    "work"
+   ]
+  },
+  {
+   "folder": "Profile 2",
+   "in_chrome": true,
+   "last_used": false,
+   "name": "Research",
+   "used_by_accounts": [
+    "research"
+   ],
+   "used_by_profiles": []
+  },
+  {
+   "folder": "claudeswitch-personal",
+   "in_chrome": true,
+   "last_used": false,
+   "name": null,
+   "used_by_accounts": [
+    "personal"
+   ],
+   "used_by_profiles": []
+  }
+ ],
+ "last_used": "Default",
+ "local_state": true,
+ "supported": true
+}

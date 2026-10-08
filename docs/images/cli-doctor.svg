@@ -9,7 +9,7 @@
 <text x="20.0" y="60.0" fill="#5f6670" textLength="7.8" lengthAdjust="spacingAndGlyphs">$</text>
 <text x="35.6" y="60.0" fill="#f4f7fa" font-weight="700" textLength="70.2" lengthAdjust="spacingAndGlyphs">cs doctor</text>
 <text x="35.6" y="78.8" fill="#8fd3ff" textLength="109.2" lengthAdjust="spacingAndGlyphs">◎ claudeswitch</text>
-<text x="152.6" y="78.8" fill-opacity="0.55" textLength="288.6" lengthAdjust="spacingAndGlyphs">v0.5.2 · daemon live · polled 40s ago</text>
+<text x="152.6" y="78.8" fill-opacity="0.55" textLength="288.6" lengthAdjust="spacingAndGlyphs">v0.5.3 · daemon live · polled 40s ago</text>
 <text x="35.6" y="116.5" textLength="23.4" lengthAdjust="spacingAndGlyphs">[ok</text>
 <text x="74.6" y="116.5" textLength="62.4" lengthAdjust="spacingAndGlyphs">] config</text>
 <text x="215.0" y="116.5" textLength="265.2" lengthAdjust="spacingAndGlyphs">~/.config/claudeswitch/config.toml</text>
@@ -18,7 +18,7 @@
 <text x="215.0" y="135.4" textLength="226.2" lengthAdjust="spacingAndGlyphs">each holds its own credential</text>
 <text x="35.6" y="154.2" textLength="23.4" lengthAdjust="spacingAndGlyphs">[ok</text>
 <text x="74.6" y="154.2" textLength="62.4" lengthAdjust="spacingAndGlyphs">] daemon</text>
-<text x="215.0" y="154.2" textLength="444.6" lengthAdjust="spacingAndGlyphs">running, not older than this binary (v0.5.2 b8265fbe03ce)</text>
+<text x="215.0" y="154.2" textLength="444.6" lengthAdjust="spacingAndGlyphs">running, not older than this binary (v0.5.3 b8265fbe03ce)</text>
 <text x="35.6" y="173.1" textLength="23.4" lengthAdjust="spacingAndGlyphs">[ok</text>
 <text x="74.6" y="173.1" textLength="101.4" lengthAdjust="spacingAndGlyphs">] service qos</text>
 <text x="215.0" y="173.1" textLength="101.4" lengthAdjust="spacingAndGlyphs">not throttled</text>

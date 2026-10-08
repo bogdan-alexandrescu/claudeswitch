@@ -12,11 +12,18 @@ Latest release: **v0.5.3**
 
 <p align="center"><img src="docs/images/popover.png" width="384" alt="The ClaudeSwitch menu-bar popover: the daemon is live, the default profile is on work-1 and the work profile is on work-team"></p>
 
-[`docs/GUIDE.md`](docs/GUIDE.md) is the full manual. This README covers
-installing it and finding your way around.
+**New to claudeswitch? Start with [the tutorial](docs/TUTORIAL.md)**: install
+it, add a second account, watch it decide, add a work profile, set up Claude in
+Chrome, and use it from inside Claude Code, with screenshots at every step.
+
+**[Documentation](docs/README.md)**: every app control and every CLI command,
+by section, with the concepts behind them. [`docs/GUIDE.md`](docs/GUIDE.md) is
+the full manual. This README covers installing it and finding your way around.
 
 ## Contents
 
+- [Tutorial](docs/TUTORIAL.md) (a separate page)
+- [Docs](docs/README.md): the full reference, app and CLI (a separate page)
 - [Features](#features)
 - [How it works](#how-it-works)
 - [Install](#install)
@@ -26,6 +33,13 @@ installing it and finding your way around.
   - [Claude Code plugin](#claude-code-plugin)
 - [Quick start](#quick-start)
 - [The macOS app](#the-macos-app)
+  - [Menu-bar glyph](#menu-bar-glyph)
+  - [Popover](#popover)
+  - [The ⋯ menu and Appearance](#the--menu-and-appearance)
+  - [Warnings](#warnings)
+  - [Claude in Chrome on the card](#claude-in-chrome-on-the-card)
+  - [Settings](#settings)
+  - [Add account](#add-account)
 - [The cs CLI](#the-cs-cli)
 - [Inside Claude Code](#inside-claude-code)
 - [Configuration](#configuration)
@@ -56,6 +70,9 @@ installing it and finding your way around.
 - **Usage across a session.** `cs session` adds up tokens across every account
   a stretch of work touched.
 - **A menu-bar app, a status line and a plugin**, all reading the same state.
+  The app draws each account's session and week as dials or bars, follows
+  light and dark mode (or stays in one), and shows its state in a live
+  menu-bar glyph.
 
 ## How it works
 
@@ -139,8 +156,9 @@ cd claudeswitch
 symlink, and installs the daemon in dry-run (see [Daemon](#daemon)). To build
 the binary alone: `go build -o bin/claudeswitch ./cmd/claudeswitch`.
 
-**Verify it worked:** `cs version` prints `claudeswitch v0.5.3`. If the shell
-cannot find `cs`, add `~/.local/bin` to your `PATH`.
+**Verify it worked:** `cs version` prints `claudeswitch v0.5.3` for the release
+binary (a build from source prints `claudeswitch dev`). If the shell cannot
+find `cs`, add `~/.local/bin` to your `PATH`.
 
 ### Daemon
 
@@ -231,8 +249,9 @@ the path set in Settings > Advanced, then `~/.local/bin`, then `PATH` and the
 usual Homebrew and Go locations. Without one, its menu says so and shows how
 to install it. [macos/README.md](macos/README.md) has the details.
 
-**Verify it worked:** a gauge icon with the live account and its utilization
-appears in the menu bar. If you see nothing on a MacBook with a notch, see
+**Verify it worked:** the Twin rings glyph with the live account and its
+utilization appears in the menu bar, and **About ClaudeSwitch** in its ⋯ menu
+shows version 0.5.3. If you see nothing on a MacBook with a notch, see
 [Troubleshooting](#troubleshooting).
 
 ### Claude Code plugin
@@ -288,12 +307,14 @@ cs setup
 `setup` is interactive and does the whole first run. It finds the account you
 are signed in to now, walks you through signing in to each additional one,
 writes a config with each account pinned to its seat, and offers to install
-the daemon in dry-run and to add the status line.
+the daemon in dry-run (the same as `cs daemon install`) and to add the
+status line.
 
 To add more accounts later:
 
 ```sh
 cs login work-1 --direct                    # sign in through a browser; your live session is untouched
+cs login work-1 --code <the-code>           # ...then finish with the code the page shows
 cs login work-1 --direct --browser Safari   # ...in a browser that is signed in to that account
 cs add research                             # or: /login in Claude Code, then save that login as "research"
 ```
@@ -321,7 +342,10 @@ cs daemon live   # let the daemon swap
 ## The macOS app
 
 The menu-bar app shows what claudeswitch knows and lets you manage all of it:
-profiles, accounts, settings and the daemon. It is a native SwiftUI app.
+profiles, accounts, settings, Chrome profiles and the daemon. It is a native
+SwiftUI app. The screenshots below show the same two profiles as the
+[CLI screenshots](#the-cs-cli), a little later: `default` on personal with
+research refused, and `work` just rotated from work-1 to work-team.
 
 It only reads `~/.local/state/claudeswitch/state.json` and runs
 `claudeswitch ... --json` commands from [docs/APP_CLI.md](docs/APP_CLI.md). It
@@ -329,45 +353,96 @@ never reads the keychain and never calls the usage API itself. It re-reads the
 state file on every save, and runs `cs why --json` every 20 seconds and after
 each action.
 
-### Menu-bar label
+[docs/TUTORIAL.md](docs/TUTORIAL.md) walks through the app step by step.
 
-<p align="center"><img src="docs/images/menubar-label.png" width="157" alt="The menu-bar label: a gauge icon followed by &quot;default · work-1 41%&quot;"></p>
+### Menu-bar glyph
 
-The label shows the live account of the profile you follow and its binding
-utilization, for example `default · work-1 41%` (no profile name when you have
-only one). The gauge moves as that window nears its switch threshold, and
-turns into a warning triangle with a trailing `!` once it is over it or the
-account needs a login. `cs ...` means it is still loading. A question mark
-means the `claudeswitch` binary is missing or too old. Icon-only is a setting
-(Advanced).
+<p align="center"><img src="docs/images/menubar-label.png" width="166" alt="The menu-bar item: the Twin rings glyph followed by &quot;default · personal 44%&quot;"></p>
+
+The menu-bar item is the Twin rings, drawn live, then the followed profile's
+live account and its binding utilization, for example
+`default · personal 44%` (no profile name when you have only one). The outer
+ring is the week, the inner ring the session, and the small dot on the outer
+ring sits at the week's reading. The glyph is a template image, so it takes the
+menu bar's own colour, light or dark. It has four states:
+
+<p align="center"><img src="docs/images/glyph-states.png" width="534" alt="The menu-bar glyph in its four states, on a light and a dark menu bar: healthy, climbing, switching (the dot moves to the incoming account's week), and needs you (a warning mark and a trailing !)"></p>
+
+| state | what it means |
+|---|---|
+| **Healthy** | the live account has room |
+| **Climbing** | the live account is near its switch threshold |
+| **Switching** | rotation is moving the profile to another account; the dot sits at the incoming account's week |
+| **Needs you** | the live account was refused or needs a sign-in; a warning mark replaces the dot and the text ends in `!` |
+
+`cs ...` means it is still loading. A question mark means the `claudeswitch`
+binary is missing or too old. **Icon only in the menu bar** (Settings →
+Advanced) hides the text and keeps the rings.
 
 ### Popover
 
+Click the glyph to open the popover.
+
 <table>
   <tr>
-    <td align="center"><img src="docs/images/popover.png" width="384" alt="The popover in light mode: daemon live, the default profile on work-1 and the work profile on work-team"></td>
-    <td align="center"><img src="docs/images/popover-dark.png" width="384" alt="The same popover in dark mode"></td>
+    <td align="center"><img src="docs/images/popover-dials.png" width="384" alt="The popover with dials: daemon live, the default profile on personal with its session at 24% and its week at 44%, and the work profile on work-team"></td>
+    <td align="center"><img src="docs/images/popover-bars.png" width="384" alt="The same popover with bars: one row of dots for the session and one for the week"></td>
+  </tr>
+  <tr>
+    <td align="center">Dials</td>
+    <td align="center">Bars</td>
   </tr>
 </table>
 
 At the top is the daemon: live or dry run, how long since it polled, and "not
-polling for N m" if it has stopped. Below it is a card per profile. The
-followed profile's card is open and shows:
+polling for N m" if it has stopped. Next to it, the dials/bars switch. Below
+is a card per profile. The followed profile's card (marked **Menu bar**) is
+open and shows:
 
 - its directory;
-- the live account, as a picker of the profile's pool;
-- session and weekly bars with a tick at the profile's own threshold;
-- resets and per-model weekly limits;
+- the live account and its plan, as a picker of the profile's pool;
+- the session (5-hour) and week as **dials**: dots lit up to the reading, the
+  figure in the middle, and when the window resets. The larger dark dot is
+  the profile's switch threshold (85% for the session and 98% for the week by
+  default): when the lit dots reach it, rotation moves the profile on;
+- per-model weekly limits, when an account has them;
 - what rotation will do next, and why.
+
+The **bars** show the same dots in two rows. Switch between them with the two
+small buttons at the top right, the ⋯ menu, or Settings → Advanced. The
+choice is remembered.
 
 The card's buttons are **Open Claude Code** (your terminal running
 `cs run <profile>`: Terminal, iTerm, Ghostty or Warp), **Switch to best**
-(which names the account it would move to and its utilization), the globe that
-opens the account's Chrome profile, and **Pin**. When the profile's shared
-Chrome profile is still signed in to the account before a rotation, the card
-says so in amber with a **Sign in as ...** button. The other profiles are compact
-rows with a play button for Claude Code and a chevron that expands them.
-**+ Add account** and **Settings...** are at the foot.
+(which names the account it would move to and its utilization, or says there
+is none), the globe that opens the account's Chrome profile, and **Pin**,
+which keeps the profile on its account until you unpin it. The other profiles
+are compact rows with their own small rings, a play button for Claude Code and
+a chevron that expands them. **Show in menu bar** on an expanded card makes
+the menu bar follow that profile. **+ Add account**, **Settings...** and the
+⋯ menu are at the foot.
+
+Dark mode, with the same data:
+[dials](docs/images/popover-dials-dark.png),
+[bars](docs/images/popover-bars-dark.png).
+
+### The ⋯ menu and Appearance
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/menu-more.png" width="362" alt="The popover's ⋯ menu: Refresh now, Appearance (open, with System checked, Light and Dark), Show usage as, Settings, About and Quit"></td>
+    <td align="center"><img src="docs/images/menu-more-usage.png" width="362" alt="The same menu with Show usage as open: Dials checked, and Bars"></td>
+  </tr>
+</table>
+
+The ⋯ menu at the foot of the popover has **Refresh now** (⌘R), which reloads
+what the app shows from the state file and the CLI, **Appearance**, **Show usage as**,
+**Settings...**, **About ClaudeSwitch** and **Quit ClaudeSwitch** (⌘Q).
+
+**Appearance** is System, Light or Dark. System follows your Mac. Light or
+Dark keeps the popover and Settings in that appearance whatever the system
+uses. **Show usage as** is Dials or Bars. Both are also in Settings →
+Advanced → This app.
 
 ### Warnings
 
@@ -384,46 +459,76 @@ with a 401, the account is pinned, and the pool has no other account to move
 to, so nothing can rotate there until you sign in to it again
 (`cs login <id> --direct`) or add another account to the pool.
 
+### Claude in Chrome on the card
+
+<p align="center"><img src="docs/images/popover-chrome-signin.png" width="384" alt="The work profile's card after a rotation from work-1 to work-team: an amber banner says Claude in Chrome in &quot;Work&quot; is still signed in as work-1, with a Sign in as work-team button"></p>
+
+When a profile's accounts share one Chrome profile, the Claude in Chrome
+extension there stays signed in to the account before a rotation. The card
+says so in amber, naming the Chrome profile and the old account, with a
+**Sign in as ...** button. The button opens that Chrome profile at the
+claude.ai and Claude in Chrome sign-in pages (`cs chrome signin <id>`). The ×
+hides the banner until the next rotation. An account with a Chrome profile of
+its own never needs this: see [Claude in Chrome](#claude-in-chrome).
+
 ### Settings
+
+**Settings...** opens a window with six panes.
 
 <table>
   <tr>
-    <td width="440"><img src="docs/images/settings-profiles.png" width="440" alt="Settings, Profiles pane: each profile with its directory, pool and per-profile overrides"></td>
+    <td width="440"><img src="docs/images/settings-profiles.png" width="440" alt="Settings, Profiles pane: the default profile open, with its accounts as chips with small rings, its thresholds, and its Chrome profile picker set to Chrome's last used"></td>
     <td><b>Profiles.</b> Create a profile with a directory, a pool and a seed
-    account. Add, remove and move accounts between pools. Set the five
-    per-profile overrides (<code>switch_at</code>, <code>switch_at_weekly</code>,
+    account. Add, remove and move accounts between pools; each account is a
+    chip with its own small rings. Set the five per-profile overrides
+    (<code>switch_at</code>, <code>switch_at_weekly</code>,
     <code>hard_floor</code>, <code>landing_margin</code>, <code>models</code>).
-    Forget a removed profile's old credential.</td>
+    Choose the profile's <b>Chrome profile</b>, from the profiles your Chrome
+    has, or Chrome's last used. Open Claude Code or Chrome for it, show it in
+    the menu bar, or remove it. Forget a removed profile's old credential.</td>
   </tr>
   <tr>
-    <td width="440"><img src="docs/images/settings-accounts.png" width="440" alt="Settings, Accounts pane: accounts in rotation order, dragged to reorder, and the recovery copies"></td>
-    <td><b>Accounts.</b> Drag accounts to set the rotation order. Rename an
-    account, sign in to it again, open or choose its Chrome profile (its
-    profile's, one of yours, or a new one), or delete it after
-    a confirmation that names the account and seat. Recovery copies (logins a
-    swap kept aside) are listed here to restore or clear.</td>
+    <td width="440"><img src="docs/images/settings-accounts.png" width="440" alt="Settings, Accounts pane: personal, research, work-1 and work-team in rotation order, each with small rings, its state, plan and login expiry, and the recovery copies"></td>
+    <td><b>Accounts.</b> Every account in rotation order, with small rings for
+    its week and session, its state (available, no headroom, refused and when
+    it clears), plan and login expiry. Drag to set the rotation order. From an
+    account's ⋯ menu: rename it, move it to another profile or up and down the
+    order, sign in to it again, open Chrome, choose its
+    <b>Chrome profile</b> (the same as its profile's, one of yours, or a new
+    one), or delete it after a confirmation that names the account and seat.
+    Recovery copies (logins a swap kept aside) are listed here to restore or
+    clear.</td>
   </tr>
   <tr>
     <td width="440"><img src="docs/images/settings-rotation.png" width="440" alt="Settings, Rotation pane: the rotation settings, with inline validation"></td>
-    <td><b>Rotation, Polling, Advanced, Daemon.</b> Every <code>cs config</code>
+    <td><b>Rotation, Polling, Daemon.</b> Every <code>cs config</code>
     setting, generated from <code>cs config schema --json</code>, with inline
     validation and the CLI's own error messages. The Daemon pane shows its
     status and switches between live and dry run, restarts, starts, stops,
     installs and uninstalls it, and sets the app to launch at login.</td>
   </tr>
+  <tr>
+    <td width="440"><img src="docs/images/settings-advanced.png" width="440" alt="Settings, Advanced pane: This app (Appearance System/Light/Dark, Usage in the popover Dials/Bars, Open Claude Code in, Icon only in the menu bar, the claudeswitch binary) above the advanced settings"></td>
+    <td><b>Advanced.</b> <i>This app</i>: Appearance, usage as dials or
+    bars, which terminal <b>Open Claude Code</b> uses, icon only in the menu
+    bar, and which <code>claudeswitch</code> binary the app runs. Below them,
+    the advanced budget and credential-refresh settings.</td>
+  </tr>
 </table>
 
 ### Add account
 
-<p align="center"><img src="docs/images/add-account.png" width="420" alt="The Add account sheet: sign in with a browser, or save the login Claude Code is using now"></p>
+<p align="center"><img src="docs/images/add-account.png" width="520" alt="The Add account sheet: sign in with a browser, or save the login Claude Code is using now"></p>
 
-Two ways to add an account:
+**+ Add account** in the popover, or **Add account** in Settings → Accounts,
+offers two ways:
 
-- **Sign in with a browser.** The app opens the sign-in page in the browser
-  you pick, and you paste the code back. Your live session is not touched
+- **Sign in with browser.** Name the account, pick the profile whose pool it
+  joins and the browser to sign in with. The app opens the sign-in page, and
+  you paste back the code it shows. Your live session is not touched
   (`cs login <id> --direct --no-open`).
-- **Save the login that is live now.** After `/login` in Claude Code, save
-  that credential under the name it suggests (`cs add`).
+- **Save current login.** After `/login` in Claude Code, save that credential
+  under the name it suggests (`cs add`).
 
 ## The cs CLI
 

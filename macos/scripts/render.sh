@@ -5,6 +5,8 @@
 #   many         RenderFixtures/many over them: five profiles, long names
 #   one-profile  RenderFixtures/one-profile over them: no [[profile]] blocks
 #   hero         RenderFixtures/hero over them: two healthy profiles (README)
+#   tutorial     RenderFixtures/tutorial over them: the CLI screenshots' story,
+#                with the Chrome sign-in notice (README app section, TUTORIAL)
 #
 #   macos/scripts/render.sh <out-dir> [set...]
 #
@@ -17,7 +19,7 @@ set -eu
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${1:?usage: render.sh <out-dir> [set...]}"
 shift
-SETS="${*:-base many one-profile hero}"
+SETS="${*:-base many one-profile hero tutorial}"
 FIXED_NOW="2026-10-08T02:46:41Z"
 
 swift build --package-path "$HERE" >/dev/null

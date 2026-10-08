@@ -5,5 +5,5 @@
   timing    at the next idle gap between turns
 
   no daemon is running, so nothing will act on this.
-  start one with `claudeswitch watch`, or install it with ./install.sh
+  start one with `claudeswitch watch`, or install it with `claudeswitch daemon install`
 

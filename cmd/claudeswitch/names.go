@@ -11,8 +11,10 @@ import (
 // checkNewAccountID refuses an account id the config would not load, before
 // anything is vaulted under it: the id becomes a keychain item's name and a
 // line in config.toml, and a vault entry whose config edit then fails is an
-// account in limbo.
-func checkNewAccountID(id string) error { return config.ValidName("account id", id) }
+// account in limbo. The refusal is invalid_value (docs/APP_CLI.md).
+func checkNewAccountID(id string) error {
+	return wrapErr(codeInvalidValue, "", config.ValidName("account id", id))
+}
 
 // newAccountNotice is what login says before signing in to an account the
 // config does not have: where its block goes and, with profiles declared,

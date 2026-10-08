@@ -118,7 +118,9 @@ enum Render {
         fx.state = state
         fx.why = why
         fx.profiles = profiles
-        fx.chrome = data("cli-chrome-list-some.json").flatMap(ChromeList.init(data:))
+        // A set may bring its own Chrome state (RenderFixtures/tutorial).
+        fx.chrome = (data("render-chrome-list.json") ?? data("cli-chrome-list-some.json")).flatMap(ChromeList.init(data:))
+        fx.chromeProfiles = data("render-chrome-profiles.json").flatMap(ChromeProfiles.init(data:))
         fx.accountList = data("cli-account-list.json").flatMap(AccountList.init(data:))
         fx.schema = data("cli-config-schema.json").flatMap(ConfigSchema.init(data:))
         fx.values = data("config.json").flatMap(ConfigValues.init(data:))
@@ -142,6 +144,10 @@ enum Render {
             save(AddAccountSheet(request: AddAccountRequest(), route: .current, name: "person4").environmentObject(store),
                  size: nil, dark: dark, to: out + "/add-account-current\(suffix).png")
             extras(store: store, snap: snap, login: login, profiles: profiles, dark: dark, out: out)
+            save(MoreMenuFacsimile(appearance: store.appearance, usage: store.usageMode, open: "Appearance"),
+                 size: nil, dark: dark, to: out + "/menu-more\(suffix).png")
+            save(MoreMenuFacsimile(appearance: store.appearance, usage: store.usageMode, open: "Show usage as"),
+                 size: nil, dark: dark, to: out + "/menu-more-usage\(suffix).png")
         }
         save(PopoverView().environmentObject(missing).environmentObject(login), size: nil, dark: false,
              to: out + "/popover-missing.png")
@@ -181,6 +187,12 @@ enum Render {
             save(PopoverView().environmentObject(store).environmentObject(login),
                  size: nil, dark: dark, to: out + "/popover-card-error\(sfx).png")
             store.renderCardError(nil, card: c.name)
+        }
+        // C2: a card whose Chrome profile is still signed in as the account
+        // before the last rotation, expanded to show its banner.
+        if let c = snap.cards.first(where: { store.chromeNotice(for: $0) != nil }) {
+            save(PopoverView(expanded: [c.name]).environmentObject(store).environmentObject(login),
+                 size: nil, dark: dark, to: out + "/popover-chrome-signin\(sfx).png")
         }
         save(NewProfileSheet().environmentObject(store), size: nil, dark: dark, to: out + "/sheet-new-profile\(sfx).png")
         if let p = profiles?.profiles.last(where: \.declared), profiles?.profiles.filter(\.declared).count ?? 0 > 1 {
@@ -262,6 +274,71 @@ enum Render {
         host.cacheDisplay(in: host.bounds, to: rep)
         guard let png = rep.representation(using: .png, properties: [:]) else { return }
         try? png.write(to: URL(fileURLWithPath: path))
+    }
+}
+
+/// The popover's ⋯ menu, drawn for the docs: an NSMenu cannot be drawn off
+/// screen, so this lays out the same items (PopoverView's footer menu) with
+/// one submenu open ("Appearance" or "Show usage as"). Render only; the
+/// app never shows it.
+struct MoreMenuFacsimile: View {
+    let appearance: AppearancePref
+    let usage: UsageMode
+    let open: String
+
+    enum Row { case item(String, String?, Bool), divider }
+
+    var main: [Row] {
+        [.item("Refresh now", "⌘R", false), .item("Appearance", nil, true), .item("Show usage as", nil, true),
+         .divider, .item("Settings…", nil, false), .item("About ClaudeSwitch", nil, false),
+         .divider, .item("Quit ClaudeSwitch", "⌘Q", false)]
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: -4) {
+            panel(main, highlight: open, checked: nil, width: 210)
+            if open == "Appearance" {
+                panel(AppearancePref.allCases.map { .item($0.label, nil, false) }, highlight: nil,
+                      checked: appearance.label, width: 120)
+                    .padding(.top, 22)
+            } else {
+                panel(UsageMode.allCases.map { .item($0.label, nil, false) }, highlight: nil,
+                      checked: usage.label, width: 120)
+                    .padding(.top, 44)
+            }
+        }
+        .padding(18)
+        .accessibilityHidden(true)
+    }
+
+    func panel(_ rows: [Row], highlight: String?, checked: String?, width: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
+                switch r {
+                case .divider:
+                    Divider().padding(.horizontal, 10).padding(.vertical, 5)
+                case let .item(title, key, sub):
+                    let on = title == highlight
+                    HStack(spacing: 0) {
+                        Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold))
+                            .opacity(title == checked ? 1 : 0).frame(width: 18)
+                        Text(title)
+                        Spacer(minLength: 16)
+                        if let key { Text(key).foregroundStyle(on ? Color.white : Color.secondary) }
+                        if sub { Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)) }
+                    }
+                    .font(.system(size: 13))
+                    .foregroundStyle(on ? Color.white : Color.primary)
+                    .padding(.horizontal, 6).frame(height: 22)
+                    .background(RoundedRectangle(cornerRadius: 4).fill(on ? Color.accentColor : Color.clear))
+                }
+            }
+        }
+        .padding(5)
+        .frame(width: width)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.15)))
+        .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
     }
 }
 

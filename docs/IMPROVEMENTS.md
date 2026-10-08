@@ -148,7 +148,7 @@ verification, `--direct`, `--browser` and `--sso`; remove the busywork.
   `./install-app.sh` builds it on the user's Mac with the Command Line Tools,
   so it is never quarantined and opens without warnings. Secondary: an unsigned
   zip on releases, with the one-time "Open Anyway" steps. Signing and
-  notarization ($99/yr) can be added later without changing the app. Not the
+  notarization ($99/yr) can be added later without changing the app. *Not now (owner, 2026-10-08).* Not the
   App Store: sandboxing would forbid running the binary and reading its state.
 
 ## The app manages everything (decided 2026-10-07)
@@ -191,7 +191,9 @@ which names account and seat, as the confirmation text. The global settings
 are grouped into Rotation, Polling and Advanced by the app (the schema has
 no grouping; an unknown key lands in Advanced). Not built, for want of a CLI
 form: removing a profile, an account's plan and current scope in the
-Accounts list (email comes from state.json's `emails`).
+Accounts list (email comes from state.json's `emails`). Since lane 15
+both have one — `profile remove` and `account list`'s `plan` — and the app
+uses them; scope went with S1.
 
 ## Claude in Chrome (investigated and decided 2026-10-07)
 
@@ -480,6 +482,8 @@ As built (lane 16, app):
   3m (owner; stale-decision cap 4m), a faster one loaded at 2m with a warning, `Write` no longer
   pinning defaults; see DESIGN 4.3c. The sustained-rate probe is still unrun and would
   tighten the refill figure.
+  *Probe not planned (owner, 2026-10-08)*: today's figures are working, and
+  the probe would make an account unreadable for up to an hour.
 - **I6. Per-model weekly limits.** Parse `limits[]` entries of kind
   `weekly_scoped` with `scope.model`; show them in `status` and the status
   line; optional policy input. Capture a real response first; an unknown scope
@@ -552,3 +556,11 @@ selection strategy, `oauthAccount` splicing, `service install` from the binary,
   account has no more room than the active one (by the binding window), the
   card's second button is disabled and reads "Already on the best", with the
   next best and its percentage underneath. The account picker still switches.
+
+  *Measure (owner, 2026-10-08):* "already on the best" uses the policy's room
+  (points short of each window's own trigger, as `policy.Best` ranks), not raw
+  utilization, so the button and the CLI never disagree. `why --json` gains,
+  per profile, `on_best`, `active_room` and `best_room` (additive), and the
+  app reads `on_best`.
+  *`daemon install --config` (owner, 2026-10-08):* accepted and ignored; the
+  service runs the default config, as install.sh's does.

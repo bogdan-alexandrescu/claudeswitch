@@ -494,6 +494,7 @@ func cmdAudit(args []string) error {
 	n := fs.Int("n", 30, "how many events")
 	kind := fs.String("kind", "", "only this kind: decision|switch|rejection|severity|error")
 	since := fs.Duration("since", 0, "only events newer than this (e.g. 24h)")
+	fs.String("config", "", "accepted as by every command; audit reads no config")
 	parseInterleaved(fs, args)
 
 	events, err := audit.Tail("", 100000)
@@ -563,6 +564,7 @@ func cmdAudit(args []string) error {
 func cmdHistory(args []string) error {
 	fs := flag.NewFlagSet("history", flag.ExitOnError)
 	days := fs.Int("days", 21, "how far back to read")
+	fs.String("config", "", "accepted as by every command; history reads no config")
 	parseInterleaved(fs, args)
 
 	log := logger(false)
@@ -1148,8 +1150,8 @@ func chooseAddName(positional []string, interactive bool,
 		return positional[0], nil
 	case 0:
 	default:
-		return "", fmt.Errorf("usage: claudeswitch add [<name>]\n\n" +
-			"Log in to the account first (`claude` → /login), then add what you just logged into.")
+		return "", appErr(codeUsage, "Log in to the account first (`claude` → /login), then add what you just logged into.",
+			"usage: claudeswitch add [<name>]")
 	}
 	email, orgName, orgID := "", "", ""
 	suggested := ""
@@ -1788,12 +1790,12 @@ func cmdPlan(args []string) error {
 	switch {
 	case !state.DaemonRunning():
 		fmt.Printf("  no daemon is running, so nothing will act on this.\n")
-		fmt.Printf("  start one with `claudeswitch watch`, or install it with ./install.sh\n")
+		fmt.Printf("  start one with `claudeswitch watch`, or install it with `claudeswitch daemon install`\n")
 	case st.DaemonLive:
 		fmt.Printf("  a LIVE daemon is running: it will act on a decision like this.\n")
 	default:
 		fmt.Printf("  a dry-run daemon is running: it will log this decision and change nothing.\n")
-		fmt.Printf("  re-install with ./install.sh --live to let it act.\n")
+		fmt.Printf("  make it act with `claudeswitch daemon live`.\n")
 	}
 	fmt.Println()
 	return nil
@@ -2864,7 +2866,7 @@ func cmdLogin(args []string) error {
 	noOpen := fs.Bool("no-open", false, "with --direct: do not open a browser, only print the URL")
 	positional := parseInterleaved(fs, args)
 	if len(positional) != 1 {
-		return fmt.Errorf("usage: claudeswitch login <account-id> [--direct] [--browser <app>] [--sso] [--keep] [--profile NAME]")
+		return appErr(codeUsage, "", "usage: claudeswitch login <account-id> [--direct] [--browser <app>] [--sso] [--keep] [--profile NAME]")
 	}
 	id := positional[0]
 	if err := checkNewAccountID(id); err != nil {
@@ -3777,15 +3779,15 @@ func cmdSetup(args []string) error {
 	fmt.Printf("  dry-run: it reports the swap it would make and changes nothing, so you can\n")
 	fmt.Printf("  check its judgement first.\n")
 	if askYes("  Install and start it now", true) {
-		cmd := exec.Command("./install.sh")
-		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-		if err := cmd.Run(); err != nil {
-			fmt.Printf("    could not run ./install.sh (%v)\n", err)
-			fmt.Printf("    run it by hand from the claudeswitch directory\n")
+		// The same path as `cs daemon install`, so a release binary works too;
+		// install.sh writes the same service file (TestServiceFilesMatchInstallSh).
+		if err := runDaemonCmd(os.Stdout, "install", "", false); err != nil {
+			fmt.Printf("    could not install the daemon: %v\n", err)
+			fmt.Printf("    install it later with: claudeswitch daemon install\n")
 		}
 	} else {
-		fmt.Printf("\n  When you are ready:  ./install.sh          (dry-run)\n")
-		fmt.Printf("                       ./install.sh --live   (acts)\n")
+		fmt.Printf("\n  When you are ready:  claudeswitch daemon install   (dry-run)\n")
+		fmt.Printf("                       claudeswitch daemon live      (acts)\n")
 	}
 
 	if ok, _ := statuslineInstalled(); !ok && askYes("\n  Show quota in Claude Code's status line", true) {

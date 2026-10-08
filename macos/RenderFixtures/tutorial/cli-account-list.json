@@ -1,0 +1,52 @@
+{
+ "accounts": [
+  {
+   "active_in": "default",
+   "email": "person1@example.com",
+   "enabled": true,
+   "id": "personal",
+   "pinned": false,
+   "plan": "Max 5x",
+   "profile": "default",
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  },
+  {
+   "active_in": null,
+   "email": null,
+   "enabled": true,
+   "id": "research",
+   "pinned": false,
+   "plan": "Pro",
+   "profile": "default",
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  },
+  {
+   "active_in": null,
+   "email": null,
+   "enabled": true,
+   "id": "work-1",
+   "pinned": false,
+   "plan": "Max 20x",
+   "profile": "work",
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  },
+  {
+   "active_in": "work",
+   "email": "person2@example.com",
+   "enabled": true,
+   "id": "work-team",
+   "pinned": false,
+   "plan": "Team",
+   "profile": "work",
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  }
+ ]
+}

@@ -221,6 +221,7 @@ final class Store: ObservableObject {
         daemon = fixtures.daemon
         recovery = fixtures.recovery
         timer = Timer() // never scheduled; marks the store as started
+        chromeProfiles = fixtures.chromeProfiles
     }
 
     func start() {
@@ -586,6 +587,8 @@ struct PreviewData {
     var why: WhyReport?
     var profiles: ProfileList?
     var chrome: ChromeList?
+    /// `chrome profiles --json`, for the pickers' names.
+    var chromeProfiles: ChromeProfiles?
     var accountList: AccountList?
     var schema: ConfigSchema?
     var values: ConfigValues?

@@ -379,7 +379,8 @@ of the config they wrote as well as for the profile.
 
 `claudeswitch account pin <id> --json` → `{"profile": "work", "pinned": "w1"}`.
 Suspends automatic rotation in the profile the account belongs to. Only the
-account live there can be pinned (`not_active` otherwise).
+account live there can be pinned (`not_active` otherwise, and for a disabled
+account no profile's pool holds).
 
 `claudeswitch account unpin [<id>] [--profile P] --json` → `{"unpinned": ["work"]}`.
 With an id, every profile pinned to it; with `--profile`, that one; with
@@ -454,7 +455,9 @@ Browser route, the live session untouched:
 
    Errors: `no_pending_login`, `wrong_account` (pinned seat mismatch; the
    message names both organizations), `already_vaulted`, `failed` (the
-   code did not exchange: it must come from the most recent URL).
+   code did not exchange: it must come from the most recent URL). On both
+   steps, an id the config would not load is `invalid_value` and a missing
+   or extra id `usage`.
 
 `login` without `--direct` signs in through Claude Code interactively and
 has no JSON form (`usage`).
@@ -475,8 +478,9 @@ lists is `outside_pool` for the target; an unknown `--from` is
 `not_found`. With no id it refuses with `name_required`, the suggested
 name (from the source profile's live account) as the whole `hint`; ask the
 person, then run `add <name>` — and ask again when the source changes. Errors also:
-`wrong_account`, `already_vaulted`, `outside_pool`, `failed` (e.g. the live
-credential is staler than the vaulted one: `--force`).
+`wrong_account`, `already_vaulted`, `outside_pool`, `invalid_value` (an id
+the config would not load), `usage` (more than one id), `failed` (e.g. the
+live credential is staler than the vaulted one: `--force`).
 
 ## daemon
 

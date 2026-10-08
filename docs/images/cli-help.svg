@@ -8,7 +8,7 @@
 <g font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="13.0" fill="#dfe4ea" style="font-variant-ligatures:none;font-feature-settings:'liga' 0,'calt' 0" xml:space="preserve">
 <text x="20.0" y="60.0" fill="#5f6670" textLength="7.8" lengthAdjust="spacingAndGlyphs">$</text>
 <text x="35.6" y="60.0" fill="#f4f7fa" font-weight="700" textLength="15.6" lengthAdjust="spacingAndGlyphs">cs</text>
-<text x="20.0" y="78.8" textLength="577.2" lengthAdjust="spacingAndGlyphs">claudeswitch v0.5.2 — keeps Claude Code on an account that still has quota</text>
+<text x="20.0" y="78.8" textLength="577.2" lengthAdjust="spacingAndGlyphs">claudeswitch v0.5.3 — keeps Claude Code on an account that still has quota</text>
 <text x="35.6" y="116.5" textLength="46.8" lengthAdjust="spacingAndGlyphs">status</text>
 <text x="121.4" y="116.5" textLength="452.4" lengthAdjust="spacingAndGlyphs">what every configured account&#x27;s quota looks like right now</text>
 <text x="35.6" y="135.4" textLength="39.0" lengthAdjust="spacingAndGlyphs">watch</text>

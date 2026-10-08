@@ -1,0 +1,81 @@
+{
+ "dir": "/Users/example",
+ "profiles": [
+  {
+   "accounts": [
+    {
+     "active": true,
+     "eligible": true,
+     "id": "personal",
+     "utilization": 44,
+     "why": "at 44%, ready",
+     "window": "seven_day"
+    },
+    {
+     "active": false,
+     "eligible": false,
+     "id": "research",
+     "utilization": 100,
+     "why": "refused on its five_hour window",
+     "window": "five_hour"
+    }
+   ],
+   "best": null,
+   "best_why": null,
+   "current": true,
+   "decision": {
+    "kind": "stay",
+    "reason": "active account at 44%, under the 98% trigger"
+   },
+   "pool": [
+    "personal",
+    "research"
+   ],
+   "profile": "default",
+   "thresholds": {
+    "hard_floor": 99,
+    "landing_margin": 10,
+    "switch_at": 85,
+    "switch_at_weekly": 98
+   }
+  },
+  {
+   "accounts": [
+    {
+     "active": false,
+     "eligible": false,
+     "id": "work-1",
+     "utilization": 88,
+     "why": "at 88%, over the 85% session trigger",
+     "window": "five_hour"
+    },
+    {
+     "active": true,
+     "eligible": true,
+     "id": "work-team",
+     "utilization": 22,
+     "why": "at 22%, ready",
+     "window": "seven_day"
+    }
+   ],
+   "best": null,
+   "best_why": null,
+   "current": false,
+   "decision": {
+    "kind": "stay",
+    "reason": "active account at 22%, under the 98% trigger"
+   },
+   "pool": [
+    "work-1",
+    "work-team"
+   ],
+   "profile": "work",
+   "thresholds": {
+    "hard_floor": 99,
+    "landing_margin": 10,
+    "switch_at": 85,
+    "switch_at_weekly": 98
+   }
+  }
+ ]
+}
