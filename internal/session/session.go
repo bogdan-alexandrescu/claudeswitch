@@ -149,28 +149,81 @@ type record struct {
 	RequestID string `json:"requestId"`
 }
 
-// Build assembles the session covering the given window.
+// Source is one Claude Code profile's part of a session (owner,
+// 2026-10-08: cs session covers every profile).
+type Source struct {
+	// Profile names it; its switches are the audit events naming it.
+	Profile string
+	// Root is its transcripts directory, "" for the environment's.
+	Root string
+	// Active is the account live in it now.
+	Active string
+	// Legacy also gives it the switches that name no profile, written
+	// before profiles existed: the default profile's.
+	Legacy bool
+}
+
+// Build assembles the session covering the given window, for the
+// environment's transcripts and the default profile's switches.
 func Build(root string, from, to time.Time, active string) (*Session, error) {
-	if root == "" {
-		root = detector.ProjectsRoot()
-	}
+	return BuildAll([]Source{{Profile: "default", Root: root, Active: active, Legacy: true}}, from, to)
+}
+
+// BuildAll is Build over several profiles, reading the audit log.
+func BuildAll(sources []Source, from, to time.Time) (*Session, error) {
 	events, err := audit.Tail("", 100000)
 	if err != nil {
 		events = nil // an unreadable audit log costs attribution, not the whole report
 	}
-	timeline := buildTimeline(events, from, active)
+	return BuildFrom(events, sources, from, to)
+}
 
+// BuildFrom assembles the session from these audit events. Each profile's
+// messages are attributed by its own switches — an account is live in one
+// profile, not in all of them — and the session's switches are every
+// profile's, oldest first, each labelled with its profile. Token totals add
+// up across profiles, by account.
+func BuildFrom(events []audit.Event, sources []Source, from, to time.Time) (*Session, error) {
 	s := &Session{From: from, To: to}
-	for _, e := range events {
-		if e.Kind == "switch" && !e.At.Before(from) && !e.At.After(to) {
-			s.Switches = append(s.Switches, e)
-		}
-	}
-
 	byAccount := map[string]*Share{}
 	seen := map[string]bool{}
+	var firstErr error
+	for _, src := range sources {
+		var mine []audit.Event
+		for _, e := range events {
+			if e.Profile == src.Profile || (e.Profile == "" && src.Legacy) {
+				e.Profile = src.Profile
+				mine = append(mine, e)
+			}
+		}
+		for _, e := range mine {
+			if e.Kind == "switch" && !e.At.Before(from) && !e.At.After(to) {
+				s.Switches = append(s.Switches, e)
+			}
+		}
+		if err := s.add(src, buildTimeline(mine, from, src.Active), byAccount, seen); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	sort.SliceStable(s.Switches, func(i, j int) bool { return s.Switches[i].At.Before(s.Switches[j].At) })
 
-	err = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+	for _, sh := range byAccount {
+		s.Shares = append(s.Shares, *sh)
+	}
+	sort.Slice(s.Shares, func(i, j int) bool {
+		return s.Shares[i].Tokens.Total() > s.Shares[j].Tokens.Total()
+	})
+	return s, firstErr
+}
+
+// add counts one profile's transcripts against its timeline.
+func (s *Session) add(src Source, timeline []span, byAccount map[string]*Share, seen map[string]bool) error {
+	from, to := s.From, s.To
+	root := src.Root
+	if root == "" {
+		root = detector.ProjectsRoot()
+	}
+	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".jsonl") {
 			return nil
 		}
@@ -242,7 +295,7 @@ func Build(root string, from, to time.Time, active string) (*Session, error) {
 		if end.After(to) {
 			end = to
 		}
-		if d := end.Sub(sp.at); d > 0 {
+		if d := end.Sub(sp.at); d > 0 && sp.account != "" {
 			sh := byAccount[sp.account]
 			if sh == nil {
 				sh = &Share{Account: sp.account, Models: map[string]int{}}
@@ -251,12 +304,5 @@ func Build(root string, from, to time.Time, active string) (*Session, error) {
 			sh.Active += d
 		}
 	}
-
-	for _, sh := range byAccount {
-		s.Shares = append(s.Shares, *sh)
-	}
-	sort.Slice(s.Shares, func(i, j int) bool {
-		return s.Shares[i].Tokens.Total() > s.Shares[j].Tokens.Total()
-	})
-	return s, err
+	return err
 }

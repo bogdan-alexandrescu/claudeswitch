@@ -528,9 +528,10 @@ same files (a test holds them equal).
 
 `claudeswitch why --json` is the rotation decision as `cs why` explains it,
 read from config and state alone. With one profile:
-`{"decision", "accounts", "best", "best_why"}`; with several,
+`{"decision", "accounts", "best", "best_why", "on_best", "active_room",
+"best_room"}`; with several,
 `{"profiles": [{"profile", "pool", "thresholds", "decision", "accounts",
-"best", "best_why", "current"?}]}`. (Before contract 2 both shapes also
+"best", "best_why", "on_best", "active_room", "best_room", "current"?}]}`. (Before contract 2 both shapes also
 carried `dir`, the working directory project rules were judged against.)
 
 `best` (lane 16, owner decision) is the account the app's "Switch to best"
@@ -547,6 +548,23 @@ why (`"work has no other account"`, `"no other account in work has room
 (…)"`, `"no other account in work can be switched to (w2: live in
 default)"`; accounts left out for those reasons are listed after `not
 offered:`). `best_why` is `null` when `best` is set with room to spare.
+
+`on_best`, `active_room` and `best_room` (contract 2, additive, IMPROVEMENTS
+M12, owner decision 2026-10-08) are the measure behind the app's "Already
+on the best". A room is the points an account sits below the trigger of its
+binding window (the one closest to its own trigger: session against
+`switch_at`, week against `switch_at_weekly`), negative past it: the figure
+`best` is ranked by, the live account's carrying its projection.
+`active_room` is the live account's, `best_room` is `best`'s; either is
+`null` when unknown (no reading, one whose window has since reset, an
+unreadable counted model, or no such account), never `0`. `on_best` is
+`true` when there is a `best` and it has no more room than the live
+account; it is `false` when either room is `null`, when `best` is `null`,
+and while the live account is refused. Raw utilization does not decide it:
+the live session at 80% of an 85% trigger (5 points) against a best whose
+week is at 85% of 98% (13 points) is `on_best: false`. The app reads
+`on_best` and falls back to comparing the higher of session and week only
+when the key is absent (an older binary).
 
 ## chrome
 

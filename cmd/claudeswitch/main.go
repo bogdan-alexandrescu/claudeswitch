@@ -27,6 +27,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/audit"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/ccdir"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/detector"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/keychain"
@@ -3397,11 +3398,37 @@ func cmdSession(args []string) error {
 	since := fs.Duration("since", 0, "how far back to look (default: since the first switch today, else 8h)")
 	full := fs.Bool("detail", false, "per-account token breakdown and models")
 	asJSON := fs.Bool("json", false, "machine-readable output")
+	only := fs.String("profile", "", "report only this Claude Code profile (default: every one)")
 	parseInterleaved(fs, args)
 
-	_, st, err := load(*cfgPath)
+	cfg, st, err := load(*cfgPath)
 	if err != nil {
 		return err
+	}
+	if err := checkProfileFlag(cfg, *only); err != nil {
+		return err
+	}
+
+	// Every profile's work and switches (owner, 2026-10-08), or one's.
+	views := profileViews(cfg, st, *only)
+	var sources []session.Source
+	var names []string
+	var last time.Time
+	for _, v := range views {
+		root := "" // the environment's, for the implicit profile
+		if !v.in.FromEnv {
+			// The path alone: profile.Resolve would also look up the
+			// keychain item, which a report has no use for.
+			if p, err := ccdir.For(v.in.Dir); err == nil {
+				root = p.Projects
+			}
+		}
+		sources = append(sources, session.Source{Profile: v.in.Name, Root: root,
+			Active: v.ist.Active, Legacy: v.in.Name == state.DefaultProfile})
+		names = append(names, v.in.Name)
+		if v.ist.LastSwitch.After(last) {
+			last = v.ist.LastSwitch
+		}
 	}
 
 	to := time.Now()
@@ -3409,18 +3436,20 @@ func cmdSession(args []string) error {
 	switch {
 	case *since > 0:
 		from = to.Add(-*since)
-	case !st.Default().LastSwitch.IsZero() && st.Default().LastSwitch.After(to.Add(-24*time.Hour)):
+	case !last.IsZero() && last.After(to.Add(-24*time.Hour)):
 		// Default to something meaningful: the span the current rotation covers,
-		// widened to catch the work that led up to it.
-		if c := st.Default().LastSwitch.Add(-8 * time.Hour); c.After(from) {
+		// widened to catch the work that led up to it. The latest switch of
+		// any profile reported.
+		if c := last.Add(-8 * time.Hour); c.After(from) {
 			from = c
 		}
 	}
 
-	s, err := session.Build("", from, to, st.Default().Active)
+	s, err := session.BuildAll(sources, from, to)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "note: %v\n", err)
 	}
+	labelled := multiProfile(cfg)
 
 	if *asJSON {
 		shares := make([]map[string]any, 0, len(s.Shares))
@@ -3432,10 +3461,16 @@ func cmdSession(args []string) error {
 				"cache_read": sh.Tokens.CacheRead, "cache_write": sh.Tokens.CacheCreation,
 			})
 		}
+		events := make([]map[string]any, 0, len(s.Switches))
+		for _, e := range s.Switches {
+			events = append(events, map[string]any{
+				"at": e.At, "profile": e.Profile, "from": e.From, "to": e.To, "reason": e.Reason,
+			})
+		}
 		return emitJSON(map[string]any{
-			"from": s.From, "to": s.To, "accounts": shares,
+			"from": s.From, "to": s.To, "profiles": names, "accounts": shares,
 			"total_tokens": s.Total.Total(), "messages": s.Messages,
-			"switches": len(s.Switches),
+			"switches": len(s.Switches), "switch_events": events,
 		})
 	}
 
@@ -3483,9 +3518,13 @@ func cmdSession(args []string) error {
 		sw := render.NewTable(nil)
 		for i := len(s.Switches) - 1; i >= 0; i-- {
 			e := s.Switches[i]
-			sw.Add(render.Grey(e.At.Local().Format("15:04")),
-				nonEmpty(e.From, "?")+" → "+render.Bold(e.To),
+			cells := []string{render.Grey(e.At.Local().Format("15:04"))}
+			if labelled {
+				cells = append(cells, e.Profile)
+			}
+			cells = append(cells, nonEmpty(e.From, "?")+" → "+render.Bold(e.To),
 				render.Grey(truncateStr(e.Reason, 42)))
+			sw.Add(cells...)
 		}
 		fmt.Print(sw.Render("  "))
 	} else {

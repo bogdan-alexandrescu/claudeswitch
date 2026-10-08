@@ -564,3 +564,17 @@ selection strategy, `oauthAccount` splicing, `service install` from the binary,
   app reads `on_best`.
   *`daemon install --config` (owner, 2026-10-08):* accepted and ignored; the
   service runs the default config, as install.sh's does.
+  *As built (2026-10-08):* `policy.Choose` beside `Best` returns the pick
+  with both rooms (the negated exceedance `better` compares; nil when
+  unknown) and `OnBest`; `why --json` reports them (null rooms, never 0;
+  `on_best` false when either is unknown, with no best, or while the live
+  account is refused). The app's `alreadyOnBest` reads `on_best`, falling
+  back to the raw higher-of-session-and-week only when the key is absent.
+  Fixture `why-m12-room.json` holds the case they disagreed on.
+
+- **`cs session` covers every profile (decided 2026-10-08).** Its span and
+  switch list were the default profile's alone, leaving out a switch in
+  `work`. Now they merge every profile's switches, each labelled with its
+  profile; each message still counts against the account live in its own
+  profile when it was written; `--profile P` narrows to one. `--json` adds
+  `profiles` and `switch_events` (`switches` stays the count).

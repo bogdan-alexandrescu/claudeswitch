@@ -43,7 +43,7 @@ An open card shows, top to bottom:
 | **Session** and **Week** | the live account's two windows, as dials or bars (below) | `cs status` |
 | per-model limits | an account's per-model weekly limits, each with its own bar and reset | `cs status` |
 | **Open Claude Code** | opens your terminal running Claude Code in this profile. The terminal is set in [Settings → Advanced](settings-advanced.md) | `cs run <p>` |
-| **Switch to best** | moves the profile to the account rotation would choose now, named under the button with its utilization. Greyed out, with the reason below it, when there is none or the profile is already on it | `cs use <best> --profile <p>` |
+| **Switch to best** | moves the profile to the account rotation would choose now, named under the button with its utilization. Greyed out, with the reason below it, when there is none. When the best has no more room than the live account it reads **Already on the best**, greyed out, with the next best underneath; room is points below each window's own trigger, as `cs why --json` reports it (`on_best`) | `cs use <best> --profile <p>` |
 | **Next:** | what rotation will do next and why: stay, switch to an account, or wait | `cs why --profile <p>` |
 | **Pin** / **Pinned** | Pin holds the profile on its live account and turns rotation off for it. Pinned (filled) lets it rotate again | `cs account pin <id>` / `cs account unpin --profile <p>` |
 

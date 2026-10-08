@@ -136,6 +136,9 @@ public struct ProfileCard: Equatable, Identifiable {
     /// Where "Switch to best" goes (why's `best`), and why nowhere.
     public var best: AccountView?
     public var bestWhy: String?
+    /// M12: why's `on_best`, the policy's "already on the best"; nil from an
+    /// older binary, or before `why` has loaded.
+    public var onBest: Bool?
     /// The account `why` judged live; when it is not `active` (state moved
     /// on since), why's decision is about another account.
     public var whyActive: String?
@@ -168,11 +171,15 @@ public struct ProfileCard: Equatable, Identifiable {
         return "Switch to best: \(b.id) \(Format.pct(b.bindingPct))"
     }
 
-    /// M12: the best other account has no more room than the active one,
-    /// by the binding window (the higher of session and week, as policy
-    /// measures room). The button is then off. An unknown reading on
-    /// either side claims nothing.
+    /// M12: the best other account has no more room than the active one.
+    /// The button is then off. Room is the policy's (owner, 2026-10-08):
+    /// points short of each window's own trigger, which the CLI reports as
+    /// `on_best`, so the button and the CLI never disagree. Without it (an
+    /// older binary, or not yet loaded) the card falls back to the higher of
+    /// session and week; an unknown reading on either side claims nothing.
     public var alreadyOnBest: Bool {
+        guard best != nil else { return false }
+        if let on = onBest { return on }
         guard let b = best?.bindingPct, let a = active?.bindingPct, a.isFinite, b.isFinite else { return false }
         return b >= a
     }
@@ -327,6 +334,7 @@ public struct Snapshot: Equatable {
                                    switchAtWeekly: c.trigger(for: "seven_day"), pool: pool, accounts: accounts)
             card.best = pw?.best.flatMap { id in id == activeID ? nil : (accounts.first { $0.id == id } ?? view(id)) }
             card.bestWhy = pw?.bestWhy
+            card.onBest = pw?.onBest
             card.whyActive = pw?.accounts.first { $0.active }?.id
             return card
         }

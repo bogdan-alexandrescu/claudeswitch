@@ -223,6 +223,9 @@ $ cs session
 It joins the transcripts (per-message token counts and timestamps) with the audit
 log (when the active account changed), attributing every message to whichever
 account was live when it was written. No network calls, so it costs no quota.
+With several profiles it covers them all: each profile's messages go to the
+account live in that profile, and the switch list labels each switch with its
+profile. `--profile work` reports one.
 `--since 2h` narrows the window, `--detail` breaks out input/output/cache and models.
 
 ## Inside Claude Code

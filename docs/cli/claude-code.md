@@ -11,7 +11,7 @@ cs statusline                  [--config PATH]
 cs statusline install          [--force]
 cs statusline uninstall
 cs context                     [--config PATH]
-cs session                     [--since DURATION] [--detail] [--json] [--config PATH]
+cs session                     [--since DURATION] [--profile NAME] [--detail] [--json] [--config PATH]
 cs history                     [--days N]
 cs audit                       [-n N] [--kind KIND] [--since DURATION]
 ```
@@ -124,7 +124,7 @@ It always exits 0, so it can never fail a session start.
 Adds up token usage for a span of work across every account that served it.
 Rotation splits one stretch of work over several accounts, and each account
 only knows its own share, so this is the one place the total exists. It reads
-Claude Code's transcripts.
+Claude Code's transcripts, in every profile's directory.
 
 ```sh
 cs session
@@ -137,23 +137,32 @@ active time), `(unattributed)` for usage it cannot place, the total, output
 and thinking tokens, and the switches in the span with their reasons
 (`no switches in this span` when there were none).
 
+It covers every profile (decided 2026-10-08): each message counts against
+the account live in its own profile when it was written, so an account's
+row adds up its work in whichever profile used it, and the switch list
+merges every profile's switches, each labelled with its profile when there
+are several. `--profile NAME` reports one profile only.
+
 | flag | default | meaning |
 |---|---|---|
 | `--since DURATION` | see below | how far back to look, e.g. `2h`, `24h` |
+| `--profile NAME` | every profile | report only this profile's work and switches |
 | `--detail` | off | per account: input, output and cache tokens, and messages per model |
 | `--json` | off | machine-readable output |
 | `--config PATH` | `~/.config/claudeswitch/config.toml` | the config file |
 
-Without `--since` the span is the last 8 hours; when the default profile
-switched in the last 24 hours, it starts 8 hours before that switch if that
-is later. The switch history it uses is the default profile's.
+Without `--since` the span is the last 8 hours; when a profile reported
+switched in the last 24 hours, it starts 8 hours before the latest such
+switch if that is later.
 
 `--json`:
 
 ```
-{"from": ..., "to": ..., "accounts": [{"account", "tokens", "messages", "active_seconds",
+{"from": ..., "to": ..., "profiles": ["default", ...],
+  "accounts": [{"account", "tokens", "messages", "active_seconds",
   "input", "output", "cache_read", "cache_write"}], "total_tokens": ..., "messages": ...,
-  "switches": <count>}
+  "switches": <count>,
+  "switch_events": [{"at", "profile", "from", "to", "reason"}]}
 ```
 
 A transcript problem is printed as `note: ...` on stderr and the report still

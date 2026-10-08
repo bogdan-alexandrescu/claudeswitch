@@ -250,6 +250,13 @@ public struct ProfileWhy: Equatable {
     public var best: String?
     /// Why there is none, when `best` is nil.
     public var bestWhy: String?
+    /// M12: the CLI's "Already on the best", by the policy's room. Nil from
+    /// a binary older than contract 2's on_best.
+    public var onBest: Bool? = nil
+    /// Points the live account and `best` sit below their binding window's
+    /// trigger, as the policy ranks them; nil when unknown.
+    public var activeRoom: Double? = nil
+    public var bestRoom: Double? = nil
 }
 
 /// `claudeswitch why --json`. With one profile it is
@@ -271,7 +278,8 @@ public struct WhyReport: Equatable {
                 switchAt: b["thresholds"]["switch_at"].double,
                 switchAtWeekly: b["thresholds"]["switch_at_weekly"].double,
                 pool: b["pool"].array.compactMap(\.string),
-                best: Self.text(b["best"]), bestWhy: Self.text(b["best_why"])))
+                best: Self.text(b["best"]), bestWhy: Self.text(b["best_why"]),
+                onBest: b["on_best"].bool, activeRoom: b["active_room"].double, bestRoom: b["best_room"].double))
         }
         if list.isEmpty {
             let d = Decision(j["decision"])
@@ -279,7 +287,9 @@ public struct WhyReport: Equatable {
             guard d != nil || !a.isEmpty else { return nil }
             list.append(ProfileWhy(profile: StateFile.defaultProfile, current: true,
                                     decision: d, accounts: a, switchAt: nil, switchAtWeekly: nil,
-                                    best: Self.text(j["best"]), bestWhy: Self.text(j["best_why"])))
+                                    best: Self.text(j["best"]), bestWhy: Self.text(j["best_why"]),
+                                    onBest: j["on_best"].bool, activeRoom: j["active_room"].double,
+                                    bestRoom: j["best_room"].double))
         }
         profiles = list
     }

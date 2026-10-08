@@ -203,11 +203,22 @@ func whyJSON(cfg *config.Config, st *state.State, now time.Time, only string) ma
 	return map[string]any{"profiles": list}
 }
 
-// addBest adds "best" and "best_why" for one profile's policy input.
+// addBest adds "best" and "best_why" for one profile's policy input, and
+// M12's "on_best", "active_room" and "best_room" (policy.Choose; a room is
+// null when unknown, never 0).
 func addBest(m map[string]any, in policy.Input, name string, cfg *config.Config, st *state.State, now time.Time) {
 	in.Unavailable = bestExclusions(cfg, st, name, now)
-	best, why := policy.Best(in, name)
-	m["best"], m["best_why"] = orNull(best), orNull(why)
+	c := policy.Choose(in, name)
+	m["best"], m["best_why"] = orNull(c.ID), orNull(c.Why)
+	m["on_best"], m["active_room"], m["best_room"] = c.OnBest, roomJSON(c.ActiveRoom), roomJSON(c.BestRoom)
+}
+
+// roomJSON is a room for JSON: its points, or null when unknown.
+func roomJSON(r *float64) any {
+	if r == nil {
+		return nil
+	}
+	return *r
 }
 
 // bestExclusions are the accounts "Switch to best" must never offer in

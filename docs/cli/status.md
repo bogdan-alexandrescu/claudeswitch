@@ -134,8 +134,10 @@ Each profile block gives:
 
 `--json` gives one object per profile, with `decision` (`kind`, `reason`,
 and `target` for a switch), `accounts` (each with `eligible`, `utilization`,
-`window`, `why`, `clears_at`, `weekly_pace` and `model_limits`), `best` and
-`thresholds`. The full shape is in
+`window`, `why`, `clears_at`, `weekly_pace` and `model_limits`), `best`,
+`thresholds`, and `on_best` with `active_room` and `best_room`: the points
+the live account and `best` sit below their binding window's trigger, which
+is what "already on the best" compares (`null` when unknown). The full shape is in
 [APP_CLI.md → why](../APP_CLI.md#why).
 
 Exit status: as above.

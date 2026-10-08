@@ -516,21 +516,59 @@ func better(a, b candidate, in Input) bool {
 // in.Unavailable (live elsewhere, needing a sign-in) are never offered.
 // name is the profile, for the reasons.
 func Best(in Input, name string) (string, string) {
+	c := Choose(in, name)
+	return c.ID, c.Why
+}
+
+// Choice is Best's answer with the measure behind it (IMPROVEMENTS M12).
+type Choice struct {
+	// ID is Best's account, "" when there is none; Why is Best's warning
+	// or its reason for none.
+	ID, Why string
+	// ActiveRoom and BestRoom are the points the live account and ID sit
+	// below the trigger of their binding window (the one closest to its own
+	// trigger): the figures better ranks by, the live account's carrying its
+	// projection, negative past the trigger. Nil when unknown — no reading,
+	// an expired one, an unreadable counted model, or no such account —
+	// never 0.
+	ActiveRoom, BestRoom *float64
+	// OnBest is "Already on the best" (M12, owner 2026-10-08): there is a
+	// best account and better does not rank it ahead of the live one. False
+	// whenever either room is unknown, and while the live account is
+	// refused (a 429 leaves it no room, whatever its reading says).
+	OnBest bool
+}
+
+// Choose is Best with the rooms it compares. The app's "Already on the
+// best" reads OnBest, so its button and the CLI never disagree.
+func Choose(in Input, name string) Choice {
 	in.Pinned = ""
 	var all []candidate
 	var excluded []string
+	var out Choice
+	active, haveActive := candidate{}, false
 	for _, c := range gather(in) {
+		if c.acct.ID == in.active() {
+			active, haveActive = c, true
+			out.ActiveRoom = room(c)
+		}
 		if why, ok := in.Unavailable[c.acct.ID]; ok && c.acct.ID != in.active() {
 			excluded = append(excluded, c.acct.ID+": "+why)
 			continue
 		}
 		all = append(all, c)
 	}
+	pick := func(c candidate, why string) Choice {
+		out.ID, out.Why, out.BestRoom = c.acct.ID, why, room(c)
+		out.OnBest = haveActive && active.avail != state.Burnt &&
+			out.ActiveRoom != nil && out.BestRoom != nil && !better(c, active, in)
+		return out
+	}
 	if c, ok := bestEligible(all, in); ok {
-		return c.acct.ID, ""
+		return pick(c, "")
 	}
 	if c, ok := bestWithin(all, in, 0, false); ok {
-		return c.acct.ID, fmt.Sprintf("%s, short of the %g-point landing margin", shortOf(c, in), in.Cfg.Margin())
+		return pick(c, fmt.Sprintf("%s, short of the %g-point landing margin", shortOf(c, in), in.Cfg.Margin()))
 	}
 	others := 0
 	for _, c := range all {
@@ -543,15 +581,27 @@ func Best(in Input, name string) (string, string) {
 	}
 	switch {
 	case others == 0 && len(excluded) == 0:
-		return "", name + " has no other account"
+		out.Why = name + " has no other account"
+		return out
 	case others == 0:
-		return "", "no other account in " + name + " can be switched to (" + strings.Join(excluded, "; ") + ")"
+		out.Why = "no other account in " + name + " can be switched to (" + strings.Join(excluded, "; ") + ")"
+		return out
 	}
-	why := "no other account in " + name + " has room (each is over its trigger, refused, reserved or unread)"
+	out.Why = "no other account in " + name + " has room (each is over its trigger, refused, reserved or unread)"
 	if len(excluded) > 0 {
-		why += "; not offered: " + strings.Join(excluded, "; ")
+		out.Why += "; not offered: " + strings.Join(excluded, "; ")
 	}
-	return "", why
+	return out
+}
+
+// room is how many points c sits below its binding window's trigger: the
+// negated exceedance better compares. Nil when that is not known.
+func room(c candidate) *float64 {
+	if c.window == "" || c.unreadable != "" || c.avail == state.Unknown {
+		return nil
+	}
+	r := -c.exceedance
+	return &r
 }
 
 // waiting reports the earliest recovery so the daemon can say something useful
