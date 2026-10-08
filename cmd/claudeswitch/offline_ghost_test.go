@@ -45,7 +45,7 @@ func TestDaemonStartupMakesAGhostOfAProfileRemovedOffline(t *testing.T) {
 	if !strings.Contains(r.logs.String(), "level=WARN") || !strings.Contains(r.logs.String(), "profile=work") {
 		t.Errorf("no WARN naming work:\n%s", r.logs)
 	}
-	if other, _ := r.d.liveElsewhere(context.Background(), r.prof("default"), "w1"); other == "" {
+	if other, _, _ := r.d.liveElsewhere(context.Background(), r.prof("default"), "w1"); other == "" {
 		t.Fatal("w1 installable in default while it may be live in work's old item")
 	}
 }
@@ -87,7 +87,7 @@ func TestCLIWithNoDaemonRefusesAnAccountOfAProfileRemovedOffline(t *testing.T) {
 	t.Cleanup(func() { cliLiveFor = old })
 	cliLiveFor = rigLiveFor
 
-	other, why := liveConflict(cfg, st, &fakeVault{}, "default", "w1")
+	other, why, _ := liveConflict(cfg, st, &fakeVault{}, "default", "w1")
 	if other == "" || !strings.Contains(why, "removed profile work") {
 		t.Fatalf("use/login: %q %q", other, why)
 	}
@@ -112,7 +112,7 @@ func TestAProfileWithNoRecordedItemGuardsItsAccountByName(t *testing.T) {
 	t.Cleanup(func() { cliLiveFor = old })
 	cliLiveFor = rigLiveFor
 
-	if other, why := liveConflict(cfg, st, &fakeVault{}, "default", "w1"); other == "" || !strings.Contains(why, "work") {
+	if other, why, _ := liveConflict(cfg, st, &fakeVault{}, "default", "w1"); other == "" || !strings.Contains(why, "work") {
 		t.Fatalf("use/login: %q %q", other, why)
 	}
 	if name, _, live := liveHolder(cliGhostTargets(cfg, st), &fakeVault{}, "w1"); !live || !strings.Contains(name, "work") {
@@ -128,7 +128,7 @@ func TestAProfileWithNoRecordedItemGuardsItsAccountByName(t *testing.T) {
 	if gs := r.d.st.GhostList(); len(gs) != 1 || gs[0].Service != "" || gs[0].Account != "w1" {
 		t.Fatalf("daemon ghosts: %+v", gs)
 	}
-	if other, _ := r.d.liveElsewhere(context.Background(), r.prof("default"), "w1"); other == "" {
+	if other, _, _ := r.d.liveElsewhere(context.Background(), r.prof("default"), "w1"); other == "" {
 		t.Fatal("daemon ignores the by-name guard")
 	}
 
@@ -137,7 +137,7 @@ func TestAProfileWithNoRecordedItemGuardsItsAccountByName(t *testing.T) {
 		t.Fatal(err)
 	}
 	after, _ := state.Load("", cfg.ProfileNames()...)
-	if other, _ := liveConflict(cfg, after, &fakeVault{}, "default", "w1"); other != "" {
+	if other, _, _ := liveConflict(cfg, after, &fakeVault{}, "default", "w1"); other != "" {
 		t.Errorf("still guarded after forget: %q", other)
 	}
 }

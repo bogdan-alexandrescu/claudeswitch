@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="292" viewBox="0 0 820 292" role="img" aria-label="cs session">
+<rect x="0.5" y="0.5" width="819" height="291" rx="9" fill="#16181d" stroke="#33363f"/>
+<path d="M0.5 32 V9.5 a9 9 0 0 1 9 -9 H810.5 a9 9 0 0 1 9 9 V32 Z" fill="#22252c" stroke="#33363f"/>
+<circle cx="18" cy="16.0" r="6" fill="#ff5f57"/>
+<circle cx="38" cy="16.0" r="6" fill="#febc2e"/>
+<circle cx="58" cy="16.0" r="6" fill="#28c840"/>
+<text x="410.0" y="20.5" text-anchor="middle" fill="#9aa0aa" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif" font-size="12.5">cs session</text>
+<g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="13.0" fill="#d5d8de" xml:space="preserve">
+<text x="20.0" y="61.2" fill="#5fd38d" textLength="7.8" lengthAdjust="spacingAndGlyphs">$</text>
+<text x="35.6" y="61.2" fill="#f4f5f7" font-weight="700" textLength="78.0" lengthAdjust="spacingAndGlyphs">cs session</text>
+<text x="35.6" y="98.9" textLength="210.6" lengthAdjust="spacingAndGlyphs">Thu 10:25 → 18:25  (8h 00m)</text>
+<text x="35.6" y="136.6" fill-opacity="0.62" textLength="54.6" lengthAdjust="spacingAndGlyphs">ACCOUNT</text>
+<text x="113.6" y="136.6" fill-opacity="0.62" textLength="46.8" lengthAdjust="spacingAndGlyphs">TOKENS</text>
+<text x="176.0" y="136.6" fill-opacity="0.62" textLength="39.0" lengthAdjust="spacingAndGlyphs">SHARE</text>
+<text x="230.6" y="136.6" fill-opacity="0.62" textLength="62.4" lengthAdjust="spacingAndGlyphs">MESSAGES</text>
+<text x="308.6" y="136.6" fill-opacity="0.62" textLength="46.8" lengthAdjust="spacingAndGlyphs">ACTIVE</text>
+<text x="35.6" y="155.4" textLength="319.8" lengthAdjust="spacingAndGlyphs">research  127.4M    63%       997  5h 03m</text>
+<text x="35.6" y="174.3" textLength="319.8" lengthAdjust="spacingAndGlyphs">personal   75.5M    37%       598  2h 56m</text>
+<text x="35.6" y="193.1" fill="#f4f5f7" font-weight="700" textLength="39.0" lengthAdjust="spacingAndGlyphs">total</text>
+<text x="113.6" y="193.1" fill="#f4f5f7" font-weight="700" textLength="46.8" lengthAdjust="spacingAndGlyphs">202.9M</text>
+<text x="261.8" y="193.1" fill="#f4f5f7" font-weight="700" textLength="31.2" lengthAdjust="spacingAndGlyphs">1595</text>
+<text x="308.6" y="193.1" textLength="46.8" lengthAdjust="spacingAndGlyphs">8h 00m</text>
+<text x="35.6" y="212.0" fill="#878d98" textLength="179.4" lengthAdjust="spacingAndGlyphs">out 786k · thinking 95k</text>
+<text x="35.6" y="249.7" fill-opacity="0.62" textLength="195.0" lengthAdjust="spacingAndGlyphs">1 SWITCH(ES) IN THIS SPAN</text>
+<text x="35.6" y="268.5" fill="#878d98" textLength="39.0" lengthAdjust="spacingAndGlyphs">15:29</text>
+<text x="90.2" y="268.5" textLength="78.0" lengthAdjust="spacingAndGlyphs">research →</text>
+<text x="176.0" y="268.5" fill="#f4f5f7" font-weight="700" textLength="62.4" lengthAdjust="spacingAndGlyphs">personal</text>
+<text x="254.0" y="268.5" fill="#878d98" textLength="327.6" lengthAdjust="spacingAndGlyphs">active account at 86%, over the 85% trigg…</text>
+</g></svg>

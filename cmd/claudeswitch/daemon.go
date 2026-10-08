@@ -68,6 +68,9 @@ type daemonVault interface {
 	// HoldsAccount: does item hold accountID by any token (a hand login
 	// included)? May spend one identity lookup. known false means unsettled.
 	HoldsAccount(ctx context.Context, item keychain.Live, accountID, wantSeat string) (holds, known bool)
+	// HoldsAccountWhy is HoldsAccount with, for an unknown a rate-limit lock
+	// caused, when the lock clears (R1).
+	HoldsAccountWhy(ctx context.Context, item keychain.Live, accountID, wantSeat string) (holds, known bool, retryAt time.Time)
 	NeedsRefresh(accountID string, window time.Duration) bool
 	VaultedAt(accountID string) time.Time
 	RefreshIn(ctx context.Context, accountID, wantSeat string, holder keychain.Live, allowActive bool) (*vault.Entry, error)
@@ -515,10 +518,14 @@ func (d *daemon) evaluate(ctx context.Context, il *profileLoop, trigger string) 
 	// §3: one credential may be live in at most one profile. Pools are
 	// disjoint, so rotation alone cannot get here; a manual login or a config
 	// reload can. Refuse before anything is written.
-	if other, how := d.liveElsewhere(ctx, il, dec.Target); other != "" {
+	if other, how, at := d.liveElsewhere(ctx, il, dec.Target); other != "" {
 		msg := fmt.Sprintf("refusing to install %s in profile %s: %s (%s), "+
 			"and one credential live in two profiles is revoked by whichever refreshes first",
 			dec.Target, il.name, how, whereLive(other))
+		if !at.IsZero() {
+			how = rateLimitedWhy(dec.Target, whereLive(other), at)
+			msg = fmt.Sprintf("refusing to install %s in profile %s: %s", dec.Target, il.name, how)
+		}
 		// A refusal persists until the other profile lets go, and this runs
 		// every tick: say it once per distinct finding.
 		if sig := dec.Target + "|" + other + "|" + how; sig != il.lastRefusalSig {
@@ -797,7 +804,7 @@ func (d *daemon) liveAnywhere(accountID string) bool {
 
 // liveElsewhere is the check before a live write (§3): may accountID be live
 // in a profile other than il? See liveElsewhereOf, which `use` shares.
-func (d *daemon) liveElsewhere(ctx context.Context, il *profileLoop, accountID string) (string, string) {
+func (d *daemon) liveElsewhere(ctx context.Context, il *profileLoop, accountID string) (string, string, time.Time) {
 	return liveElsewhereOf(ctx, d.v, d.cfg, d.st, il.name, d.ghostTargets(), accountID)
 }
 

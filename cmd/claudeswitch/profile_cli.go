@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/ccdir"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
@@ -155,8 +156,10 @@ func liveTargets(cfg *config.Config, resolve func(config.Profile) (keychain.Live
 }
 
 // holdsChecker is the part of the vault the §3 check needs.
+// HoldsAccountWhy is HoldsAccount plus, for an unknown a rate-limit lock
+// caused, when that lock clears (R1).
 type holdsChecker interface {
-	HoldsAccount(ctx context.Context, item keychain.Live, accountID, wantSeat string) (holds, known bool)
+	HoldsAccountWhy(ctx context.Context, item keychain.Live, accountID, wantSeat string) (holds, known bool, retryAt time.Time)
 }
 
 // liveElsewhereOf is the check before a live write (§3): may accountID be live
@@ -171,12 +174,16 @@ type holdsChecker interface {
 // resolved because none exists under any spelling of its dir (D9: not logged
 // in, ErrNotFound); one whose resolution failed for any other reason — a
 // lookup error or timeout — is unknown, and refuses.
+//
+// retryAt is set only for an unknown a rate-limit lock on the token the check
+// needed caused: when it clears, so the refusal can say when to try again
+// (R1, rateLimitedRefusal).
 func liveElsewhereOf(ctx context.Context, v holdsChecker, cfg *config.Config, st *state.State,
-	self string, targets []liveTarget, accountID string) (string, string) {
+	self string, targets []liveTarget, accountID string) (other, why string, retryAt time.Time) {
 	for _, o := range targets {
 		if o.ghost != nil {
 			if o.ghost.Account == accountID {
-				return o.name, "it may still be live in " + o.name
+				return o.name, "it may still be live in " + o.name, time.Time{}
 			}
 			continue
 		}
@@ -184,7 +191,7 @@ func liveElsewhereOf(ctx context.Context, v holdsChecker, cfg *config.Config, st
 			continue
 		}
 		if in := st.Profiles[o.name]; in != nil && in.Active == accountID {
-			return o.name, "it is the recorded live account"
+			return o.name, "it is the recorded live account", time.Time{}
 		}
 	}
 	seat := cfg.SeatOf(accountID)
@@ -194,19 +201,33 @@ func liveElsewhereOf(ctx context.Context, v holdsChecker, cfg *config.Config, st
 		}
 		if o.live == nil {
 			if o.unresolved != nil && !errors.Is(o.unresolved, keychain.ErrNotFound) {
-				return o.name, "its live credential could not be looked up, so it could not be confirmed absent"
+				return o.name, "its live credential could not be looked up, so it could not be confirmed absent", time.Time{}
 			}
 			continue
 		}
-		holds, known := v.HoldsAccount(ctx, o.live, accountID, seat)
+		holds, known, at := v.HoldsAccountWhy(ctx, o.live, accountID, seat)
 		switch {
 		case !known:
-			return o.name, "it could not be confirmed absent from the live credential"
+			return o.name, "it could not be confirmed absent from the live credential", at
 		case holds:
-			return o.name, "it is in the live credential"
+			return o.name, "it is in the live credential", time.Time{}
 		}
 	}
-	return "", ""
+	return "", "", time.Time{}
+}
+
+// rateLimitedWhy is R1's wording for a §3 check that could not get an answer
+// because of a rate-limit lock: id and where as the caller writes them (the
+// CLI quotes, the daemon does not), at shown as local wall-clock time.
+func rateLimitedWhy(id, where string, at time.Time) string {
+	return fmt.Sprintf("can't confirm %s isn't signed in under %s: the check is rate limited until %s; try again then",
+		id, where, at.Local().Format("15:04:05"))
+}
+
+// rateLimitedRefusal is the CLI's refusal for it: code live, as any §3
+// refusal, with retry_at in the JSON error object.
+func rateLimitedRefusal(id, other string, at time.Time) *appError {
+	return &appError{Code: codeLive, Message: rateLimitedWhy(fmt.Sprintf("%q", id), whereLiveQ(other), at), RetryAt: at}
 }
 
 // profileForAccount is the profile a command putting accountID into a live

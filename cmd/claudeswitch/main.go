@@ -1535,7 +1535,10 @@ func cmdUse(args []string) error {
 	if multiProfile(cfg) {
 		on = " in profile " + target.Name
 	}
-	if other, why := liveConflict(cfg, st, v, target.Name, id); other != "" {
+	if other, why, at := liveConflict(cfg, st, v, target.Name, id); other != "" {
+		if !at.IsZero() {
+			return rateLimitedRefusal(id, other, at)
+		}
 		return &appError{Code: codeLive, Message: fmt.Sprintf("account %q may be live in %s (%s); one credential live in two "+
 			"profiles is logged out by whichever refreshes first, so nothing was changed",
 			id, whereLiveQ(other), why)}
@@ -2903,7 +2906,10 @@ func cmdLogin(args []string) error {
 	if err != nil {
 		return err
 	}
-	if other, why := liveConflict(cfg, st, v, target.Name, id); other != "" {
+	if other, why, at := liveConflict(cfg, st, v, target.Name, id); other != "" {
+		if !at.IsZero() {
+			return rateLimitedRefusal(id, other, at)
+		}
 		return fmt.Errorf("account %q may be live in %s (%s); sign in there, or use "+
 			"`claudeswitch login %s --direct`, which touches no live credential", id, whereLiveQ(other), why, id)
 	}

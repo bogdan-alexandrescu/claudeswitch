@@ -416,7 +416,10 @@ func checkSeed(cfg *config.Config, st *state.State, v seedVault, o createOptions
 func seedConflict(cfg *config.Config, st *state.State, v holdsChecker, self, id string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if other, why := liveElsewhereOf(ctx, v, cfg, st, self, cliGhostTargets(cfg, st), id); other != "" {
+	if other, why, at := liveElsewhereOf(ctx, v, cfg, st, self, cliGhostTargets(cfg, st), id); other != "" {
+		if !at.IsZero() {
+			return rateLimitedRefusal(id, other, at)
+		}
 		return appErr(codeLive, "", "--seed %s: the account may be live in %s (%s); one credential live in two "+
 			"profiles is logged out by whichever refreshes first, so nothing was made",
 			id, whereLiveQ(other), why)

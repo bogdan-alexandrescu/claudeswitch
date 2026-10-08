@@ -4,6 +4,7 @@
 #   base         the test fixtures (macos/Tests/ClaudeSwitchCoreTests/Fixtures)
 #   many         RenderFixtures/many over them: five profiles, long names
 #   one-profile  RenderFixtures/one-profile over them: no [[profile]] blocks
+#   hero         RenderFixtures/hero over them: two healthy profiles (README)
 #
 #   macos/scripts/render.sh <out-dir> [set...]
 #
@@ -16,7 +17,7 @@ set -eu
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${1:?usage: render.sh <out-dir> [set...]}"
 shift
-SETS="${*:-base many one-profile}"
+SETS="${*:-base many one-profile hero}"
 FIXED_NOW="2026-10-08T02:46:41Z"
 
 swift build --package-path "$HERE" >/dev/null

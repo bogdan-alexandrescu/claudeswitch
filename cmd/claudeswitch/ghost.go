@@ -279,9 +279,9 @@ func (d *daemon) recordItem(il *profileLoop) {
 // into profile self's live item. It runs whenever there is anything else to
 // check against: other profiles, or ghosts — with one profile left after a
 // consolidation, the removed one's Claude Code may still hold the account.
-func liveConflict(cfg *config.Config, st *state.State, v holdsChecker, self, accountID string) (string, string) {
+func liveConflict(cfg *config.Config, st *state.State, v holdsChecker, self, accountID string) (string, string, time.Time) {
 	if !multiProfile(cfg) && len(allGhosts(cfg, st)) == 0 {
-		return "", ""
+		return "", "", time.Time{}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

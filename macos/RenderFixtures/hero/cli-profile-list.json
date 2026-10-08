@@ -1,0 +1,53 @@
+{
+ "ghosts": [],
+ "profiles": [
+  {
+   "declared": true,
+   "dir": null,
+   "from_env": false,
+   "listed": [
+    "work-1",
+    "personal"
+   ],
+   "live": "work-1",
+   "name": "default",
+   "overrides": {},
+   "pinned": null,
+   "pool": [
+    "work-1",
+    "personal"
+   ],
+   "signed_in": "yes",
+   "thresholds": {
+    "hard_floor": 99,
+    "landing_margin": 10,
+    "switch_at": 85,
+    "switch_at_weekly": 98
+   }
+  },
+  {
+   "declared": true,
+   "dir": "~/.claude-work",
+   "from_env": false,
+   "listed": [
+    "work-team",
+    "work-2"
+   ],
+   "live": "work-team",
+   "name": "work",
+   "overrides": {},
+   "pinned": null,
+   "pool": [
+    "work-team",
+    "work-2"
+   ],
+   "signed_in": "yes",
+   "thresholds": {
+    "hard_floor": 99,
+    "landing_margin": 10,
+    "switch_at": 85,
+    "switch_at_weekly": 98
+   }
+  }
+ ]
+}

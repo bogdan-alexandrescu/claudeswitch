@@ -93,6 +93,9 @@ type fakeVault struct {
 	// seatHolds overrides holds for HoldsAccount alone: an item holding the
 	// account under a token the vault never saw, which LiveHolds cannot see.
 	seatHolds map[string]string
+	// seatRetryAt is when the rate-limit lock behind an unknown seatHolds or
+	// holds answer clears (HoldsAccountWhy), keyed as holds.
+	seatRetryAt map[string]time.Time
 	// swapOpts is what each swap was told about the profile it writes.
 	swapOpts []vault.SwapOptions
 	// refreshWindow is the window NeedsRefresh was last asked about.
@@ -147,6 +150,13 @@ func (f *fakeVault) HoldsAccount(_ context.Context, item keychain.Live, id, _ st
 		return false, false
 	}
 	return f.answer(item, id)
+}
+func (f *fakeVault) HoldsAccountWhy(ctx context.Context, item keychain.Live, id, seat string) (bool, bool, time.Time) {
+	holds, known := f.HoldsAccount(ctx, item, id, seat)
+	if known {
+		return holds, known, time.Time{}
+	}
+	return holds, known, f.seatRetryAt[itemKey(item)+"/"+id]
 }
 func (f *fakeVault) NeedsRefresh(id string, w time.Duration) bool {
 	f.refreshWindow = w

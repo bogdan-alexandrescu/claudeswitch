@@ -168,6 +168,26 @@ public struct ProfileCard: Equatable, Identifiable {
         return "Switch to best: \(b.id) \(Format.pct(b.bindingPct))"
     }
 
+    /// M12: the best other account has no more room than the active one,
+    /// by the binding window (the higher of session and week, as policy
+    /// measures room). The button is then off. An unknown reading on
+    /// either side claims nothing.
+    public var alreadyOnBest: Bool {
+        guard let b = best?.bindingPct, let a = active?.bindingPct, a.isFinite, b.isFinite else { return false }
+        return b >= a
+    }
+
+    /// The button's first line.
+    public var bestTitle: String { alreadyOnBest ? "Already on the best" : "Switch to best" }
+
+    /// The button's second line: the best account and its utilization,
+    /// "next: …" when the card is already on the best (M12).
+    public var bestSubtitle: String? {
+        guard let b = best else { return nil }
+        let line = "\(b.id) · \(Format.pct(b.bindingPct))"
+        return alreadyOnBest ? "next: " + line : line
+    }
+
     /// Why the button is off; nil when there is a best account.
     public var bestUnavailable: String? {
         guard best == nil else { return nil }

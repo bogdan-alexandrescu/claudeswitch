@@ -101,7 +101,7 @@ func TestGhostGuardsARepointedProfilesOldItem(t *testing.T) {
 		t.Fatalf("ghosts: %+v", gs)
 	}
 	// The re-pointed profile itself may not swap w1 into its new item.
-	other, why := r.d.liveElsewhere(context.Background(), r.prof("work"), "w1")
+	other, why, _ := r.d.liveElsewhere(context.Background(), r.prof("work"), "w1")
 	if other == "" || !strings.Contains(why, "work") {
 		t.Fatalf("w1 installable while it may still be live in work's old item: %q %q", other, why)
 	}
@@ -125,7 +125,7 @@ func TestGhostSurvivesADaemonRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.d.st, r.p.st = fresh, fresh
-	if other, _ := r.d.liveElsewhere(context.Background(), r.prof("default"), "w1"); other == "" {
+	if other, _, _ := r.d.liveElsewhere(context.Background(), r.prof("default"), "w1"); other == "" {
 		t.Fatal("a restarted daemon forgot the ghost")
 	}
 }
@@ -188,13 +188,13 @@ func TestCLIChecksConsultGhosts(t *testing.T) {
 	mk := func(service, file string) keychain.Live { return fakeLive{name: service} }
 	targets := withGhosts(st, []liveTarget{{name: "default", live: fakeLive{name: "item-default"}}}, mk)
 
-	other, why := liveElsewhereOf(context.Background(), &fakeVault{}, cfg, st, "default", targets, "w1")
+	other, why, _ := liveElsewhereOf(context.Background(), &fakeVault{}, cfg, st, "default", targets, "w1")
 	if other == "" || !strings.Contains(why, "may still be live in removed profile old") {
 		t.Fatalf("use/login: %q %q", other, why)
 	}
 	// Another account in the ghost's item (a hand login there) is found too.
 	v := &fakeVault{holds: map[string]string{"item-old/b": "yes"}}
-	if other, _ := liveElsewhereOf(context.Background(), v, cfg, st, "default", targets, "b"); other == "" {
+	if other, _, _ := liveElsewhereOf(context.Background(), v, cfg, st, "default", targets, "b"); other == "" {
 		t.Error("an account in the ghost's item was not found")
 	}
 	if name, _, live := liveHolder(targets, v, "b"); !live || !strings.Contains(name, "old") {

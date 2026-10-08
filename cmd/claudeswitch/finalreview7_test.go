@@ -60,7 +60,7 @@ func TestLegacyDefaultRecordGuardsTheEnvironmentsItemNotTheName(t *testing.T) {
 		}
 		return fakeLive{name: "item-" + in.Name}, nil
 	}
-	if other, why := liveConflict(cfg, st, &fakeVault{}, "personal", "x"); other != "" {
+	if other, why, _ := liveConflict(cfg, st, &fakeVault{}, "personal", "x"); other != "" {
 		t.Fatalf("x refused in the profile it is live in: %q %q", other, why)
 	}
 

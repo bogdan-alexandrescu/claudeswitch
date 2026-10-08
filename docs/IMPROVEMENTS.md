@@ -211,8 +211,8 @@ cookies is ruled out.
   and the extension's page; `cs chrome <account>` opens it. After a rotation, and
   when browser tools fail with the same-account error, claudeswitch says which
   account's profile Claude in Chrome needs. The app gets an "Open Chrome for this
-  account" action. The automatic re-routing between profiles is to be confirmed
-  on a real machine before it is documented as working.
+  account" action. Automatic re-routing after a switch was confirmed on a real
+  machine on 2026-10-08 (GROUND_TRUTH §45).
 
 - **I5a. Cadence trade-off (decided 2026-10-07).** An account refills ~28
   calls/h after Claude Code's own reads, so the active account cannot have both
@@ -467,3 +467,23 @@ As built (lane 9, I6 and I8):
 Not chosen for now: argv fallback for oversized writes, a use-it-or-lose-it
 selection strategy, `oauthAccount` splicing, `service install` from the binary,
 `schemaVersion` on JSON, session records as the busy signal.
+
+## Refusal wording when a safety check is rate limited (decided 2026-10-08)
+
+- **R1. Say when to retry.** When `use` (or any swap) is refused because the
+  cross-profile check could not get an answer and the cause is a rate-limit
+  lock on the token it needed, the refusal keeps refusing but names the time
+  the lock clears: "can't confirm X isn't signed in under P: the check is rate
+  limited until HH:MM:SS; try again then". Other unknowns keep today's wording.
+
+- **M11. No modal alerts in the popover (decided 2026-10-08).** A refused
+  action's error shows inline in the card that caused it, with a dismiss
+  button and, when the CLI gives one, the retry time (R1). Observed: a refused
+  `use` opened an alert window that macOS never put on screen, leaving the
+  popover dimmed and blocked until the app was relaunched. Settings keeps its
+  sheets and alerts, which work in a normal window.
+
+- **M12. "Already on the best" (decided 2026-10-08).** When the best other
+  account has no more room than the active one (by the binding window), the
+  card's second button is disabled and reads "Already on the best", with the
+  next best and its percentage underneath. The account picker still switches.

@@ -1342,3 +1342,14 @@ usage reading there is nothing to rotate on, and the profile endpoint (which nee
 `user:profile`) would not identify the seat either. `add-token`, built for 0.4.9 to vault such
 tokens for machines without a browser, was removed before release. `cs login <id> --direct`
 remains the way to add an account without disturbing the live session.
+
+## 45. Claude in Chrome follows a switch to the matching Chrome profile (observed 2026-10-08)
+
+Two accounts in one profile (`~/.claude`), each with its own Chrome profile
+made by `cs chrome add`, each signed in to claude.ai and to the Claude in
+Chrome extension as that account. With the first account live, a browser task
+from Claude Code ran in the first account's Chrome profile. After `cs use` to
+the second account, the same task ran in the second account's Chrome profile
+without that profile being opened or brought forward by hand. This confirms the
+inference in IMPROVEMENTS C1: the bridge is keyed by account, so one Chrome
+profile per account is enough for routing to follow a rotation.

@@ -44,11 +44,11 @@ func TestLoginConflictWithOneProfileLeftHonoursAGhost(t *testing.T) {
 	t.Cleanup(func() { cliLiveFor = old })
 	cliLiveFor = func(config.Profile) (keychain.Live, error) { return fakeLive{name: "item-default"}, nil }
 
-	other, why := liveConflict(cfg, st, &fakeVault{}, "default", "x")
+	other, why, _ := liveConflict(cfg, st, &fakeVault{}, "default", "x")
 	if other == "" || !strings.Contains(why, "removed profile old") {
 		t.Fatalf("login's §3 check ignored the ghost: %q %q", other, why)
 	}
-	if other, _ := liveConflict(cfg, st, &fakeVault{}, "default", "y"); other != "" {
+	if other, _, _ := liveConflict(cfg, st, &fakeVault{}, "default", "y"); other != "" {
 		t.Errorf("an account no ghost holds was refused: %q", other)
 	}
 }

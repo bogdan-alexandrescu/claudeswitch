@@ -1,0 +1,185 @@
+{
+ "accounts": {
+  "personal": {
+   "burnt_until": "0001-01-01T00:00:00Z",
+   "id": "personal",
+   "last_at": "2026-10-08T02:45:41Z",
+   "last_usage": {
+    "five_hour": {
+     "resets_at": "2026-10-08T04:46:41Z",
+     "utilization": 7
+    },
+    "limits": [
+     {
+      "group": "session",
+      "is_active": false,
+      "kind": "session",
+      "percent": 7,
+      "resets_at": "2026-10-08T04:46:41Z",
+      "scope": null,
+      "severity": "normal"
+     },
+     {
+      "group": "weekly",
+      "is_active": true,
+      "kind": "weekly_all",
+      "percent": 22,
+      "resets_at": "2026-10-11T02:46:41Z",
+      "scope": null,
+      "severity": "normal"
+     }
+    ],
+    "seven_day": {
+     "resets_at": "2026-10-11T02:46:41Z",
+     "utilization": 22
+    }
+   },
+   "org_id": "11111111-1111-1111-1111-111111111111",
+   "prev_at": "0001-01-01T00:00:00Z",
+   "refresh_expiry": "2026-11-08T02:45:41Z",
+   "seat": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa@11111111-1111-1111-1111-111111111111",
+   "token_expiry": "0001-01-01T00:00:00Z"
+  },
+  "work-1": {
+   "burnt_until": "0001-01-01T00:00:00Z",
+   "id": "work-1",
+   "last_at": "2026-10-08T02:45:41Z",
+   "last_usage": {
+    "five_hour": {
+     "resets_at": "2026-10-08T04:46:41Z",
+     "utilization": 18
+    },
+    "limits": [
+     {
+      "group": "session",
+      "is_active": false,
+      "kind": "session",
+      "percent": 18,
+      "resets_at": "2026-10-08T04:46:41Z",
+      "scope": null,
+      "severity": "normal"
+     },
+     {
+      "group": "weekly",
+      "is_active": true,
+      "kind": "weekly_all",
+      "percent": 41,
+      "resets_at": "2026-10-11T02:46:41Z",
+      "scope": null,
+      "severity": "normal"
+     }
+    ],
+    "seven_day": {
+     "resets_at": "2026-10-11T02:46:41Z",
+     "utilization": 41
+    }
+   },
+   "org_id": "11111111-1111-1111-1111-111111111111",
+   "prev_at": "0001-01-01T00:00:00Z",
+   "refresh_expiry": "2026-11-08T02:45:41Z",
+   "seat": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa@11111111-1111-1111-1111-111111111111",
+   "token_expiry": "0001-01-01T00:00:00Z"
+  },
+  "work-2": {
+   "burnt_until": "0001-01-01T00:00:00Z",
+   "id": "work-2",
+   "last_at": "2026-10-08T02:45:41Z",
+   "last_usage": {
+    "five_hour": {
+     "resets_at": "2026-10-08T04:46:41Z",
+     "utilization": 3
+    },
+    "limits": [
+     {
+      "group": "session",
+      "is_active": false,
+      "kind": "session",
+      "percent": 3,
+      "resets_at": "2026-10-08T04:46:41Z",
+      "scope": null,
+      "severity": "normal"
+     },
+     {
+      "group": "weekly",
+      "is_active": true,
+      "kind": "weekly_all",
+      "percent": 9,
+      "resets_at": "2026-10-11T02:46:41Z",
+      "scope": null,
+      "severity": "normal"
+     }
+    ],
+    "seven_day": {
+     "resets_at": "2026-10-11T02:46:41Z",
+     "utilization": 9
+    }
+   },
+   "org_id": "11111111-1111-1111-1111-111111111111",
+   "prev_at": "0001-01-01T00:00:00Z",
+   "refresh_expiry": "2026-11-08T02:45:41Z",
+   "seat": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa@11111111-1111-1111-1111-111111111111",
+   "token_expiry": "0001-01-01T00:00:00Z"
+  },
+  "work-team": {
+   "burnt_until": "0001-01-01T00:00:00Z",
+   "id": "work-team",
+   "last_at": "2026-10-08T02:45:41Z",
+   "last_usage": {
+    "five_hour": {
+     "resets_at": "2026-10-08T04:46:41Z",
+     "utilization": 6
+    },
+    "limits": [
+     {
+      "group": "session",
+      "is_active": false,
+      "kind": "session",
+      "percent": 6,
+      "resets_at": "2026-10-08T04:46:41Z",
+      "scope": null,
+      "severity": "normal"
+     },
+     {
+      "group": "weekly",
+      "is_active": true,
+      "kind": "weekly_all",
+      "percent": 12,
+      "resets_at": "2026-10-11T02:46:41Z",
+      "scope": null,
+      "severity": "normal"
+     }
+    ],
+    "seven_day": {
+     "resets_at": "2026-10-11T02:46:41Z",
+     "utilization": 12
+    }
+   },
+   "org_id": "11111111-1111-1111-1111-111111111111",
+   "prev_at": "0001-01-01T00:00:00Z",
+   "refresh_expiry": "2026-11-08T02:45:41Z",
+   "seat": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa@11111111-1111-1111-1111-111111111111",
+   "token_expiry": "0001-01-01T00:00:00Z"
+  }
+ },
+ "daemon_build_time": "0001-01-01T00:00:00Z",
+ "daemon_live": true,
+ "daemon_since": "2026-10-08T01:00:00Z",
+ "emails": {
+  "work-1": "person1@example.com",
+  "work-team": "person2@example.com"
+ },
+ "profiles": {
+  "default": {
+   "active_account": "work-1",
+   "active_at": "2026-10-08T02:45:41Z",
+   "last_switch": "2026-10-08T02:45:41Z"
+  },
+  "work": {
+   "active_account": "work-team",
+   "active_at": "2026-10-08T02:45:41Z",
+   "last_switch": "2026-10-08T02:45:41Z"
+  }
+ },
+ "saved_at": "2026-10-08T02:45:41Z",
+ "version": 1
+}

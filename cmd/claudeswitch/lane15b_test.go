@@ -135,7 +135,7 @@ func TestDaemonReloadGuardsByNameWhenTheRemovedItemNeverResolved(t *testing.T) {
 	if len(gs) != 1 || gs[0].Account != "w1" || gs[0].Service != "" || gs[0].Why != state.GhostRemoved {
 		t.Fatalf("ghosts %+v, want w1 guarded by name", gs)
 	}
-	if holder, _ := liveElsewhereOf(context.Background(), r.d.v, r.d.cfg, r.d.st, "default",
+	if holder, _, _ := liveElsewhereOf(context.Background(), r.d.v, r.d.cfg, r.d.st, "default",
 		r.d.ghostTargets(), "w1"); holder == "" {
 		t.Error("w1 may be installed elsewhere: the by-name ghost does not guard it")
 	}

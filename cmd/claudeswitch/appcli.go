@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/state"
 )
@@ -54,6 +55,9 @@ type appError struct {
 	Message string
 	Hint    string
 	Err     error
+	// RetryAt, when set, is when the refusal may clear (R1: a rate-limited
+	// §3 check); the JSON error object carries it as retry_at.
+	RetryAt time.Time
 }
 
 func (e *appError) Error() string {
@@ -86,14 +90,19 @@ func wrapErr(code, hint string, err error) error {
 // daemon lock refusal as daemon_running, anything else as "failed".
 func errorObject(err error) map[string]any {
 	code, msg, hint := codeFailed, err.Error(), ""
+	var retryAt time.Time
 	var ae *appError
 	switch {
 	case errors.As(err, &ae):
-		code, msg, hint = ae.Code, ae.Message, ae.Hint
+		code, msg, hint, retryAt = ae.Code, ae.Message, ae.Hint, ae.RetryAt
 	case errors.Is(err, state.ErrDaemonRunning):
 		code, hint = codeDaemonRunning, "stop it with: claudeswitch daemon stop"
 	}
-	return map[string]any{"error": map[string]any{"code": code, "message": msg, "hint": hint}}
+	obj := map[string]any{"code": code, "message": msg, "hint": hint, "retry_at": nil}
+	if !retryAt.IsZero() {
+		obj["retry_at"] = retryAt.Format(time.RFC3339)
+	}
+	return map[string]any{"error": obj}
 }
 
 // writeJSONError prints err as the error object.

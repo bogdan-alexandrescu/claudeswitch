@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "live",
+    "hint": "",
+    "message": "can't confirm \"work-1\" isn't signed in under profile \"default\": the check is rate limited until 14:03:07; try again then",
+    "retry_at": "2026-10-08T14:03:07-07:00"
+  }
+}

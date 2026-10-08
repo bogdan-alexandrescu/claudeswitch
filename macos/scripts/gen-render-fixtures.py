@@ -10,6 +10,7 @@ from anyone's state.
                needs-login, refused and errored accounts, an account in
                default by D6 alone, an empty profile, two ghosts
   one-profile  no [[profile]] blocks: the implicit default profile
+  hero         two healthy profiles, no warnings: the README's hero image
 
     python3 macos/scripts/gen-render-fixtures.py
 """
@@ -149,3 +150,50 @@ write("one-profile", {
         why_prof("default", pool1, "personal",
                  {"kind": "stay", "reason": "active account at 69%, under the 95% trigger"}, best="x-unpooled")]},
     "cli-account-list.json": {"accounts": [info(a, "default") for a in pool1]}})
+
+# The README's hero: two healthy profiles, nothing wrong anywhere.
+hero_accounts = {
+    "work-1": rec("work-1", 18, 41),
+    "personal": rec("personal", 7, 22),
+    "work-team": rec("work-team", 6, 12),
+    "work-2": rec("work-2", 3, 9),
+}
+
+
+def hero_why(name, pool, active, reason, best):
+    accts = []
+    for a in pool:
+        u = hero_accounts[a]["last_usage"]
+        fh, sd = u["five_hour"]["utilization"], u["seven_day"]["utilization"]
+        accts.append({"id": a, "active": a == active, "eligible": True, "utilization": max(fh, sd),
+                      "window": "seven_day" if sd >= fh else "five_hour",
+                      "why": "at %d%%, ready" % max(fh, sd)})
+    return {"profile": name, "pool": pool, "accounts": accts,
+            "decision": {"kind": "stay", "reason": reason},
+            "current": name == "default", "best": best, "best_why": None,
+            "thresholds": {"switch_at": 85, "switch_at_weekly": 98, "hard_floor": 99, "landing_margin": 10}}
+
+
+hero_prof = [prof("default", ["work-1", "personal"], ["work-1", "personal"], live="work-1", sa=85, sw=98),
+             prof("work", ["work-team", "work-2"], ["work-team", "work-2"], dir="~/.claude-work",
+                  live="work-team", sa=85, sw=98)]
+for p in hero_prof:
+    p["thresholds"]["hard_floor"] = 99
+write("hero", {
+    "state.json": {"version": 1, "accounts": hero_accounts,
+                   "profiles": {"default": {"active_account": "work-1", "last_switch": NOW, "active_at": NOW},
+                                "work": {"active_account": "work-team", "last_switch": NOW, "active_at": NOW}},
+                   "emails": {"work-1": "person1@example.com", "work-team": "person2@example.com"},
+                   "daemon_live": True, "daemon_since": "2026-10-08T01:00:00Z", "daemon_build_time": Z,
+                   "saved_at": NOW},
+    "cli-profile-list.json": {"profiles": hero_prof, "ghosts": []},
+    "why-profiles.json": {"dir": "/Users/example", "profiles": [
+        hero_why("default", ["work-1", "personal"], "work-1",
+                 "active account at 41%, under the 98% trigger", "personal"),
+        hero_why("work", ["work-team", "work-2"], "work-team",
+                 "active account at 12%, under the 98% trigger", "work-2")]},
+    "cli-account-list.json": {"accounts": [
+        info("work-1", "default", "default", email="person1@example.com"),
+        info("personal", "default", plan="Pro"),
+        info("work-team", "work", "work", plan="Team", email="person2@example.com"),
+        info("work-2", "work", plan="Max 5x")]}})

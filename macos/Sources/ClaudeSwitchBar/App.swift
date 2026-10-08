@@ -142,6 +142,18 @@ enum Render {
         let sfx = dark ? "-dark" : ""
         save(PopoverView(expanded: Set(snap.cards.map(\.name))).environmentObject(store).environmentObject(login),
              size: nil, dark: dark, to: out + "/popover-expanded\(sfx).png")
+        // M11: a refused `use` shown inline on its card, with R1's retry time.
+        if let c = snap.cards.first {
+            let target = c.best?.id ?? c.accounts.first?.id ?? "work-1"
+            let at = snap.now.addingTimeInterval(4 * 60)
+            let message = "can't confirm \"\(target)\" isn't signed in under profile \"\(c.name)\": the check is "
+                + "rate limited until \(CardError.clock(at)); try again then"
+            store.renderCardError(CardError(title: "Could not switch \(c.name) to \(target)", message: message, retryAt: at),
+                                  card: c.name)
+            save(PopoverView().environmentObject(store).environmentObject(login),
+                 size: nil, dark: dark, to: out + "/popover-card-error\(sfx).png")
+            store.renderCardError(nil, card: c.name)
+        }
         save(NewProfileSheet().environmentObject(store), size: nil, dark: dark, to: out + "/sheet-new-profile\(sfx).png")
         if let p = profiles?.profiles.last(where: \.declared), profiles?.profiles.filter(\.declared).count ?? 0 > 1 {
             save(RemoveProfileSheet(profile: p).environmentObject(store), size: nil, dark: dark,

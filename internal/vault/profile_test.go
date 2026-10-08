@@ -57,6 +57,8 @@ type fakeEndpoints struct {
 	recovered map[string]*keychain.Blob
 	// during, when set, sees every request as it is made.
 	during func(*http.Request)
+	// limited is the tokens the profile endpoint answers with a 429.
+	limited map[string]bool
 }
 
 func (f *fakeEndpoints) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -66,6 +68,10 @@ func (f *fakeEndpoints) RoundTrip(r *http.Request) (*http.Response, error) {
 	if r.URL.String() == usage.ProfileEndpoint {
 		f.profiles++
 		tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if f.limited[tok] {
+			return &http.Response{StatusCode: http.StatusTooManyRequests, Header: http.Header{},
+				Body: io.NopCloser(strings.NewReader("{}")), Request: r}, nil
+		}
 		seat, ok := f.seatOf[tok]
 		if !ok {
 			return &http.Response{StatusCode: 500, Header: http.Header{},

@@ -9,17 +9,22 @@ public struct AppError: Error, Equatable {
     public var code: String
     public var message: String
     public var hint: String
+    /// When the refusal is expected to clear (`retry_at`, R1: a §3 check
+    /// that was rate limited); nil when the CLI gives none.
+    public var retryAt: Date?
 
-    public init(code: String, message: String, hint: String = "") {
+    public init(code: String, message: String, hint: String = "", retryAt: Date? = nil) {
         self.code = code
         self.message = message
         self.hint = hint
+        self.retryAt = retryAt
     }
 
     init?(_ j: JSON) {
         let e = j["error"]
         guard let code = e["code"].string else { return nil }
-        self.init(code: code, message: e["message"].string ?? code, hint: e["hint"].string ?? "")
+        self.init(code: code, message: e["message"].string ?? code, hint: e["hint"].string ?? "",
+                  retryAt: e["retry_at"].date)
     }
 
     /// The error object in bytes, or nil when they hold something else.
@@ -53,6 +58,12 @@ public enum CallError: Error, Equatable {
         case .cli(.missing), .cli(.tooOld): return CLI.installSteps
         case .cli: return ""
         }
+    }
+
+    /// When the CLI said the refusal may clear (retry_at), if it did.
+    public var retryAt: Date? {
+        if case .app(let e) = self { return e.retryAt }
+        return nil
     }
 
     /// A refusal made here, before anything ran.

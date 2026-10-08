@@ -266,7 +266,7 @@ func TestLiveElsewhereOf(t *testing.T) {
 			st := fresh()
 			st.Profile("work").Active = c.active
 			v := &fakeVault{holds: c.holds}
-			other, why := liveElsewhereOf(ctx, v, cfg, st, "default", targets(c.unres), "personal")
+			other, why, _ := liveElsewhereOf(ctx, v, cfg, st, "default", targets(c.unres), "personal")
 			if other != c.wantOther {
 				t.Fatalf("liveElsewhereOf = %q (%s), want %q", other, why, c.wantOther)
 			}

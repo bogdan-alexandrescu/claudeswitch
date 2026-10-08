@@ -1,84 +1,241 @@
 # claudeswitch
 
-Keeps Claude Code pointed at an account that still has quota.
+Keeps Claude Code on an account that still has quota.
 
-It observes every Claude account you own, reports on them, switches on command,
-and rotates automatically before you hit a wall. Inside Claude Code, a plugin
-tells each session where quota stands and lets Claude check, explain and switch
-accounts for you.
+claudeswitch watches every Claude account you have, shows where each one
+stands, and hot-swaps Claude Code onto a fresh account before the current one
+hits its limit: no restart, no lost session. It ships as a Go CLI plus daemon
+(macOS and Linux), a native macOS menu-bar app and a Claude Code plugin.
 
-[`docs/DESIGN.md`](docs/DESIGN.md) records why it is shaped the way it is;
-[`docs/GROUND_TRUTH.md`](docs/GROUND_TRUTH.md) holds the measured facts it is
-built on.
+Latest release: **v0.5.2**
+([releases](https://github.com/bogdan-alexandrescu/claudeswitch/releases)).
 
-## Why it exists
+<p align="center"><img src="docs/images/popover.png" width="384" alt="The ClaudeSwitch menu-bar popover: the daemon is live, the default profile is on work-1 and the work profile is on work-team"></p>
 
-Hitting the weekly ceiling blocks work until it resets — days, sometimes. Four
-accounts sit idle while one is exhausted. This watches all of them and moves you
-onto a fresh one before you notice.
+[`docs/GUIDE.md`](docs/GUIDE.md) is the full manual. This README covers
+installing it and finding your way around.
+
+## Contents
+
+- [Features](#features)
+- [How it works](#how-it-works)
+- [Install](#install)
+  - [Binary](#binary)
+  - [Daemon](#daemon)
+  - [Menu-bar app (macOS)](#menu-bar-app-macos)
+  - [Claude Code plugin](#claude-code-plugin)
+- [Quick start](#quick-start)
+- [The macOS app](#the-macos-app)
+- [The cs CLI](#the-cs-cli)
+- [Inside Claude Code](#inside-claude-code)
+- [Configuration](#configuration)
+- [Claude in Chrome](#claude-in-chrome)
+- [Troubleshooting](#troubleshooting)
+- [Uninstall](#uninstall)
+- [Safety](#safety)
+- [License](#license)
+
+## Features
+
+- **Every account at a glance.** Session (5-hour) and weekly utilization, reset
+  times, per-model weekly limits, and which account each Claude Code profile is
+  on.
+- **Rotation before the wall.** The daemon moves a profile to another account
+  at 85% of the session window or 98% of the weekly one, between turns where it
+  can. Past 99% it swaps mid-turn.
+- **Hot swaps.** Only the live credential changes. Running sessions pick it up
+  from their next request. Your MCP logins are left alone.
+- **Several Claude Code profiles.** Each config directory (`~/.claude`,
+  `~/.claude-work`, ...) has its own pool of accounts, and one daemon drives
+  them all.
+- **Credentials kept alive.** Stored credentials are renewed before they
+  expire, and dead refresh tokens are found within a day rather than when you
+  need the account ([→ how](docs/GUIDE.md#keeping-credentials-alive)).
+- **Explanations.** `cs why` says, account by account, why it is staying,
+  switching or waiting. `cs audit` shows what it observed, decided and did.
+- **Usage across a session.** `cs session` adds up tokens across every account
+  a stretch of work touched.
+- **A menu-bar app, a status line and a plugin**, all reading the same state.
+
+## How it works
+
+```
+                  usage API (/api/oauth/usage)
+                        ^            ^
+                        |  polls     |  polls
+                  +-----+------------+------+
+                  |   claudeswitch daemon    |
+                  |   decides per profile,   |
+                  |   swaps the live         |
+                  |   credential             |
+                  +-----+------------+-------+
+                        |            |
+        swap live cred  |            |  swap live cred
+                        v            v
+         profile "default"          profile "work"
+         ~/.claude                  ~/.claude-work
+         pool: personal, research   pool: work-1, work-team
+                        |            |
+                   Claude Code   Claude Code
+```
+
+Each account's credential is stored in a vault: the macOS Keychain, or `0600`
+files on Linux. The daemon polls each account's usage within a strict call
+budget and records the readings in `~/.local/state/claudeswitch/state.json`.
+When the account a profile is using crosses its trigger, the daemon picks the
+next eligible account from that profile's pool and writes its credential into
+the profile's live slot. Claude Code reads the new credential on its next
+request.
+
+Everything else reads that state file: `cs status`, the status line, the
+session-start hook and the menu-bar app. None of them spend API calls or touch
+the keychain to show you a figure.
 
 ## Install
 
-There are four parts. The binary is required; the daemon, the Claude Code
-plugin and the menu-bar app are each optional, and each needs the binary.
+There are four parts. The binary is required. The others are optional, and
+each needs the binary.
 
 | part | gives you | needs |
 |---|---|---|
-| binary | every command below | a release download, or Go to build it |
-| daemon | automatic rotation, credential renewal, notifications | a source checkout (`install.sh`) |
-| Claude Code plugin | quota context in every session, `/cs` skills | the binary |
-| menu-bar app (macOS) | every account's quota at a glance, one-click switching | a source checkout (`install-app.sh`) |
+| binary | `claudeswitch`, and `cs` as a symlink to it | a release archive, or Go to build it |
+| daemon | automatic rotation, credential renewal, notifications | the binary; launchd (macOS) or systemd `--user` (Linux) |
+| menu-bar app | every profile and account in the menu bar, switching, settings | macOS 13 or later, binary 0.5.1 or later |
+| Claude Code plugin | quota context in every session, `/cs` commands | the binary, Claude Code |
 
-### From source (binary and daemon)
+`cs` is a symlink, not a shell alias, on purpose: aliases do not exist in
+non-interactive shells, scripts or Claude Code's `!` prefix.
+
+### Binary
+
+From a release. Each release has archives for macOS and Linux on amd64 and
+arm64, and a `checksums.txt`. The archives are reproducible: the same tag
+always produces the same bytes.
+
+```sh
+VERSION=v0.5.2
+TARGET=darwin_arm64            # darwin_amd64, linux_amd64, linux_arm64
+BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
+curl -LO "$BASE/claudeswitch_${VERSION}_${TARGET}.tar.gz"
+curl -LO "$BASE/checksums.txt"
+shasum -a 256 -c checksums.txt --ignore-missing   # Linux: sha256sum -c --ignore-missing checksums.txt
+tar -xzf "claudeswitch_${VERSION}_${TARGET}.tar.gz"
+mkdir -p ~/.local/bin
+install -m 0755 claudeswitch ~/.local/bin/claudeswitch
+ln -sf claudeswitch ~/.local/bin/cs
+```
+
+The archive holds the binary, `LICENSE` and this README.
+
+From source, with Go 1.23 or later:
 
 ```sh
 git clone https://github.com/bogdan-alexandrescu/claudeswitch
 cd claudeswitch
-go build -o bin/claudeswitch ./cmd/claudeswitch
-./bin/claudeswitch setup
+./install.sh
 ```
 
-`setup` is interactive and does the whole first run. It finds the account you
-are already signed into, walks each additional one through a browser that will
-actually produce a different account, writes a config with the real seats
-pinned, offers to install the daemon in dry-run, and offers to add the status
-line to Claude Code.
+`install.sh` builds the binary, installs it to `~/.local/bin`, adds the `cs`
+symlink, and installs the daemon in dry-run (see [Daemon](#daemon)). To build
+the binary alone: `go build -o bin/claudeswitch ./cmd/claudeswitch`.
 
-Run it from the checkout: installing the daemon runs `./install.sh`, which puts
-the binary in `~/.local/bin`, adds a `cs` symlink, and loads a launchd agent
-(macOS) or a systemd `--user` unit (Linux). See [Running as a
-daemon](#running-as-a-daemon).
+**Verify it worked:** `cs version` prints `claudeswitch v0.5.2`. If the shell
+cannot find `cs`, add `~/.local/bin` to your `PATH`.
 
-Pinning cannot be done by hand in advance: you only learn an account's seat uuid
-by signing in to it, which is why the config is generated rather than templated.
-`init` still writes a bare config if you would rather fill it in yourself, and
-`doctor` checks everything that has to be true.
+### Daemon
 
-### From a release (binary only)
+The daemon does the polling, the rotation and the credential renewal. It is
+installed in **dry-run** by default: it makes every decision and logs the swap
+it would make, but changes nothing. Run it that way for a day, check
+`cs audit --kind decision`, then make it live.
 
-Each [release](https://github.com/bogdan-alexandrescu/claudeswitch/releases) has archives for
-macOS and Linux on amd64 and arm64, and a `checksums.txt`. The archives are
-reproducible: the same tag always produces the same bytes.
+From a source checkout:
 
 ```sh
-VERSION=v0.5.1
-TARGET=darwin_arm64            # darwin_amd64, linux_amd64, linux_arm64
-curl -LO "https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION/claudeswitch_${VERSION}_${TARGET}.tar.gz"
-curl -LO "https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION/checksums.txt"
-shasum -a 256 -c checksums.txt --ignore-missing
-tar -xzf "claudeswitch_${VERSION}_${TARGET}.tar.gz"
-install -m 0755 claudeswitch ~/.local/bin/claudeswitch
-ln -sf claudeswitch ~/.local/bin/cs
-claudeswitch setup
+./install.sh            # build, install, load the service in dry-run
+./install.sh --live     # ...or in live mode
 ```
 
-The archive holds the binary, `LICENSE` and this README. It does not include
-`install.sh`, so for the daemon use a source checkout.
+With a release binary, from `~/.local/bin`:
 
-`cs` is a symlink rather than a shell alias deliberately: aliases do not exist
-in non-interactive shells, scripts, or Claude Code's `!` prefix.
+```sh
+claudeswitch daemon install            # dry-run
+claudeswitch daemon install --live     # live
+```
 
-### In Claude Code (plugin)
+Either way it runs as a launchd agent on macOS (`xyz.claudeswitch.daemon`) or
+a systemd `--user` unit on Linux (`claudeswitch.service`). Once it is
+installed, switch modes and manage it without reinstalling:
+
+```sh
+cs daemon live          # start acting
+cs daemon dry-run       # back to reporting only
+cs daemon status|start|stop|restart
+```
+
+Re-running `./install.sh` without `--live` puts a live daemon back into
+dry-run.
+
+On macOS a newly built binary is a stranger to the Keychain, and a daemon
+cannot answer the access prompt. `install.sh` triggers that prompt while you
+are at the keyboard. With a release binary, run `cs whoami` once before
+`daemon install` and click **Always Allow**.
+
+The log is `~/.local/state/claudeswitch/daemon.log` (on Linux also
+`journalctl --user -u claudeswitch`). More in
+[docs/GUIDE.md → Running as a daemon](docs/GUIDE.md#running-as-a-daemon).
+
+**Verify it worked:** `cs doctor`'s daemon row reads "running, not older than
+this binary", and `cs status` ends with "a daemon is polling; these are its
+readings".
+
+### Menu-bar app (macOS)
+
+Building it on your Mac is the recommended way. It needs only the Command Line
+Tools (`xcode-select --install`), not Xcode and not an Apple Developer
+account. A copy built locally was never downloaded, so it opens without a
+Gatekeeper warning.
+
+```sh
+./install-app.sh               # build, install in /Applications, offer to open it
+./install-app.sh --uninstall   # quit it and remove it
+```
+
+It goes to `/Applications`, or `~/Applications` if that is not writable.
+Re-run it after pulling to update.
+
+From a release, as a universal build:
+
+```sh
+VERSION=v0.5.2
+BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
+ZIP="ClaudeSwitch-${VERSION#v}-macos.zip"
+curl -LO "$BASE/$ZIP"
+curl -LO "$BASE/$ZIP.sha256"
+shasum -a 256 -c "$ZIP.sha256"
+ditto -x -k "$ZIP" .
+mv ClaudeSwitch.app /Applications/
+```
+
+The release app is **not** signed with a Developer ID or notarized, so macOS
+blocks its first launch. Either open it once, click **Done**, then go to
+**System Settings > Privacy & Security** and click **Open Anyway**, or remove
+the quarantine flag yourself:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/ClaudeSwitch.app
+```
+
+The app needs the `claudeswitch` binary, version 0.5.1 or later. It looks in
+the path set in Settings > Advanced, then `~/.local/bin`, then `PATH` and the
+usual Homebrew and Go locations. Without one, its menu says so and shows how
+to install it. [macos/README.md](macos/README.md) has the details.
+
+**Verify it worked:** a gauge icon with the live account and its utilization
+appears in the menu bar. If you see nothing on a MacBook with a notch, see
+[Troubleshooting](#troubleshooting).
+
+### Claude Code plugin
 
 Install the binary first. Then, inside Claude Code:
 
@@ -94,27 +251,21 @@ claude plugin marketplace add https://github.com/bogdan-alexandrescu/claudeswitc
 claude plugin install cs@claudeswitch
 ```
 
-Start a new session for it to take effect, then run `/cs setup`: it
-checks the binary is reachable, adds the status line, and runs `doctor`. The
-status line can also be added directly:
-
-```sh
-claudeswitch statusline install
-```
-
-The plugin's version always matches the binary release it shipped with. To
-update it:
+Start a new session, then run `/cs setup`. It checks that the binary is
+reachable, adds the status line to Claude Code's settings, and runs
+`cs doctor`. The plugin's version always matches the binary release it shipped
+with. To update it:
 
 ```sh
 claude plugin marketplace update claudeswitch
 claude plugin update cs@claudeswitch
 ```
 
-To remove it: `claude plugin uninstall cs@claudeswitch`, and
-`claudeswitch statusline uninstall` for the status line.
+<details>
+<summary>Migrating from v0.4.0 (<code>claudeswitch@claudeswitch</code>)</summary>
 
 v0.4.0 shipped the plugin as `claudeswitch@claudeswitch`, with skills under
-`/claudeswitch:`. It is `cs` from v0.4.1, so update by reinstalling:
+`/claudeswitch:`. From v0.4.1 it is `cs`, with one `/cs` command. Reinstall:
 
 ```sh
 claude plugin uninstall claudeswitch@claudeswitch
@@ -122,244 +273,328 @@ claude plugin marketplace update claudeswitch
 claude plugin install cs@claudeswitch
 ```
 
-### In the menu bar (macOS)
+</details>
+
+**Verify it worked:** a new session starts with two `[claudeswitch]` context
+lines, and `/cs status` prints the status table. `cs doctor` shows
+`[ok  ] claude plugin   installed`.
+
+## Quick start
 
 ```sh
-./install-app.sh
+cs setup
 ```
 
-builds a native menu-bar app on your Mac with the Command Line Tools (no Xcode,
-no Apple Developer account) and installs it in `/Applications`. It shows the
-active account and its utilization in the menu bar, every account's windows
-and resets in its menu, and switches with `claudeswitch use`. It never reads
-the keychain. See [macos/README.md](macos/README.md), which also covers the
-unsigned release zip.
+`setup` is interactive and does the whole first run. It finds the account you
+are signed in to now, walks you through signing in to each additional one,
+writes a config with each account pinned to its seat, and offers to install
+the daemon in dry-run and to add the status line.
 
-## Use
+To add more accounts later:
 
-Every command also works as `cs <command>`.
+```sh
+cs login work-1 --direct                    # sign in through a browser; your live session is untouched
+cs login work-1 --direct --browser Safari   # ...in a browser that is signed in to that account
+cs add research                             # or: /login in Claude Code, then save that login as "research"
+```
+
+A login returns a credential for whichever account your browser is signed in
+to. Separate browser applications keep separate cookies, which is what
+`--browser` is for. `login` and `add` verify the seat that came back and
+refuse a mismatch.
+
+To run a second Claude Code profile with its own pool:
+
+```sh
+cs profile create work --pool work-1,work-team --seed work-1
+cs run work                                                     # claude, with CLAUDE_CONFIG_DIR set for "work"
+```
+
+Then check on it, and make it act when you trust its decisions:
+
+```sh
+cs status        # every profile and account
+cs why           # what rotation will do, and why
+cs daemon live   # let the daemon swap
+```
+
+## The macOS app
+
+The menu-bar app shows what claudeswitch knows and lets you manage all of it:
+profiles, accounts, settings and the daemon. It is a native SwiftUI app.
+
+It only reads `~/.local/state/claudeswitch/state.json` and runs
+`claudeswitch ... --json` commands from [docs/APP_CLI.md](docs/APP_CLI.md). It
+never reads the keychain and never calls the usage API itself. It re-reads the
+state file on every save, and runs `cs why --json` every 20 seconds and after
+each action.
+
+### Menu-bar label
+
+<p align="center"><img src="docs/images/menubar-label.png" width="154" alt="The menu-bar label: a gauge icon followed by &quot;default · work-1 41%&quot;"></p>
+
+The label shows the live account of the profile you follow and its binding
+utilization, for example `default · work-1 41%` (no profile name when you have
+only one). The gauge moves as that window nears its switch threshold, and
+turns into a warning triangle with a trailing `!` once it is over it or the
+account needs a login. `cs ...` means it is still loading. A question mark
+means the `claudeswitch` binary is missing or too old. Icon-only is a setting
+(Advanced).
+
+### Popover
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/popover.png" width="384" alt="The popover in light mode: daemon live, the default profile on work-1 and the work profile on work-team"></td>
+    <td align="center"><img src="docs/images/popover-dark.png" width="384" alt="The same popover in dark mode"></td>
+  </tr>
+</table>
+
+At the top is the daemon: live or dry run, how long since it polled, and "not
+polling for N m" if it has stopped. Below it is a card per profile. The
+followed profile's card is open and shows:
+
+- its directory;
+- the live account, as a picker of the profile's pool;
+- session and weekly bars with a tick at the profile's own threshold;
+- resets and per-model weekly limits;
+- what rotation will do next, and why.
+
+The card's buttons are **Open Claude Code** (your terminal running
+`cs run <profile>`: Terminal, iTerm, Ghostty or Warp), **Switch to best**
+(which names the account it would move to and its utilization), the globe that
+opens the account's Chrome profile, and **Pin**. The other profiles are compact
+rows with a play button for Claude Code and a chevron that expands them.
+**+ Add account** and **Settings...** are at the foot.
+
+### Warnings
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/popover-warnings.png" width="384" alt="The popover showing warnings: the daemon in dry run, and the review profile's account refused with a 401, pinned, with no other account to move to"></td>
+    <td align="center"><img src="docs/images/popover-warnings-dark.png" width="384" alt="The same warnings in dark mode"></td>
+  </tr>
+</table>
+
+Problems appear where they apply. Here the daemon is in dry run, so nothing
+rotates by itself. In the `review` profile, the usage API answers its account
+with a 401, the account is pinned, and the pool has no other account to move
+to, so nothing can rotate there until you sign in to it again
+(`cs login <id> --direct`) or add another account to the pool.
+
+### Settings
+
+<table>
+  <tr>
+    <td width="440"><img src="docs/images/settings-profiles.png" width="440" alt="Settings, Profiles pane: each profile with its directory, pool and per-profile overrides"></td>
+    <td><b>Profiles.</b> Create a profile with a directory, a pool and a seed
+    account. Add, remove and move accounts between pools. Set the five
+    per-profile overrides (<code>switch_at</code>, <code>switch_at_weekly</code>,
+    <code>hard_floor</code>, <code>landing_margin</code>, <code>models</code>).
+    Forget a removed profile's old credential.</td>
+  </tr>
+  <tr>
+    <td width="440"><img src="docs/images/settings-accounts.png" width="440" alt="Settings, Accounts pane: accounts in rotation order, dragged to reorder, and the recovery copies"></td>
+    <td><b>Accounts.</b> Drag accounts to set the rotation order. Rename an
+    account, sign in to it again, open its Chrome profile, or delete it after
+    a confirmation that names the account and seat. Recovery copies (logins a
+    swap kept aside) are listed here to restore or clear.</td>
+  </tr>
+  <tr>
+    <td width="440"><img src="docs/images/settings-rotation.png" width="440" alt="Settings, Rotation pane: the rotation settings, with inline validation"></td>
+    <td><b>Rotation, Polling, Advanced, Daemon.</b> Every <code>cs config</code>
+    setting, generated from <code>cs config schema --json</code>, with inline
+    validation and the CLI's own error messages. The Daemon pane shows its
+    status and switches between live and dry run, restarts, starts, stops,
+    installs and uninstalls it, and sets the app to launch at login.</td>
+  </tr>
+</table>
+
+### Add account
+
+<p align="center"><img src="docs/images/add-account.png" width="420" alt="The Add account sheet: sign in with a browser, or save the login Claude Code is using now"></p>
+
+Two ways to add an account:
+
+- **Sign in with a browser.** The app opens the sign-in page in the browser
+  you pick, and you paste the code back. Your live session is not touched
+  (`cs login <id> --direct --no-open`).
+- **Save the login that is live now.** After `/login` in Claude Code, save
+  that credential under the name it suggests (`cs add`).
+
+## The cs CLI
+
+`claudeswitch` and `cs` are the same program. Commands that act on one profile
+(`use`, `add`, `login`, `whoami`) take `--profile NAME`, and otherwise act on
+the profile your shell's `CLAUDE_CONFIG_DIR` belongs to. `status`, `why`,
+`plan` and `top` show every profile unless you pass `--profile`.
+
+Most commands take `--json`. Those the menu-bar app runs never prompt and fail
+with a stable `{"error": {"code", "message", "hint"}}` object.
+[docs/APP_CLI.md](docs/APP_CLI.md) is that contract, and `cs version --json`
+names its version.
+
+The screenshots below use made-up accounts (`work-1`, `work-team`,
+`personal`, `research`) in two profiles, `default` and `work`.
+
+### cs
+
+With no command, `cs` lists every command.
+
+<p align="center"><img src="docs/images/cli-help.svg" width="720" alt="Output of cs with no arguments: the version line and a list of every command with a one-line description"></p>
+
+### cs status
+
+Every profile, its pool and the utilization of each account in both windows.
+`▸` marks the live account. `--detail` adds reading age, burn rate and the
+binding limit. `cs top` is the same view, redrawn in place.
+
+<p align="center"><img src="docs/images/cli-status.svg" width="720" alt="Output of cs status: the default profile on personal at 44% of its weekly window with research refused until its session resets, and the work profile on work-1 at 87% of its 5-hour window, rotating to work-team"></p>
+
+### cs why
+
+The rotation decision for each profile, with every account considered in
+order and the reason it is or is not eligible. It reads saved state only and
+makes no API calls.
+
+<p align="center"><img src="docs/images/cli-why.svg" width="720" alt="Output of cs why: default is staying put on personal; work is rotating to work-team because work-1 is over the 85% session trigger; with weekly pace for each account"></p>
+
+### cs doctor
+
+Checks everything that has to be true for rotation to work: the config, the
+vault, the daemon, the live credential, the usage API, each profile, the
+refresh policy, the polling budget, the status line and the plugin.
+`--verify` also confirms every stored credential still authenticates (one API
+call each).
+
+<p align="center"><img src="docs/images/cli-doctor.svg" width="720" alt="Output of cs doctor: every check ok, including config, vault, daemon, credentials, usage API, both profiles, auto-refresh, poll cadence, status line and plugin"></p>
+
+### cs use
+
+Swaps a profile onto another account straight away. Hot: no restart. Running
+sessions pick it up from their next request. `--dry-run` says what it would
+do.
+
+<p align="center"><img src="docs/images/cli-use.svg" width="720" alt="Output of cs use work-team --profile work: now using work-team in profile work, with its 5-hour and 7-day usage, MCP logins untouched, no restart needed"></p>
+
+### cs profile list
+
+Each Claude Code profile: its directory, its pool and the account live in it.
+
+<p align="center"><img src="docs/images/cli-profile-list.svg" width="720" alt="Output of cs profile list: default in ~/.claude with pool personal and research, live personal; work in ~/.claude-work with pool work-1 and work-team, live work-1"></p>
+
+### cs session
+
+Token usage for a stretch of work, split across every account it touched.
+It joins Claude Code's transcripts with the audit log's switches, so each
+message is counted against the account that was live when it was written. No
+API calls. `--since 3h` sets the span and `--detail` adds a per-model
+breakdown.
+
+<p align="center"><img src="docs/images/cli-session.svg" width="720" alt="Output of cs session: eight hours split between research and personal, with tokens, share, messages and active time, and the one switch in the span"></p>
+
+### Command reference
+
+Every command also takes `--config PATH` to use another config file. Each
+command in more depth: [docs/GUIDE.md → Commands](docs/GUIDE.md#commands).
 
 **Looking**
 
-```sh
-claudeswitch status              # every account's utilization, both windows
-claudeswitch status --detail     # ...with reading age, burn rate, binding limit
-claudeswitch top                 # the same, redrawn in place (ctrl-c to leave)
-claudeswitch whoami              # which Claude account is live right now
-claudeswitch accounts            # what is in the vault
-claudeswitch session             # token usage across every account used in a span
-claudeswitch history -days 21    # deduped rejection history from your transcripts
-```
+| command | what it does |
+|---|---|
+| `cs status [--detail] [--profile P] [--json]` | every account's utilization in both windows; `--refresh=false` skips the live read of the account in use, `--max-age D` re-reads anything older |
+| `cs top [--every 2s] [--profile P]` | `status`, redrawn in place (ctrl-c to leave) |
+| `cs why [--profile P] [--json]` | the rotation decision per profile, account by account, with reasons |
+| `cs plan [--profile P] [--json]` | the same decision in brief, and whether anything will act on it |
+| `cs whoami [--profile P]` | which account is live in a profile right now |
+| `cs accounts [--json]` | what is in the vault: account, email, plan, organization |
+| `cs session [--since D] [--detail] [--json]` | token usage across every account used in a span |
+| `cs history [--days 21]` | deduplicated rejection history from the transcripts |
+| `cs audit [--kind K] [--since D] [--n 30]` | what the daemon observed, decided and did; `K` is `decision`, `switch`, `rejection`, `severity` or `error` |
+| `cs doctor [--verify]` | check everything; exits non-zero if a check fails |
+| `cs version [--json]` | the version, and with `--json` the app contract version |
 
-**Deciding**
+**Switching and signing in**
 
-```sh
-claudeswitch plan                # the rotation decision right now (changes nothing)
-claudeswitch why                 # the same decision, account by account, with reasons
-claudeswitch audit               # what the daemon observed, decided and did
-claudeswitch audit --kind switch --since 24h
-```
+| command | what it does |
+|---|---|
+| `cs use <id> [--profile P] [--dry-run] [--json]` | swap a profile onto a vaulted account (hot, no restart) |
+| `cs login <id> --direct [--browser APP] [--no-open]` | sign in through a browser, verify the seat, vault it and add it to the config, without touching the live session |
+| `cs login <id> --code CODE` | finish a `--direct` login with the code the browser shows |
+| `cs login <id> [--sso] [--email ADDR] [--prompt select_account\|login] [--keep]` | other sign-in options; without `--direct` it signs in through Claude Code and puts your previous account back unless `--keep` |
+| `cs add [<id>] [--from P] [--profile P] [--force] [--json]` | vault the credential that is live now (after `/login`) and add it to the config |
+| `cs refresh <id> [--allow-active]` | renew a vaulted credential; never the live one unless you insist |
+| `cs run <profile> [-- claude args]` | start Claude Code in a profile |
 
-**Acting**
+**Accounts**
 
-```sh
-claudeswitch use <id>            # swap onto a vaulted account (hot; no restart)
-claudeswitch login <id> --direct # sign in to an account, vault it, add it to the config
-claudeswitch add [<id>]          # vault the credential that is live right now (after /login)
-claudeswitch refresh <id>        # renew a vaulted credential (never the live one)
-```
+| command | what it does |
+|---|---|
+| `cs priority <id>... [--json]` | set the rotation order (also `cs account priority`) |
+| `cs account list [--json]` | accounts with email and plan |
+| `cs account pin <id>` / `cs account unpin [<id>] [--profile P]` | stop and resume automatic rotation in that account's profile |
+| `cs rename <old> <new>` | re-file an account under another id, in config, state and vault (also `cs account rename`) |
+| `cs remove <id> [--yes] [--json]` | delete an account everywhere: credential, config block, pool and priority entries, observations (also `cs account delete`) |
+| `cs forget <id>` / `cs forget --stale` | drop an account's recorded observations (not its credential), or those of every account no longer in the config |
+| `cs identify [--force]` | record which seat (and email) each vaulted credential belongs to |
+| `cs recovery [--identify] [--json]` | list the logins a swap kept aside |
+| `cs recovery restore <slot> <account> [--force]` | vault a recovery copy under an account, after checking its seat |
+| `cs recovery clear <slot> [--yes]` | delete a recovery copy |
 
-**Managing**
+**Profiles**
 
-```sh
-claudeswitch setup               # guided first run
-claudeswitch config              # every setting in force; `config <name> <value>` changes one
-claudeswitch config clean        # delete the scope lines and [project] tables older configs carry
-claudeswitch doctor              # config, vault, keychain, usage API, daemon, Claude Code
-claudeswitch identify            # record which seat each vaulted credential belongs to
-claudeswitch rename <old> <new>  # re-file a vaulted account under another id
-claudeswitch forget <id>         # drop an account's recorded observations
-claudeswitch remove <id>         # delete an account everywhere: credential, config block,
-                                 # pool and priority entries, observations
-claudeswitch priority <id>...    # set the rotation order
-claudeswitch account pin <id>    # stop automatic rotation in its profile (`unpin` resumes)
-claudeswitch profile pool <p> add|remove <id> [--to <other>]
-claudeswitch profile set <p> <key> <value|inherit>   # per-profile thresholds and models
-claudeswitch daemon status|start|stop|restart|live|dry-run|install|uninstall
-claudeswitch watch [--live]      # run the daemon in the foreground
-claudeswitch uninstall           # stop the daemon and remove what was installed
-```
+| command | what it does |
+|---|---|
+| `cs profile create <name> [--dir PATH] [--pool a,b] [--seed <id>] [--json]` | make a Claude Code profile: its directory, shared settings and skills linked from `~/.claude`, MCP servers copied, its `[[profile]]` block; `--seed` signs it in |
+| `cs profile seed <name> <id>` | sign a profile with no credential in with a vaulted account |
+| `cs profile list [--json]` | each profile's directory, pool and live account |
+| `cs profile pool <name> add\|remove <id> [--to P]` | change a pool (pools never overlap) |
+| `cs profile set <name> <key> <value\|inherit>` | per-profile `switch_at`, `switch_at_weekly`, `hard_floor`, `landing_margin` or `models` |
+| `cs profile remove <name> [--to P] [--yes]` | remove a profile; its accounts join `--to`, or `default` |
+| `cs profile forget <name>` | release the guard on a removed or re-pointed profile's old credential |
 
-**Claude Code**
+**Settings and service**
 
-```sh
-claudeswitch statusline          # one line for Claude Code's status line (read-only)
-claudeswitch statusline install  # add it to ~/.claude/settings.json
-claudeswitch context             # the quota summary the plugin gives each session
-```
+| command | what it does |
+|---|---|
+| `cs setup` | guided first run |
+| `cs init` | write a starter config to fill in by hand |
+| `cs config [--json]` | every setting in force |
+| `cs config <name> <value>` / `cs config get\|set ...` | read or change one setting, with validation (`get --profile P` gives a profile's value) |
+| `cs config schema [--json]` | every setting's type, range and default |
+| `cs config clean [--yes]` | remove the `scope` lines and `[project]` tables older configs carry |
+| `cs daemon status\|start\|stop\|restart\|live\|dry-run` | manage the installed service |
+| `cs daemon install [--live\|--dry-run]` / `cs daemon uninstall` | register or remove the service for this binary |
+| `cs watch [--live] [--quiet] [--idle-gap 8s] [-v]` | run the daemon in the foreground |
+| `cs uninstall [--credentials] [--yes]` | stop the daemon and remove what claudeswitch installed |
 
-Most read commands take `--json`. So does every command the menu-bar app
-runs, which then never prompts and fails with a stable error object;
-[docs/APP_CLI.md](docs/APP_CLI.md) is that contract.
+**Claude Code and Chrome**
 
-`status` on a machine with one account configured:
-
-```
-  ACCOUNT      5-HOUR                          7-DAY                           RESETS    STATE
-  personal     [#########.............]  40.0% [#######...............]  30.0% 3h10m     ACTIVE available
-                 ↳ binding: session (normal) 40%, resets 3h10m
-
-  thresholds  switch ≥85% session / ≥98% weekly   hard floor ≥99%   swap idle, forced after 30s
-  api budget  11 scheduled call(s) available now (12 per 5m0s, one held for swaps)
-```
-
-## Adding an account
-
-The quickest way, if you can sign in through Claude Code:
-
-```sh
-# in Claude Code: /login, as the account you want to add
-cs add              # suggests a name from the account, asks you to confirm it
-cs add work-b       # or name it yourself
-```
-
-That is all: the credential is verified and vaulted, and the account is added
-to your config — pinned to its seat, last in `priority`. With several profiles,
-`--from <profile>` saves the login that profile's Claude Code is signed into,
-and `--profile` names the pool the account joins. A running daemon notices the config change and
-starts polling the new account without a restart. Running `add` again for the
-same account refreshes its stored credential in place.
-
-To add an account **without** touching the session you are working in, sign in
-to it directly instead. Any name works, including one your config has never
-seen; it is written in, pinned to whichever seat actually signed in:
-
-```sh
-cs login work-b --direct                     # sign in, verify, vault, add to config
-cs login work-b --direct --browser Safari    # ...in a browser signed into that account
-cs login work-b --code <code>                # finish, with the code the browser shows
-cs login work-b --sso                        # an SSO-backed organization
-```
-
-A login returns a credential for **whichever account your browser is signed
-into**; nothing in the request can override that. So sign in using a browser
-that holds the account you want — separate browser applications keep separate
-cookies, which is what `--browser` is for.
-
-`login` and `add` check the part that is easy to get wrong. If your config
-already pins the name to a seat, the credential that came back is verified
-against it and a mismatch is refused, naming the account actually got. A seat
-already vaulted under a **different** name is refused too, and nothing is
-written. `--direct` obtains the credential without touching your live session
-at all; without it, `login` signs in through Claude Code and puts your previous
-account back afterwards.
-
-A token from `claude setup-token` cannot be used: it carries the
-`user:inference` scope only, and the usage endpoint refuses it with a 403
-(measured 2026-10-07), so there is nothing to rotate on. Sign in with
-`cs login <id> --direct` instead.
-
-Identity is the **seat** — one person within one organization — never the
-email. One address can belong to several organizations with separate quota
-pools, and one team organization holds a separate pool for each member. Only
-`claudeAiOauth` is ever vaulted; your MCP tokens stay with the machine.
-
-## Keeping credentials alive
-
-Refreshing an access token **revokes the previous one**, so a vaulted snapshot
-goes stale within hours of that account's session being refreshed elsewhere. The
-daemon therefore renews them itself:
-
-```toml
-auto_refresh   = true     # keep vaulted credentials alive at all
-refresh_window = "1h"     # renew this long before a token expires
-refresh_probe  = "24h"    # also refresh each idle account this often; "0s" disables
-```
-
-Those are the defaults. It never refreshes the account currently in use — that
-would revoke the token your session is holding; Claude Code renews that one
-itself and `SyncActive` re-captures it. Refreshing runs in dry-run too: dry-run
-means "do not rotate", and letting every stored credential expire while watching
-would be a strange reading of it.
-
-`refresh_probe` exists because `/v1/oauth/token` never reports when a *refresh*
-token expires. Without a periodic probe a dead one stays invisible until the
-moment you need that account; with it, you find out within a day. `cs doctor`
-shows the policy and every account's standing, and `status` says when an
-account cannot be renewed.
-
-### Recovery copies
-
-Before a swap overwrites the live credential it saves it: into its account's
-vault entry when it can tell whose it is, otherwise into a recovery slot (up to
-five per profile), so a login is never destroyed by a swap. `cs doctor` warns
-when any slot holds something.
-
-```sh
-cs recovery                       # list kept credentials: slot, profile, when, seat, expiry
-cs recovery --identify            # also ask whose each one is (one API call each)
-cs recovery restore work-1 w1     # vault slot work-1 as w1, after checking its seat; clears the slot
-cs recovery clear work-1          # delete a slot (asks first; --yes without a terminal)
-```
-
-`restore` refuses a credential whose seat is not the account's pinned one, and
-will not replace a better vaulted credential without `--force`. No command ever
-prints a token.
-
-## Sessions that span accounts
-
-Rotation makes "how much have I used?" a question no single account can answer:
-the work continues across swaps, and each account only knows its own share.
-
-```
-$ cs session
-  Thu 10:51 → 18:51  (8h0m0s)
-
-  ACCOUNT      TOKENS  SHARE  MESSAGES   ACTIVE
-  personal      1.20B    56%      4276   5h4m0s
-  work-team    947.5M    44%      4115  2h56m0s
-
-  total         2.15B             8391
-              ↳ out 1.1M · thinking 131k
-
-  1 switch(es) in this span:
-    15:55:30  personal → work-team   active account at 85%, over the 85% trigger
-```
-
-It joins the transcripts (per-message token counts and timestamps) with the audit
-log (when the active account changed), attributing every message to whichever
-account was live when it was written. No network calls, so it costs no quota.
-`--since 2h` narrows the window, `--detail` breaks out input/output/cache and models.
+| command | what it does |
+|---|---|
+| `cs statusline` | one line for Claude Code's status line (read-only) |
+| `cs statusline install [--force]` / `cs statusline uninstall` | add it to or remove it from `~/.claude/settings.json` |
+| `cs context` | the quota summary the plugin gives each session (read-only) |
+| `cs chrome add <id>` | create a Chrome profile for an account, for Claude in Chrome |
+| `cs chrome [<id>]` | open an account's Chrome profile (no id: the account live in this shell's profile) |
+| `cs chrome list [--json]` / `cs chrome forget <id>` | which account has which Chrome profile; drop a mapping |
 
 ## Inside Claude Code
 
-With the [plugin installed](#in-claude-code-plugin), three things change.
-
-### Every session starts knowing where quota stands
+With the [plugin](#claude-code-plugin) installed, every session starts knowing
+where quota stands. A SessionStart hook runs `cs context`, which reads saved
+state only (no keychain, no API calls) and never fails a session start:
 
 ```
 [claudeswitch] active personal · session 24% (resets 3h47m) · week 44% (resets 4d15h)
 [claudeswitch] rotates at session 85% / week 98%, mid-turn at 99% · daemon running, rotates automatically
 ```
 
-That is `claudeswitch context`, run by a SessionStart hook. It reads saved state
-only — no keychain, no API calls — and never fails a session start. Two lines is
-the normal case; anything more needs attention:
+Two lines is the normal case; more mean something needs attention
+([→ details](docs/GUIDE.md#every-session-starts-knowing-where-quota-stands)).
 
-| extra | means |
-|---|---|
-| `· reading 12m old` | no fresh reading for over 10 minutes: the poller is stuck or refused |
-| `personal was refused until 14:30` | the account hit a limit |
-| `daemon NOT running` / `daemon in dry-run` | nothing will rotate automatically |
-| `next: switch to work-a …` | a switch is due; the line gives the `use` command |
-| `next: wait …` | every account is out; says which recovers first |
-| `not on PATH` / `older than this plugin` | install or update the binary |
-
-### Skills
-
-`/cs` works like `cs` in a terminal: `/cs status`, `/cs why`,
-`/cs switch work-a`. With no command it shows status. It is the plugin's only
-slash command. You can also simply ask, and Claude runs the matching command.
+`/cs` works like `cs` in a terminal. With no command it shows status. You can
+also just ask, and Claude runs the matching command.
 
 | command | ask something like | changes anything |
 |---|---|---|
@@ -371,367 +606,163 @@ slash command. You can also simply ask, and Claude runs the matching command.
 | `/cs login <id>` | "add my work account" | yes, after confirming account and browser |
 | `/cs setup` | "set up claudeswitch" | settings.json; asks before replacing a status line |
 
-`/status`, `/login` and `/doctor` belong to Claude Code itself, which is why the
-plugin's commands live under `/cs`.
+The commands live under `/cs` because `/status`, `/login` and `/doctor` belong
+to Claude Code itself.
 
-A switch made from a skill takes effect from Claude's next request, in the
-current session included. First-time account setup stays in a terminal
-(`claudeswitch setup`): it is interactive in ways a skill cannot be.
-
-### Status line
-
-`claudeswitch statusline` prints one compact line and is strictly read-only —
-no polling, no API calls, no state writes — so it is safe to run on every
-render:
+The status line is `cs statusline`, added by `/cs setup` or
+`cs statusline install`. It is strictly read-only, so it is safe to run on
+every render:
 
 ```
 personal  session ▓▓░░░░░░░░ 24% 3h48m  ▸week ▓▓▓▓░░░░░░ 44% 4d15h
 ```
 
-`▸` marks the window that binds, and an arrow after its figure shows which way
-it is moving. Bars turn yellow at 60%, and at the switch threshold and hard
-floor take the colours for "rotation coming" and "mid-turn swap". Past the
-threshold the line says what happens next — `· rotating to work-a`,
-`· all out, quota at 14:30`, `· holding` — and a refused account reads
-`refused until 14:30`. `· read 12m ago` means the readings have stopped moving.
-
-`claudeswitch statusline install` writes it to `~/.claude/settings.json`
-(honouring `CLAUDE_CONFIG_DIR`). It leaves an existing status line alone unless
-you pass `--force`, keeps the previous file as `settings.json.claudeswitch.bak`,
-and preserves the order of your keys. `uninstall` removes it only if it is
-claudeswitch's. By hand, it is:
-
-```json
-"statusLine": { "type": "command", "command": "claudeswitch statusline" }
-```
-
-## Claude in Chrome
-
-The Claude in Chrome extension keeps its own claude.ai login, pinned to one
-account, and Claude Code finds it on a channel keyed by Claude Code's own
-account. After a rotation Claude Code is on another account, so the browser
-tools stop answering ("not connected", or "both must use the same claude.ai
-account"). claudeswitch cannot move the extension's login, and does not try:
-it gives each account a Chrome profile of its own and tells you which one to
-use.
-
-```sh
-cs chrome add work-a     # a new Chrome profile for work-a, opened at the
-                         # claude.ai login and the extension's Web Store page
-cs chrome work-a         # open that profile again
-cs chrome                # open the profile of the account live in this shell's profile
-cs chrome list [--json]  # which account has which profile
-cs chrome forget work-a  # drop the mapping (the Chrome profile itself stays)
-```
-
-In the window `add` opens: sign in to claude.ai as that account, add (or
-enable) Claude in Chrome, and sign the extension in as the same account.
-Then:
-
-- after a rotation to an account with a profile, the daemon and `cs use` say
-  `Claude in Chrome: use the work-b Chrome profile (cs chrome work-b)`; to one
-  without, once you have set up a profile for any account, they say
-  `Claude in Chrome: work-b has no Chrome profile — cs chrome add work-b`;
-- when a browser tool fails with the same-account or not-connected error, the
-  plugin tells Claude which account Claude Code is on and the command, once
-  per rotation (it looks only at failures, never at page content).
-
-The steps `add` prints name the account's email when claudeswitch recorded
-one (at `add`, `login`, `setup` or `identify`); it never reads the keychain
-for it. Accounts vaulted before this release show their id until
-`cs identify` records the email. `cs rename` carries the mapping
-over.
-
-The profiles live inside Chrome's normal user-data directory (chosen with
-`--profile-directory`), because Claude in Chrome's native-messaging host is
-registered there; a separate `--user-data-dir` would not find it.
-claudeswitch records only which account has which profile directory, in its
-own state. It never reads or writes Chrome's files (preferences, cookies,
-extension storage) and never decrypts anything.
-
-**Untested:** that Claude Code connects to whichever profile's extension is on
-its account, by itself, once that profile is open. It follows from how the
-extension and Claude Code meet, but has not yet been confirmed on a real
-machine. macOS and Linux (`google-chrome` or `chromium` on PATH) only.
-
-## Notifications
-
-The daemon sends a desktop notification when it switches accounts, when every
-account is burnt (naming which recovers first), and before an idle account's
-refresh token expires — a dead refresh token means that account can no longer
-be swapped to *or* polled. Once you use [Chrome profiles](#claude-in-chrome),
-a switch also says which profile Claude in Chrome needs, or that the new
-account has none yet. Nothing else notifies; `--quiet` disables them.
-
-## Running as a daemon
-
-```sh
-./install.sh          # builds, installs, loads the service in DRY-RUN
-./install.sh --live   # ...or let it actually perform swaps
-claudeswitch plan     # the current decision, and whether anything will act on it
-claudeswitch audit    # what it has decided and done
-```
-
-Dry-run is the default and exercises the entire decision path, logging the swap it
-*would* make. Run that way for a day first; `claudeswitch audit --kind decision` shows
-whether its judgement matches yours. **Re-running `./install.sh` without `--live`
-puts a live daemon back into dry-run.**
-
-Once installed, `claudeswitch daemon live` / `daemon dry-run` switch the mode,
-and `daemon status|start|stop|restart` manage it, without a rebuild;
-`daemon install` registers the binary you run (it builds nothing). The
-plist and unit are the ones `install.sh` writes.
-
-On macOS a rebuilt binary is a new program to the Keychain, so `install.sh`
-triggers the access prompt while you are at the keyboard — click **Always
-Allow**. A daemon cannot answer that prompt and would otherwise sit silently.
-
-One daemon per machine, enforced with a lock file. While it runs it owns the
-polling and the state file, and the CLI reports its readings instead of making
-its own API calls — so checking `status` never costs you API budget or races
-the daemon's writes. Its log is `~/.local/state/claudeswitch/daemon.log`.
+`▸` marks the window that binds. With several profiles it starts with the
+profile's name. Colours and the messages it adds past the threshold:
+[→ Status line](docs/GUIDE.md#status-line).
 
 ## Configuration
 
-`~/.config/claudeswitch/config.toml`, written by `setup`:
+The config is `~/.config/claudeswitch/config.toml`, written by `cs setup`.
+`cs config` lists every setting with its value, and `cs config <name> <value>`
+changes one with validation. A running daemon picks up edits without a
+restart.
+
+| setting | default | what it does |
+|---|---|---|
+| `switch_at` | `85` | rotate away at this session (5-hour) utilization |
+| `switch_at_weekly` | `98` | ...and at this weekly utilization |
+| `hard_floor` | `99` | above this, swap mid-turn rather than wait for an idle gap |
+| `switch_when` | `idle` | `idle` swaps between turns; `immediate` does not wait |
+| `max_switch_wait` | `30s` | how long a due switch waits for an idle gap |
+| `cooldown` | `10m` | minimum gap between rotations |
+| `landing_margin` | `10` | a switch target's session window needs this many points of room below `switch_at`, so it is not left again at once; `0` turns it off |
+| `models` | `[]` | models whose per-model weekly limit counts like the weekly window; empty means those limits are shown, never acted on |
+| `priority` | config order | the order accounts are tried in |
+| `poll_active` | `3m` | how often the account in use is read |
+| `poll_hot` | `60s` | ...when it is above `hot_threshold` and moving toward its trigger |
+| `hot_threshold` | `60` | where close watching starts |
+| `poll_idle` | `10m` | how often the other accounts are read |
+| `auto_refresh` | `true` | keep vaulted credentials alive |
+| `refresh_window` | `1h` | renew a credential this long before it expires |
+| `refresh_probe` | `24h` | also renew each idle account this often, to find a dead refresh token; `0s` disables |
+| `blind_failover_polls` | `3` | after this many unreadable polls of the account in use, fail over to one that can be read (in an idle gap only); `0` holds |
+| `reserve` (per account) | none | never rotate onto this account above this utilization |
+
+`cs config` also lists the advanced budget settings
+([→ Advanced](docs/GUIDE.md#advanced)); change those only if you have measured
+better.
 
 ```toml
-switch_at        = 85     # rotate away at this session (5-hour) utilization
-switch_at_weekly = 98     # ...and at this weekly utilization
-hard_floor       = 99     # above this, swap mid-turn rather than wait for an idle gap
-switch_when      = "idle"
-hot_threshold    = 60     # poll_hot only above this (or burning fast), and only while moving toward the trigger
-poll_hot         = "1m"   # the default; faster drains the usage API's burst allowance
-poll_active      = "3m"   # the default: the account in use when not moving; under 2m runs at 2m and warns
-cooldown         = "10m"
-max_switch_wait  = "30s"  # how long a due switch waits for an idle gap
-landing_margin   = 10     # a switch target's session window needs this many points below its trigger
-blind_failover_polls = 3  # unreadable polls of the account in use before failing over; 0 holds
-
-priority = ["work-a", "work-b", "personal"]
+switch_at        = 85
+switch_at_weekly = 98
+priority = ["work-1", "work-team", "personal", "research"]
 
 [[account]]
 id           = "personal"
-reserve      = 70         # never auto-used above this utilization
-account_uuid = "…"        # the seat: this person...
-org_id       = "…"        # ...in this organization
-```
+reserve      = 70          # never auto-used above 70%
+account_uuid = "…"         # the seat: this person...
+org_id       = "…"         # ...in this organization
 
-The two triggers differ on purpose: 85% of a 5-hour window is nearly gone and
-refills the same afternoon, while 85% of a weekly one still holds days of work.
-
-| setting | default | what it does |
-|---|---|---|
-| `landing_margin` | `10` (0–50) | A switch only lands on an account whose **session (5-hour)** window has at least this many points of room below `switch_at`, so it never lands on one it must leave again at once. The weekly window has no margin: any account under `switch_at_weekly` qualifies. When every account with room is inside the margin, an ordinary rotation holds until `hard_floor`; past it, or after a refusal, it takes the best of them anyway. Settable per profile. `0` turns it off. Written to the file only once set. |
-| `models` | `[]` | Model names (as `cs status --detail` shows them) whose **per-model weekly limit** counts like the weekly window: when one is higher than the account's weekly figure it is what `switch_at_weekly` triggers on and what eligibility judges, and a counted limit the API reports without a figure makes the account unknown (never a target). Empty: per-model limits are shown, never acted on. Settable per profile; `models = []` in a profile turns the global list off there. |
-| `blind_failover_polls` | `3` | When the usage of the account in use has failed to read for this many polls in a row, over at least that many `poll_active` intervals counted from the first failure, switch to an account that can be read and clears the landing margin — only in an idle gap, never mid-turn. A 429 from the usage endpoint does not count (it clears by itself within 15 minutes), nor a 401 on a stale stored copy of a token Claude Code has since refreshed, nor an access token that merely expired on an idle session. A daemon restart starts the count afresh. `0` always holds. Written to the file only once set. |
-
-### Advanced
-
-The per-account usage model (DESIGN 4.3c). The defaults are the measured
-model; change them only if you have measured better. `doctor`'s "account
-rate" row shows the values in force.
-
-| setting | default | what it does |
-|---|---|---|
-| `hot_reserve` | `10` (0–15) | Usage calls per account that routine polling leaves untouched, so the account in use can be read every `poll_hot` while it moves toward its trigger. A 15-minute hot spell at 60 s needs 7.5. |
-| `unseen_calls_per_hour` | `2` (0–20) | Usage calls an hour a live account is assumed to lose to Claude Code's own reads of the same endpoint, which claudeswitch cannot see. Its allowance is modelled as refilling this much slower. |
-
-`cs config` lists every setting with its value, and `cs config <name> <value>`
-changes one with validation. A live credential that matches no pinned seat is
-reported as `ACTIVE, unattributed` rather than filed under a guess.
-
-## Multiple Claude Code profiles
-
-Claude Code can run as several independent profiles, one per config
-directory, each with its own live credential:
-
-```sh
-claude                                   # CLAUDE_CONFIG_DIR unset: ~/.claude
-CLAUDE_CONFIG_DIR=~/.claude-work claude  # a second profile
-```
-
-Declare each one with an `[[profile]]` block and give it a pool of accounts.
-One daemon drives them all, rotating each profile only within its own pool:
-
-```toml
 [[profile]]
-name = "default"        # no dir: Claude Code runs with CLAUDE_CONFIG_DIR unset
-pool = ["personal", "a4", "a5"]
+name = "default"           # no dir: Claude Code runs with CLAUDE_CONFIG_DIR unset (~/.claude)
+pool = ["personal", "research"]
 
 [[profile]]
 name      = "work"
 dir       = "~/.claude-work"
-pool      = ["work-1", "work-2"]
-switch_at = 75          # overrides the global 85 for this profile only
+pool      = ["work-1", "work-team"]
+switch_at = 75             # this profile only
 ```
 
-- **`dir` is `CLAUDE_CONFIG_DIR` exactly as you launch Claude Code with it.**
-  Leaving it out means `CLAUDE_CONFIG_DIR` unset, which is *not* the same as
-  `dir = "~/.claude"`: Claude Code keeps a different keychain item for each.
-  Only one profile may leave it out.
-- **Pools must not overlap.** Accounts in no pool join the profile named
-  `default`; with no `default` declared, an unlisted account is a config error.
-- `switch_at`, `switch_at_weekly`, `hard_floor`, `landing_margin` and `models` may be set
-  per profile; anything unset falls back to the global value.
-- No `[[profile]]` blocks at all means one profile holding every account,
-  which behaves exactly as before.
-- Profile names and account ids are plain names: letters, digits, `.`, `_`
-  and `-`, not starting with `-` or `.`, at most 64 characters. A config
-  with an older id that breaks this does not load; the error names it, and
-  `cs rename <old> <new>` fixes it everywhere (config, state and vault).
-- Removing a profile, or changing its `dir`, keeps its old credential
-  guarded: the account last live there is installed in no other profile
-  until that credential no longer holds it, or `cs profile forget <name>`.
-  This holds for edits made while the daemon is stopped too: the next daemon
-  start, and every `use`, `login`, `refresh` and `remove`, notice them. For
-  a profile whose credential was never recorded, the account itself stays
-  guarded until `cs profile forget <name>`. `status` and `doctor` list what
-  is still guarded.
-- A new account signed in (`login <id>`) or added (`add <id>`) through an
-  profile joins that profile's pool: the config edit writes the account and
-  the pool entry together.
-- Editing the profiles while the daemon runs needs no restart: a profile
-  added is started, one removed is stopped, and one whose `dir` changed is
-  stopped and started again, between swaps, never during one.
+Each `[[profile]]` is one Claude Code config directory with its own pool.
+Pools never overlap, and with no `[[profile]]` blocks at all everything is one
+profile. Accounts are identified by seat (one person in one organization),
+never by email, which is why `setup`, `login` and `add` write the config for
+you.
 
-**One credential is live in at most one profile.** Claude Code refreshes its
-own token, and a refresh revokes the previous one, so an account live in two
-profiles is logged out of whichever refreshes second. claudeswitch therefore
-never swaps an account into a profile while it is, or might be, live in
-another; when it cannot tell, it refuses and tries again later.
+Every setting, with the reasoning behind the defaults:
+[docs/GUIDE.md → Configuration](docs/GUIDE.md#configuration). Profiles in
+depth: [→ Multiple Claude Code profiles](docs/GUIDE.md#multiple-claude-code-profiles)
+and [docs/PROFILES.md](docs/PROFILES.md).
 
-### Making a profile, and starting Claude Code in one
+## Claude in Chrome
+
+The Claude in Chrome extension keeps its own claude.ai login. After a rotation
+Claude Code is on another account, and the browser tools stop answering ("not
+connected", or "both must use the same claude.ai account"). claudeswitch
+cannot move the extension's login and does not try. Instead, give each account
+its own Chrome profile, signed in to claude.ai and to the extension as that
+account:
 
 ```sh
-cs profile create work --pool work-1,work-2 --seed work-1
-cs run work                    # claude, with CLAUDE_CONFIG_DIR set for work
-cs run work -- --resume        # arguments after -- go to claude
-cs profile list                # each profile's dir, pool and live account
+cs chrome add work-1     # a new Chrome profile for work-1, opened at the claude.ai
+                         # login and the extension's Web Store page
+cs chrome work-1         # open that profile again
+cs chrome                # open the profile of the account live in this shell's profile
 ```
 
-`profile create` does, in one step:
+Browser tasks then follow rotation. After a switch, the daemon and `cs use`
+name the Chrome profile to open. When a browser tool fails with the
+same-account or not-connected error, the plugin tells Claude which account
+Claude Code is on and the command to run. This was confirmed on a real machine
+on 2026-10-08.
 
-- makes the dir (`~/.claude-<name>`, or `--dir PATH`), written to the config
-  as an absolute path. It may not be, hold or sit inside `~/.claude` or
-  another profile's dir, through links or (on macOS) a different case; no
-  two profiles may share a folder, which the config also refuses at load.
-  It warns about an existing dir that is not 0700, or one in a git work
-  tree;
-- links your `settings.json`, `CLAUDE.md`, `skills/`, `commands/` and
-  `agents/` from `~/.claude` into it, so one edit serves both profiles.
-  Anything already in the dir is kept, never replaced. Transcripts, history,
-  plugins and credentials are not shared;
-- copies your user-scope MCP servers (`mcpServers` from `~/.claude.json`, and
-  nothing else from it) into the new dir's `.claude.json`. It is a copy, and
-  servers that sign in with OAuth need signing in again there (`/mcp`);
-- writes the `[[profile]]` block, refusing an account another profile's pool
-  lists. With no `[[profile]]` blocks yet, it declares `default` too — on
-  your shell's `CLAUDE_CONFIG_DIR` if it is set, with no `dir` if not —
-  which keeps every other account where it was;
-- with `--seed <account>`, signs the new profile in with that account's
-  vaulted credential, so Claude Code starts signed in. The account must be in
-  the new pool and live in no other profile, nor possibly live in one (the
-  same check as `use`); the profile must have no credential yet. With a
-  daemon running it first waits up to 10 seconds for the daemon to load the
-  new profile, then checks again; if the daemon does not, the profile is
-  made but not signed in, and `cs profile seed <name> <account>` finishes
-  it. It is written holding Claude Code's credential locks and never
-  overwrites an existing item.
+claudeswitch only records which account has which Chrome profile and never
+reads or writes Chrome's files. macOS and Linux. More in
+[docs/GUIDE.md → Claude in Chrome](docs/GUIDE.md#claude-in-chrome).
 
-`cs run` on a profile that is not signed in yet starts Claude Code anyway,
-with a note to use /login. A running daemon picks up the new profile without
-a restart.
+## Troubleshooting
 
-### Which profile a command acts on
+Run `cs doctor` first. It checks everything below and says what to fix.
 
-`use`, `add`, `login` and `whoami` act on one profile:
+| symptom | fix |
+|---|---|
+| The menu-bar item does not appear (MacBook with a notch) | It is probably hidden under the notch. Quit or hide other menu-bar apps, or ⌘-drag it to the right of the notch. Or run `defaults write xyz.claudeswitch.menubar "NSStatusItem Preferred Position Item-0" -float 300` and reopen ClaudeSwitch. |
+| Keychain prompts, or a daemon that never polls (macOS) | A rebuilt binary is new to the Keychain. Run `cs whoami` once and click **Always Allow**. |
+| Readings stop updating, or the usage API answers 429 | The usage API locks an account out for 10–15 minutes after a burst of about 24 calls. claudeswitch budgets its calls to avoid this. Wait it out, and do not lower `poll_hot` below the default. |
+| "the running daemon ... is older than this cs" | Restart it: `cs daemon restart`. |
+| It did not switch, or switched somewhere unexpected | `cs why` explains the current decision; `cs audit --kind decision` shows past ones. |
+| An account shows a 401, or "needs a login" | Its credential is dead. Sign in again with `cs login <id> --direct`. If a swap kept a login aside, `cs recovery` lists it ([→ Recovery copies](docs/GUIDE.md#recovery-copies)). |
 
-- `--profile NAME` names it.
-- Without the flag, the profile your shell's own `CLAUDE_CONFIG_DIR` belongs
-  to: unset is the profile with no `dir`, and a set one is matched against each
-  `dir` (as written first, then as the directory it names). So `/cs use x`
-  typed inside a work session switches the work profile, with no flag. A shell
-  whose `CLAUDE_CONFIG_DIR` matches no profile gets an error saying so, never a
-  guess.
+## Uninstall
 
-`use` (and `login`, and `add` for a configured id) refuses an account from
-another profile's pool, naming the profile that owns it. There is no
-`--force`: a swap across pools is how one credential ends up live in two
-profiles. `cs use work-1 --profile work` is how to switch the other one.
-
-`status`, `top`, `why` and `plan` show one block per profile — its pool, its
-active account, its decision and its effective thresholds — and take
-`--profile NAME` to show only one. The status line and the session-start
-context show the profile of the session they run in. `refresh` and `remove`
-check every profile's live credential before touching an account. `doctor`
-checks each profile: its directory, its live credential, and its pool.
-
-### Upgrading to the multi-profile release
-
-`state.json` now records the active account per profile and no longer writes
-the old top-level `active_account`, `pinned`, `last_switch` and `active_at`
-fields. Old files are still read and migrated. **Restart the daemon once
-after upgrading, before adding `[[profile]]` blocks**: the new daemon
-records which credential each profile uses, which is what lets a later
-config edit keep guarding an account still live in a profile you removed.
-Restart it (`./install.sh`, or `--live` if it was live) so no older daemon is
-left reading fields that are no longer written. Until you do, every command
-that reads state prints one line to stderr saying the running daemon is older
-than `cs` and how to restart it, and `doctor` reports it as a FAIL. The daemon
-records its build in `state.json` when it starts; builds are compared by commit
-time, or by release version, and a `dev` build with no git information is not
-compared at all.
-
-## What it will not do
-
-- **Guess.** An account it cannot read is `unknown`, and `unknown` is never
-  treated as available. A percentage is shown only if the API reported it.
-- **Estimate quota from token counts.** That was tested against 24 real limit
-  hits and produced 40–79% spread. See ground truth, Round 2.
-- **Hammer the usage API.** The endpoint refuses an account for 10–15 minutes
-  after a burst of about 24 calls. Every claudeswitch process shares one budget
-  of 12 calls per 5 minutes, plus an allowance per account (20 calls, refilling
-  one every 2 minutes, 3 held back to verify a swap); the account in use is
-  read every `poll_hot` only while its usage is moving toward its trigger.
-- **Touch your MCP tokens.** The Keychain item holds Notion and Slack OAuth
-  alongside the Claude credential; only the `claudeAiOauth` subtree is ever
-  swapped.
-- **Prompt for the Keychain from Claude Code.** The status line and the session
-  hook read saved state only.
-
-## Platforms
-
-| | macOS | Linux |
-|---|---|---|
-| credentials | Keychain (`security`) | `~/.claude/` files, `0600` in a `0700` dir |
-| service | launchd agent | systemd `--user` unit |
-| notifications | `osascript` | `notify-send` (absent on servers; harmless) |
-
-Both are exercised by the same test suite. The Linux side was developed against
-a real Linux container rather than cross-compiled and hoped for — which caught
-two faults a cross-compile would have missed: re-indented JSON breaking the
-byte-for-byte mcpOAuth guarantee, and a path check that accepted `..`.
-
-## Layout
-
+```sh
+cs uninstall                  # stop and remove the daemon and ~/.local/state/claudeswitch
+cs uninstall --credentials    # ...and delete the vaulted credentials too
+./install-app.sh --uninstall  # the menu-bar app
+claude plugin uninstall cs@claudeswitch
+cs statusline uninstall
+rm ~/.local/bin/claudeswitch ~/.local/bin/cs
 ```
-cmd/claudeswitch      CLI
-internal/usage        the /api/oauth/usage adapter + call budget
-internal/poller       scheduling within the call budget
-internal/policy       whether to rotate, and where to
-internal/vault        per-account credentials, and the swap
-internal/credstore    where the platform keeps credentials
-internal/keychain     credential read, mcpOAuth-aware
-internal/oauth        login and token refresh
-internal/detector     transcript rejection watcher (safety net)
-internal/state        durable observations (the 7-day window outlives restarts)
-internal/audit        what was observed, decided and done
-internal/session      work that spans several accounts
-internal/config       declarative accounts
-internal/render       the status view
-internal/notify       desktop notifications
-plugin/               the Claude Code plugin: hooks (session start, Chrome hint) and skills
-macos/                the menu-bar app (SwiftUI); install-app.sh builds it
-.claude-plugin/       the marketplace entry that lists the plugin
-```
+
+`cs uninstall` keeps your config, and always leaves Claude Code's own
+credential alone.
+
+## Safety
+
+- **Credentials stay in their store.** Vaulted credentials live in the macOS
+  Keychain, or in `0600` files in a `0700` directory on Linux. Only the
+  `claudeAiOauth` part is ever swapped, so MCP logins stay put. No command
+  prints a token.
+- **One account is live in at most one profile.** Refreshing a token revokes
+  the previous one, so an account live in two profiles would be logged out of
+  whichever refreshed second. claudeswitch never swaps an account into a
+  profile while it is, or might be, live in another.
+- **A swap never destroys a login.** Before overwriting the live credential it
+  saves it to its account's vault entry, or to a recovery slot when it cannot
+  tell whose it is (`cs recovery`).
+- **It does not guess.** An account it cannot read is `unknown`, and unknown is
+  never treated as available. A percentage is shown only if the API reported
+  it.
+- **Dry-run first.** The daemon installs in dry-run and logs what it would do
+  until you run `cs daemon live`.
+
+What it will not do: [docs/GUIDE.md](docs/GUIDE.md#what-it-will-not-do).
+Design and evidence: [docs/DESIGN.md](docs/DESIGN.md),
+[docs/GROUND_TRUTH.md](docs/GROUND_TRUTH.md),
+[docs/PROFILES.md](docs/PROFILES.md).
+
+## License
+
+MIT. See [LICENSE](https://github.com/bogdan-alexandrescu/claudeswitch/blob/main/LICENSE).

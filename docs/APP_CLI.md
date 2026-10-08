@@ -31,12 +31,20 @@ this document's contract. Plain `claudeswitch version` still prints
 - **Failure**: exit status 1, and on stdout:
 
   ```json
-  {"error": {"code": "live", "message": "account \"a1\" is or may be live in profile \"work\" …", "hint": "switch profile work to another account first: …"}}
+  {"error": {"code": "live", "message": "account \"a1\" is or may be live in profile \"work\" …", "hint": "switch profile work to another account first: …", "retry_at": null}}
   ```
 
   `code` is one of the table below; `message` is the sentence a person
   reads; `hint` is what to do next, `""` when there is nothing to add.
   Branch on `code`, show `message` and `hint`.
+- **`retry_at`** (contract 2, additive, lane 17): an error object may also
+  carry `retry_at`, an RFC 3339 time, when the refusal is expected to clear
+  by then. Today only `live` carries it: the §3 check could not confirm the
+  account is absent from another profile because a rate-limit lock on the
+  token it needed refused the identity lookup (R1). The message then reads
+  `can't confirm "a1" isn't signed in under profile "work": the check is
+  rate limited until 14:03:07; try again then` (local wall-clock time).
+  It is `null` on every other error.
 - **No prompts**: `--json` (or `--yes`) turns every prompt off. A command
   that would have asked refuses with `confirmation_required` (pass `--yes`)
   or `name_required` instead.
@@ -56,7 +64,7 @@ this document's contract. Plain `claudeswitch version` still prints
 | `invalid_value` | a value the validator refuses (the hint says what is accepted) |
 | `config_invalid` | the config does not load, or an edit would not; nothing was written |
 | `no_config` | there is no config file to edit (`claudeswitch setup` first) |
-| `live` | the account is, or may be (D18: unknown counts as live), live in a profile or a removed profile's old item; the message names it |
+| `live` | the account is, or may be (D18: unknown counts as live), live in a profile or a removed profile's old item; the message names it; `retry_at` when a rate-limit lock is why it could not be confirmed |
 | `in_other_pool` | D1: another profile's pool lists the account |
 | `outside_pool` | D5: the account is not in this profile's pool |
 | `would_orphan` | removing it from its pool would leave it in no pool |

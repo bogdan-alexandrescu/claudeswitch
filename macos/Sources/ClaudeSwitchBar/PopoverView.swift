@@ -47,6 +47,13 @@ struct PopoverView: View {
                 Text(store.refreshing ? "Reading…" : "No state yet: is the daemon installed? Run `claudeswitch setup`.")
                     .foregroundStyle(.secondary)
             }
+            // M11: an error with no card to show on, inline; never a modal
+            // alert in the popover.
+            if let a = store.alert(on: .popover) {
+                InlineErrorView(title: a.title, message: a.message, hint: a.hint, retryLine: nil) {
+                    store.clearAlert(on: .popover)
+                }
+            }
             if let n = store.note(on: .popover) { NoteBanner(text: n) { store.clearNote(on: .popover) } }
             Divider()
             footer
@@ -58,9 +65,6 @@ struct PopoverView: View {
             store.acting(in: .popover)
             login.reload()
             store.refresh(full: true, profiles: true)
-        }
-        .alert(item: store.alertBinding(.popover)) { a in
-            Alert(title: Text(a.title), message: Text(a.hint.isEmpty ? a.message : a.message + "\n\n" + a.hint))
         }
     }
 
@@ -181,9 +185,10 @@ struct ProfileCardView: View {
                 AccountPicker(card: card)
                 if let a = card.active, store.chrome?.supported != false {
                     IconButton(symbol: "globe", label: "Open Chrome for \(a.id)",
-                               busy: store.isBusy("chrome:\(a.id)")) { store.openChrome(a.id) }
+                               busy: store.isBusy("chrome:\(a.id)")) { store.openChrome(a.id, card: card.name) }
                 }
             }
+            CardErrorView(card: card.name)
             if let a = card.active {
                 VStack(alignment: .leading, spacing: 8) {
                     UsageBar(title: "Session", window: a.fiveHour, trigger: card.switchAt, now: now)
@@ -282,9 +287,9 @@ struct BestButton: View {
             } else {
                 // Two lines, so a long id is never cut out of the verb.
                 VStack(spacing: 0) {
-                    Text("Switch to best").lineLimit(1)
-                    if let b = card.best {
-                        Text("\(b.id) · \(Format.pct(b.bindingPct))").font(.caption)
+                    Text(card.bestTitle).lineLimit(1)
+                    if let sub = card.bestSubtitle {
+                        Text(sub).font(.caption)
                             .lineLimit(1).truncationMode(.middle)
                     }
                 }
@@ -292,9 +297,13 @@ struct BestButton: View {
             }
         }
         .controlSize(.large)
-        .disabled(card.best == nil || store.binaryPath == nil || store.isBusy("use:\(card.name)"))
-        .help(card.bestUnavailable ?? "Switch \(card.name) to \(card.best?.id ?? "")")
-        .accessibilityLabel(card.best.map { "Switch \(card.name) to \($0.id)" } ?? "No account to switch to")
+        .disabled(card.best == nil || card.alreadyOnBest || store.binaryPath == nil
+            || store.isBusy("use:\(card.name)"))
+        .help(card.bestUnavailable ?? (card.alreadyOnBest
+            ? "No other account has more room than \(card.active?.id ?? "the active one"); the picker still switches"
+            : "Switch \(card.name) to \(card.best?.id ?? "")"))
+        .accessibilityLabel(card.alreadyOnBest ? "Already on the best account"
+            : card.best.map { "Switch \(card.name) to \($0.id)" } ?? "No account to switch to")
     }
 }
 
@@ -418,6 +427,16 @@ struct CompactCardView: View {
     let expand: () -> Void
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            row
+            CardErrorView(card: card.name)
+        }
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.secondary.opacity(0.25)))
+    }
+
+    var row: some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
@@ -438,9 +457,6 @@ struct CompactCardView: View {
                 .disabled(!card.canOpen)
             IconButton(symbol: "chevron.down", label: "Expand \(card.name)", action: expand)
         }
-        .padding(16)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.secondary.opacity(0.25)))
     }
 
     var trouble: Bool {
@@ -545,6 +561,58 @@ struct ProblemBanner: View {
     var isTooOld: Bool {
         if case .tooOld = problem { return true }
         return false
+    }
+}
+
+/// A card's inline error (M11), if it has one.
+struct CardErrorView: View {
+    @EnvironmentObject var store: Store
+    let card: String
+
+    var body: some View {
+        if let e = store.cardError(card) {
+            InlineErrorView(title: e.title, message: e.message, hint: e.hint, retryLine: e.retryLine()) {
+                store.dismissCardError(card)
+            }
+        }
+    }
+}
+
+/// A refused action, inline: the title, the CLI's message verbatim, its
+/// hint, "Try again at …" when the CLI gave retry_at, and a dismiss ×. The
+/// popover shows errors this way, never as a modal alert (M11).
+struct InlineErrorView: View {
+    let title: String
+    let message: String
+    let hint: String
+    let retryLine: String?
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.octagon.fill").foregroundStyle(.red)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.caption.weight(.semibold))
+                Text(message).font(.caption)
+                if !hint.isEmpty {
+                    Text(hint).font(.caption).foregroundStyle(.secondary)
+                }
+                if let r = retryLine {
+                    Text(r).font(.caption.weight(.semibold))
+                }
+            }
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Button(action: dismiss) { Image(systemName: "xmark") }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Dismiss")
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.red.opacity(0.1)))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.red.opacity(0.35)))
+        .accessibilityElement(children: .combine)
     }
 }
 

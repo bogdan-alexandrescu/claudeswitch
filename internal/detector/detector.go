@@ -19,6 +19,8 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -178,6 +180,12 @@ func (d *Detector) Run(stop <-chan struct{}) error {
 func (d *Detector) addWatches(w *fsnotify.Watcher) {
 	_ = w.Add(d.root)
 	entries, err := os.ReadDir(d.root)
+	if errors.Is(err, fs.ErrNotExist) {
+		// A freshly created profile has no projects dir until Claude Code
+		// first runs there: nothing to watch yet, and nothing to say. The
+		// minute rescan picks it up once it appears.
+		return
+	}
 	if err != nil {
 		d.log.Warn("cannot read transcripts root", "path", d.root, "err", err)
 		return

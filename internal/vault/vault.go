@@ -846,29 +846,38 @@ func (v *Vault) LiveHolds(item keychain.Live, accountID string) (holds, known bo
 // item, a failed identity lookup, no seat to compare against — and callers about
 // to write must treat that as "may hold it".
 func (v *Vault) HoldsAccount(ctx context.Context, item keychain.Live, accountID, wantSeat string) (holds, known bool) {
+	holds, known, _ = v.HoldsAccountWhy(ctx, item, accountID, wantSeat)
+	return holds, known
+}
+
+// HoldsAccountWhy is HoldsAccount, and when the answer is unknown because a
+// rate-limit lock on the live token kept the identity lookup from being made
+// (or a 429 just armed one), retryAt is when that lock clears (R1). It is zero
+// for every other answer, an unknown of any other cause included.
+func (v *Vault) HoldsAccountWhy(ctx context.Context, item keychain.Live, accountID, wantSeat string) (holds, known bool, retryAt time.Time) {
 	live, err := item.Read()
 	if errors.Is(err, keychain.ErrNotFound) {
-		return false, true
+		return false, true, time.Time{}
 	}
 	if err != nil || live.ClaudeAIOAuth == nil {
-		return false, false
+		return false, false, time.Time{}
 	}
 	entry, eerr := readEntry(accountID)
 	if eerr == nil && entry.ClaudeAIOAuth != nil &&
 		entry.ClaudeAIOAuth.AccessToken == live.ClaudeAIOAuth.AccessToken {
-		return true, true
+		return true, true, time.Time{}
 	}
 	if wantSeat == "" && eerr == nil && entry.Meta != nil {
 		wantSeat = entry.Meta.Seat()
 	}
 	if wantSeat == "" {
-		return false, false
+		return false, false, time.Time{}
 	}
-	seat := v.seatBehind(ctx, live.ClaudeAIOAuth.AccessToken)
-	if seat == "" {
-		return false, false
+	p := v.probeSeat(ctx, live.ClaudeAIOAuth.AccessToken)
+	if p.seat == "" {
+		return false, false, p.retryAt
 	}
-	return seat == wantSeat, true
+	return p.seat == wantSeat, true, time.Time{}
 }
 
 // holdsProbeTTL is how long the seat behind a live token is remembered. A
@@ -894,46 +903,68 @@ func (p seatProbe) ttl() time.Duration {
 type seatProbe struct {
 	seat string // "" when the probe could not say
 	at   time.Time
+	// retryAt, for a probe that could not say because a rate-limit lock on
+	// the token refused it (or a 429 armed one), is when that lock clears.
+	retryAt time.Time
 }
 
-// seatBehind is the seat a live token belongs to, "" when unknown. It is a
-// probe, not a swap: it asks at Scheduled priority, so it never spends the
-// call reserved for a swap, and a refused or failed probe is remembered for
-// a shorter period (holdsUnknownTTL) rather than retried every tick.
+// stale reports whether a cached probe no longer answers: its period is over,
+// or the lock that kept it from asking has cleared.
+func (p seatProbe) stale(now time.Time) bool {
+	if now.Sub(p.at) >= p.ttl() {
+		return true
+	}
+	return p.seat == "" && !p.retryAt.IsZero() && !now.Before(p.retryAt)
+}
+
+// seatBehind is the seat a live token belongs to, "" when unknown.
 func (v *Vault) seatBehind(ctx context.Context, token string) string {
+	return v.probeSeat(ctx, token).seat
+}
+
+// probeSeat asks the seat behind a live token, seat "" when unknown. It is
+// a probe, not a swap: it asks at Scheduled priority, so it never spends the
+// call reserved for a swap, and a refused or failed probe is remembered for
+// a shorter period (holdsUnknownTTL) rather than retried every tick — or
+// until the rate-limit lock that refused it clears, if that is sooner.
+func (v *Vault) probeSeat(ctx context.Context, token string) seatProbe {
 	v.probeMu.Lock()
-	if p, ok := v.probes[token]; ok && time.Since(p.at) < p.ttl() {
+	if p, ok := v.probes[token]; ok && !p.stale(time.Now()) {
 		v.probeMu.Unlock()
-		return p.seat
+		return p
 	}
 	v.probeMu.Unlock()
 
-	seat := ""
+	var p seatProbe
 	// Pacing blocks the caller for at most the burst spacing, and the cache
 	// above bounds how often that can happen.
 	v.budget.Pace(ctx)
-	if ok, _ := v.budget.Allow(token, usage.Scheduled); ok {
+	if ok, reason := v.budget.Allow(token, usage.Scheduled); ok {
 		if pr, err := v.client.FetchProfile(ctx, token); err == nil {
-			seat = pr.Seat()
+			p.seat = pr.Seat()
 			v.budget.Succeeded(token)
 		} else if rl, isRL := usage.IsRateLimited(err); isRL {
 			// Only ever asked about live tokens: the live cap applies.
 			v.budget.PenalizeLive(token, rl.RetryAfter)
+			p.retryAt, _ = v.budget.LockedUntil(token)
 		}
+	} else if reason == usage.ReasonLockout {
+		p.retryAt, _ = v.budget.LockedUntil(token)
 	}
+	p.at = time.Now()
 
 	v.probeMu.Lock()
 	defer v.probeMu.Unlock()
 	if v.probes == nil {
 		v.probes = map[string]seatProbe{}
 	}
-	for k, p := range v.probes { // keep it small: old tokens are dead anyway
-		if time.Since(p.at) >= p.ttl() {
+	for k, old := range v.probes { // keep it small: old tokens are dead anyway
+		if old.stale(p.at) {
 			delete(v.probes, k)
 		}
 	}
-	v.probes[token] = seatProbe{seat: seat, at: time.Now()}
-	return seat
+	v.probes[token] = p
+	return p
 }
 
 // DuplicateSeatError means the credential belongs to a seat already vaulted

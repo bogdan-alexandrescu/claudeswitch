@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="828" height="631" viewBox="0 0 828 631" role="img" aria-label="cs why">
+<rect x="0.5" y="0.5" width="827" height="630" rx="9" fill="#16181d" stroke="#33363f"/>
+<path d="M0.5 32 V9.5 a9 9 0 0 1 9 -9 H818.3 a9 9 0 0 1 9 9 V32 Z" fill="#22252c" stroke="#33363f"/>
+<circle cx="18" cy="16.0" r="6" fill="#ff5f57"/>
+<circle cx="38" cy="16.0" r="6" fill="#febc2e"/>
+<circle cx="58" cy="16.0" r="6" fill="#28c840"/>
+<text x="413.9" y="20.5" text-anchor="middle" fill="#9aa0aa" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif" font-size="12.5">cs why</text>
+<g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="13.0" fill="#d5d8de" xml:space="preserve">
+<text x="20.0" y="61.2" fill="#5fd38d" textLength="7.8" lengthAdjust="spacingAndGlyphs">$</text>
+<text x="35.6" y="61.2" fill="#f4f5f7" font-weight="700" textLength="46.8" lengthAdjust="spacingAndGlyphs">cs why</text>
+<text x="35.6" y="98.9" fill="#f4f5f7" font-weight="700" textLength="54.6" lengthAdjust="spacingAndGlyphs">profile</text>
+<text x="98.0" y="98.9" fill="#f4f5f7" font-weight="700" textLength="54.6" lengthAdjust="spacingAndGlyphs">default</text>
+<text x="160.4" y="98.9" textLength="156.0" lengthAdjust="spacingAndGlyphs">(switch ≥85% / ≥98%)</text>
+<text x="332.0" y="98.9" fill="#878d98" textLength="179.4" lengthAdjust="spacingAndGlyphs">CLAUDE_CONFIG_DIR unset</text>
+<text x="35.6" y="117.7" fill="#878d98" textLength="319.8" lengthAdjust="spacingAndGlyphs">pool personal, research · hard floor ≥99%</text>
+<text x="35.6" y="155.4" fill="#5fd38d" textLength="85.8" lengthAdjust="spacingAndGlyphs">staying put</text>
+<text x="35.6" y="174.3" fill="#878d98" textLength="343.2" lengthAdjust="spacingAndGlyphs">active account at 44%, under the 98% trigger</text>
+<text x="35.6" y="212.0" fill-opacity="0.62" textLength="156.0" lengthAdjust="spacingAndGlyphs">CONSIDERED, in order</text>
+<text x="35.6" y="230.8" fill="#5fd38d" textLength="7.8" lengthAdjust="spacingAndGlyphs">▸</text>
+<text x="59.0" y="230.8" fill="#f4f5f7" font-weight="700" textLength="62.4" lengthAdjust="spacingAndGlyphs">personal</text>
+<text x="137.0" y="230.8" textLength="195.0" lengthAdjust="spacingAndGlyphs">at 44%, 54 points of room</text>
+<text x="35.6" y="249.7" fill="#ff6b6b" textLength="7.8" lengthAdjust="spacingAndGlyphs">✗</text>
+<text x="59.0" y="249.7" textLength="319.8" lengthAdjust="spacingAndGlyphs">research  refused on its five_hour window</text>
+<text x="386.6" y="249.7" fill="#878d98" textLength="117.0" lengthAdjust="spacingAndGlyphs">· clears in 37m</text>
+<text x="35.6" y="287.4" fill-opacity="0.62" textLength="202.8" lengthAdjust="spacingAndGlyphs">WEEKLY, at the pace so far</text>
+<text x="59.0" y="306.2" textLength="647.4" lengthAdjust="spacingAndGlyphs">personal  44% used · 34% of the week gone · 10 points ahead · on pace to use it all</text>
+<text x="59.0" y="325.1" textLength="647.4" lengthAdjust="spacingAndGlyphs">research  71% used · 52% of the week gone · 19 points ahead · on pace to use it all</text>
+<text x="35.6" y="381.6" fill="#f4f5f7" font-weight="700" textLength="54.6" lengthAdjust="spacingAndGlyphs">profile</text>
+<text x="98.0" y="381.6" fill="#f4f5f7" font-weight="700" textLength="31.2" lengthAdjust="spacingAndGlyphs">work</text>
+<text x="137.0" y="381.6" textLength="156.0" lengthAdjust="spacingAndGlyphs">(switch ≥85% / ≥98%)</text>
+<text x="308.6" y="381.6" fill="#878d98" textLength="249.6" lengthAdjust="spacingAndGlyphs">CLAUDE_CONFIG_DIR=~/.claude-work</text>
+<text x="35.6" y="400.5" fill="#878d98" textLength="312.0" lengthAdjust="spacingAndGlyphs">pool work-1, work-team · hard floor ≥99%</text>
+<text x="35.6" y="438.2" fill="#5fd38d" textLength="85.8" lengthAdjust="spacingAndGlyphs">rotating to</text>
+<text x="129.2" y="438.2" fill="#f4f5f7" font-weight="700" textLength="70.2" lengthAdjust="spacingAndGlyphs">work-team</text>
+<text x="35.6" y="457.0" fill="#878d98" textLength="452.4" lengthAdjust="spacingAndGlyphs">active account at 87% of its session, over the 85% trigger</text>
+<text x="35.6" y="494.7" fill-opacity="0.62" textLength="156.0" lengthAdjust="spacingAndGlyphs">CONSIDERED, in order</text>
+<text x="35.6" y="513.6" fill="#5fd38d" textLength="7.8" lengthAdjust="spacingAndGlyphs">▸</text>
+<text x="59.0" y="513.6" fill="#f4f5f7" font-weight="700" textLength="46.8" lengthAdjust="spacingAndGlyphs">work-1</text>
+<text x="144.8" y="513.6" textLength="280.8" lengthAdjust="spacingAndGlyphs">at 87%, over the 85% session trigger</text>
+<text x="35.6" y="532.4" fill="#5fd38d" textLength="7.8" lengthAdjust="spacingAndGlyphs">✓</text>
+<text x="59.0" y="532.4" textLength="187.2" lengthAdjust="spacingAndGlyphs">work-team  at 22%, ready</text>
+<text x="35.6" y="570.1" fill-opacity="0.62" textLength="202.8" lengthAdjust="spacingAndGlyphs">WEEKLY, at the pace so far</text>
+<text x="59.0" y="589.0" textLength="741.0" lengthAdjust="spacingAndGlyphs">work-1     63% used · 68% of the week gone · 5 points behind · ~7% would expire unused at reset</text>
+<text x="59.0" y="607.8" textLength="748.8" lengthAdjust="spacingAndGlyphs">work-team  22% used · 27% of the week gone · 5 points behind · ~20% would expire unused at reset</text>
+</g></svg>

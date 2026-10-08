@@ -3,7 +3,8 @@ import AppKit
 import Foundation
 import SwiftUI
 
-/// A CLI error or refusal, shown as a native alert with its hint.
+/// A CLI error or refusal, shown as a native alert with its hint in
+/// Settings, and inline in the popover (M11: never a modal there).
 struct AlertItem: Identifiable, Equatable {
     let id = UUID()
     var title: String
@@ -70,6 +71,10 @@ final class Store: ObservableObject {
     /// (the owner's live use: every alert appeared twice).
     @Published private(set) var alerts = Inbox<AlertItem>()
     @Published private(set) var notes = Inbox<String>()
+    /// The popover's inline errors, on the card whose action was refused
+    /// (M11). A popover error with no card goes to `alerts`, which the
+    /// popover also shows inline.
+    @Published private(set) var cardErrors = CardErrors()
     /// The surface the person is acting in: the key window's.
     private(set) var surface: Surface = .popover
     private var keyObserver: NSObjectProtocol?
@@ -88,6 +93,27 @@ final class Store: ObservableObject {
 
     func alertBinding(_ s: Surface) -> Binding<AlertItem?> {
         Binding(get: { self.alerts.item(for: s) }, set: { self.alerts.post($0, to: s) })
+    }
+
+    func cardError(_ card: String) -> CardError? { cardErrors.error(for: card) }
+    func dismissCardError(_ card: String) { cardErrors.dismiss(card: card) }
+    /// --render only: puts an error on a card, to draw it.
+    func renderCardError(_ e: CardError?, card: String) {
+        guard preview else { return }
+        if let e { cardErrors.post(e, card: card) } else { cardErrors.dismiss(card: card) }
+    }
+    func alert(on s: Surface) -> AlertItem? { alerts.item(for: s) }
+    func clearAlert(on s: Surface) { alerts.post(nil, to: s) }
+
+    /// Reports a failure where the person acted: inline on the card in the
+    /// popover when there is one, else the surface's alert (inline in the
+    /// popover, a native alert in Settings).
+    private func fail(_ title: String, _ e: CallError, card: String?, on origin: Surface) {
+        if origin == .popover, let c = card {
+            cardErrors.post(CardError(title: title, e), card: c)
+        } else {
+            alerts.post(AlertItem(title, e), to: origin)
+        }
     }
 
     func note(on s: Surface) -> String? { notes.item(for: s) }
@@ -272,13 +298,15 @@ final class Store: ObservableObject {
         }
     }
 
-    /// Runs an action: on success `done`; on failure the CLI's error as an
-    /// alert. Either way a full refresh follows (re-reading the profile
-    /// list when `profiles`): a refusal can mean the app's picture was out
-    /// of date (B5).
-    func act<T>(_ key: String, title: String, profiles: Bool = false,
+    /// Runs an action: on success `done`; on failure the CLI's error, on
+    /// `card` in the popover (cleared when the next action on it starts) or
+    /// as the surface's alert. Either way a full refresh follows
+    /// (re-reading the profile list when `profiles`): a refusal can mean
+    /// the app's picture was out of date (B5).
+    func act<T>(_ key: String, title: String, profiles: Bool = false, card: String? = nil,
                 _ op: @escaping (CLI) -> Result<T, CallError>, done: @escaping (T) -> Void = { _ in }) {
         let origin = surface // where the person acted, wherever they are when it ends
+        if let c = card { cardErrors.begin(card: c) }
         Task {
             switch await call(key, op) {
             case .success(let v):
@@ -287,7 +315,7 @@ final class Store: ObservableObject {
                 done(v) // its note goes where the action started
                 surface = was
             case .failure(let e):
-                alerts.post(AlertItem(title, e), to: origin)
+                fail(title, e, card: card, on: origin)
             }
             refresh(full: true, profiles: profiles)
         }
@@ -333,7 +361,7 @@ final class Store: ObservableObject {
     // MARK: actions
 
     func use(_ account: String, profile: String) {
-        act("use:\(profile)", title: "Could not switch \(profile) to \(account)", profiles: true,
+        act("use:\(profile)", title: "Could not switch \(profile) to \(account)", profiles: true, card: profile,
             { $0.use(account, profile: profile) }) { [weak self] r in
             var text = "\(r.profile) now uses \(r.account)"
             if !r.verified { text += " (not yet confirmed by a usage read)" }
@@ -343,17 +371,24 @@ final class Store: ObservableObject {
 
     func setPinned(_ pinned: Bool, profile: String, account: String?) {
         if pinned, let a = account {
-            act("pin:\(profile)", title: "Could not pin \(profile)", profiles: true, { $0.pin(a) })
+            act("pin:\(profile)", title: "Could not pin \(profile)", profiles: true, card: profile, { $0.pin(a) })
         } else {
-            act("pin:\(profile)", title: "Could not unpin \(profile)", profiles: true, { $0.unpin(profile: profile) })
+            act("pin:\(profile)", title: "Could not unpin \(profile)", profiles: true, card: profile,
+                { $0.unpin(profile: profile) })
         }
     }
 
     /// Opens the user's terminal running `claudeswitch run <profile>`.
     func openClaudeCode(_ profile: String) {
-        guard let bin = binaryPath else { alert = AlertItem("Could not open Claude Code", .cli(.missing)); return }
+        let origin = surface
+        cardErrors.begin(card: profile)
+        guard let bin = binaryPath else {
+            fail("Could not open Claude Code", .cli(.missing), card: profile, on: origin)
+            return
+        }
         guard let argv = TerminalLauncher.runArgv(binary: bin, profile: profile) else {
-            alert = AlertItem(title: "Could not open Claude Code", message: "\"\(profile)\" is not a profile name.")
+            fail("Could not open Claude Code", .app(AppError(code: "failed", message: "\"\(profile)\" is not a profile name.")),
+                 card: profile, on: origin)
             return
         }
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("claudeswitch-run", isDirectory: true)
@@ -365,17 +400,19 @@ final class Store: ObservableObject {
                 Launcher.run(plan, scriptDir: dir.path, scriptPath: script)
             }
             if case .failure(let e) = r {
-                alert = AlertItem(title: "Could not open \(app)", message: e.message,
-                                  hint: "Choose another terminal in Settings → Advanced, or run: claudeswitch run \(profile)")
+                let hint = "Choose another terminal in Settings → Advanced, or run: claudeswitch run \(profile)"
+                fail("Could not open \(app)", .app(AppError(code: e.code ?? "failed", message: e.message, hint: hint)),
+                     card: profile, on: origin)
             }
         }
     }
 
     /// "Open Chrome for this account" (lane 13): its Chrome profile, set up
     /// first when it has none.
-    func openChrome(_ account: String) {
+    /// `card` is the popover card it was asked from, if any.
+    func openChrome(_ account: String, card: String? = nil) {
         let known = chrome
-        act("chrome:\(account)", title: "Could not open Chrome for \(account)",
+        act("chrome:\(account)", title: "Could not open Chrome for \(account)", card: card,
             { $0.chromeOpenOrAdd(account, known: known) }) { [weak self] r in
             self?.note = r.opened ? "Opened Chrome for \(r.account)" : "Chrome for \(r.account) is set up"
         }
@@ -433,7 +470,7 @@ final class Store: ObservableObject {
 
     /// Switches a profile to its best account now (why's `best`).
     func switchToBest(_ card: ProfileCard) {
-        guard let b = card.best else { return }
+        guard let b = card.best, !card.alreadyOnBest else { return }
         use(b.id, profile: card.name)
     }
 }
