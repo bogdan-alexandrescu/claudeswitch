@@ -1,0 +1,34 @@
+{
+  "accounts": [
+    {
+      "active": true,
+      "clears_at": "2026-10-11T01:57:15Z",
+      "eligible": true,
+      "id": "work-1",
+      "utilization": 41.627656691666665,
+      "why": "at 42%, 53 points of room",
+      "window": "seven_day"
+    },
+    {
+      "clears_at": "2026-10-08T03:57:15Z",
+      "eligible": true,
+      "id": "personal",
+      "utilization": 12,
+      "why": "at 12%, ready",
+      "window": "five_hour"
+    },
+    {
+      "clears_at": "2026-10-08T02:37:15Z",
+      "eligible": false,
+      "id": "work-2",
+      "utilization": 100,
+      "why": "refused on its five_hour window",
+      "window": "five_hour"
+    }
+  ],
+  "decision": {
+    "kind": "stay",
+    "reason": "active account at 42%, under the 95% trigger"
+  },
+  "dir": "/Users/example"
+}

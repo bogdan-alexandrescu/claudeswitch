@@ -33,7 +33,7 @@ func TestRecordSeatAppendsAPinnedBlockForANewAccount(t *testing.T) {
 	path := writeConfig(t, baseConfig)
 	cfg := loadOrFail(t, path)
 
-	msg, err := recordSeat(cfg, "work-b", "work", gotSeat("person-3", "org-3"))
+	msg, err := recordSeat(cfg, "work-b", "work", gotSeat("person-3", "org-3"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestRecordSeatAppendsAPinnedBlockForANewAccount(t *testing.T) {
 
 func TestRecordSeatRespectsTheScopeAskedFor(t *testing.T) {
 	path := writeConfig(t, baseConfig)
-	if _, err := recordSeat(loadOrFail(t, path), "home", "personal", gotSeat("person-9", "org-9")); err != nil {
+	if _, err := recordSeat(loadOrFail(t, path), "home", "personal", gotSeat("person-9", "org-9"), ""); err != nil {
 		t.Fatal(err)
 	}
 	for _, a := range loadOrFail(t, path).Accounts {
@@ -91,7 +91,7 @@ eligible = ["work"]
 // account half-added. The login knows the seat; it writes it in place.
 func TestRecordSeatPinsAKnownUnpinnedAccountInPlace(t *testing.T) {
 	path := writeConfig(t, unpinnedConfig)
-	if _, err := recordSeat(loadOrFail(t, path), "fresh", "work", gotSeat("person-5", "org-5")); err != nil {
+	if _, err := recordSeat(loadOrFail(t, path), "fresh", "work", gotSeat("person-5", "org-5"), ""); err != nil {
 		t.Fatal(err)
 	}
 	after := loadOrFail(t, path)
@@ -122,7 +122,7 @@ func TestRecordSeatPinsAKnownUnpinnedAccountInPlace(t *testing.T) {
 
 func TestRecordSeatLeavesAPinnedAccountAlone(t *testing.T) {
 	path := writeConfig(t, baseConfig)
-	msg, err := recordSeat(loadOrFail(t, path), "work-a", "work", gotSeat("person-1", "org-1"))
+	msg, err := recordSeat(loadOrFail(t, path), "work-a", "work", gotSeat("person-1", "org-1"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestRecordSeatRefusesToOverwriteADisagreeingHalfPin(t *testing.T) {
 	body := strings.Replace(unpinnedConfig, `scope = "work"`+"\n\n[project",
 		`scope = "work"`+"\norg_id = \"org-OTHER\"\n\n[project", 1)
 	path := writeConfig(t, body)
-	if _, err := recordSeat(loadOrFail(t, path), "fresh", "work", gotSeat("person-5", "org-5")); err == nil {
+	if _, err := recordSeat(loadOrFail(t, path), "fresh", "work", gotSeat("person-5", "org-5"), ""); err == nil {
 		t.Fatal("a hand-pinned organization that disagrees must be refused")
 	}
 	raw, _ := os.ReadFile(path)

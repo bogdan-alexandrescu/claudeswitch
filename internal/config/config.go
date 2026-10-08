@@ -5,6 +5,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -37,6 +38,19 @@ const (
 	// anti-flap cooldown and the preference for swapping between turns.
 	DefaultHardFloor = 99.0 // above this, swap mid-turn rather than wait for idle
 	DefaultReserve   = 70.0 // personal is ineligible for overflow above this
+	// DefaultLandingMargin is how far below its own trigger a switch target
+	// must be (IMPROVEMENTS A1), so a rotation never lands on an account it is
+	// about to rotate away from.
+	DefaultLandingMargin = 10.0
+	// MaxLandingMargin bounds it: past half the scale almost nothing
+	// qualifies, and the margin would quietly turn rotation off.
+	MaxLandingMargin = 50.0
+	// DefaultBlindFailoverPolls is how many consecutive unreadable polls of the
+	// active account end DESIGN 4.4's hold (IMPROVEMENTS A2). At poll_active 2m
+	// that is about six minutes. A 429 never counts: the usage endpoint's
+	// refusals clear on their own in 10–15 minutes (GROUND_TRUTH §42) and say
+	// nothing about the account.
+	DefaultBlindFailoverPolls = 3
 	// DefaultHotThreshold is where close watching begins, as a percentage of
 	// whichever window is worse. It is far below either trigger on purpose:
 	// watching starts before the decision matters. Raise it when the active
@@ -66,28 +80,48 @@ type Account struct {
 func (a Account) IsEnabled() bool { return a.Enabled == nil || *a.Enabled }
 
 // CallsPerWindow is how many usage-API calls this cadence needs per five
-// minutes: the active account, plus every other configured account at the idle
-// rate. Written out because the trade-off is not obvious — an extra account
-// costs budget even when it is doing nothing.
+// minutes: one active account per profile, plus every other configured
+// account at the idle rate. Written out because the trade-off is not obvious —
+// an extra account costs budget even when it is doing nothing.
+//
+// A profile counts only when its pool holds an enabled account: an empty
+// pool (D13) never has anything active to poll. Hot polling is not counted;
+// the shared budget throttles it (docs/PROFILES.md §5 Budget).
 func (c *Config) CallsPerWindow() float64 {
 	const window = 5 * time.Minute
-	n := 0
+	enabled := map[string]bool{}
 	for _, a := range c.Accounts {
 		if a.IsEnabled() {
-			n++
+			enabled[a.ID] = true
 		}
 	}
+	n := len(enabled)
 	if n == 0 {
 		return 0
 	}
-	calls := float64(window) / float64(c.PollActive.Duration)
-	calls += float64(n-1) * float64(window) / float64(c.PollIdle.Duration)
+	active := 0
+	for _, in := range c.EffectiveProfiles() {
+		for _, id := range in.Pool {
+			if enabled[id] {
+				active++
+				break
+			}
+		}
+	}
+	if active == 0 {
+		active = 1 // unreachable with an enabled account; kept so this never divides wrong
+	}
+	if active > n {
+		active = n
+	}
+	calls := float64(active) * float64(window) / float64(c.PollActive.Duration)
+	calls += float64(n-active) * float64(window) / float64(c.PollIdle.Duration)
 	return calls
 }
 
 // DefaultPollHot is the hot polling cadence. UsageBurstCalls is roughly how
 // many usage calls one account's allowance absorbs in a burst before refusing,
-// recovering over 10-15 minutes (GROUND_TRUTH §42, multi-instance). At 20s a
+// recovering over 10-15 minutes (GROUND_TRUTH §42, multi-profile). At 20s a
 // hot account emptied it in about 8 minutes.
 const (
 	DefaultPollHot  = 60 * time.Second
@@ -161,6 +195,22 @@ func (c *Config) TriggerFor(window string) float64 {
 	return c.SwitchAt
 }
 
+// Margin is the effective landing margin: the configured one, or the default.
+func (c *Config) Margin() float64 {
+	if c.LandingMargin == nil {
+		return DefaultLandingMargin
+	}
+	return *c.LandingMargin
+}
+
+// BlindPolls is the effective blind-failover threshold; zero means off.
+func (c *Config) BlindPolls() int {
+	if c.BlindFailoverPolls == nil {
+		return DefaultBlindFailoverPolls
+	}
+	return *c.BlindFailoverPolls
+}
+
 func (a Account) Seat() string {
 	if a.AccountUUID == "" || a.OrgID == "" {
 		return ""
@@ -185,6 +235,16 @@ type Config struct {
 	// approaching — the transcript never goes quiet and the switch would be
 	// deferred all the way to the hard floor. Observed 2026-09-10 at 85%.
 	MaxSwitchWait Duration `toml:"max_switch_wait"`
+
+	// LandingMargin is the room, in points below its own trigger, a switch
+	// target must have (IMPROVEMENTS A1). Nil means DefaultLandingMargin; zero
+	// is a real value and turns the margin off. Read it through Margin().
+	LandingMargin *float64 `toml:"landing_margin"`
+	// BlindFailoverPolls is how many consecutive unreadable polls of the active
+	// account make the daemon fail over to a healthy one (IMPROVEMENTS A2). Nil
+	// means DefaultBlindFailoverPolls; zero turns failover off and restores
+	// DESIGN 4.4's unconditional hold. Read it through BlindPolls().
+	BlindFailoverPolls *int `toml:"blind_failover_polls"`
 
 	// AutoRefresh keeps vaulted credentials alive. Nil means on.
 	//
@@ -228,6 +288,11 @@ type Config struct {
 	// they can use and one they cannot.
 	Projects map[string]Project `toml:"project"`
 
+	// Profiles are the declared [[profile]] blocks, exactly as written. Most
+	// callers want EffectiveProfiles, which adds the implicit default and the
+	// unlisted accounts that join it.
+	Profiles []Profile `toml:"profile"`
+
 	Path string `toml:"-"`
 }
 
@@ -250,7 +315,8 @@ func DefaultPath() string {
 	return "config.toml"
 }
 
-func Load(path string) (*Config, error) {
+// decode reads the file over the defaults, without validating.
+func decode(path string) (*Config, error) {
 	if path == "" {
 		path = DefaultPath()
 	}
@@ -267,20 +333,37 @@ func Load(path string) (*Config, error) {
 		PollActive:     Duration{60 * time.Second},
 		// 60s, not 20s: the usage endpoint allows about 25 calls per account in
 		// a burst and takes 10-15 minutes to recover, so 20-second hot polling
-		// emptied it in about 8 minutes (GROUND_TRUTH §42, multi-instance).
+		// emptied it in about 8 minutes (GROUND_TRUTH §42, multi-profile).
 		PollHot:   Duration{DefaultPollHot},
 		PollIdle:  Duration{10 * time.Minute},
 		APIBudget: 12,
 		Path:      path,
 	}
-	if _, err := toml.DecodeFile(path, c); err != nil {
+	md, err := toml.DecodeFile(path, c)
+	if err != nil {
 		if os.IsNotExist(err) {
 			return c, fmt.Errorf("no config at %s (run `claudeswitch init`): %w", path, err)
 		}
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
+	// Builds before D19 called these blocks [[instance]]. No release read
+	// them, so there is no alias: an old block is refused rather than
+	// silently ignored, which would merge every account into one pool.
+	if md.IsDefined("instance") {
+		return nil, fmt.Errorf("%s: [[instance]] blocks are now called [[profile]]; "+
+			"rename each [[instance]] to [[profile]] (the keys inside are unchanged)", path)
+	}
+	return c, nil
+}
+
+// Load reads and validates the config.
+func Load(path string) (*Config, error) {
+	c, err := decode(path)
+	if err != nil {
+		return c, err
+	}
 	if err := c.validate(); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, fmt.Errorf("%s: %w", c.Path, err)
 	}
 	return c, nil
 }
@@ -313,10 +396,24 @@ func (c *Config) Warnings() []string {
 				"than at an idle gap. Raise hard_floor above %g to keep both.",
 			c.HardFloor, c.SwitchAtWeekly, c.Cooldown.String(), c.SwitchAtWeekly))
 	}
-	return out
+	return append(out, c.profileWarnings()...)
 }
 
+// validate is every check: names (a *NameError listing each bad one with its
+// fix) and everything else (validateRest), joined when both fail.
 func (c *Config) validate() error {
+	rest := c.validateRest()
+	ne := c.nameError()
+	switch {
+	case ne == nil:
+		return rest
+	case rest == nil:
+		return ne
+	}
+	return errors.Join(ne, rest)
+}
+
+func (c *Config) validateRest() error {
 	if c.SwitchAt <= 0 || c.SwitchAt > 100 {
 		return fmt.Errorf("switch_at must be between 0 and 100, got %v", c.SwitchAt)
 	}
@@ -325,6 +422,12 @@ func (c *Config) validate() error {
 	}
 	if c.HardFloor < c.SwitchAt {
 		return fmt.Errorf("hard_floor (%v) must be at or above switch_at (%v)", c.HardFloor, c.SwitchAt)
+	}
+	if m := c.Margin(); m < 0 || m > MaxLandingMargin {
+		return fmt.Errorf("landing_margin must be between 0 and %g, got %v", MaxLandingMargin, m)
+	}
+	if n := c.BlindPolls(); n < 0 {
+		return fmt.Errorf("blind_failover_polls cannot be negative (0 turns failover off), got %d", n)
 	}
 	if c.HotThreshold < 0 || c.HotThreshold > 100 {
 		return fmt.Errorf("hot_threshold must be between 0 and 100, got %v", c.HotThreshold)
@@ -393,7 +496,7 @@ func (c *Config) validate() error {
 				"(scopes in use: %s)", pattern, e, strings.Join(keysOf(scopes), ", "))
 		}
 	}
-	return nil
+	return c.validateProfiles()
 }
 
 // Ordered returns the enabled accounts in rotation order: those named in
@@ -455,6 +558,10 @@ func (c *Config) Write(path string) error {
 		or(c.HotThreshold, DefaultHotThreshold))
 	fmt.Fprintf(&b, "cooldown        = %q   # anti-flap\n", c.Cooldown.String())
 	fmt.Fprintf(&b, "max_switch_wait = %q   # stop waiting for an idle gap after this\n", c.MaxSwitchWait.String())
+	fmt.Fprintf(&b, "landing_margin  = %g     # a switch target needs this much room below its own trigger\n",
+		c.Margin())
+	fmt.Fprintf(&b, "blind_failover_polls = %d # fail over after this many unreadable polls of the active account; 0 holds\n",
+		c.BlindPolls())
 	b.WriteString("\n# Keeping vaulted credentials alive. Refreshing revokes the previous token,\n")
 	b.WriteString("# so a stored credential goes stale on its own without this.\n")
 	fmt.Fprintf(&b, "refresh_window  = %q\n", c.RefreshWindow.String())
@@ -521,6 +628,8 @@ func (c *Config) Write(path string) error {
 			fmt.Fprintf(&b, "org_id       = %q\n", a.OrgID)
 		}
 	}
+
+	c.writeProfiles(&b)
 
 	patterns := make([]string, 0, len(c.Projects))
 	for pattern := range c.Projects {

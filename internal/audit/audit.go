@@ -13,8 +13,12 @@ import (
 )
 
 type Event struct {
-	At       time.Time `json:"at"`
-	Kind     string    `json:"kind"` // decision | switch | rejection | error
+	At   time.Time `json:"at"`
+	Kind string    `json:"kind"` // decision | switch | rejection | error
+	// Profile is the Claude Code profile the event concerns, "default" when
+	// none are configured. Empty on events from before profiles, and on
+	// account-wide events (severity) that belong to no one profile.
+	Profile  string    `json:"profile,omitempty"`
 	Decision string    `json:"decision,omitempty"`
 	From     string    `json:"from,omitempty"`
 	To       string    `json:"to,omitempty"`
@@ -36,6 +40,23 @@ type Event struct {
 	FromSeverity string   `json:"from_severity,omitempty"`
 	ToSeverity   string   `json:"to_severity,omitempty"`
 	Percent      *float64 `json:"percent,omitempty"`
+}
+
+// UnmarshalJSON also reads "instance", the field's name in rows written by
+// dev builds before D19; new rows write "profile" only.
+func (e *Event) UnmarshalJSON(b []byte) error {
+	type plain Event
+	in := struct {
+		*plain
+		DevInstance string `json:"instance"`
+	}{plain: (*plain)(e)}
+	if err := json.Unmarshal(b, &in); err != nil {
+		return err
+	}
+	if e.Profile == "" {
+		e.Profile = in.DevInstance
+	}
+	return nil
 }
 
 type Log struct {

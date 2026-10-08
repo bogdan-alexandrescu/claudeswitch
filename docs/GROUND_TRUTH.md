@@ -1219,3 +1219,120 @@ performs — logged one `SecKeychainItemModifyContent`, no `SecACLSetSimpleConte
 The live account then drew five refusals in a row, and doubling put its next read 16 minutes
 away: 25 minutes unread at 61%. The account in use now backs off no further than four
 minutes (`MaxLiveBackoff`); idle accounts still go to sixteen.
+
+## 42. The usage limit is a per-account burst of about 25 calls, recovering within 15 minutes
+
+Measured 2026-10-07 on an idle Max 5x team seat, calling `/api/oauth/usage` directly
+(outside claudeswitch's budget) once every 20 seconds, prompted by claude-swap's model of
+"~30 calls per trailing hour per identity":
+
+```
+calls 1–24   200   t+0s … t+465s
+call  25     429   t+485s   retry-after: 0   {"type":"rate_limit_error"}
+other seat   200   t+485s   (a different account, same machine, same moment)
++5 min       429   retry-after: 0
++10 min      429   retry-after: 0
++15 min      200
+```
+
+- **Per account, not per machine or IP**: another account answered normally at the moment
+  this one was refused.
+- **A burst allowance of about 25**, not a trailing hour: an hourly cap of ~30 would have
+  stayed refused for most of an hour after 25 calls in 8 minutes. It cleared between 10 and
+  15 minutes. The daemon's own idle poll of that account may have added one call.
+- **`Retry-After: 0` carries no information** on these refusals, as §40 saw. Backing off
+  must use our own schedule, not the header.
+- **What it explains**: hot polling every 20 s drains an account's allowance in about 8
+  minutes — the daily 429s in `daemon.log` (243 on 09-28, 323 on 10-01). Polling every 2
+  minutes (2.5 calls per 5 min) is far inside it.
+
+This contradicts claude-swap's trailing-hour figure for these accounts; §34's "burst
+allowance" reading was right, but its 12-call sample stopped short of the edge.
+The probe's raw usage response also confirmed per-model weekly limits: `limits[]` carries
+`{"kind": "weekly_scoped", "scope": {"model": {"display_name": "Fable"}}}` alongside
+`session` and `weekly_all` (IMPROVEMENTS I6).
+
+## 43. Claude Code's credential locks, and the keychain line limit
+
+Read on 2026-10-07 from the installed Claude Code 2.1.293
+(`~/.local/share/claude/versions/2.1.293`, `BUILD_TIME 2026-10-07T06:36:42Z`), by
+extracting the embedded JavaScript with `strings` and reading the refresh path. Prompted by
+claude-swap's `claude_locks.py` (IMPROVEMENTS I2); every detail below is from the binary,
+not from claude-swap.
+
+### The OAuth refresh locks
+
+Claude Code refreshes its token only while holding two locks, taken in this order:
+
+```js
+G = uw()                // CLAUDE_SECURESTORAGE_CONFIG_DIR (set-but-empty: ~/.claude), else the config dir; NFC
+lock(G, {lockfilePath: join(G, ".oauth_refresh.lock"), realpath: false, stale: 60000, update: 5000})
+lock(G, {lockfilePath: `${realpath(G)}.lock`,       realpath: false, stale: 60000, update: 5000})   // "legacy"
+```
+
+- **The lock is proper-lockfile's**, vendored: `mkdir(lockfilePath)` creates it, and
+  `EEXIST` means held. A held lock whose directory **mtime is older than `stale` (60 s)**
+  is removed (`rmdir`) and the `mkdir` retried once. While held, the holder re-touches
+  the directory's mtime every `update` (5 s); if the mtime it finds is not the one it
+  last wrote, it calls the lock compromised. Release is `rmdir`.
+- **Order: `<dir>/.oauth_refresh.lock`, then `<realpath(dir)>.lock`** (for the default
+  instance, `~/.claude/.oauth_refresh.lock` then `~/.claude.lock`). If the second is
+  held, the first is released and the attempt fails with `ELOCKED`.
+- **Contention: up to 5 retries, 1–2 s apart (jittered)**, then a wait until 7.5 s has
+  passed if the lock's mtime has not moved, then it gives up with `lock_busy` or
+  `lock_timeout` and does not refresh this time.
+- **Under the lock it re-reads the credential** (cache cleared) and, if the access token
+  is no longer the one it set out to refresh, stops with `race_resolved`: someone else
+  already put a different credential there. So a write made under these locks is never
+  overwritten by a refresh that started from the old token.
+- **Dead-holder takeover** uses an owner record, `<dir>/.oauth_refresh.lock.owner`
+  (`{pid, procStart, pidDomain, pidSpace, lockBirthtimeMs, legacyLockBirthtimeMs}`).
+  Without a record (or with one whose `lockBirthtimeMs` is not the held lock's birth
+  time) the outcome is `no_owner_record` / `record_mismatch`, and nothing is taken over.
+  A lock held without an owner record is therefore honoured for its whole life, up to the
+  60 s stale limit.
+- `CLAUDE_CODE_DISABLE_AUTH_REFRESH_LOCK` turns off the separate auth-refresh-command
+  lock (`apiKeyHelper`-style), not these.
+- The keychain write itself is not locked separately: the refresh holds both locks across
+  read, token exchange and write.
+
+What claudeswitch does with it (lane 6, I2): every write to a profile's live item —
+the swap, its rollback, and `refresh` of a live account — is made holding both locks for
+that profile's secure-storage dir, in Claude Code's order, by the same `mkdir`/mtime
+convention with the same 60 s staleness. It writes no owner record, so Claude Code never
+takes the lock over; it touches the mtime every 5 s while held, so a slow keychain write
+is not mistaken for a dead holder. It waits at most 5 s; a lock still held then means the
+swap is skipped and retried on the next tick. The usage calls and identity lookups are made
+outside the lock. A secure-storage dir that does not exist has no Claude Code using it,
+and is written without locks.
+
+### The keychain line limit
+
+Claude Code writes its credential through `security -i` as
+`add-generic-password -U -a "<user>" -s "<service>" -X "<hex payload>"\n` and checks the
+length first:
+
+```js
+ee = 4032
+if (line.length <= ee) security -i  (line on stdin)
+else  warn("Keychain payload (…B JSON) exceeds security -i stdin limit; using argv"),
+      security add-generic-password … -X <hex>        // the secret on argv
+```
+
+So Claude Code's own limit is **4032 bytes for the whole line, newline included**, below
+the 4096 at which `security -i` truncates (Claude Code issue #30337, via claude-swap), and
+above it Claude Code puts the secret on argv. claudeswitch does not (DESIGN 4.2): its
+writes measure the same line, use the same 4032 limit, and refuse with the size in the
+error. claudeswitch's own encoding is quoted JSON, about half the length of Claude Code's
+hex, so a credential Claude Code can write without argv always fits claudeswitch's.
+
+Claude Code runs `security` by bare name. claudeswitch runs `/usr/bin/security`.
+
+## 44. A `claude setup-token` token cannot read usage, so it cannot be rotated
+
+Measured 2026-10-07 with a token minted by `claude setup-token` (Claude Code 2.1.293,
+an `oat01` OAuth token, scope `user:inference` only): `/api/oauth/usage` answered **403**. With no
+usage reading there is nothing to rotate on, and the profile endpoint (which needs
+`user:profile`) would not identify the seat either. `add-token`, built for 0.4.9 to vault such
+tokens for machines without a browser, was removed before release. `cs login <id> --direct`
+remains the way to add an account without disturbing the live session.

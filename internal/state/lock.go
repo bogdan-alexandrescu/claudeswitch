@@ -1,10 +1,12 @@
 package state
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"syscall"
+	"time"
 )
 
 // Two locks, two jobs.
@@ -30,7 +32,11 @@ func lockPath(name string) string {
 }
 
 // tryLock takes an exclusive flock without blocking.
-func tryLock(path string) (*Lock, error) {
+func tryLock(path string) (*Lock, error) { return tryLockMode(path, syscall.LOCK_EX) }
+
+// tryLockMode takes a flock of the given mode (LOCK_EX or LOCK_SH) without
+// blocking.
+func tryLockMode(path string, mode int) (*Lock, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
@@ -38,12 +44,19 @@ func tryLock(path string) (*Lock, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := syscall.Flock(int(f.Fd()), mode|syscall.LOCK_NB); err != nil {
 		f.Close()
 		return nil, fmt.Errorf("lock held by another process: %w", err)
 	}
 	return &Lock{f: f, path: path}, nil
 }
+
+// daemonLockWait is how long AcquireDaemonLock waits out a lock held only
+// for a moment, by a DaemonRunning probe, before calling it a daemon.
+const (
+	daemonLockWait  = 500 * time.Millisecond
+	daemonLockRetry = 25 * time.Millisecond
+)
 
 // blockingLock waits for the lock. Only used for the brief state lock.
 func blockingLock(path string) (*Lock, error) {
@@ -72,18 +85,46 @@ func (l *Lock) Release() {
 
 // AcquireDaemonLock is how the daemon claims sole ownership. A second daemon
 // gets an error instead of quietly fighting the first over state.json.
+//
+// A `status` probing the lock (DaemonRunning) holds it for moments; failing on
+// that made a daemon starting at the same instant exit, to be restarted by
+// launchd half a minute later. So a lock that is busy is retried for
+// daemonLockWait before it counts as another daemon.
 func AcquireDaemonLock() (*Lock, error) {
-	l, err := tryLock(lockPath(daemonLockName))
-	if err != nil {
-		return nil, fmt.Errorf("another claudeswitch daemon is already running: %w", err)
+	deadline := time.Now().Add(daemonLockWait)
+	for {
+		l, err := tryLock(lockPath(daemonLockName))
+		if err == nil {
+			return l, nil
+		}
+		if !errors.Is(err, syscall.EWOULDBLOCK) || time.Now().After(deadline) {
+			return nil, fmt.Errorf("another claudeswitch daemon is already running: %w", err)
+		}
+		time.Sleep(daemonLockRetry)
 	}
-	return l, nil
+}
+
+// ErrDaemonRunning is TryDaemonLock's answer when a daemon holds the lock,
+// as distinct from failing to take it at all.
+var ErrDaemonRunning = errors.New("a claudeswitch daemon is running")
+
+// TryDaemonLock takes the daemon lock without waiting, for a command that
+// must keep any daemon from starting while it rewrites state (rename). It
+// fails at once if a daemon holds it; a daemon starting meanwhile waits its
+// short bound and exits, to be restarted by its service manager.
+func TryDaemonLock() (*Lock, error) {
+	l, err := tryLock(lockPath(daemonLockName))
+	if err != nil && errors.Is(err, syscall.EWOULDBLOCK) {
+		return nil, fmt.Errorf("%w: %v", ErrDaemonRunning, err)
+	}
+	return l, err
 }
 
 // DaemonRunning reports whether a daemon holds the lock. It works by trying to
-// take it: if we can, nobody else has it.
+// take it, shared: a daemon's exclusive lock refuses that, while two probes
+// sharing it never take each other for a daemon.
 func DaemonRunning() bool {
-	l, err := tryLock(lockPath(daemonLockName))
+	l, err := tryLockMode(lockPath(daemonLockName), syscall.LOCK_SH)
 	if err != nil {
 		return true
 	}

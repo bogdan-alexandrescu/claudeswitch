@@ -17,9 +17,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/ccdir"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/policy"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/state"
@@ -40,11 +42,27 @@ func cmdContext(args []string) error {
 		fmt.Println("[claudeswitch] config unreadable; run `claudeswitch doctor` in a terminal")
 		return nil // never fail a session start over a config problem
 	}
-	st, err := state.Load("")
+	st, err := state.Load("", cfg.ProfileNames()...)
 	if err != nil {
 		st = nil
 	}
-	renderContext(os.Stdout, cfg, st, time.Now(), state.DaemonRunning(), currentDir())
+	// A session start runs with the session's own CLAUDE_CONFIG_DIR, so it
+	// describes that profile.
+	var view *profileView
+	if st != nil {
+		v, verr := statuslineView(cfg, st)
+		if verr != nil {
+			fmt.Printf("[claudeswitch] %v\n", verr)
+			return nil
+		}
+		view = &v
+	}
+	running := daemonRunning()
+	renderContextIn(os.Stdout, cfg, st, view, time.Now(), running, currentDir())
+	if st != nil && staleDaemonLine(st, currentBuild(), running, runtime.GOOS) != "" {
+		fmt.Println("[claudeswitch] the running daemon is older than this claudeswitch, so it may act " +
+			"on rules this version has changed; ask the user to restart it: " + restartHint(runtime.GOOS))
+	}
 	return nil
 }
 
@@ -61,23 +79,41 @@ const staleReadingAfter = 10 * time.Minute
 // where it came from. The normal case is two lines; anything more means
 // something needs attention.
 func renderContext(w io.Writer, cfg *config.Config, st *state.State, now time.Time, daemon bool, dir string) {
-	const p = "[claudeswitch] "
+	renderContextIn(w, cfg, st, nil, now, daemon, dir)
+}
+
+// renderContextIn is renderContext for one profile's session. A nil view is
+// the default profile, as before profiles.
+func renderContextIn(w io.Writer, cfg *config.Config, st *state.State, view *profileView,
+	now time.Time, daemon bool, dir string) {
+	p := "[claudeswitch] "
 	if len(cfg.Accounts) == 0 {
 		fmt.Fprintln(w, p+"no accounts set up yet; run `claudeswitch setup` in a terminal")
 		return
 	}
-	if st == nil || st.Active == "" {
+	if view != nil && multiProfile(cfg) {
+		p += "profile " + view.in.Name + " · "
+	}
+	var ist *state.ProfileState
+	if st != nil {
+		ist = st.Default()
+		if view != nil {
+			ist, cfg = view.ist, view.cfg
+		}
+	}
+	if ist == nil || ist.Active == "" {
 		fmt.Fprintln(w, p+"no account selected yet; `claudeswitch status` shows what is available")
 		return
 	}
-	a, ok := st.Accounts[st.Active]
+	active := ist.Active
+	a, ok := st.Accounts[active]
 	if !ok || a.Last == nil {
-		fmt.Fprintf(w, p+"active account %s, no usage reading yet\n", st.Active)
+		fmt.Fprintf(w, p+"active account %s, no usage reading yet\n", active)
 		return
 	}
 
 	line := fmt.Sprintf("active %s · session %.0f%% (resets %s) · week %.0f%% (resets %s)",
-		st.Active,
+		active,
 		a.Last.FiveHour.Pct(), slUntil(a.Last.FiveHour.ResetsAt, now),
 		a.Last.SevenDay.Pct(), slUntil(a.Last.SevenDay.ResetsAt, now))
 	if age := now.Sub(a.LastAt); !a.LastAt.IsZero() && age > staleReadingAfter {
@@ -86,7 +122,7 @@ func renderContext(w io.Writer, cfg *config.Config, st *state.State, now time.Ti
 	fmt.Fprintln(w, p+line)
 
 	if !a.BurntTil.IsZero() && now.Before(a.BurntTil) {
-		fmt.Fprintf(w, p+"%s was refused until %s\n", st.Active, a.BurntTil.Local().Format("15:04"))
+		fmt.Fprintf(w, p+"%s was refused until %s\n", active, a.BurntTil.Local().Format("15:04"))
 	}
 
 	daemonNote := "daemon running, rotates automatically"
@@ -99,12 +135,18 @@ func renderContext(w io.Writer, cfg *config.Config, st *state.State, now time.Ti
 	fmt.Fprintf(w, p+"rotates at session %.0f%% / week %.0f%%, mid-turn at %.0f%% · %s\n",
 		cfg.TriggerFor(usage.FiveHourKey), cfg.TriggerFor(usage.SevenDayKey), cfg.HardFloor, daemonNote)
 
-	dec, _ := policy.Explain(policy.Input{
-		Cfg: cfg, St: st, Now: now, LastSwitch: st.LastSwitch,
-		Pinned: st.Pinned, Dir: dir, Lookahead: lookahead(cfg),
-	})
+	in := policy.Input{
+		Cfg: cfg, St: st, Now: now, LastSwitch: ist.LastSwitch,
+		Pinned: ist.Pinned, Dir: dir, Lookahead: lookahead(cfg),
+	}
+	if view != nil {
+		in = view.input(st, now, dir)
+	}
+	dec, _ := policy.Explain(in)
 	switch dec.Kind {
 	case policy.Switch:
+		// The session runs with its profile's CLAUDE_CONFIG_DIR, so `use`
+		// run from inside it picks the same profile with no flag.
 		fmt.Fprintf(w, p+"next: %s. `claudeswitch use %s` swaps now, no restart\n", dec, dec.Target)
 	case policy.Wait:
 		fmt.Fprintf(w, p+"next: %s\n", dec)
@@ -114,14 +156,11 @@ func renderContext(w io.Writer, cfg *config.Config, st *state.State, now time.Ti
 // settingsPath is Claude Code's user settings file, honouring
 // CLAUDE_CONFIG_DIR the way Claude Code does.
 func settingsPath() (string, error) {
-	if d := os.Getenv("CLAUDE_CONFIG_DIR"); d != "" {
-		return filepath.Join(d, "settings.json"), nil
-	}
-	home, err := os.UserHomeDir()
+	d, err := ccdir.Dir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".claude", "settings.json"), nil
+	return filepath.Join(d, "settings.json"), nil
 }
 
 const statuslineCommand = "claudeswitch statusline"
@@ -346,13 +385,9 @@ func (s *settingsFile) write(path string) error {
 // pluginInstalled reports whether Claude Code has the claudeswitch plugin
 // installed, from its own record of installed plugins.
 func pluginInstalled() bool {
-	dir := os.Getenv("CLAUDE_CONFIG_DIR")
-	if dir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return false
-		}
-		dir = filepath.Join(home, ".claude")
+	dir, err := ccdir.Dir()
+	if err != nil {
+		return false
 	}
 	b, err := os.ReadFile(filepath.Join(dir, "plugins", "installed_plugins.json"))
 	if err != nil {

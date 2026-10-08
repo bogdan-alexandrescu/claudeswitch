@@ -64,6 +64,7 @@ type pendingFlow struct {
 	OrgID     string    `json:"org_id"`
 	Pinned    bool      `json:"pinned"`
 	Scope     string    `json:"scope,omitempty"`
+	Profile   string    `json:"profile,omitempty"`
 	URL       string    `json:"url"`
 	Verifier  string    `json:"verifier"`
 	State     string    `json:"state"`
@@ -100,6 +101,9 @@ type Pending struct {
 	OrgID     string
 	Scope     string
 	Pinned    bool
+	// Profile is the declared profile whose pool a new account joins when
+	// the login completes (PROFILES D20), "" for none.
+	Profile string
 }
 
 // Save writes the flow so a later invocation can complete it. 0600, and
@@ -110,7 +114,7 @@ func (f *AuthFlow) Save(p Pending) error {
 		return err
 	}
 	b, err := json.Marshal(pendingFlow{
-		AccountID: p.AccountID, OrgID: p.OrgID, Pinned: p.Pinned, Scope: p.Scope, URL: f.URL,
+		AccountID: p.AccountID, OrgID: p.OrgID, Pinned: p.Pinned, Scope: p.Scope, Profile: p.Profile, URL: f.URL,
 		Verifier: f.verifier, State: f.state, StartedAt: time.Now(),
 	})
 	if err != nil {
@@ -143,7 +147,8 @@ func LoadPending() (*AuthFlow, Pending, error) {
 			time.Since(pf.StartedAt).Round(time.Minute))
 	}
 	return &AuthFlow{URL: pf.URL, verifier: pf.Verifier, state: pf.State},
-		Pending{AccountID: pf.AccountID, OrgID: pf.OrgID, Scope: pf.Scope, Pinned: pf.Pinned}, nil
+		Pending{AccountID: pf.AccountID, OrgID: pf.OrgID, Scope: pf.Scope, Pinned: pf.Pinned,
+			Profile: pf.Profile}, nil
 }
 
 // ClearPending removes a saved flow. Called as soon as it is used or abandoned,

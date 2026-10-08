@@ -23,7 +23,7 @@ func statusRow(t *testing.T, id string, five, seven usage.Window) string {
 		Priority:   []string{"active", id},
 	}
 	far := time.Now().Add(72 * time.Hour)
-	st := &state.State{Active: "active", Accounts: map[string]*state.Account{
+	st := &state.State{Profiles: map[string]*state.ProfileState{state.DefaultProfile: {Active: "active"}}, Accounts: map[string]*state.Account{
 		"active": {
 			Last: &usage.Usage{
 				FiveHour: usage.Window{Utilization: ptr(10), ResetsAt: &far},
@@ -113,7 +113,7 @@ func TestAContradictoryConfigIsWarnedAboutInStatus(t *testing.T) {
 		Accounts:   []config.Account{{ID: "work-a"}},
 		Priority:   []string{"work-a"},
 	}
-	st := &state.State{Active: "work-a", Accounts: map[string]*state.Account{
+	st := &state.State{Profiles: map[string]*state.ProfileState{state.DefaultProfile: {Active: "work-a"}}, Accounts: map[string]*state.Account{
 		"work-a": {Last: &usage.Usage{
 			FiveHour: usage.Window{Utilization: ptr(10), ResetsAt: &far},
 			SevenDay: usage.Window{Utilization: ptr(20), ResetsAt: &far},

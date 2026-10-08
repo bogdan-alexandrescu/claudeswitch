@@ -15,6 +15,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/keychain"
@@ -22,11 +24,26 @@ import (
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/usage"
 )
 
+// readEntry reads an account's vault entry. A seam, so tests of the swap never
+// reach the keychain.
+var readEntry = func(accountID string) (*keychain.Blob, error) {
+	return keychain.Read(keychain.VaultService(accountID))
+}
+
+// writeEntry stores an account's vault entry. A seam, like readEntry.
+var writeEntry = func(accountID string, b *keychain.Blob) error {
+	return keychain.Write(keychain.VaultService(accountID), b)
+}
+
 type Vault struct {
 	log    *slog.Logger
 	client *usage.Client
 	oauth  *oauth.Client
 	budget *usage.Budget
+
+	// probes remembers the seat behind live tokens; see seatBehind.
+	probeMu sync.Mutex
+	probes  map[string]seatProbe
 }
 
 func New(log *slog.Logger) *Vault {
@@ -138,7 +155,12 @@ func (v *Vault) OrgOf(accountID string) string {
 // It verifies the credential works before storing it, so a broken entry never
 // enters the vault.
 func (v *Vault) Store(ctx context.Context, accountID, expectSeat string, conflictCheck []string) (*Entry, error) {
-	return v.StoreGuarded(ctx, accountID, expectSeat, conflictCheck, nil)
+	return v.StoreFrom(ctx, keychain.EnvLive(), accountID, expectSeat, conflictCheck)
+}
+
+// StoreFrom is Store reading one profile's live credential.
+func (v *Vault) StoreFrom(ctx context.Context, item keychain.Live, accountID, expectSeat string, conflictCheck []string) (*Entry, error) {
+	return v.StoreGuardedFrom(ctx, item, accountID, expectSeat, conflictCheck, nil)
 }
 
 // StoreGuarded is Store with a last check: once the live credential is known to
@@ -147,7 +169,13 @@ func (v *Vault) Store(ctx context.Context, accountID, expectSeat string, conflic
 // how `add` refuses to overwrite a vaulted credential with a staler one.
 func (v *Vault) StoreGuarded(ctx context.Context, accountID, expectSeat string, conflictCheck []string,
 	guard func(live, vaulted *keychain.OAuth) error) (*Entry, error) {
-	live, err := keychain.ReadLive()
+	return v.StoreGuardedFrom(ctx, keychain.EnvLive(), accountID, expectSeat, conflictCheck, guard)
+}
+
+// StoreGuardedFrom is StoreGuarded reading one profile's live credential.
+func (v *Vault) StoreGuardedFrom(ctx context.Context, item keychain.Live, accountID, expectSeat string, conflictCheck []string,
+	guard func(live, vaulted *keychain.OAuth) error) (*Entry, error) {
+	live, err := item.Read()
 	if err != nil {
 		return nil, err
 	}
@@ -358,7 +386,7 @@ func (v *Vault) StoreTokens(ctx context.Context, accountID, expectSeat string, t
 
 // Load reads a vaulted account.
 func (v *Vault) Load(accountID string) (*keychain.OAuth, error) {
-	b, err := keychain.Read(keychain.VaultService(accountID))
+	b, err := readEntry(accountID)
 	if err != nil {
 		return nil, fmt.Errorf("account %q is not in the vault (run `claudeswitch add %s`): %w",
 			accountID, accountID, err)
@@ -387,65 +415,7 @@ type SwapResult struct {
 // empty on the first swap to an account, in which case whatever org answers is
 // recorded rather than checked.
 func (v *Vault) SwapTo(ctx context.Context, accountID, expectOrg string) (*SwapResult, error) {
-	live, err := keychain.ReadLive()
-	if err != nil {
-		return nil, err
-	}
-	snapshot := *live // value copy; MCPOAuth is a slice we do not mutate
-
-	incoming, err := v.Load(accountID)
-	if err != nil {
-		return nil, err
-	}
-	if incoming.RefreshDead() {
-		return nil, fmt.Errorf("account %q has an expired refresh token and needs an interactive login", accountID)
-	}
-
-	merged, err := keychain.MergeForSwap(live, incoming)
-	if err != nil {
-		return nil, err
-	}
-	if err := keychain.Write(keychain.LiveService, merged); err != nil {
-		return nil, fmt.Errorf("swap aborted before it took effect: %w", err)
-	}
-
-	u, verr := v.fetch(ctx, incoming.AccessToken, usage.Swap)
-	switch {
-	case verr != nil:
-		if _, ok := usage.IsRateLimited(verr); ok {
-			// The credential is installed and may well be fine; we simply cannot
-			// prove it right now. Say so rather than roll back a good swap.
-			v.log.Warn("swap installed but could not be verified: usage API rate limited",
-				"account", accountID)
-			return &SwapResult{AccountID: accountID}, nil
-		}
-		return v.rollback(&snapshot, accountID, fmt.Errorf("the new credential could not read usage: %w", verr))
-	case expectOrg != "" && u.OrgID != expectOrg:
-		return v.rollback(&snapshot, accountID,
-			fmt.Errorf("swap installed the wrong account: expected org %s, got %s", expectOrg, u.OrgID))
-	}
-
-	v.log.Info("swapped account", "account", accountID, "org", u.OrgID,
-		"five_hour", u.FiveHour.Pct(), "seven_day", u.SevenDay.Pct(),
-		"mcp_preserved", len(merged.MCPOAuth) > 0)
-	return &SwapResult{AccountID: accountID, OrgID: u.OrgID, Usage: u}, nil
-}
-
-// rollback restores a snapshot and verifies the restore. A failure here is the
-// worst outcome the program can produce, so it is reported in full.
-func (v *Vault) rollback(snapshot *keychain.Blob, accountID string, cause error) (*SwapResult, error) {
-	if err := keychain.Write(keychain.LiveService, snapshot); err != nil {
-		return &SwapResult{AccountID: accountID, RolledBack: false}, fmt.Errorf(
-			"CREDENTIAL LEFT IN A BAD STATE. The swap failed (%v) and the rollback also failed (%v). "+
-				"Run `claude /login` to restore your session", cause, err)
-	}
-	back, err := keychain.ReadLive()
-	if err != nil || back.ClaudeAIOAuth.AccessToken != snapshot.ClaudeAIOAuth.AccessToken {
-		return &SwapResult{AccountID: accountID, RolledBack: false}, fmt.Errorf(
-			"rollback wrote but did not verify after: %v. Run `claude /login` if Claude Code misbehaves", cause)
-	}
-	v.log.Warn("swap rolled back", "account", accountID, "cause", cause.Error())
-	return &SwapResult{AccountID: accountID, RolledBack: true}, cause
+	return v.SwapToIn(ctx, keychain.EnvLive(), accountID, expectOrg)
 }
 
 // RefreshWindow is how close to expiry a token gets before we refresh it.
@@ -470,12 +440,26 @@ var ErrActiveAccount = errors.New(
 //  3. only then, if this account is also the live one, update the live item
 //  4. verify
 //
-// isActive tells us whether accountID is the credential Claude Code is using.
+// isActive tells us whether accountID is the credential Claude Code is using
+// in this process's environment; RefreshIn names the profile instead.
 func (v *Vault) Refresh(ctx context.Context, accountID, wantSeat string, isActive, allowActive bool) (*Entry, error) {
+	var holder keychain.Live
+	if isActive {
+		holder = keychain.EnvLive()
+	}
+	return v.RefreshIn(ctx, accountID, wantSeat, holder, allowActive)
+}
+
+// RefreshIn is Refresh where holder is the live credential of the profile
+// that has accountID live, or nil when no profile does. Step 3 writes the
+// renewed token back into that item and no other: the profile whose session
+// is using the old token is the one that must not be left holding it.
+func (v *Vault) RefreshIn(ctx context.Context, accountID, wantSeat string, holder keychain.Live, allowActive bool) (*Entry, error) {
+	isActive := holder != nil
 	if isActive && !allowActive {
 		return nil, ErrActiveAccount
 	}
-	blob, err := keychain.Read(keychain.VaultService(accountID))
+	blob, err := readEntry(accountID)
 	if err != nil {
 		return nil, fmt.Errorf("account %q is not in the vault (run `claudeswitch add %s`): %w",
 			accountID, accountID, err)
@@ -499,6 +483,39 @@ func (v *Vault) Refresh(ctx context.Context, accountID, wantSeat string, isActiv
 			cur.RefreshExpiry().Format("2006-01-02")}
 	}
 
+	// A live account is refreshed as Claude Code refreshes it: holding its
+	// credential locks from the token exchange to the write of the live item,
+	// so Claude Code cannot exchange the same refresh token meanwhile
+	// (GROUND_TRUTH §43). The verifying usage call comes after the release.
+	release := func() {}
+	if isActive {
+		held, lerr := v.lock(ctx, holder, 0)
+		if lerr != nil {
+			return nil, fmt.Errorf("not refreshing %q now: %w", accountID, lerr)
+		}
+		release = func() { _ = held.Release() } // idempotent
+		defer release()
+		live, rerr := holder.Read()
+		if rerr != nil {
+			// Unknown is not "still the vaulted token" (D18): a refresh
+			// revokes whatever is live there.
+			return nil, fmt.Errorf("not refreshing %q: its live item could not be read to confirm it "+
+				"still holds the vaulted token: %w", accountID, rerr)
+		}
+		if live.ClaudeAIOAuth.AccessToken != cur.AccessToken {
+			return nil, fmt.Errorf("not refreshing %q: the live credential is no longer the vaulted one "+
+				"(Claude Code has probably refreshed it already), and refreshing the vaulted copy would "+
+				"revoke nothing useful while risking the live one", accountID)
+		}
+		// The exchange revokes the token the session holds, so step 3 must
+		// succeed. If the store would refuse the write-back (the security -i
+		// line limit), refuse now, while the live token still works.
+		if err := checkRefreshWrite(holder, live, cur); err != nil {
+			return nil, fmt.Errorf("not refreshing %q: the renewed credential could not be written back "+
+				"into %s, and the refresh would revoke the token it holds: %w", accountID, holder.Name(), err)
+		}
+	}
+
 	tok, err := v.oauth.Refresh(ctx, cur.RefreshToken)
 	if err != nil {
 		return nil, err
@@ -520,14 +537,14 @@ func (v *Vault) Refresh(ctx context.Context, accountID, wantSeat string, isActiv
 	// automatic refresh — and losing the seat uuid disables the identity guards
 	// that stop one account's credential being filed under another's name.
 	meta := &keychain.Meta{AccountID: accountID}
-	if b, err := keychain.Read(keychain.VaultService(accountID)); err == nil && b.Meta != nil {
+	if b, err := readEntry(accountID); err == nil && b.Meta != nil {
 		cp := *b.Meta
 		meta = &cp
 	}
 	meta.AccountID = accountID
 	meta.VaultedAt = time.Now().Format(time.RFC3339)
 	entry := &keychain.Blob{ClaudeAIOAuth: &next, Meta: meta}
-	if err := keychain.Write(keychain.VaultService(accountID), entry); err != nil {
+	if err := writeEntry(accountID, entry); err != nil {
 		return nil, fmt.Errorf(
 			"CREDENTIAL AT RISK: refreshed %q but could not store the new token (%w). "+
 				"The old token is now revoked; run `claude` and /login for this account", accountID, err)
@@ -535,7 +552,7 @@ func (v *Vault) Refresh(ctx context.Context, accountID, wantSeat string, isActiv
 
 	// Step 3. Keep the live item in step, preserving mcpOAuth.
 	if isActive {
-		live, lerr := keychain.ReadLive()
+		live, lerr := holder.Read()
 		if lerr != nil {
 			return nil, fmt.Errorf("refreshed and vaulted %q, but could not read the live item to update it: %w",
 				accountID, lerr)
@@ -544,13 +561,14 @@ func (v *Vault) Refresh(ctx context.Context, accountID, wantSeat string, isActiv
 		if merr != nil {
 			return nil, merr
 		}
-		if werr := keychain.Write(keychain.LiveService, merged); werr != nil {
+		if werr := holder.Write(merged); werr != nil {
 			return nil, fmt.Errorf("refreshed and vaulted %q, but the live item still holds the revoked token (%w). "+
 				"Run `claudeswitch use %s`", accountID, werr, accountID)
 		}
 	}
 
-	// Step 4. Prove it works.
+	// Step 4. Prove it works — over the network, so outside the lock.
+	release()
 	u, verr := v.fetch(ctx, next.AccessToken, usage.Swap)
 	if verr != nil {
 		if _, rl := usage.IsRateLimited(verr); rl {
@@ -565,6 +583,32 @@ func (v *Vault) Refresh(ctx context.Context, accountID, wantSeat string, isActiv
 	return &Entry{AccountID: accountID, OrgID: u.OrgID, Expiry: next.Expiry(),
 		RefreshExpiry: next.RefreshExpiry(), Tier: next.RateLimitTier,
 		Subscription: next.SubscriptionType}, nil
+}
+
+// refreshGrowth is how much longer each renewed token may be than the one it
+// replaces, for checking the write-back before the exchange: the new tokens
+// are not known until then, and are the same format as the old.
+const refreshGrowth = 32
+
+// checkRefreshWrite asks holder's store whether the live write a refresh will
+// make fits: the live item merged with the current credential, its tokens
+// lengthened by refreshGrowth. A store that cannot check is not asked.
+func checkRefreshWrite(holder keychain.Live, live *keychain.Blob, cur *keychain.OAuth) error {
+	wc, ok := holder.(keychain.WriteChecker)
+	if !ok {
+		return nil
+	}
+	proj := *cur
+	pad := strings.Repeat("x", refreshGrowth)
+	proj.AccessToken += pad
+	if proj.RefreshToken != "" {
+		proj.RefreshToken += pad
+	}
+	merged, err := keychain.MergeForSwap(live, &proj)
+	if err != nil {
+		return err
+	}
+	return wc.CheckWrite(merged)
 }
 
 // NeedsRefresh reports whether a vaulted account is close enough to expiry to
@@ -611,6 +655,13 @@ func (v *Vault) VaultedAt(accountID string) time.Time {
 // checked against the entry's recorded org before anything is written. That
 // costs one API call, and only on the rare occasions the tokens differ.
 func (v *Vault) SyncActive(ctx context.Context, accountID, wantSeat string) (bool, error) {
+	return v.SyncActiveIn(ctx, keychain.EnvLive(), accountID, wantSeat)
+}
+
+// SyncActiveIn is SyncActive against one profile's live credential: the
+// profile whose live item holds accountID, so a token Claude Code refreshed
+// there is the one re-captured.
+func (v *Vault) SyncActiveIn(ctx context.Context, item keychain.Live, accountID, wantSeat string) (bool, error) {
 	// Before touching the store at all: without a pinned seat there is no way to
 	// tell this account's credential from a colleague's in the same
 	// organization, and guessing is what corrupted two entries here.
@@ -621,7 +672,7 @@ func (v *Vault) SyncActive(ctx context.Context, accountID, wantSeat string) (boo
 				"in the same organization. Run `claudeswitch identify` and add it", accountID)
 	}
 
-	live, err := keychain.ReadLive()
+	live, err := item.Read()
 	if err != nil {
 		return false, err
 	}
@@ -672,7 +723,7 @@ func (v *Vault) SyncActive(ctx context.Context, accountID, wantSeat string) (boo
 			VaultedAt:   time.Now().Format(time.RFC3339),
 		},
 	}
-	if err := keychain.Write(keychain.VaultService(accountID), entry); err != nil {
+	if err := writeEntry(accountID, entry); err != nil {
 		return false, err
 	}
 	v.log.Info("vault entry re-captured from the live credential (same account, token had been refreshed)",
@@ -740,18 +791,135 @@ func (v *Vault) Verify(ctx context.Context, accountID string) error {
 // This must never be answered from stored state. State can be empty, stale, or
 // simply wrong, and the consequence of getting it wrong is refreshing the token
 // the running session depends on. The live Keychain item is the only authority.
-func (v *Vault) IsLive(accountID string) bool {
-	live, err := keychain.ReadLive()
+func (v *Vault) IsLive(accountID string) bool { return v.IsLiveIn(keychain.EnvLive(), accountID) }
+
+// IsLiveIn reports whether a vault entry holds the credential one profile's
+// live item holds, with IsLive's answer when the item cannot be read.
+func (v *Vault) IsLiveIn(item keychain.Live, accountID string) bool {
+	holds, known := v.LiveHolds(item, accountID)
+	// Unable to tell — assume it IS live, because that is the answer that
+	// makes the caller ask for confirmation rather than act.
+	return holds || !known
+}
+
+// LiveHolds reports whether an item holds accountID's vaulted credential, and
+// whether that is known. A missing item (ErrNotFound: the profile is not
+// logged in) is known to hold nothing; an item that could not be read is
+// unknown. Telling the two apart is what stops one logged-out profile making
+// every account look live everywhere. Local only: no network.
+func (v *Vault) LiveHolds(item keychain.Live, accountID string) (holds, known bool) {
+	live, err := item.Read()
+	if errors.Is(err, keychain.ErrNotFound) {
+		return false, true
+	}
 	if err != nil {
-		// Unable to tell — assume it IS live, because that is the answer that
-		// makes the caller ask for confirmation rather than act.
-		return true
+		return false, false
 	}
 	cur, err := v.Load(accountID)
 	if err != nil {
-		return false
+		return false, true
 	}
-	return cur.AccessToken == live.ClaudeAIOAuth.AccessToken
+	return cur.AccessToken == live.ClaudeAIOAuth.AccessToken, true
+}
+
+// HoldsAccount is the check before installing accountID into another
+// profile: does item hold that ACCOUNT, by any token? A person signing in by
+// hand gets a token claudeswitch never vaulted, so the token comparison is
+// only the cheap first step; after it the seat behind the live token is read
+// from the profile endpoint and compared with wantSeat (or, when the config
+// pins none, the seat the vault entry records).
+//
+// known is false whenever the answer could not be settled — an unreadable
+// item, a failed identity lookup, no seat to compare against — and callers about
+// to write must treat that as "may hold it".
+func (v *Vault) HoldsAccount(ctx context.Context, item keychain.Live, accountID, wantSeat string) (holds, known bool) {
+	live, err := item.Read()
+	if errors.Is(err, keychain.ErrNotFound) {
+		return false, true
+	}
+	if err != nil || live.ClaudeAIOAuth == nil {
+		return false, false
+	}
+	entry, eerr := readEntry(accountID)
+	if eerr == nil && entry.ClaudeAIOAuth != nil &&
+		entry.ClaudeAIOAuth.AccessToken == live.ClaudeAIOAuth.AccessToken {
+		return true, true
+	}
+	if wantSeat == "" && eerr == nil && entry.Meta != nil {
+		wantSeat = entry.Meta.Seat()
+	}
+	if wantSeat == "" {
+		return false, false
+	}
+	seat := v.seatBehind(ctx, live.ClaudeAIOAuth.AccessToken)
+	if seat == "" {
+		return false, false
+	}
+	return seat == wantSeat, true
+}
+
+// holdsProbeTTL is how long the seat behind a live token is remembered. A
+// refusal that persists re-checks on every twenty-second tick, and asking the
+// profile endpoint each time spent the whole budget in four minutes. The cache
+// is keyed by the token itself, so a new login is a new question at once.
+var holdsProbeTTL = 5 * time.Minute
+
+// holdsUnknownTTL is how long a probe that could not say is remembered: one
+// refused by the budget, cancelled, or failed. That doubt makes the daemon
+// refuse a swap (D18), so it must clear soon; a minute still keeps a lasting
+// refusal from spending a call every tick.
+var holdsUnknownTTL = 60 * time.Second
+
+// ttl is how long this probe's answer holds.
+func (p seatProbe) ttl() time.Duration {
+	if p.seat == "" {
+		return min(holdsUnknownTTL, holdsProbeTTL)
+	}
+	return holdsProbeTTL
+}
+
+type seatProbe struct {
+	seat string // "" when the probe could not say
+	at   time.Time
+}
+
+// seatBehind is the seat a live token belongs to, "" when unknown. It is a
+// probe, not a swap: it asks at Scheduled priority, so it never spends the
+// call reserved for a swap, and a refused or failed probe is remembered for
+// a shorter period (holdsUnknownTTL) rather than retried every tick.
+func (v *Vault) seatBehind(ctx context.Context, token string) string {
+	v.probeMu.Lock()
+	if p, ok := v.probes[token]; ok && time.Since(p.at) < p.ttl() {
+		v.probeMu.Unlock()
+		return p.seat
+	}
+	v.probeMu.Unlock()
+
+	seat := ""
+	// Pacing blocks the caller for at most the burst spacing, and the cache
+	// above bounds how often that can happen.
+	v.budget.Pace(ctx)
+	if ok, _ := v.budget.Allow(token, usage.Scheduled); ok {
+		if pr, err := v.client.FetchProfile(ctx, token); err == nil {
+			seat = pr.Seat()
+			v.budget.Succeeded(token)
+		} else if rl, isRL := usage.IsRateLimited(err); isRL {
+			v.budget.Penalize(token, rl.RetryAfter)
+		}
+	}
+
+	v.probeMu.Lock()
+	defer v.probeMu.Unlock()
+	if v.probes == nil {
+		v.probes = map[string]seatProbe{}
+	}
+	for k, p := range v.probes { // keep it small: old tokens are dead anyway
+		if time.Since(p.at) >= p.ttl() {
+			delete(v.probes, k)
+		}
+	}
+	v.probes[token] = seatProbe{seat: seat, at: time.Now()}
+	return seat
 }
 
 // DuplicateSeatError means the credential belongs to a seat already vaulted

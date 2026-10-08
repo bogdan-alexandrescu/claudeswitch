@@ -18,6 +18,11 @@ claudeswitch status
 
 Add `--detail` when the user wants burn rate, reading age or which limit binds.
 
+With several Claude Code profiles configured, the output has one block per
+profile, each with its own pool, active account and thresholds. Lead with the
+block for this session's profile (the status line names it), and mention the
+others briefly. `--profile <name>` shows a single profile.
+
 Summarise for the user in a few lines:
 
 - the **active** account and its session and weekly utilization, with reset times

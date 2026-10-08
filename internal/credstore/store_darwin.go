@@ -39,7 +39,7 @@ func Read(service string) (*Blob, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "security", "find-generic-password", "-s", service, "-w")
+	cmd := exec.CommandContext(ctx, securityBinary(), "find-generic-password", "-s", service, "-w")
 	out, err := cmd.Output()
 	if ctx.Err() == context.DeadlineExceeded {
 		return nil, fmt.Errorf(
@@ -53,10 +53,21 @@ func Read(service string) (*Blob, error) {
 			service, readTimeout, ErrUnavailable)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("reading keychain item %q (is it present, and did you approve access?): %w",
-			service, err)
+		return nil, readError(service, err)
 	}
 	return parse(service, out)
+}
+
+// readError describes a failed read. Exit 44 (errSecItemNotFound) is a
+// definite answer — no such item — and wraps ErrNotFound; anything else says
+// nothing about what the item holds.
+func readError(service string, err error) error {
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 44 {
+		return fmt.Errorf("keychain item %q is not present: %w", service, ErrNotFound)
+	}
+	return fmt.Errorf("reading keychain item %q (is it present, and did you approve access?): %w",
+		service, err)
 }
 
 // selfPath is the installed binary, resolved through any symlink, so the access
@@ -81,9 +92,36 @@ func currentUser() string {
 }
 
 // escapeForSecurity quotes a value for security(1)'s interactive parser.
+//
+// security -i reads one command per line, so a newline inside a value would
+// end the command and run the rest as another. Write refuses such names before
+// getting here (refuseControl); as a second line of defence, any control
+// character that still arrives is replaced, so the line can never be split.
+// The payload is JSON from encoding/json, which escapes control characters
+// itself, so it is never changed by this.
 func escapeForSecurity(s string) string {
 	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
+	s = strings.Map(func(c rune) rune {
+		if c < 0x20 || c == 0x7f {
+			return '?'
+		}
+		return c
+	}, s)
 	return `"` + r.Replace(s) + `"`
+}
+
+// refuseControl refuses a name or account carrying a control character
+// before any security -i line is built from it.
+func refuseControl(service string, parts ...string) error {
+	for _, p := range parts {
+		for _, c := range p {
+			if c < 0x20 || c == 0x7f {
+				return fmt.Errorf("not writing keychain item %q: a name passed to security -i contains a "+
+					"control character, which would split the command", service)
+			}
+		}
+	}
+	return nil
 }
 
 // Write stores a blob, replacing any existing item.
@@ -116,11 +154,22 @@ func Write(service string, b *Blob) error {
 	// This applies only to claudeswitch's own vault items. Claude Code's live
 	// credential is left alone: rewriting its access control to suit us could
 	// break Claude Code's own access, which is not ours to risk.
+	user := currentUser()
+	if err := refuseControl(service, service, user); err != nil {
+		return err
+	}
 	trust := ""
 	if IsVaultService(service) && !itemExists(service) {
 		trust = selfPath()
+		if err := refuseControl(service, trust); err != nil {
+			return err
+		}
 	}
-	timedOut, stderr, err := runSecurity(addCommand(service, currentUser(), trust, string(payload)))
+	line := addCommand(service, user, trust, string(payload))
+	if err := lineFits(service, line, len(payload)); err != nil {
+		return err
+	}
+	timedOut, stderr, err := runSecurity(line)
 	if err != nil {
 		if timedOut {
 			// The content can be stored even though the command never
@@ -138,6 +187,44 @@ func Write(service string, b *Blob) error {
 		return fmt.Errorf("writing keychain item %q: %w (%s)", service, err, stderr)
 	}
 	return readBack(service, b)
+}
+
+// SecurityLineMax is the longest command line, newline included, that a write
+// sends to security -i. security -i truncates longer input lines (4096 bytes;
+// Claude Code issue #30337), and Claude Code's own writes use 4032 as the
+// limit for the same line, so this does too (GROUND_TRUTH §43).
+const SecurityLineMax = 4032
+
+// lineFits refuses a security -i line over SecurityLineMax. Never the
+// payload in the error, and never the argv fallback Claude Code uses here:
+// argv is readable by every process (DESIGN 4.2).
+func lineFits(service, line string, payload int) error {
+	if len(line) <= SecurityLineMax {
+		return nil
+	}
+	return fmt.Errorf("not writing keychain item %q: the command is %d bytes and security -i "+
+		"reads at most %d per line, so the credential would be stored truncated. "+
+		"claudeswitch never passes secrets on argv instead (DESIGN 4.2), so nothing was "+
+		"written; the payload is %d bytes, usually from many MCP server logins in the "+
+		"live item", service, len(line), SecurityLineMax, payload)
+}
+
+// checkLiveWrite says whether Write would accept b for a live item, without
+// writing. A live item never gets an access list from us, so its line is the
+// one Write builds.
+func checkLiveWrite(service, _ string, b *Blob) error {
+	if b == nil || b.ClaudeAIOAuth == nil {
+		return fmt.Errorf("refusing to write a credential with no claudeAiOauth section")
+	}
+	payload, err := json.Marshal(b)
+	if err != nil {
+		return err
+	}
+	user := currentUser()
+	if err := refuseControl(service, service, user); err != nil {
+		return err
+	}
+	return lineFits(service, addCommand(service, user, "", string(payload)), len(payload))
 }
 
 // addCommand is the security(1) interactive command that stores payload. An
@@ -166,7 +253,7 @@ var (
 func securityItemExists(service string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 	defer cancel()
-	err := exec.CommandContext(ctx, "security", "find-generic-password", "-s", service).Run()
+	err := exec.CommandContext(ctx, securityBinary(), "find-generic-password", "-s", service).Run()
 	var exit *exec.ExitError
 	if errors.As(err, &exit) && exit.ExitCode() == 44 { // errSecItemNotFound
 		return false
@@ -174,10 +261,42 @@ func securityItemExists(service string) bool {
 	return true
 }
 
+// lookupArgs is the security(1) invocation that checks an item exists. No -w
+// and no -g: asking for the secret is what prompts, and this must not.
+func lookupArgs(service string) []string {
+	return []string{"find-generic-password", "-s", service}
+}
+
+// lookupItem reports whether a keychain item exists, from its attributes alone.
+func lookupItem(service string) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
+	defer cancel()
+	err := exec.CommandContext(ctx, securityBinary(), lookupArgs(service)...).Run()
+	return classifyLookup(err, ctx.Err() == context.DeadlineExceeded)
+}
+
+// classifyLookup turns a lookup's outcome into an answer. Only exit 44
+// (errSecItemNotFound) means absent; any other failure is an error, because
+// calling an unanswering keychain "absent" would report a live credential as
+// missing.
+func classifyLookup(err error, timedOut bool) (bool, error) {
+	if timedOut {
+		return false, fmt.Errorf("keychain lookup timed out after %s: %w", readTimeout, ErrUnavailable)
+	}
+	if err == nil {
+		return true, nil
+	}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 44 {
+		return false, nil
+	}
+	return false, fmt.Errorf("keychain lookup failed: %w", err)
+}
+
 func runSecurityInteractive(stdin string) (timedOut bool, stderr string, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 	defer cancel()
-	c := exec.CommandContext(ctx, "security", "-i")
+	c := exec.CommandContext(ctx, securityBinary(), "-i")
 	c.Stdin = strings.NewReader(stdin)
 	var errb bytes.Buffer
 	c.Stderr = &errb
@@ -189,9 +308,15 @@ func runSecurityInteractive(stdin string) (timedOut bool, stderr string, err err
 func Delete(service string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "security", "delete-generic-password", "-s", service).CombinedOutput()
+	out, err := exec.CommandContext(ctx, securityBinary(), "delete-generic-password", "-s", service).CombinedOutput()
 	if err != nil && !strings.Contains(string(out), "could not be found") {
 		return fmt.Errorf("deleting keychain item %q: %w", service, err)
 	}
 	return nil
 }
+
+// The keychain item is the live credential on macOS; the Linux file path is
+// not used here.
+func liveItemName(service, _ string) string          { return service }
+func readLiveItem(service, _ string) (*Blob, error)  { return Read(service) }
+func writeLiveItem(service, _ string, b *Blob) error { return Write(service, b) }

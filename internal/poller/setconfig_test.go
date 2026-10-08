@@ -16,7 +16,7 @@ import (
 func TestSetConfigMakesAnAddedAccountDueAtOnce(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	old := &config.Config{Accounts: []config.Account{{ID: "a"}, {ID: "gone"}}}
-	p := New(old, &state.State{Accounts: map[string]*state.Account{}, Active: "a"},
+	p := New(old, &state.State{Accounts: map[string]*state.Account{}},
 		slog.New(slog.NewTextHandler(io.Discard, nil)))
 	p.budget = usage.NewBudget()
 	now := time.Now()

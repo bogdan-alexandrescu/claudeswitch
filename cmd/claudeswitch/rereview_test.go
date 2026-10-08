@@ -17,7 +17,7 @@ import (
 func holdFixture() (*config.Config, *state.State) {
 	next := testCfg() // poll_active 1m
 	next.Accounts = []config.Account{{ID: "b", Scope: "work"}}
-	return next, &state.State{Active: "a", Accounts: map[string]*state.Account{"a": {}, "b": {}}}
+	return next, &state.State{Profiles: map[string]*state.ProfileState{state.DefaultProfile: {Active: "a"}}, Accounts: map[string]*state.Account{"a": {}, "b": {}}}
 }
 
 // Removing the account whose credential is still live leaves nothing to
@@ -29,18 +29,18 @@ func TestHoldLiftsAfterTwoActivePollsWhenNothingCanBeAttributed(t *testing.T) {
 	log, buf := captureLog()
 	h := activeHold{now: func() time.Time { return clock }, log: log}
 
-	before := st.Active
+	before := st.Default().Active
 	st.Reconcile(pinnedOf(cfg))
-	h.afterReload(before, st)
-	st.SetActive(state.Unattributed) // what PollActive does with a credential nobody owns
+	h.afterReload(before, st.Default().Active)
+	st.Default().SetActive(state.Unattributed) // what PollActive does with a credential nobody owns
 
 	want := policy.Decision{Kind: policy.Switch, Target: "b", Reason: "no active account yet"}
 	clock = clock.Add(cfg.PollActive.Duration)
-	if d := h.gate(want, st, cfg); d.Kind == policy.Switch {
+	if d := h.gate(want, st.Default().Active, cfg); d.Kind == policy.Switch {
 		t.Fatal("inside the bound the hold still applies")
 	}
 	clock = clock.Add(cfg.PollActive.Duration + time.Second)
-	if d := h.gate(want, st, cfg); d != want {
+	if d := h.gate(want, st.Default().Active, cfg); d != want {
 		t.Fatalf("after two active polls the hold must lift and normal policy apply, got %v", d)
 	}
 	if !strings.Contains(buf.String(), "lifted") || !strings.Contains(buf.String(), "removed_account=a ") {
@@ -55,12 +55,12 @@ func TestHoldLiftsAtOnceWhenTheLiveCredentialIsAttributed(t *testing.T) {
 	cfg, st := holdFixture()
 	log, buf := captureLog()
 	h := activeHold{log: log}
-	before := st.Active
+	before := st.Default().Active
 	st.Reconcile(pinnedOf(cfg))
-	h.afterReload(before, st)
-	st.SetActive("b")
+	h.afterReload(before, st.Default().Active)
+	st.Default().SetActive("b")
 	want := policy.Decision{Kind: policy.Stay, Reason: "fine"}
-	if d := h.gate(want, st, cfg); d != want || h.holding() {
+	if d := h.gate(want, st.Default().Active, cfg); d != want || h.holding() {
 		t.Fatalf("got %v, holding=%v", d, h.holding())
 	}
 	if !strings.Contains(buf.String(), "lifted") || !strings.Contains(buf.String(), "b") {

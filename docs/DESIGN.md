@@ -113,6 +113,47 @@ An account whose usage cannot be read is `unknown`, and `unknown` is never a rot
 target. Symmetrically, an *unknown active* account causes a hold rather than a rotation —
 rotating away from a working session on no evidence is worse than waiting for the poller.
 
+**The hold has a limit** (amended 2026-10-07, IMPROVEMENTS A2). Waiting for the poller is
+right while the poller is about to catch up; it stops being right once it plainly is not.
+A daemon blind on the account being spent cannot see it approach its limit, and the
+stale reading's projection is only a guess. So when the active account's usage has been
+unreadable for `blind_failover_polls` consecutive polls (default 3), and its last good
+reading is at least that many `poll_active` intervals old, the policy fails over to a
+*healthy* account: one whose own last poll succeeded and that sits at least
+`landing_margin` points under its trigger. It is an ordinary rotation for timing — it
+respects the cooldown and the idle-gap preference, and D18/§3 still refuses a target live
+in another profile. With no healthy account, it keeps holding (a Stay, not a Wait).
+
+Two things are deliberately not blindness:
+
+- **A 429** from the usage endpoint is its own burst limit, per account, clearing within
+  10–15 minutes (GROUND_TRUTH §42), and says nothing about whether the account can work.
+  It neither counts nor clears the count. If the account really is refusing work, the
+  rejection detector burns it (4.6) and that rotates on its own, blind or not.
+- **An access token that expired on an idle session**, with a live refresh token. Claude
+  Code refreshes it on the next message and the daemon re-captures it; failing over would
+  move an idle session for nothing. The same expired token on a *busy* session is not
+  explained that way — Claude Code would have refreshed it to keep working — so it counts.
+
+`blind_failover_polls = 0` restores the unconditional hold.
+
+### 4.4a A switch lands with room to spare
+
+A rotation target needs `landing_margin` points (default 10) of room below **its own**
+trigger, on the same figures eligibility uses (IMPROVEMENTS A1). Landing one point under
+the line means the next poll rotates away again — or, with the cooldown, holds the session
+on an account with no headroom. When every account with room is inside the margin:
+
+- an ordinary rotation (over the trigger, under the hard floor) **holds** and says which
+  accounts the margin excluded. It is a Stay, not a Wait: "every account is out" would be
+  false, and the hard floor still guarantees the switch happens before it matters;
+- past the **hard floor**, or after a **refusal**, staying is worse than landing close to
+  a trigger, so it takes the best account inside the margin and says so;
+- with no active account at all it does the same, since there is nothing to stay on.
+
+`why` marks an account excluded by the margin and gives its room; `plan` names them in
+the reason.
+
 ### 4.5 The reserve governs entry, not tenancy
 
 Personal is ineligible as work overflow above 70% utilization. But once personal is the

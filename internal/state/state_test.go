@@ -66,21 +66,21 @@ func TestActiveMergesByRecencyNotByOwner(t *testing.T) {
 
 	// The daemon establishes "personal" and saves.
 	daemon, _ := Load(path)
-	daemon.SetActive("personal")
+	daemon.Default().SetActive("personal")
 	if err := daemon.SaveAs(OwnerDaemon); err != nil {
 		t.Fatal(err)
 	}
 
 	// A CLI swap to "work" happens afterwards.
 	cli, _ := Load(path)
-	cli.SetActive("work")
-	cli.ActiveAt = daemon.ActiveAt.Add(time.Second)
+	cli.Default().SetActive("work")
+	cli.Default().ActiveAt = daemon.Default().ActiveAt.Add(time.Second)
 	if err := cli.SaveAs(OwnerCLI); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := Load(path)
-	if got.Active != "work" {
-		t.Fatalf("the newer observation must win: got %q, want work", got.Active)
+	if got.Default().Active != "work" {
+		t.Fatalf("the newer observation must win: got %q, want work", got.Default().Active)
 	}
 
 	// Now the daemon, still believing "personal" from before, saves again. Its
@@ -89,8 +89,8 @@ func TestActiveMergesByRecencyNotByOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ = Load(path)
-	if got.Active != "work" {
-		t.Fatalf("a stale daemon save reverted a newer swap: got %q, want work", got.Active)
+	if got.Default().Active != "work" {
+		t.Fatalf("a stale daemon save reverted a newer swap: got %q, want work", got.Default().Active)
 	}
 }
 
@@ -99,20 +99,20 @@ func TestDaemonObservationWinsWhenItIsNewer(t *testing.T) {
 	path := dir + "/state.json"
 
 	cli, _ := Load(path)
-	cli.SetActive("work")
+	cli.Default().SetActive("work")
 	if err := cli.SaveAs(OwnerCLI); err != nil {
 		t.Fatal(err)
 	}
 
 	daemon, _ := Load(path)
-	daemon.SetActive("personal") // observed later, e.g. after an external login
-	daemon.ActiveAt = cli.ActiveAt.Add(time.Second)
+	daemon.Default().SetActive("personal") // observed later, e.g. after an external login
+	daemon.Default().ActiveAt = cli.Default().ActiveAt.Add(time.Second)
 	if err := daemon.SaveAs(OwnerDaemon); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := Load(path)
-	if got.Active != "personal" {
-		t.Fatalf("got %q, want personal", got.Active)
+	if got.Default().Active != "personal" {
+		t.Fatalf("got %q, want personal", got.Default().Active)
 	}
 }
 
@@ -170,7 +170,7 @@ func TestReconcileKeepsPreSeatRecordsWithAConsistentOrganization(t *testing.T) {
 }
 
 func TestReconcileDropsUnconfiguredAccountsAndClearsActive(t *testing.T) {
-	s := &State{Active: "gone", Accounts: map[string]*Account{
+	s := &State{Profiles: map[string]*ProfileState{DefaultProfile: {Active: "gone"}}, Accounts: map[string]*Account{
 		"gone": {ID: "gone", OrgID: "abc"},
 		"kept": {ID: "kept", OrgID: "def"},
 	}}
@@ -178,8 +178,8 @@ func TestReconcileDropsUnconfiguredAccountsAndClearsActive(t *testing.T) {
 	if _, still := s.Accounts["gone"]; still {
 		t.Fatal("an account no longer in the config must not linger")
 	}
-	if s.Active != "" {
-		t.Fatalf("Active must not point at a dropped account, got %q", s.Active)
+	if s.Default().Active != "" {
+		t.Fatalf("Active must not point at a dropped account, got %q", s.Default().Active)
 	}
 }
 

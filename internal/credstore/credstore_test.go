@@ -100,7 +100,7 @@ func TestIsVaultServiceDistinguishesOurEntries(t *testing.T) {
 	if !IsVaultService(VaultService("work")) {
 		t.Error("our own entries must be recognised")
 	}
-	if IsVaultService(LiveService) {
+	if IsVaultService(liveServiceBase) {
 		t.Error("the live credential is not one of our vault entries")
 	}
 }

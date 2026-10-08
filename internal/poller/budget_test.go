@@ -100,7 +100,7 @@ func TestHotPollingFollowsTheConfiguredThreshold(t *testing.T) {
 		weekly float64
 		want   time.Duration
 	}{{61, 2 * time.Minute}, {90, 20 * time.Second}} {
-		p := New(cfg, &state.State{Active: "a", Accounts: map[string]*state.Account{}},
+		p := New(cfg, &state.State{Profiles: map[string]*state.ProfileState{state.DefaultProfile: {Active: "a"}}, Accounts: map[string]*state.Account{}},
 			slog.New(slog.NewTextHandler(io.Discard, nil)))
 		acct := at(10, c.weekly, now)
 		acct.ID = "a"

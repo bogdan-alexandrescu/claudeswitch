@@ -13,9 +13,23 @@ type (
 	OAuth = credstore.OAuth
 	Meta  = credstore.Meta
 	Blob  = credstore.Blob
+	// Live is one profile's live credential; see credstore.Live.
+	Live = credstore.Live
+	// LockDirer is a Live that names the dir Claude Code locks; see
+	// credstore.LockDirer.
+	LockDirer = credstore.LockDirer
+	// WriteChecker is a Live that can check a write without making it.
+	WriteChecker = credstore.WriteChecker
+	// ItemRefer is a Live that can name its concrete item.
+	ItemRefer = credstore.ItemRefer
 )
 
-const LiveService = credstore.LiveService
+// RecoveryService names a profile's recovery item; see credstore.
+var (
+	RecoveryService     = credstore.RecoveryService
+	RecoverySlotID      = credstore.RecoverySlotID
+	ParseRecoverySlotID = credstore.ParseRecoverySlotID
+)
 
 var (
 	Read         = credstore.Read
@@ -24,10 +38,18 @@ var (
 	VaultService = credstore.VaultService
 	Redact       = credstore.Redact
 	MergeForSwap = credstore.MergeForSwap
-)
 
-// ReadLive returns the credential Claude Code is currently using.
-func ReadLive() (*Blob, error) { return credstore.Read(credstore.LiveService) }
+	// LiveService resolves the item Claude Code reads under this process's
+	// CLAUDE_CONFIG_DIR; ReadLive and WriteLive go through it.
+	LiveService = credstore.LiveService
+	ReadLive    = credstore.ReadLive
+	WriteLive   = credstore.WriteLive
+	EnvLive     = credstore.EnvLive
+	LiveItem    = credstore.LiveItem
+
+	// ErrNotFound: the item is not stored at all, so it holds nothing.
+	ErrNotFound = credstore.ErrNotFound
+)
 
 // Backend describes where credentials live on this platform.
 const Backend = credstore.Backend

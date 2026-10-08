@@ -4,6 +4,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -32,6 +34,7 @@ import (
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/oauth"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/policy"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/poller"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/profile"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/render"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/session"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/state"
@@ -89,6 +92,10 @@ func main() {
 		err = cmdRename(args)
 	case "identify":
 		err = cmdIdentify(args)
+	case "recovery":
+		err = cmdRecovery(args)
+	case "profile":
+		err = cmdProfile(args)
 	case "remove":
 		err = cmdRemove(args)
 	case "session":
@@ -153,6 +160,15 @@ func usageText() {
   whoami     which Claude account is live right now
   identify   record which seat each vaulted credential belongs to
   refresh    renew a vaulted account's credential (never the live one)
+  recovery   credentials a swap kept because it could not tell whose they were;
+             restore <slot> <account> vaults one, clear <slot> deletes one
+  profile forget <name>
+             release the guard on a removed or re-pointed profile's old credential
+
+  Several Claude Code profiles ([[profile]] in the config): use, add, login,
+  whoami, status, top, why and plan take --profile NAME. Without it, a command
+  acts on the profile this shell's CLAUDE_CONFIG_DIR belongs to (use, add,
+  login, whoami), or shows every profile (status, top, why, plan).
 
 `)
 }
@@ -191,17 +207,27 @@ func logger(verbose bool) *slog.Logger {
 // load pulls config and state together, tolerating a missing config so that
 // `status` still says something useful on a fresh machine.
 func load(cfgPath string) (*config.Config, *state.State, error) {
-	cfg, err := config.Load(cfgPath)
+	return loadWith(config.Load, cfgPath)
+}
+
+// loadWith is load with another config loader (rename's lenient one).
+func loadWith(loader func(string) (*config.Config, error), cfgPath string) (*config.Config, *state.State, error) {
+	cfg, err := loader(cfgPath)
 	if err != nil && cfg == nil {
 		return nil, nil, err
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "note: %v\n", err)
 	}
-	st, serr := state.Load("")
+	// Every configured profile is materialised at load, so the daemon's
+	// goroutines only ever read the profile map (see state.Load).
+	st, serr := state.Load("", cfg.ProfileNames()...)
 	if serr != nil {
 		fmt.Fprintf(os.Stderr, "note: %v\n", serr)
 	}
+	// An older daemon may still read state fields this binary no longer
+	// writes (D10); every command that goes through here says so.
+	warnStaleDaemon(st)
 	// Throw away observations that cannot be trusted before anything reads them.
 	// Pin on the seat: the organization alone cannot distinguish two colleagues.
 	pinned := map[string]string{}
@@ -230,10 +256,14 @@ func cmdStatus(args []string) error {
 	maxAge := fs.Duration("max-age", 0,
 		"refresh any account whose reading is older than this (default: three poll intervals)")
 	verbose := fs.Bool("v", false, "verbose logging")
+	only := fs.String("profile", "", "show only this Claude Code profile (default: every one)")
 	parseInterleaved(fs, args)
 
 	cfg, st, err := load(*cfgPath)
 	if err != nil {
+		return err
+	}
+	if err := checkProfileFlag(cfg, *only); err != nil {
 		return err
 	}
 	log := logger(*verbose)
@@ -281,11 +311,6 @@ func cmdStatus(args []string) error {
 	if *asJSON {
 		return emitJSON(statusJSON(cfg, st, p))
 	}
-	switches := recentSwitches(5)
-	dec := policy.Decide(policy.Input{
-		Cfg: cfg, St: st, Now: time.Now(), LastSwitch: st.LastSwitch,
-		Pinned: st.Pinned, Dir: currentDir(), Lookahead: lookahead(cfg),
-	})
 	vlt := vault.New(log)
 	vaulted := map[string]bool{}
 	plans := map[string]string{}
@@ -293,11 +318,12 @@ func cmdStatus(args []string) error {
 		vaulted[a.ID] = vlt.Has(a.ID)
 		plans[a.ID] = vlt.PlanOf(a.ID)
 	}
-	render.Status(os.Stdout, render.Options{
-		Cfg: cfg, St: st, Budget: p.Budget(), Degraded: degraded, DegradedWhy: why,
+	renderStatus(os.Stdout, cfg, st, render.Options{
+		Budget: p.Budget(), Degraded: degraded, DegradedWhy: why,
 		DaemonOwns: daemonOwns, Vaulted: vaulted, Plans: plans, Detail: *detail,
-		Switches: switches, Known: knownAccounts(cfg), Decision: &dec,
-	})
+		Known: knownAccounts(cfg),
+	}, recentSwitches(5), time.Now(), currentDir(), *only)
+	fmt.Print(ghostLines(st.GhostList()))
 	return nil
 }
 
@@ -324,7 +350,6 @@ func cmdWatch(args []string) error {
 	defer dlock.Release()
 
 	p := poller.New(cfg, st, log)
-	d := detector.New("", log)
 	v := vault.New(log)
 	nt := notify.New(!*quiet)
 	aud, aerr := audit.Open("")
@@ -339,23 +364,34 @@ func cmdWatch(args []string) error {
 			FromSeverity: from, ToSeverity: to, Percent: &pct})
 	}
 
+	// One loop per profile, each with its own detector and live item. With
+	// no [[profile]] blocks there is one, resolved from this process's
+	// environment exactly as before profiles (docs/PROFILES.md §7).
+	d := &daemon{
+		cfg: cfg, st: st, p: p, v: v, aud: aud, nt: nt, log: log,
+		live: *live, idleGap: *idleGap,
+		save:     func() error { return st.SaveAs(state.OwnerDaemon) },
+		saveCLI:  st.Save,
+		resolve:  liveFor,
+		projects: projectsFor,
+		newDet:   newDetector,
+		profs:    buildProfiles(cfg, log, liveFor, projectsFor, newDetector),
+	}
+	p.Busy = d.busy
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	stop := make(chan struct{})
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 
-	go func() {
-		if err := d.Run(stop); err != nil {
-			log.Error("detector stopped", "err", err)
-		}
-	}()
+	d.startDetectors(stop)
 
 	// The config is re-read when it changes, so an account that login or add
 	// writes into it is polled without a restart. The watcher only signals; the
-	// reload itself happens below, on this goroutine, which owns cfg, the
-	// poller and the state.
-	reloader := newConfigReloader(cfg.Path, cfg, log)
+	// reload itself happens in d.run's select, on the goroutine that owns cfg,
+	// the poller and the state.
+	d.reloader = newConfigReloader(cfg.Path, cfg, log)
 	if t, err := configTarget(cfg.Path); err == nil {
 		cleanStaleConfigTemps(t)
 	}
@@ -363,256 +399,16 @@ func cmdWatch(args []string) error {
 	if werr != nil {
 		log.Warn("cannot watch the config; changes to it need a daemon restart", "path", cfg.Path, "err", werr)
 	}
+	d.cfgChanged = cfgChanged
 
-	mode := "DRY RUN — decisions are reported, nothing is changed"
-	if *live {
-		mode = "LIVE — swaps will be performed"
-	}
-	log.Info("watching", "mode", mode, "endpoint", usage.Endpoint, "transcripts", detector.ProjectsRoot())
-
-	st.DaemonLive = *live
-	st.DaemonSince = time.Now()
-	if _, err := p.PollActive(ctx); err != nil {
-		log.Warn("initial active poll failed", "err", err)
-	}
-	_ = st.SaveAs(state.OwnerDaemon)
-
-	lastDecisionSig := ""
-	// wantSwitchSince tracks how long a switch has been wanted but deferred, so
-	// the idle-gap preference cannot defer it forever.
-	var wantSwitchSince time.Time
-	// lastWaitSig stops the exhausted-everything warning repeating every tick.
-	lastWaitSig := ""
-	lastReattribute := time.Now() // PollActive already ran at startup
-	// hold keeps a config reload that removed the active account from turning
-	// into a swap; see activeHold.
-	hold := activeHold{log: log}
-
-	// evaluate runs the policy engine and, when live and the moment is right,
-	// performs the swap.
-	evaluate := func(trigger string) {
-		dec := policy.Decide(policy.Input{
-			Cfg: cfg, St: st, Now: time.Now(), LastSwitch: st.LastSwitch, Pinned: st.Pinned,
-			Dir: d.CurrentDir(), Lookahead: lookahead(cfg),
-		})
-		dec = hold.gate(dec, st, cfg)
-		// Only record a decision when it says something new. A tick every twenty
-		// seconds writing "stay" produced 377 rows in one evening and buried the
-		// one rejection that mattered.
-		sig := string(dec.Kind) + "|" + dec.Target + "|" + dec.Reason
-		if sig != lastDecisionSig {
-			lastDecisionSig = sig
-			ev := audit.Event{Kind: "decision", Decision: string(dec.Kind), From: st.Active,
-				To: dec.Target, Reason: dec.Reason, Forced: dec.Forced, DryRun: !*live}
-			if a, ok := st.Accounts[st.Active]; ok && a.Last != nil {
-				f, sv := a.Last.FiveHour.Pct(), a.Last.SevenDay.Pct()
-				ev.FiveHour, ev.SevenDay = &f, &sv
-			}
-			_ = aud.Write(ev)
-		}
-
-		// Acting on a reading that is too old to trust is how the daemon sat at
-		// 93% without rotating: its polls were failing, "stay" is logged at
-		// debug level, and nothing said a word. Staleness is now loud.
-		if a, ok := st.Accounts[st.Active]; ok && a.Last != nil {
-			if age := time.Since(a.LastAt); age > staleDecisionAfter(cfg) {
-				log.Warn("deciding on a stale reading — the poller is not keeping up",
-					"account", st.Active, "age", age.Round(time.Second),
-					"reading", fmt.Sprintf("%.0f%%", a.Projected(time.Now())),
-					"last_error", a.LastErr)
-			}
-		}
-		// About to conclude there is nowhere to go? Check that on current
-		// figures before acting on it. Ten-minute-old readings of the other
-		// accounts are exactly how this ends up stuck at 100% while a reset
-		// account sits idle.
-		if dec.Kind == policy.Wait {
-			if n := p.RefreshCandidates(ctx, 2*time.Minute); n > 0 {
-				dec = policy.Decide(policy.Input{
-					Cfg: cfg, St: st, Now: time.Now(), LastSwitch: st.LastSwitch,
-					Pinned: st.Pinned, Dir: d.CurrentDir(), Lookahead: lookahead(cfg),
-				})
-				dec = hold.gate(dec, st, cfg)
-				if dec.Kind == policy.Switch {
-					log.Info("a re-read found room after all", "target", dec.Target,
-						"rechecked", n)
-				}
-			}
-		}
-
-		if dec.Kind != policy.Switch {
-			wantSwitchSince = time.Time{}
-			// Say it once per distinct situation, not every twenty seconds.
-			if dec.Kind == policy.Wait && sig != lastWaitSig {
-				lastWaitSig = sig
-				log.Warn("nowhere to rotate to — every account is out",
-					"reason", dec.Reason, "recovers", dec.RecoversAccount,
-					"at", dec.RecoversAt.Local().Format("15:04"))
-				nt.Exhausted(dec.RecoversAccount, dec.RecoversAt)
-			} else if dec.Kind != policy.Wait {
-				lastWaitSig = ""
-			}
-			log.Debug("no rotation", "decision", dec.String(), "trigger", trigger)
-			return
-		}
-
-		// Prefer an idle gap so a turn is never split across two accounts — but
-		// only for so long. A session in continuous use never goes quiet, so
-		// holding out indefinitely means the switch never happens until the hard
-		// floor, which is the opposite of what this tool is for.
-		if wantSwitchSince.IsZero() {
-			wantSwitchSince = time.Now()
-		}
-		waited := time.Since(wantSwitchSince)
-		if !dec.Forced && !d.IdleFor(*idleGap) {
-			if waited < cfg.MaxSwitchWait.Duration {
-				log.Info("switch wanted, session busy — waiting for an idle gap",
-					"target", dec.Target, "reason", dec.Reason,
-					"waited", waited.Round(time.Second),
-					"will_force_after", cfg.MaxSwitchWait.Duration)
-				return
-			}
-			log.Info("switch wanted and the session has not gone idle; going ahead anyway",
-				"target", dec.Target, "waited", waited.Round(time.Second))
-		}
-
-		if !*live {
-			log.Warn("WOULD SWITCH (dry run)", "from", st.Active, "to", dec.Target,
-				"because", dec.Reason, "forced", dec.Forced)
-			return
-		}
-
-		expectOrg := ""
-		for _, a := range cfg.Accounts {
-			if a.ID == dec.Target {
-				expectOrg = a.OrgID
-			}
-		}
-		if expectOrg == "" {
-			if a, ok := st.Accounts[dec.Target]; ok {
-				expectOrg = a.OrgID
-			}
-		}
-		swapCtx, swapCancel := context.WithTimeout(ctx, 40*time.Second)
-		res, serr := v.SwapTo(swapCtx, dec.Target, expectOrg)
-		swapCancel()
-		if serr != nil {
-			log.Error("swap failed", "target", dec.Target, "err", serr,
-				"rolled_back", res != nil && res.RolledBack)
-			_ = aud.Write(audit.Event{Kind: "error", To: dec.Target, Reason: dec.Reason,
-				Err: serr.Error()})
-			return
-		}
-		from := st.Active
-		wantSwitchSince = time.Time{}
-		st.SetActive(dec.Target)
-		st.LastSwitch = time.Now()
-		if res.Usage != nil {
-			a := st.Get(dec.Target)
-			a.Last, a.LastAt, a.OrgID = res.Usage, res.Usage.FetchedAt, res.OrgID
-		}
-		_ = st.SaveAs(state.OwnerDaemon)
-		_ = aud.Write(audit.Event{Kind: "switch", From: from, To: dec.Target,
-			Reason: dec.Reason, Forced: dec.Forced})
-		log.Info("switched", "from", from, "to", dec.Target, "because", dec.Reason)
-		headroom := ""
-		if res.Usage != nil {
-			_, worst := res.Usage.Worst()
-			headroom = fmt.Sprintf("%.0f%% used", worst)
-		}
-		nt.Switched(from, dec.Target, dec.Reason, headroom)
-	}
-
-	evaluate("startup")
+	d.adoptOfflineGhosts()
+	d.start(ctx)
 
 	tick := time.NewTicker(20 * time.Second)
 	defer tick.Stop()
 	save := time.NewTicker(2 * time.Minute)
 	defer save.Stop()
-
-	for {
-		select {
-		case <-sig:
-			log.Info("stopping")
-			close(stop)
-			_ = st.SaveAs(state.OwnerDaemon)
-			return nil
-		case <-tick.C:
-			p.Tick(ctx)
-			evaluate("poll")
-
-			// A daemon that cannot see is worse than no daemon: it keeps
-			// deciding, on figures that stopped moving. If nothing has been read
-			// for long enough that this is a fault rather than a hiccup, say so
-			// and stand down — the service manager restarts a process that
-			// exits, and a fresh one has a far better chance than a wedged one.
-			if blind, tooLong := p.Blind(blindLimit(cfg)); tooLong {
-				log.Error("no successful reading for too long — exiting so the service manager can restart me",
-					"blind_for", blind.Round(time.Second),
-					"limit", blindLimit(cfg))
-				nt.Send("blind", "claudeswitch restarting",
-					"no usage reading for "+blind.Round(time.Minute).String())
-				close(stop)
-				_ = st.SaveAs(state.OwnerDaemon)
-				return fmt.Errorf("blind for %s", blind.Round(time.Second))
-			}
-		case <-save.C:
-			// Re-derive which account is actually live. Doing this only at
-			// startup meant a rate-limited first poll left the daemon believing
-			// the wrong account was active for the rest of its life. Doing it on
-			// every save tick was the opposite mistake: an extra priority call
-			// every two minutes, which starved the scheduled polls.
-			if time.Since(lastReattribute) >= poller.ReattributeInterval {
-				lastReattribute = time.Now()
-				if _, err := p.PollActive(ctx); err != nil {
-					log.Debug("could not re-confirm the active account", "err", err)
-				}
-			}
-			if err := st.SaveAs(state.OwnerDaemon); err != nil {
-				log.Warn("state save failed", "err", err)
-			}
-			warnExpiringRefresh(st, nt)
-			maintainVault(ctx, v, st, cfg, log, nt, *live)
-		case <-cfgChanged:
-			next, _ := reloader.reload()
-			if next == cfg {
-				continue // unloadable: the previous config stays in force
-			}
-			cfg = next
-			p.SetConfig(cfg)
-			// Observations the new pins contradict are discarded, as every
-			// command does at startup; a newly pinned account keeps its own.
-			activeBefore := st.Active
-			if dropped := st.Reconcile(pinnedOf(cfg)); len(dropped) > 0 {
-				log.Info("discarded observations the reloaded config contradicts", "accounts", dropped)
-			}
-			hold.afterReload(activeBefore, st)
-			if hold.holding() {
-				log.Warn("the reloaded config no longer has the active account; holding, not swapping, "+
-					"until the live credential is attributed again", "account", activeBefore)
-				if _, err := p.PollActive(ctx); err != nil {
-					log.Debug("could not re-attribute the live credential yet", "err", err)
-				}
-				lastReattribute = time.Now()
-			}
-			_ = st.SaveAs(state.OwnerDaemon)
-			evaluate("config")
-		case r := <-d.Rejections():
-			active := st.Active
-			if active == "" {
-				active = "active"
-			}
-			p.ApplyRejection(active, r.Type, r.ResetsAt)
-			_ = aud.Write(audit.Event{Kind: "rejection", From: active, Window: r.Type,
-				ResetsAt: r.ResetsAt})
-			log.Warn("account refused", "account", active, "window", r.Type,
-				"clears_in", time.Until(r.ResetsAt).Round(time.Second),
-				"detect_latency", r.Latency.Round(time.Millisecond),
-				"worst_latency", d.WorstLatency().Round(time.Millisecond))
-			_ = st.SaveAs(state.OwnerDaemon)
-			evaluate("rejection") // a refusal always re-decides immediately
-		}
-	}
+	return d.run(ctx, stop, sig, tick.C, save.C)
 }
 
 func cmdAudit(args []string) error {
@@ -720,12 +516,87 @@ func cmdHistory(args []string) error {
 	return nil
 }
 
+// doctorDeps are doctor's reaches into the keychain and the network, so a test
+// can run every check without either.
+type doctorDeps struct {
+	readLive   func() (*keychain.Blob, error)
+	fetchUsage func(ctx context.Context, token string) (*usage.Usage, error)
+	resolve    func(config.Profile) (profile.Resolved, error)
+	duplicates func(*config.Config, *state.State) string
+	// verifyOne signs in as a vaulted account: whether it is vaulted, and who
+	// its credential belongs to.
+	verifyOne func(id string) (vaulted bool, pr *usage.Profile, err error)
+	vaulted   func(*config.Config) int
+	// recovery lists the kept recovery copies (IMPROVEMENTS I1a); nil skips
+	// the check.
+	recovery func(*config.Config) []vault.RecoveryItem
+	// ghosts lists the ghosts still guarding; nil skips the check.
+	ghosts func() []*state.Ghost
+}
+
+var doctorSeams = doctorDeps{
+	readLive: keychain.ReadLive,
+	fetchUsage: func(ctx context.Context, token string) (*usage.Usage, error) {
+		return usage.NewClient().Fetch(ctx, token)
+	},
+	resolve:    profile.Resolve,
+	duplicates: checkDuplicateCredentials,
+	vaulted:    countVaulted,
+	recovery: func(cfg *config.Config) []vault.RecoveryItem {
+		return vault.ListRecovery(cfg.ProfileNames())
+	},
+	ghosts: func() []*state.Ghost {
+		st, err := state.Load("")
+		if err != nil || st == nil {
+			return nil
+		}
+		return st.GhostList()
+	},
+	verifyOne: func(id string) (bool, *usage.Profile, error) {
+		v := vault.New(logger(false))
+		if !v.Has(id) {
+			return false, nil, nil
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		cred, err := v.Load(id)
+		if err != nil {
+			return true, nil, err
+		}
+		pr, err := v.Identify(ctx, cred.AccessToken)
+		return true, pr, err
+	},
+}
+
+// failTally passes doctor's output through and counts its FAIL marks, so the
+// exit status follows from what was printed (D14): a check cannot print FAIL
+// and still let doctor succeed. Each mark is written by one Fprintf, so it is
+// never split across two writes.
+type failTally struct {
+	w io.Writer
+	n int
+}
+
+func (f *failTally) Write(p []byte) (int, error) {
+	f.n += bytes.Count(p, []byte("[FAIL]"))
+	return f.w.Write(p)
+}
+
 func cmdDoctor(args []string) error {
 	fs := flag.NewFlagSet("doctor", flag.ExitOnError)
 	cfgPath := fs.String("config", "", "path to config.toml")
 	deep := fs.Bool("verify", false,
 		"also confirm every vaulted credential still authenticates (one API call each)")
 	parseInterleaved(fs, args)
+	return runDoctor(os.Stdout, *cfgPath, *deep)
+}
+
+// runDoctor prints every check and fails when any printed FAIL. Warnings and
+// info lines never fail it.
+func runDoctor(stdout io.Writer, cfgPath string, deep bool) error {
+	tally := &failTally{w: stdout}
+	w := io.Writer(tally)
+	deps := doctorSeams
 
 	ok := func(b bool) string {
 		if b {
@@ -733,78 +604,116 @@ func cmdDoctor(args []string) error {
 		}
 		return "FAIL"
 	}
-	fmt.Println()
+	fmt.Fprintln(w)
 
-	cfg, cerr := config.Load(*cfgPath)
-	fmt.Printf("  [%s] config          %s\n", ok(cerr == nil), cfg.Path)
+	cfg, cerr := config.Load(cfgPath)
+	shown := cfgPath
+	if cfg != nil {
+		shown = cfg.Path
+	} else if shown == "" {
+		shown = config.DefaultPath()
+	}
+	// A config that does not parse comes back nil: report it, never crash on it.
+	fmt.Fprintf(w, "  [%s] config          %s\n", ok(cerr == nil), shown)
 	if cerr != nil {
-		fmt.Printf("         └ %v\n", cerr)
-		fmt.Printf("         └ fix: run `claudeswitch init`\n")
+		fmt.Fprintf(w, "         └ %v\n", cerr)
+		fmt.Fprintf(w, "         └ fix: run `claudeswitch init`\n")
+	}
+	if cfg != nil && cerr == nil {
+		doctorWarnings(w, cfg)
 	}
 
 	dupState, _ := state.Load("")
-	if dup := checkDuplicateCredentials(cfg, dupState); dup != "" {
-		fmt.Printf("  [%s] vault entries   %s\n", ok(false), "corrupted")
-		fmt.Printf("         └ %s\n", dup)
-		fmt.Printf("         └ fix: re-add the affected accounts while each is signed in\n")
+	if dup := deps.duplicates(cfg, dupState); dup != "" {
+		fmt.Fprintf(w, "  [%s] vault entries   %s\n", ok(false), "corrupted")
+		fmt.Fprintf(w, "         └ %s\n", dup)
+		fmt.Fprintf(w, "         └ fix: re-add the affected accounts while each is signed in\n")
 	} else if cerr == nil {
-		fmt.Printf("  [%s] vault entries   %s\n", ok(true), "each holds its own credential")
+		fmt.Fprintf(w, "  [%s] vault entries   %s\n", ok(true), "each holds its own credential")
+	}
+	// Kept recovery copies are a warning: nothing is broken, but each may be
+	// the only copy of a login (IMPROVEMENTS I1a).
+	if deps.recovery != nil && cfg != nil && cerr == nil {
+		fmt.Fprint(w, doctorRecoveryLine(deps.recovery(cfg), time.Now()))
+	}
+	// Ghosts are a warning: an old credential still guarded (lane 7).
+	if deps.ghosts != nil {
+		fmt.Fprint(w, doctorGhostLine(deps.ghosts()))
+	}
+
+	// A daemon older than this binary may read state fields it no longer
+	// writes (D10). Only a running daemon is checked.
+	if daemonRunning() && dupState != nil {
+		me := currentBuild()
+		if line := staleDaemonLine(dupState, me, true, runtime.GOOS); line != "" {
+			fmt.Fprintf(w, "  [FAIL] daemon          older than this binary (%s)\n", me)
+			fmt.Fprintf(w, "         └ %s\n", strings.TrimPrefix(line, "! "))
+		} else {
+			fmt.Fprintf(w, "  [ok  ] daemon          running, not older than this binary (%s)\n", me)
+		}
 	}
 
 	if problem := checkServiceQoS(); problem != "" {
-		fmt.Printf("  [%s] service qos     %s\n", ok(false), "throttled")
-		fmt.Printf("         └ %s\n", problem)
-		fmt.Printf("         └ fix: remove the ProcessType key and reload the agent,\n")
-		fmt.Printf("           or re-run install.sh\n")
+		fmt.Fprintf(w, "  [%s] service qos     %s\n", ok(false), "throttled")
+		fmt.Fprintf(w, "         └ %s\n", problem)
+		fmt.Fprintf(w, "         └ fix: remove the ProcessType key and reload the agent,\n")
+		fmt.Fprintf(w, "           or re-run install.sh\n")
 	} else {
-		fmt.Printf("  [%s] service qos     %s\n", ok(true), "not throttled")
+		fmt.Fprintf(w, "  [%s] service qos     %s\n", ok(true), "not throttled")
 	}
 
-	blob, kerr := keychain.ReadLive()
-	fmt.Printf("  [%s] credentials     %s\n", ok(kerr == nil), keychain.Backend)
+	blob, kerr := deps.readLive()
+	if kerr == nil && (blob == nil || blob.ClaudeAIOAuth == nil) {
+		kerr = errors.New("the live item holds no Claude credential")
+	}
+	fmt.Fprintf(w, "  [%s] credentials     %s\n", ok(kerr == nil), keychain.Backend)
 	if kerr != nil {
-		fmt.Printf("         └ %v\n", kerr)
-		fmt.Printf("         └ fix: approve access when macOS asks, or click Always Allow\n")
+		fmt.Fprintf(w, "         └ %v\n", kerr)
+		fmt.Fprintf(w, "         └ fix: approve access when macOS asks, or click Always Allow\n")
 	} else {
 		o := blob.ClaudeAIOAuth
-		fmt.Printf("         └ access token %s, expires %s\n",
+		fmt.Fprintf(w, "         └ access token %s, expires %s\n",
 			keychain.Redact(o.AccessToken), humanUntil(o.Expiry()))
-		fmt.Printf("         └ refresh token expires %s%s\n",
+		fmt.Fprintf(w, "         └ refresh token expires %s%s\n",
 			humanUntil(o.RefreshExpiry()), warnIfSoon(o.RefreshExpiry()))
-		fmt.Printf("         └ mcpOAuth present: %v (must be preserved across a swap)\n",
+		fmt.Fprintf(w, "         └ mcpOAuth present: %v (must be preserved across a swap)\n",
 			len(blob.MCPOAuth) > 0)
 	}
 
 	if kerr == nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 		defer cancel()
-		u, uerr := usage.NewClient().Fetch(ctx, blob.ClaudeAIOAuth.AccessToken)
+		u, uerr := deps.fetchUsage(ctx, blob.ClaudeAIOAuth.AccessToken)
 		var rl *usage.RateLimitedError
 		switch {
 		case uerr == nil:
-			fmt.Printf("  [ok  ] usage api       5h %.1f%%  7d %.1f%%  org %s\n",
+			fmt.Fprintf(w, "  [ok  ] usage api       5h %.1f%%  7d %.1f%%  org %s\n",
 				u.FiveHour.Pct(), u.SevenDay.Pct(), shortID(u.OrgID))
 		case errors.As(uerr, &rl):
-			fmt.Printf("  [warn] usage api       rate limited, clears in %s (expected, not a fault)\n",
+			fmt.Fprintf(w, "  [warn] usage api       rate limited, clears in %s (expected, not a fault)\n",
 				rl.RetryAfter.Round(time.Second))
 		default:
-			fmt.Printf("  [FAIL] usage api       %v\n", uerr)
+			fmt.Fprintf(w, "  [FAIL] usage api       %v\n", uerr)
 			if usage.IsShapeError(uerr) {
-				fmt.Printf("         └ the endpoint changed shape: predictive switching would be disabled\n")
+				fmt.Fprintf(w, "         └ the endpoint changed shape: predictive switching would be disabled\n")
 			}
 		}
 	}
 
+	if cfg != nil {
+		doctorProfiles(w, cfg, deps.resolve)
+	}
+
 	root := detector.ProjectsRoot()
 	entries, derr := os.ReadDir(root)
-	fmt.Printf("  [%s] transcripts     %s (%d project dirs)\n", ok(derr == nil), root, len(entries))
+	fmt.Fprintf(w, "  [%s] transcripts     %s (%d project dirs)\n", ok(derr == nil), root, len(entries))
 
 	if cfg != nil {
-		v := vault.New(logger(false))
 		if !cfg.RefreshEnabled() {
-			fmt.Printf("  [warn] auto-refresh    OFF (auto_refresh = false) — vaulted tokens will expire\n")
+			fmt.Fprintf(w, "  [warn] auto-refresh    OFF (auto_refresh = false) — vaulted tokens will expire\n")
 		} else {
-			fmt.Printf("  [ok  ] auto-refresh    renews at %s before expiry; probes idle accounts every %s\n",
+			v := vault.New(logger(false))
+			fmt.Fprintf(w, "  [ok  ] auto-refresh    renews at %s before expiry; probes idle accounts every %s\n",
 				cfg.RefreshWindow.Duration, nonEmpty(durOrNever(cfg.RefreshProbe.Duration), "never"))
 			for _, a := range cfg.Ordered() {
 				if !v.Has(a.ID) {
@@ -826,61 +735,62 @@ func cmdDoctor(args []string) error {
 				} else {
 					rt = "present, expiry not reported"
 				}
-				fmt.Printf("         └ %-18s access %s · refresh token %s\n", a.ID, exp, rt)
+				fmt.Fprintf(w, "         └ %-18s access %s · refresh token %s\n", a.ID, exp, rt)
 			}
 		}
 	}
 	if cfg != nil {
 		for _, line := range pollCadenceLines(cfg) {
-			fmt.Println(line)
+			fmt.Fprintln(w, line)
 		}
 	}
 	// A vault entry that no longer authenticates is invisible until the moment
 	// it is needed — which is the moment it matters most. Behind a flag because
 	// it costs a call per account.
-	if *deep && cfg != nil {
-		v := vault.New(logger(false))
-		fmt.Printf("  [    ] credentials     verifying each vaulted account…\n")
+	if deep && cfg != nil {
+		fmt.Fprintf(w, "  [    ] credentials     verifying each vaulted account…\n")
+		bad, tried := 0, 0
 		for _, a := range cfg.Ordered() {
-			if !v.Has(a.ID) {
-				fmt.Printf("         └ %-18s not vaulted\n", a.ID)
+			vaulted, pr, lerr := deps.verifyOne(a.ID)
+			if !vaulted {
+				fmt.Fprintf(w, "         └ %-18s not vaulted\n", a.ID)
 				continue
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			cred, lerr := v.Load(a.ID)
-			var pr *usage.Profile
-			if lerr == nil {
-				pr, lerr = v.Identify(ctx, cred.AccessToken)
-			}
-			cancel()
+			tried++
 			switch {
 			case lerr != nil:
-				fmt.Printf("         └ %-18s FAILS — %v\n", a.ID, truncateStr(lerr.Error(), 44))
-				fmt.Printf("           %s\n", "fix: cs login "+a.ID+" --direct")
+				bad++
+				fmt.Fprintf(w, "         └ %-18s FAILS — %v\n", a.ID, truncateStr(lerr.Error(), 44))
+				fmt.Fprintf(w, "           %s\n", "fix: cs login "+a.ID+" --direct")
 			case a.Seat() != "" && pr.Seat() != a.Seat():
-				fmt.Printf("         └ %-18s WRONG ACCOUNT — holds %s\n", a.ID, pr.Describe())
-				fmt.Printf("           %s\n", "fix: cs login "+a.ID+" --direct")
+				bad++
+				fmt.Fprintf(w, "         └ %-18s WRONG ACCOUNT — holds %s\n", a.ID, pr.Describe())
+				fmt.Fprintf(w, "           %s\n", "fix: cs login "+a.ID+" --direct")
 			default:
-				fmt.Printf("         └ %-18s ok — %s · %s\n", a.ID, pr.Account.Email, pr.Plan())
+				fmt.Fprintf(w, "         └ %-18s ok — %s · %s\n", a.ID, pr.Account.Email, pr.Plan())
 			}
 		}
+		if bad > 0 {
+			fmt.Fprintf(w, "  [FAIL] credentials     %d of %d vaulted account(s) do not sign in as configured\n",
+				bad, tried)
+		}
 	} else if cfg != nil {
-		fmt.Printf("  [ok  ] credentials     %d vaulted; `cs doctor --verify` checks each one works\n",
-			countVaulted(cfg))
+		fmt.Fprintf(w, "  [ok  ] credentials     %d vaulted; `cs doctor --verify` checks each one works\n",
+			deps.vaulted(cfg))
 	}
-	fmt.Printf("  [ok  ] switching       live rotation is wired; `cs plan` says what it would do\n")
+	fmt.Fprintf(w, "  [ok  ] switching       live rotation is wired; `cs plan` says what it would do\n")
 	if ok, path := statuslineInstalled(); ok {
-		fmt.Printf("  [ok  ] status line     set in %s\n", path)
+		fmt.Fprintf(w, "  [ok  ] status line     set in %s\n", path)
 	} else {
-		fmt.Printf("  [info] status line     not set; `cs statusline install` adds it\n")
+		fmt.Fprintf(w, "  [info] status line     not set; `cs statusline install` adds it\n")
 	}
 	if pluginInstalled() {
-		fmt.Printf("  [ok  ] claude plugin   installed\n")
+		fmt.Fprintf(w, "  [ok  ] claude plugin   installed\n")
 	} else {
-		fmt.Printf("  [info] claude plugin   not installed; see README, \"Inside Claude Code\"\n")
+		fmt.Fprintf(w, "  [info] claude plugin   not installed; see README, \"Inside Claude Code\"\n")
 	}
-	fmt.Println()
-	return nil
+	fmt.Fprintln(w)
+	return doctorExit(tally.n)
 }
 
 func humanUntil(t time.Time) string {
@@ -948,6 +858,27 @@ id    = "personal"
 label = "personal"
 scope = "personal"
 reserve = 70        # never auto-used above this utilization
+
+# Several Claude Code profiles (one per CLAUDE_CONFIG_DIR) each rotate within
+# their own pool; pools must not overlap, and accounts in no pool join the
+# profile named "default". Without [[profile]] blocks there is one profile,
+# whichever CLAUDE_CONFIG_DIR the environment names.
+#
+# dir is CLAUDE_CONFIG_DIR exactly as you launch Claude Code with it. Omit it
+# for the profile you run with CLAUDE_CONFIG_DIR unset: that is NOT the same
+# as dir = "~/.claude", which Claude Code keys to a different credential.
+# Declaring both is allowed with a warning: they share ~/.claude, so activity
+# and refusals may be attributed to the wrong one.
+#
+# [[profile]]
+# name = "default"            # no dir: CLAUDE_CONFIG_DIR unset
+# pool = ["personal"]
+#
+# [[profile]]
+# name      = "work"
+# dir       = "~/.claude-work"
+# pool      = ["work-a"]
+# switch_at = 75              # overrides the global value for this profile
 `
 	if err := os.WriteFile(*path, []byte(tmpl), 0o600); err != nil {
 		return err
@@ -960,12 +891,19 @@ func cmdAdd(args []string) error {
 	fs := flag.NewFlagSet("add", flag.ExitOnError)
 	cfgPath := fs.String("config", "", "path to config.toml")
 	scope := fs.String("scope", "work", `which projects may use it: "work" or "personal"`)
+	profName := fs.String("profile", "", "the Claude Code profile whose live credential to vault "+
+		"(default: the one this shell's CLAUDE_CONFIG_DIR belongs to)")
 	force := fs.Bool("force", false,
 		"re-add even when the live credential looks staler than the one already vaulted under that name")
 	positional := parseInterleaved(fs, args)
 
 	cfg, st, err := load(*cfgPath)
 	if err != nil {
+		return err
+	}
+	// The profile is settled before the name: a suggested name comes from
+	// whichever account is live in it.
+	if _, err := pickProfile(cfg, *profName); err != nil {
 		return err
 	}
 	var configured []string
@@ -977,9 +915,23 @@ func cmdAdd(args []string) error {
 	// name could be given to a pool that already had one.
 	others := st.KnownAccounts(configured)
 
-	id, err := chooseAddName(positional, isTerminal(), cachedIdentity, others, ask)
+	identity := func() (string, string, string) {
+		in, _ := pickProfile(cfg, *profName)
+		return cachedIdentity(in)
+	}
+	id, err := chooseAddName(positional, isTerminal(), identity, others, ask)
 	if err != nil {
 		return err
+	}
+	// The credential is live in this profile already; vaulting it under an id
+	// from another profile's pool would let that profile swap it in too.
+	target, err := profileForAccount(cfg, *profName, id, true)
+	if err != nil {
+		return err
+	}
+	live, err := cliLiveFor(target)
+	if err != nil {
+		return fmt.Errorf("profile %q: %w", target.Name, err)
 	}
 
 	log := logger(false)
@@ -1007,7 +959,7 @@ func cmdAdd(args []string) error {
 		}
 		return nil
 	}
-	e, err := v.StoreGuarded(ctx, id, addExpectSeat(cfg.SeatOf(id), vaultedSeat), others, guard)
+	e, err := v.StoreGuardedFrom(ctx, live, id, addExpectSeat(cfg.SeatOf(id), vaultedSeat), others, guard)
 	if err != nil {
 		return addError(id, err)
 	}
@@ -1020,7 +972,7 @@ func cmdAdd(args []string) error {
 	}
 
 	fmt.Printf("\n  ✓ %s\n", addHeadline(id, existed))
-	if email, orgName, _ := cachedIdentity(); orgName != "" {
+	if email, orgName, _ := cachedIdentity(target); orgName != "" {
 		fmt.Printf("    account       %s (as Claude Code labels it)\n", email)
 		fmt.Printf("    organization  %s\n", orgName)
 	}
@@ -1043,7 +995,7 @@ func cmdAdd(args []string) error {
 	// `accounts` did not list it, and the next command that read the state file
 	// discarded what `add` had just recorded. The seat is only knowable after
 	// signing in, which is why it is written here rather than asked for.
-	reportSeatRecorded(cfg, id, *scope, e)
+	reportSeatRecorded(cfg, id, *scope, e, poolToJoin(cfg, target))
 	fmt.Println()
 	return nil
 }
@@ -1058,6 +1010,9 @@ func chooseAddName(positional []string, interactive bool,
 
 	switch len(positional) {
 	case 1:
+		if err := checkNewAccountID(positional[0]); err != nil {
+			return "", err
+		}
 		return positional[0], nil
 	case 0:
 	default:
@@ -1088,6 +1043,9 @@ func chooseAddName(positional []string, interactive bool,
 	name := strings.TrimSpace(prompt("  name for "+who, suggestName(pr, takenMap)))
 	if name == "" {
 		return "", fmt.Errorf("no name given; nothing was stored")
+	}
+	if err := checkNewAccountID(name); err != nil {
+		return "", err
 	}
 	return name, nil
 }
@@ -1205,6 +1163,14 @@ func appendAccount(path, id, block string) error {
 }
 
 func appendAccountPlaced(path, id, block string) (priorityPlace, error) {
+	return appendAccountInPool(path, id, block, "")
+}
+
+// appendAccountInPool is appendAccountPlaced that also names the account in
+// the pool of the declared profile called pool (D20), in the same edit: with
+// no profile named "default", an account in no pool would not load at all.
+// An empty pool edits no pool.
+func appendAccountInPool(path, id, block, pool string) (priorityPlace, error) {
 	target, err := configTarget(path)
 	if err != nil {
 		return 0, err
@@ -1214,6 +1180,11 @@ func appendAccountPlaced(path, id, block string) (priorityPlace, error) {
 		return 0, err
 	}
 	out := strings.TrimRight(string(raw), "\n") + "\n" + block
+	if pool != "" {
+		if out, err = addToPool(out, pool, id); err != nil {
+			return 0, err
+		}
+	}
 
 	place := priorityNoList
 	if m := priorityLine.FindStringSubmatchIndex(out); m != nil {
@@ -1234,6 +1205,11 @@ func appendAccountPlaced(path, id, block string) (priorityPlace, error) {
 	err = writeConfigFile(target, []byte(out), func(cfg *config.Config) error {
 		if !hasAccount(cfg, id) {
 			return fmt.Errorf("the edit parsed but %q was not in it; discarded", id)
+		}
+		if pool != "" {
+			if owner, _ := cfg.ProfileOf(id); owner != pool {
+				return fmt.Errorf("the edit parsed but %q did not land in profile %q's pool; discarded", id, pool)
+			}
 		}
 		return nil
 	})
@@ -1256,6 +1232,14 @@ func configTarget(path string) (string, error) {
 // checked, then renamed into place. Anything that fails leaves the original
 // untouched and no temporary file behind.
 func writeConfigFile(target string, data []byte, check func(*config.Config) error) error {
+	return writeConfigFileWith(config.Load, target, data, check)
+}
+
+// writeConfigFileWith is writeConfigFile parsing the result with loader:
+// rename's lenient one accepts a config whose remaining fault is other bad
+// names, since repairing those one at a time is the point.
+func writeConfigFileWith(loader func(string) (*config.Config, error), target string, data []byte,
+	check func(*config.Config) error) error {
 	cleanStaleConfigTemps(target)
 	mode := os.FileMode(0o600)
 	if fi, err := os.Stat(target); err == nil {
@@ -1285,7 +1269,7 @@ func writeConfigFile(target string, data []byte, check func(*config.Config) erro
 		return err
 	}
 	// Parse what we are about to install, not what we meant to write.
-	cfg, err := config.Load(name)
+	cfg, err := loader(name)
 	if err != nil {
 		os.Remove(name)
 		return fmt.Errorf("the edit would not load, so it was discarded: %w", err)
@@ -1368,13 +1352,19 @@ func cmdUse(args []string) error {
 	fs := flag.NewFlagSet("use", flag.ExitOnError)
 	cfgPath := fs.String("config", "", "path to config.toml")
 	dry := fs.Bool("dry-run", false, "say what would happen, change nothing")
+	profName := fs.String("profile", "", profileFlagHelp)
 	positional := parseInterleaved(fs, args)
 	if len(positional) != 1 {
-		return fmt.Errorf("usage: claudeswitch use <account-id>")
+		return fmt.Errorf("usage: claudeswitch use <account-id> [--profile NAME]")
 	}
 	id := positional[0]
 
 	cfg, st, err := load(*cfgPath)
+	if err != nil {
+		return err
+	}
+	// D5 before anything is read: the refusal must not depend on the vault.
+	target, err := profileForAccount(cfg, *profName, id, false)
 	if err != nil {
 		return err
 	}
@@ -1383,6 +1373,21 @@ func cmdUse(args []string) error {
 
 	if !v.Has(id) {
 		return fmt.Errorf("account %q is not in the vault. Log in to it, then run `claudeswitch add %s`", id, id)
+	}
+	live, err := cliLiveFor(target)
+	if err != nil {
+		return fmt.Errorf("profile %q: %w", target.Name, err)
+	}
+	// §3, as the daemon checks it before every swap: one credential may be
+	// live in at most one profile. Unknown counts as live (D18).
+	on := ""
+	if multiProfile(cfg) {
+		on = " in profile " + target.Name
+	}
+	if other, why := liveConflict(cfg, st, v, target.Name, id); other != "" {
+		return fmt.Errorf("account %q may be live in %s (%s); one credential live in two "+
+			"profiles is logged out by whichever refreshes first, so nothing was changed",
+			id, whereLiveQ(other), why)
 	}
 	expectOrg := ""
 	for _, a := range cfg.Accounts {
@@ -1397,32 +1402,37 @@ func cmdUse(args []string) error {
 	}
 
 	if *dry {
-		fmt.Printf("\n  would swap to %q (expecting org %s)\n", id, nonEmpty(expectOrg, "any"))
+		fmt.Printf("\n  would swap%s to %q (expecting org %s)\n", on, id, nonEmpty(expectOrg, "any"))
 		fmt.Printf("  mcpOAuth would be carried over from the live item, unchanged\n\n")
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 80*time.Second)
 	defer cancel()
-	res, err := v.SwapTo(ctx, id, expectOrg)
+	ist := st.Profile(target.Name)
+	from := ist.Active
+	res, err := swapInto(ctx, v, cfg, target.Name, from, live, id, expectOrg, log)
 	if err != nil {
 		if res != nil && res.RolledBack {
 			return fmt.Errorf("%w\n  (your previous credential was restored and verified)", err)
 		}
+		if errors.Is(err, vault.ErrLockBusy) {
+			return fmt.Errorf("%w\n  Claude Code is refreshing this profile's credential; run the same "+
+				"command again in a few seconds", err)
+		}
 		return err
 	}
-	from := st.Active
-	st.SetActive(id)
+	ist.SetActive(id)
 	// A deliberate manual switch gets the cooldown's protection too, so the
 	// daemon does not immediately rotate away from the account you just chose.
-	st.LastSwitch = time.Now()
+	ist.LastSwitch = time.Now()
 	// And it belongs in the audit log. Recording only the daemon's switches made
 	// the history look stale and wrong: every manual swap was invisible.
 	// Only when it actually moved. Re-selecting the account already in use is
 	// not a switch, and recording it as one makes the history unreadable.
 	if from != id {
 		if aud, err := audit.Open(""); err == nil {
-			_ = aud.Write(audit.Event{Kind: "switch", From: from, To: id,
+			_ = aud.Write(audit.Event{Kind: "switch", Profile: target.Name, From: from, To: id,
 				Reason: "requested with `cs use`"})
 		}
 	}
@@ -1436,7 +1446,7 @@ func cmdUse(args []string) error {
 		fmt.Fprintf(os.Stderr, "note: %v\n", err)
 	}
 
-	fmt.Printf("\n  ✓ now using %s\n", id)
+	fmt.Printf("\n  ✓ now using %s%s\n", id, on)
 	if res.Usage != nil {
 		fmt.Printf("    5-hour %.1f%%   7-day %.1f%%   org %s\n",
 			res.Usage.FiveHour.Pct(), res.Usage.SevenDay.Pct(), shortID(res.OrgID))
@@ -1464,8 +1474,9 @@ func cmdAccounts(args []string) error {
 		for _, a := range cfg.Ordered() {
 			m := map[string]any{
 				"id": a.ID, "scope": a.Scope, "vaulted": v.Has(a.ID),
-				"active": a.ID == st.Active,
+				"active": activeIn(cfg, st, a.ID) != "",
 			}
+			addProfileJSON(m, cfg, st, a.ID)
 			if seat, org := v.IdentityOf(a.ID); seat != "" {
 				m["seat"], m["org_id"] = seat, org
 			}
@@ -1498,7 +1509,7 @@ func cmdAccounts(args []string) error {
 			orgName = shortID(org)
 		}
 		mark, name := " ", a.Name()
-		if a.ID == st.Active {
+		if activeIn(cfg, st, a.ID) != "" {
 			mark, name = render.Good("▸"), render.Bold(name)
 		}
 		if !v.Has(a.ID) {
@@ -1517,10 +1528,14 @@ func cmdPlan(args []string) error {
 	cfgPath := fs.String("config", "", "path to config.toml")
 	refresh := fs.Bool("refresh", true, "read the active account's usage first")
 	planJSON := fs.Bool("json", false, "machine-readable output")
+	only := fs.String("profile", "", "plan only this Claude Code profile (default: every one)")
 	parseInterleaved(fs, args)
 
 	cfg, st, err := load(*cfgPath)
 	if err != nil {
+		return err
+	}
+	if err := checkProfileFlag(cfg, *only); err != nil {
 		return err
 	}
 	log := logger(false)
@@ -1528,20 +1543,45 @@ func cmdPlan(args []string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 		defer cancel()
 		p := poller.New(cfg, st, log)
-		if _, err := p.PollActive(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "note: %v\n", err)
+		if len(cfg.Profiles) == 0 {
+			if _, err := p.PollActive(ctx); err != nil {
+				fmt.Fprintf(os.Stderr, "note: %v\n", err)
+			}
+		} else {
+			// Each profile's own live credential, as the daemon reads it.
+			for _, t := range liveTargets(cfg, cliLiveFor) {
+				if *only != "" && t.name != *only {
+					continue
+				}
+				if t.live == nil {
+					fmt.Fprintf(os.Stderr, "note: profile %s: %v\n", t.name, t.unresolved)
+					continue
+				}
+				p.SetLive(t.name, t.live)
+				if _, err := p.PollActiveIn(ctx, t.name); err != nil {
+					fmt.Fprintf(os.Stderr, "note: profile %s: %v\n", t.name, err)
+				}
+			}
 		}
 		_ = st.Save()
 	}
 
 	dir := currentDir()
-	d := policy.Decide(policy.Input{
-		Cfg: cfg, St: st, Now: time.Now(), LastSwitch: st.LastSwitch, Pinned: st.Pinned,
-		Dir: dir, Lookahead: lookahead(cfg),
-	})
-
+	now := time.Now()
+	views := profileViews(cfg, st, *only)
 	if *planJSON {
-		return emitJSON(map[string]any{"decision": decisionJSON(d), "dir": dir})
+		if !multiProfile(cfg) {
+			d := policy.Decide(views[0].input(st, now, dir))
+			return emitJSON(map[string]any{"decision": decisionJSON(d), "dir": dir})
+		}
+		var list []map[string]any
+		for _, v := range views {
+			d := policy.Decide(v.input(st, now, dir))
+			m := map[string]any{"profile": v.in.Name, "decision": decisionJSON(d)}
+			markCurrent(m, cfg, v.in.Name)
+			list = append(list, m)
+		}
+		return emitJSON(map[string]any{"profiles": list, "dir": dir})
 	}
 	fmt.Println()
 	if dir != "" {
@@ -1555,20 +1595,13 @@ func cmdPlan(args []string) error {
 			}
 		}
 	}
-	fmt.Printf("  decision  %s\n", d.Kind)
-	fmt.Printf("  because   %s\n", d.Reason)
-	if d.Kind == policy.Switch {
-		fmt.Printf("  target    %s\n", d.Target)
-		if d.Forced {
-			fmt.Printf("  timing    immediately, mid-turn (past the %.0f%% hard floor)\n", cfg.HardFloor)
-		} else {
-			fmt.Printf("  timing    at the next idle gap between turns\n")
+	for _, v := range views {
+		if multiProfile(cfg) {
+			v.heading(os.Stdout)
 		}
+		printPlan(os.Stdout, v.cfg, policy.Decide(v.input(st, now, dir)))
 	}
-	if d.Kind == policy.Wait && d.RecoversAccount != "" {
-		fmt.Printf("  recovers  %s in %s (at %s)\n", d.RecoversAccount,
-			time.Until(d.RecoversAt).Round(time.Minute), d.RecoversAt.Local().Format("15:04"))
-	}
+
 	fmt.Println()
 	switch {
 	case !state.DaemonRunning():
@@ -1582,6 +1615,24 @@ func cmdPlan(args []string) error {
 	}
 	fmt.Println()
 	return nil
+}
+
+// printPlan writes one decision as `plan` shows it.
+func printPlan(w io.Writer, cfg *config.Config, d policy.Decision) {
+	fmt.Fprintf(w, "  decision  %s\n", d.Kind)
+	fmt.Fprintf(w, "  because   %s\n", d.Reason)
+	if d.Kind == policy.Switch {
+		fmt.Fprintf(w, "  target    %s\n", d.Target)
+		if d.Forced {
+			fmt.Fprintf(w, "  timing    immediately, mid-turn (past the %.0f%% hard floor)\n", cfg.HardFloor)
+		} else {
+			fmt.Fprintf(w, "  timing    at the next idle gap between turns\n")
+		}
+	}
+	if d.Kind == policy.Wait && d.RecoversAccount != "" {
+		fmt.Fprintf(w, "  recovers  %s in %s (at %s)\n", d.RecoversAccount,
+			time.Until(d.RecoversAt).Round(time.Minute), d.RecoversAt.Local().Format("15:04"))
+	}
 }
 
 // cmdForget removes an account's observations. Useful when an account is
@@ -1608,16 +1659,20 @@ func cmdForget(args []string) error {
 				dropped = append(dropped, id)
 			}
 		}
-		if !known[st.Active] {
-			st.Active = ""
+		for _, in := range st.Profiles {
+			if !known[in.Active] {
+				in.Active = ""
+			}
 		}
 	}
 	for _, id := range positional {
 		if _, ok := st.Accounts[id]; ok {
 			st.Drop(id)
 			dropped = append(dropped, id)
-			if st.Active == id {
-				st.Active = ""
+			for _, in := range st.Profiles {
+				if in.Active == id {
+					in.Active = ""
+				}
 			}
 		}
 	}
@@ -1635,7 +1690,7 @@ func cmdForget(args []string) error {
 // warnExpiringRefresh nags before an idle account's refresh token dies. A dead
 // refresh token means the account cannot be swapped to OR polled, and the only
 // cure is an interactive login.
-func warnExpiringRefresh(st *state.State, nt *notify.Notifier) {
+func warnExpiringRefresh(st *state.State, nt notifier) {
 	for id, a := range st.Accounts {
 		if a.RefreshExpiry.IsZero() {
 			continue
@@ -1779,22 +1834,57 @@ func cmdStatusline(args []string) error {
 	if err != nil && cfg == nil {
 		return nil // never break someone's prompt over a config problem
 	}
-	st, err := state.Load("")
-	if err != nil || st.Active == "" {
+	st, err := state.Load("", cfg.ProfileNames()...)
+	if err != nil {
 		fmt.Print("claudeswitch  no account selected")
 		return nil
 	}
-	a, ok := st.Accounts[st.Active]
-	if !ok || a.Last == nil {
-		fmt.Printf("%s  no reading yet", st.Active)
+	err = statuslineBody(cfg, st)
+	// After whatever the line said: a daemon older than this binary may be
+	// running code that no longer matches what it is shown (owner decision,
+	// lane 6). Read-only, like the rest of the line.
+	if staleDaemonLine(st, currentBuild(), daemonRunning(), runtime.GOOS) != "" {
+		fmt.Print(slPaint(ansiYellow, "  "+outdatedMarker, slColorEnabled()))
+	}
+	return err
+}
+
+// outdatedMarker ends the status line while the running daemon is older than
+// this binary.
+const outdatedMarker = "⚠ daemon outdated"
+
+// statuslineBody prints the status line itself, for cmdStatusline.
+func statuslineBody(cfg *config.Config, st *state.State) error {
+	// The status line runs inside a session, with that session's
+	// CLAUDE_CONFIG_DIR: it shows that profile, never another's account.
+	view, verr := statuslineView(cfg, st)
+	if verr != nil {
+		fmt.Print("claudeswitch  this session's CLAUDE_CONFIG_DIR is no configured profile")
 		return nil
 	}
-	name := st.Active
+	tag := ""
+	if multiProfile(cfg) {
+		tag = view.in.Name + ": "
+	}
+	active := view.ist.Active
+	if active == "" {
+		fmt.Print("claudeswitch  " + tag + "no account selected")
+		return nil
+	}
+	a, ok := st.Accounts[active]
+	if !ok || a.Last == nil {
+		fmt.Printf("%s%s  no reading yet", tag, active)
+		return nil
+	}
+	name := active
 	for _, c := range cfg.Accounts {
-		if c.ID == st.Active {
+		if c.ID == active {
 			name = c.Name()
 		}
 	}
+	name = tag + name
+	// The profile's own thresholds (D4) colour the bars and decide.
+	cfg = view.cfg
 	now := time.Now()
 	colour := slColorEnabled()
 
@@ -1842,10 +1932,7 @@ func cmdStatusline(args []string) error {
 	// that may not be coming: when every account is exhausted there is nowhere
 	// to go, and the useful fact is when quota returns instead.
 	if worst >= cfg.SwitchAt {
-		dec := policy.Decide(policy.Input{
-			Cfg: cfg, St: st, Now: now, LastSwitch: st.LastSwitch,
-			Pinned: st.Pinned, Dir: currentDir(), Lookahead: lookahead(cfg),
-		})
+		dec := policy.Decide(view.input(st, now, currentDir()))
 		switch dec.Kind {
 		case policy.Switch:
 			if dec.Forced {
@@ -1882,130 +1969,6 @@ func cmdStatusline(args []string) error {
 	return nil
 }
 
-// maintainVault keeps vaulted credentials usable.
-//
-// Two jobs, and the first matters more. Claude Code refreshes the live session
-// on its own schedule, and that REVOKES the token our vault copy holds — so the
-// entry for the active account rots within hours unless we notice the drift and
-// re-capture. That costs nothing and cannot fail dangerously.
-//
-// The second job is refreshing genuinely idle accounts before their access
-// tokens expire. That one calls the token endpoint, which rotates and revokes,
-// so it is never attempted on the account that is currently live.
-func maintainVault(ctx context.Context, v *vault.Vault, st *state.State, cfg *config.Config,
-	log *slog.Logger, nt *notify.Notifier, live bool) {
-
-	if st.Active != "" && v.Has(st.Active) {
-		sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		changed, err := v.SyncActive(sctx, st.Active, cfg.SeatOf(st.Active))
-		cancel()
-		switch {
-		case err != nil:
-			var foreign *vault.ForeignCredentialError
-			if errors.As(err, &foreign) {
-				// Someone signed in to a different account. That is not an
-				// error, and it must not cause a write — but the daemon's idea
-				// of which account is live is now wrong, so drop it and let the
-				// next poll re-derive it from the credential itself.
-				// The error carries the seat the live credential actually
-				// belongs to, so in almost every case we already know the right
-				// answer. Clearing to "" threw it away and left the daemon with
-				// no active account, whereupon the policy picked the first one
-				// in priority order — an account at 100% — swapped its
-				// credential in, and immediately rotated away again. That cycle
-				// repeated every sixteen minutes, and each turn of it performed
-				// two real credential swaps for no reason.
-				if owner := cfg.AccountBySeat(foreign.GotOrg); owner != "" {
-					log.Info("the live credential belongs to a different account than we thought",
-						"was", st.Active, "is", owner)
-					st.Active = owner
-				} else {
-					log.Info("the live credential is an account we do not know; clearing",
-						"was", st.Active, "live_seat", foreign.GotOrg)
-					st.Active = ""
-				}
-			} else {
-				log.Warn("could not sync the active account's vault entry",
-					"account", st.Active, "err", err)
-			}
-		case changed:
-			log.Info("vault entry for the active account was refreshed underneath us and re-captured",
-				"account", st.Active)
-		}
-	}
-
-	// Refreshing is a real mutation of a credential, so it stays behind --live
-	// exactly like a swap does.
-	// Refreshing runs in dry-run too. Dry-run means "do not rotate"; letting
-	// every stored credential expire while watching would be a strange reading
-	// of that, and a refresh never changes which account is in use.
-	if !cfg.RefreshEnabled() {
-		return
-	}
-	for _, a := range cfg.Ordered() {
-		if a.ID == st.Active || !v.Has(a.ID) {
-			continue
-		}
-		// Belt and braces: never refresh whatever is actually live, whatever
-		// state believes about which account that is.
-		if v.IsLive(a.ID) {
-			continue
-		}
-
-		why := ""
-		switch {
-		case v.NeedsRefresh(a.ID, cfg.RefreshWindow.Duration):
-			why = "token near expiry"
-		case cfg.RefreshProbe.Duration > 0 && probeDue(v, a.ID, cfg.RefreshProbe.Duration):
-			// A periodic probe exists because the token endpoint does not report
-			// when a REFRESH token expires. Without it a dead refresh token
-			// stays invisible until the moment the account is needed.
-			why = "periodic probe"
-		default:
-			continue
-		}
-
-		rctx, cancel := context.WithTimeout(ctx, 40*time.Second)
-		_, err := v.Refresh(rctx, a.ID, cfg.SeatOf(a.ID), false, false)
-		cancel()
-		if err != nil {
-			var needsLogin *oauth.NeedsLoginError
-			if errors.As(err, &needsLogin) {
-				log.Error("account needs an interactive login", "account", a.ID, "detail", err)
-				nt.Send("relogin:"+a.ID, a.ID+" needs a login",
-					"its refresh token is spent; run `cs login "+a.ID+" --direct`")
-				// Record it where `status` looks. A spent refresh token is the
-				// one condition here a person has to act on, and it was only
-				// ever logged: the row went on showing whatever the last poll
-				// said — a stale rate-limit message, or "window reset ·
-				// re-reading" forever — while the account could not be renewed
-				// at all. stateOf checks needsLogin first, but only ever sees
-				// LastErr, so an error that is not written there is invisible.
-				//
-				// Safe to write on the first failure because a successful poll
-				// clears LastErr. invalid_grant does not always mean the token
-				// is spent — a refresh revokes the token it was given, so one
-				// made with a copy that another process has already rotated
-				// fails the same way while the account is perfectly healthy.
-				// Observed here: three of these two minutes apart, then the
-				// account polled fine and went back to "available" on its own.
-				// Surfacing it and letting the next good poll retract it beats
-				// staying quiet, since the alternative failure is someone
-				// spending an interactive login they did not need.
-				st.Get(a.ID).LastErr = err.Error()
-				if serr := st.Save(); serr != nil {
-					log.Warn("could not record that an account needs a login",
-						"account", a.ID, "err", serr)
-				}
-				continue
-			}
-			log.Warn("refresh failed", "account", a.ID, "err", err, "why", why)
-			continue
-		}
-		log.Info("refreshed an idle account", "account", a.ID, "why", why)
-	}
-}
-
 // cmdWhoami answers "which account is Claude Code actually using?"
 //
 // The authority is the credential itself, not Claude Code's opinion of it.
@@ -2018,11 +1981,24 @@ func maintainVault(ctx context.Context, v *vault.Vault, st *state.State, cfg *co
 func cmdWhoami(args []string) error {
 	fs := flag.NewFlagSet("whoami", flag.ExitOnError)
 	cfgPath := fs.String("config", "", "path to config.toml")
+	profName := fs.String("profile", "", profileFlagHelp)
 	parseInterleaved(fs, args)
 
-	cfg, _ := config.Load(*cfgPath)
-
-	blob, err := keychain.ReadLive()
+	cfg, cerr := config.Load(*cfgPath)
+	// A config that does not load still answers whoami, for the profile this
+	// environment names, exactly as before profiles.
+	target := config.Profile{Name: config.DefaultProfile, FromEnv: true}
+	if cfg != nil && cerr == nil {
+		var err error
+		if target, err = pickProfile(cfg, *profName); err != nil {
+			return err
+		}
+	}
+	live, err := cliLiveFor(target)
+	if err != nil {
+		return fmt.Errorf("profile %q: %w", target.Name, err)
+	}
+	blob, err := live.Read()
 	if err != nil {
 		return fmt.Errorf("cannot read the live credential: %w", err)
 	}
@@ -2030,9 +2006,12 @@ func cmdWhoami(args []string) error {
 	defer cancel()
 	u, uerr := vault.New(logger(false)).FetchLive(ctx, blob.ClaudeAIOAuth.AccessToken)
 
-	cachedEmail, cachedOrgName, cachedOrgID := cachedIdentity()
+	cachedEmail, cachedOrgName, cachedOrgID := cachedIdentity(target)
 
 	fmt.Println()
+	if cfg != nil && multiProfile(cfg) {
+		fmt.Printf("  profile      %s\n", target.Name)
+	}
 	if uerr != nil {
 		if rl, ok := usage.IsRateLimited(uerr); ok {
 			fmt.Printf("  cannot confirm right now: the usage API is rate limited (%s).\n\n",
@@ -2099,7 +2078,7 @@ func whoamiVerdict(cfg *config.Config, seat, orgID string) string {
 		b.WriteString("  → this organization is NOT in your config: a new account.\n")
 		b.WriteString("    Vault it with:  claudeswitch add <name>\n")
 	case seat == "":
-		fmt.Fprintf(&b, "  → cannot tell which person this is: the profile could not be read, and\n"+
+		fmt.Fprintf(&b, "  → cannot tell which person this is: the identity lookup failed, and\n"+
 			"    %s in this organization may be someone else's seat.\n", quoted(sameOrg))
 	default:
 		person, _, _ := strings.Cut(seat, "@")
@@ -2115,8 +2094,14 @@ func whoamiVerdict(cfg *config.Config, seat, orgID string) string {
 // cachedIdentity reads what Claude Code believes about the signed-in account.
 // It is a label, not a fact: the block is written at login and is not updated
 // when the credential underneath it changes.
-func cachedIdentity() (email, orgName, orgID string) {
-	out, err := exec.Command("claude", "auth", "status").Output()
+//
+// It asks `claude auth status` rather than reading the file, so Claude Code
+// itself resolves which .claude.json (ccdir.GlobalConfig) from the
+// CLAUDE_CONFIG_DIR the profile runs with (envForProfile).
+func cachedIdentity(in config.Profile) (email, orgName, orgID string) {
+	c := exec.Command("claude", "auth", "status")
+	c.Env = envForProfile(in)
+	out, err := c.Output()
 	if err != nil {
 		return "", "", ""
 	}
@@ -2189,10 +2174,19 @@ func cmdRefresh(args []string) error {
 	}
 	// Ask the Keychain, not the state file. State can be empty or stale, and the
 	// cost of being wrong here is revoking the token the running session uses.
-	isActive := v.IsLive(id)
+	// Every profile's live item is asked, not one: refreshing revokes the
+	// token whichever profile holds it, so no --profile can narrow this.
+	holderName, holder, isActive := liveHolder(cliGhostTargets(cfg, st), v, id)
+	if isActive && *allowActive && holder == nil {
+		return liveHolderUnknown(holderName, id)
+	}
 
 	if isActive && !*allowActive {
-		fmt.Printf("\n  %q is the account currently in use.\n", id)
+		if multiProfile(cfg) {
+			fmt.Printf("\n  %q is the account currently in use in profile %q.\n", id, holderName)
+		} else {
+			fmt.Printf("\n  %q is the account currently in use.\n", id)
+		}
 		fmt.Printf("  Refreshing revokes the token your running Claude Code session holds.\n")
 		fmt.Printf("  claudeswitch would write the new token to both the vault and the live\n")
 		fmt.Printf("  item, so in principle nothing breaks — but if that write fails you are\n")
@@ -2205,7 +2199,7 @@ func cmdRefresh(args []string) error {
 	defer cancel()
 
 	before, _ := v.Load(id)
-	e, err := v.Refresh(ctx, id, cfg.SeatOf(id), isActive, *allowActive)
+	e, err := v.RefreshIn(ctx, id, cfg.SeatOf(id), holder, *allowActive)
 	if err != nil {
 		if reportUnrenewable(os.Stdout, st, id, err) {
 			return nil
@@ -2246,48 +2240,122 @@ func cmdRename(args []string) error {
 		return fmt.Errorf("usage: claudeswitch rename <old-id> <new-id>")
 	}
 	oldID, newID := positional[0], positional[1]
+	if err := checkNewAccountID(newID); err != nil {
+		return err
+	}
 	if oldID == newID {
 		return fmt.Errorf("those are the same id")
 	}
+	return renameAccount(*cfgPath, oldID, newID)
+}
 
-	cfg, st, err := load(*cfgPath)
-	if err != nil {
-		return err
-	}
-	v := vault.New(logger(false))
-	if !v.Has(oldID) {
-		return fmt.Errorf("no vault entry for %q", oldID)
-	}
-	if v.Has(newID) {
-		return fmt.Errorf("a vault entry for %q already exists; remove it first", newID)
-	}
-	if state.DaemonRunning() {
+// renameAccount moves an account to a new id everywhere: the config (its
+// [[account]] block, priority and every pool), the vault item and the state
+// records. It works on a config that fails only the name rule, which is how
+// an id written before the rule is repaired (owner decision, lane 7).
+//
+// Order, so the credential is never lost: copy the vault item to the new name
+// and read it back; edit the config (on failure the new copy is removed and
+// nothing else has changed); update state; only then delete the old item. A
+// state save that fails stops it there, both vault items kept.
+//
+// Re-running it finishes a rename a crash or failure interrupted: a step
+// already done (the new vault item holding the same credential, the config
+// already naming the new id) is skipped, never refused. Two different
+// credentials under the two names are refused.
+//
+// The daemon lock is held throughout, so no daemon can start and write
+// state in the middle; a running daemon refuses the rename.
+func renameAccount(cfgPath, oldID, newID string) error {
+	lock, lerr := state.TryDaemonLock()
+	switch {
+	case errors.Is(lerr, state.ErrDaemonRunning):
 		return fmt.Errorf("stop the daemon before renaming (it owns the state file):\n" +
 			"  launchctl unload ~/Library/LaunchAgents/xyz.claudeswitch.daemon.plist")
+	case lerr != nil:
+		return fmt.Errorf("could not take the daemon lock, so nothing was renamed: %w", lerr)
 	}
+	defer lock.Release()
 
-	// Copy the credential under the new name, keeping the whole annotation —
-	// the seat included, not just the organization — so the identity guards
-	// keep working. They are gated on the seat, so carrying the organization
-	// alone would silently switch them off.
-	blob, err := keychain.Read(keychain.VaultService(oldID))
+	cfg, st, err := loadWith(loadIgnoringBadNames, cfgPath)
 	if err != nil {
 		return err
 	}
-	meta := blob.Meta
-	if meta == nil {
-		meta = &keychain.Meta{}
+	vaultOld := keychain.VaultService(oldID)
+	vaultNew := keychain.VaultService(newID)
+	read := func(name string) (*keychain.Blob, bool, error) {
+		b, err := keychain.Read(name)
+		switch {
+		case err == nil:
+			return b, true, nil
+		case errors.Is(err, keychain.ErrNotFound):
+			return nil, false, nil
+		}
+		return nil, false, err
 	}
-	meta.AccountID = newID
-	moved := &keychain.Blob{ClaudeAIOAuth: blob.ClaudeAIOAuth, Meta: meta}
-	if err := keychain.Write(keychain.VaultService(newID), moved); err != nil {
-		return fmt.Errorf("could not create the new vault entry (the old one is untouched): %w", err)
+	oldBlob, hasOld, err := read(vaultOld)
+	if err != nil {
+		return fmt.Errorf("could not read the vault entry for %q, so nothing was renamed: %w", oldID, err)
 	}
-	// Write() already verified the read-back, so the new entry is good before
-	// the old one goes.
-	if err := keychain.Delete(keychain.VaultService(oldID)); err != nil {
-		fmt.Fprintf(os.Stderr, "note: created %q but could not remove %q: %v\n",
-			newID, oldID, err)
+	newBlob, hasNew, err := read(vaultNew)
+	if err != nil {
+		return fmt.Errorf("could not check whether %q is already vaulted: %w", newID, err)
+	}
+	configOld, configNew := hasAccount(cfg, oldID), hasAccount(cfg, newID)
+	stateOld := stateNames(st, oldID)
+
+	switch {
+	case configOld && configNew:
+		return fmt.Errorf("%s has both %q and %q; pick another name", cfg.Path, oldID, newID)
+	case hasOld && hasNew && (oldBlob.ClaudeAIOAuth == nil || newBlob.ClaudeAIOAuth == nil ||
+		oldBlob.ClaudeAIOAuth.AccessToken != newBlob.ClaudeAIOAuth.AccessToken):
+		return fmt.Errorf("a vault entry for %q already exists and holds a different credential; "+
+			"remove it first", newID)
+	case hasNew && !hasOld && !configOld && !stateOld:
+		return fmt.Errorf("a vault entry for %q already exists and nothing is named %q any more", newID, oldID)
+	case !hasOld && !configOld && !stateOld:
+		return fmt.Errorf("%q is neither in the vault, nor in %s, nor in the state", oldID, cfg.Path)
+	case hasNew && !hasOld && configOld:
+		return fmt.Errorf("a vault entry for %q already exists; remove it first", newID)
+	case configNew && !configOld && hasOld && !hasNew:
+		// Not a resume: a rename copies the vault entry before it edits
+		// the config, so a config already naming newID means the copy was
+		// made. This is a different credential headed for an account the
+		// config already has.
+		return fmt.Errorf("%s already has an account %q, and %q's credential is not its own; "+
+			"nothing was renamed", cfg.Path, newID, oldID)
+	}
+
+	// The whole annotation moves, the seat included: the identity guards are
+	// gated on the seat.
+	var meta *keychain.Meta
+	created := false
+	if hasOld && !hasNew {
+		meta = oldBlob.Meta
+		if meta == nil {
+			meta = &keychain.Meta{}
+		}
+		meta.AccountID = newID
+		moved := &keychain.Blob{ClaudeAIOAuth: oldBlob.ClaudeAIOAuth, Meta: meta}
+		if err := keychain.Write(vaultNew, moved); err != nil {
+			return fmt.Errorf("could not create the new vault entry (the old one is untouched): %w", err)
+		}
+		back, err := keychain.Read(vaultNew)
+		if err != nil || back.ClaudeAIOAuth == nil || back.ClaudeAIOAuth.AccessToken != oldBlob.ClaudeAIOAuth.AccessToken {
+			_ = keychain.Delete(vaultNew)
+			return fmt.Errorf("the new vault entry did not read back as written; nothing was renamed")
+		}
+		created = true
+	} else if hasNew {
+		meta = newBlob.Meta
+	}
+	if configOld {
+		if err := renameInConfig(cfg, oldID, newID); err != nil {
+			if created {
+				_ = keychain.Delete(vaultNew)
+			}
+			return fmt.Errorf("could not rename %q in %s, so nothing was renamed: %w", oldID, cfg.Path, err)
+		}
 	}
 
 	if a, ok := st.Accounts[oldID]; ok {
@@ -2295,26 +2363,199 @@ func cmdRename(args []string) error {
 		st.Accounts[newID] = a
 		st.Drop(oldID)
 	}
-	if st.Active == oldID {
-		// A rename does not change which account is live, so keep the original
-		// timestamp rather than claiming a fresh observation.
-		at := st.ActiveAt
-		st.SetActive(newID)
-		st.ActiveAt = at
+	for _, v := range st.Vaulted {
+		if v == oldID {
+			st.DropVaulted(oldID)
+			st.AddVaulted(newID)
+			break
+		}
 	}
-	if st.Pinned == oldID {
-		st.Pinned = newID
+	// In every profile: the renamed account may be live in any of them.
+	for _, in := range st.Profiles {
+		if in.Active == oldID {
+			// A rename does not change which account is live, so keep the
+			// original timestamp rather than claiming a fresh observation.
+			in.Active = newID
+		}
+		if in.Pinned == oldID {
+			in.Pinned = newID
+		}
 	}
-	if err := st.Save(); err != nil {
-		fmt.Fprintf(os.Stderr, "note: %v\n", err)
+	st.RenameGhostAccount(oldID, newID)
+	if err := saveRenameState(st); err != nil {
+		return fmt.Errorf("renamed %s → %s in the vault and the config, but the state file could not be "+
+			"saved (%v). Both vault entries are kept, so nothing is lost; do not start the daemon "+
+			"until the rename is finished. Finish it with:\n"+
+			"      cs rename %s %s", oldID, newID, err, oldID, newID)
+	}
+	if hasOld {
+		if err := keychain.Delete(vaultOld); err != nil {
+			fmt.Fprintf(os.Stderr, "note: created %q but could not remove %q: %v\n", newID, oldID, err)
+		}
 	}
 
 	fmt.Printf("\n  ✓ renamed %s → %s\n", oldID, newID)
-	fmt.Printf("    credential moved, organization annotation kept (%s)\n", shortID(meta.OrgID))
-	fmt.Printf("\n  now update %s: change the id (and any priority entry)\n", cfg.Path)
-	fmt.Printf("    from  id = %q\n", oldID)
-	fmt.Printf("    to    id = %q\n\n", newID)
+	if meta != nil {
+		fmt.Printf("    credential moved, seat annotation kept (%s)\n", shortID(meta.OrgID))
+	}
+	if configOld {
+		fmt.Printf("    %s updated: the account, priority and pools\n", cfg.Path)
+	}
+	if !created && (hasNew || configNew) {
+		fmt.Printf("    (finished an interrupted rename)\n")
+	}
+	fmt.Println()
 	return nil
+}
+
+// stateNames reports whether the state still names id anywhere a rename
+// changes.
+func stateNames(st *state.State, id string) bool {
+	if _, ok := st.Accounts[id]; ok {
+		return true
+	}
+	for _, v := range st.Vaulted {
+		if v == id {
+			return true
+		}
+	}
+	for _, in := range st.Profiles {
+		if in.Active == id || in.Pinned == id {
+			return true
+		}
+	}
+	for _, g := range st.GhostList() {
+		if g.Account == id {
+			return true
+		}
+	}
+	return false
+}
+
+// loadIgnoringBadNames loads a config whose only fault is names that break
+// the rule, as if it had none: the names are what rename is repairing.
+func loadIgnoringBadNames(p string) (*config.Config, error) {
+	cfg, err := config.LoadAllowingBadNames(p)
+	var ne *config.NameError
+	if cfg != nil && errors.As(err, &ne) {
+		return cfg, nil
+	}
+	return cfg, err
+}
+
+// renameInConfig rewrites oldID as newID in the config's text: the id line of
+// its [[account]] block, the top-level priority list, and every
+// [[profile]]'s pool, however they are laid out. Comments and everything
+// else survive. The result is parsed back (leniently: other ids may still
+// break the name rule) and checked before it replaces the file.
+func renameInConfig(cfg *config.Config, oldID, newID string) error {
+	target, err := configTarget(cfg.Path)
+	if err != nil {
+		return err
+	}
+	raw, err := os.ReadFile(target)
+	if err != nil {
+		return err
+	}
+	out := renameIDInText(string(raw), oldID, newID)
+	owner, inPool := cfg.ProfileOf(oldID)
+	declaredPool := false
+	for _, in := range cfg.Profiles {
+		for _, id := range in.Pool {
+			if id == oldID {
+				declaredPool = true
+			}
+		}
+	}
+	prio := slices.Index(cfg.Priority, oldID)
+	return writeConfigFileWith(loadIgnoringBadNames, target, []byte(out), func(c *config.Config) error {
+		if !hasAccount(c, newID) || hasAccount(c, oldID) {
+			return fmt.Errorf("the edit did not rename the [[account]] block; discarded")
+		}
+		if prio >= 0 && slices.Index(c.Priority, newID) != prio {
+			return fmt.Errorf("the edit did not rename the priority entry; discarded")
+		}
+		if declaredPool || inPool {
+			if got, _ := c.ProfileOf(newID); got != owner {
+				return fmt.Errorf("the edit moved the account from profile %q's pool to %q's; discarded", owner, got)
+			}
+		}
+		return nil
+	})
+}
+
+// renameIDInText replaces the string literal oldID with newID where an
+// account id is named: an id line inside [[account]], the top-level priority
+// array and a pool array inside [[profile]].
+func renameIDInText(text, oldID, newID string) string {
+	lines := strings.Split(text, "\n")
+	section := "" // "" top level, "account", "profile", "other"
+	inArray := false
+	for i, line := range lines {
+		if !inArray && tableHeader.MatchString(line) {
+			switch {
+			case accountHdr.MatchString(line):
+				section = "account"
+			case profileHdr.MatchString(line):
+				section = "profile"
+			default:
+				section = "other"
+			}
+			continue
+		}
+		if inArray {
+			lines[i], inArray = renameLiterals(line, 0, oldID, newID)
+			continue
+		}
+		switch {
+		case section == "account" && idLine.MatchString(line):
+			lines[i], _ = renameLiterals(line, strings.Index(line, "="), oldID, newID)
+		case section == "" && priorityAny.MatchString(line), section == "profile" && poolLine.MatchString(line):
+			lines[i], inArray = renameLiterals(line, strings.Index(line, "["), oldID, newID)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// renameLiterals replaces string literals equal to oldID in line from
+// offset from, stopping at a comment, and reports whether an array opened at
+// or before from is still open at the end of the line.
+func renameLiterals(line string, from int, oldID, newID string) (string, bool) {
+	var b strings.Builder
+	b.WriteString(line[:from])
+	open := true
+	for i := from; i < len(line); i++ {
+		c := line[i]
+		switch c {
+		case '#':
+			b.WriteString(line[i:])
+			return b.String(), open
+		case ']':
+			open = false
+			b.WriteByte(c)
+		case '"', '\'':
+			j := i + 1
+			for j < len(line) && line[j] != c {
+				if c == '"' && line[j] == '\\' {
+					j++
+				}
+				j++
+			}
+			if j >= len(line) {
+				b.WriteString(line[i:])
+				return b.String(), open
+			}
+			if line[i+1:j] == oldID {
+				b.WriteString(strconv.Quote(newID))
+			} else {
+				b.WriteString(line[i : j+1])
+			}
+			i = j
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String(), open
 }
 
 // cmdLogin signs in to an account and vaults it, end to end.
@@ -2343,13 +2584,19 @@ func cmdLogin(args []string) error {
 			"A browser you are not normally signed into has its own cookie jar, which is what "+
 			"gets you a different account")
 	keep := fs.Bool("keep", false, "stay on the newly signed-in account instead of switching back")
+	profName := fs.String("profile", "", "the Claude Code profile to sign in through, without --direct "+
+		"(default: the one this shell's CLAUDE_CONFIG_DIR belongs to); with --direct, the profile whose "+
+		"pool a new account joins")
 	scope := fs.String("scope", "work",
 		`for an account the config does not have yet: which projects may use it, "work" or "personal"`)
 	positional := parseInterleaved(fs, args)
 	if len(positional) != 1 {
-		return fmt.Errorf("usage: claudeswitch login <account-id> [--direct] [--browser <app>] [--sso] [--scope work|personal] [--keep]")
+		return fmt.Errorf("usage: claudeswitch login <account-id> [--direct] [--browser <app>] [--sso] [--scope work|personal] [--keep] [--profile NAME]")
 	}
 	id := positional[0]
+	if err := checkNewAccountID(id); err != nil {
+		return err
+	}
 
 	cfg, st, err := load(*cfgPath)
 	if err != nil {
@@ -2372,13 +2619,6 @@ func cmdLogin(args []string) error {
 	// the seat is not knowable before then. Refusing here sent people off to
 	// write a block by hand that could not be pinned anyway.
 
-	// Remember what to come back to. Only an account we can actually restore
-	// counts — a vaulted credential, not merely whatever is live now.
-	restoreTo := ""
-	if st.Active != "" && st.Active != id && v.Has(st.Active) {
-		restoreTo = st.Active
-	}
-
 	if *code != "" {
 		scopeOverride := ""
 		fs.Visit(func(f *flag.Flag) {
@@ -2389,13 +2629,40 @@ func cmdLogin(args []string) error {
 		return loginComplete(cfg, st, v, *code, scopeOverride)
 	}
 	if *direct {
-		return loginDirect(cfg, st, v, id, wantOrg, *scope, *pinOrg, oauth.Extra{Prompt: *prompt, LoginHint: *email}, *browser)
+		// --direct never touches a live credential. --profile only says whose
+		// pool a new account joins when the login completes (D20), and is
+		// settled now, before anything is started.
+		pool, err := directPool(cfg, id, *profName)
+		if err != nil {
+			return err
+		}
+		return loginDirect(cfg, st, v, id, wantOrg, *scope, *pinOrg, oauth.Extra{Prompt: *prompt, LoginHint: *email}, *browser, pool)
+	}
+
+	// Without --direct the sign-in goes through a profile's live credential:
+	// it must be one whose pool holds the account (D5), and the account must
+	// not be live in another profile (§3). A name the config has never heard
+	// of is exempt from the first: it has no pool yet, and the block recorded
+	// after the login is what gives it one.
+	target, err := profileForAccount(cfg, *profName, id, true)
+	if err != nil {
+		return err
+	}
+	if other, why := liveConflict(cfg, st, v, target.Name, id); other != "" {
+		return fmt.Errorf("account %q may be live in %s (%s); sign in there, or use "+
+			"`claudeswitch login %s --direct`, which touches no live credential", id, whereLiveQ(other), why, id)
+	}
+
+	// Remember what to come back to. Only an account we can actually restore
+	// counts — a vaulted credential, not merely whatever is live now.
+	restoreTo := ""
+	if prev := st.Profile(target.Name).Active; prev != "" && prev != id && v.Has(prev) {
+		restoreTo = prev
 	}
 
 	fmt.Println()
 	if !known {
-		fmt.Printf("  %q is new. Once signed in, it is vaulted and added to %s,\n", id, cfg.Path)
-		fmt.Printf("  pinned to the seat that signed in (scope %s).\n\n", *scope)
+		fmt.Print(newAccountNotice(cfg, target, id, *scope))
 	}
 	if wantOrg != "" {
 		fmt.Printf("  About to sign in and vault it as %q.\n\n", id)
@@ -2418,13 +2685,21 @@ func cmdLogin(args []string) error {
 		loginArgs = append(loginArgs, "--sso")
 	}
 	cmd := exec.Command("claude", loginArgs...)
+	cmd.Env = envForProfile(target)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("`claude auth login` did not complete: %w", err)
 	}
 
-	if email, orgName, _ := cachedIdentity(); orgName != "" {
+	if email, orgName, _ := cachedIdentity(target); orgName != "" {
 		fmt.Printf("\n  signed in as  %s\n  organization  %s\n", email, orgName)
+	}
+
+	// Resolved after the login: a profile not yet signed in has no item
+	// before it (D9), and this login is what creates it.
+	live, err := cliLiveFor(target)
+	if err != nil {
+		return fmt.Errorf("profile %q: %w", target.Name, err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
@@ -2435,26 +2710,26 @@ func cmdLogin(args []string) error {
 		configuredIDs = append(configuredIDs, a.ID)
 	}
 	// Including what was vaulted outside the config — see cmdAdd.
-	e, serr := v.Store(ctx, id, wantOrg, st.KnownAccounts(configuredIDs))
+	e, serr := v.StoreFrom(ctx, live, id, wantOrg, st.KnownAccounts(configuredIDs))
 	if serr != nil {
 		fmt.Printf("\n  ✗ not vaulted.\n     %v\n", serr)
-		restoreActive(v, st, restoreTo)
+		restoreActive(v, cfg, st, target.Name, live, restoreTo)
 		return nil
 	}
 
 	st.AddVaulted(id)
 	acct := st.Get(id)
 	acct.OrgID, acct.RefreshExpiry = e.OrgID, e.RefreshExpiry
-	st.SetActive(id)
+	st.Profile(target.Name).SetActive(id)
 	fmt.Printf("\n  ✓ vaulted %s (org %s, %s)\n", id, shortID(e.OrgID), nonEmpty(e.Tier, "tier unknown"))
 	if e.NoRefreshToken {
 		fmt.Printf("    ⚠ no refresh token issued — this account cannot be renewed and will\n")
 		fmt.Printf("      need signing in again when its access token expires %s\n", humanUntil(e.Expiry))
 	}
-	reportSeatRecorded(cfg, id, *scope, e)
+	reportSeatRecorded(cfg, id, *scope, e, poolToJoin(cfg, target))
 
 	if !*keep && restoreTo != "" {
-		restoreActive(v, st, restoreTo)
+		restoreActive(v, cfg, st, target.Name, live, restoreTo)
 	} else if restoreTo != "" {
 		fmt.Printf("    staying on %s (--keep); `claudeswitch use %s` switches back\n", id, restoreTo)
 	}
@@ -2467,26 +2742,27 @@ func cmdLogin(args []string) error {
 
 // restoreActive puts the previously-live account back, so signing in to vault a
 // second account does not silently leave the user working on it.
-func restoreActive(v *vault.Vault, st *state.State, to string) {
+func restoreActive(v swapperWith, cfg *config.Config, st *state.State, profName string, live keychain.Live, to string) {
 	if to == "" {
 		return
 	}
-	from := st.Active
+	ist := st.Profile(profName)
+	from := ist.Active
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	defer cancel()
 	expect := ""
 	if a, ok := st.Accounts[to]; ok {
 		expect = a.OrgID
 	}
-	if _, err := v.SwapTo(ctx, to, expect); err != nil {
+	if _, err := v.SwapToWith(ctx, live, to, expect, swapOptions(cfg, profName, from, to)); err != nil {
 		fmt.Printf("    ⚠ could not switch back to %s: %v\n", to, err)
-		fmt.Printf("      run `claudeswitch use %s`\n", to)
+		fmt.Printf("      run `claudeswitch use %s --profile %s`\n", to, profName)
 		return
 	}
-	st.SetActive(to)
+	ist.SetActive(to)
 	if from != to {
 		if aud, err := audit.Open(""); err == nil {
-			_ = aud.Write(audit.Event{Kind: "switch", From: from, To: to,
+			_ = aud.Write(audit.Event{Kind: "switch", Profile: profName, From: from, To: to,
 				Reason: "restored after vaulting another account"})
 		}
 	}
@@ -2509,7 +2785,7 @@ func restoreActive(v *vault.Vault, st *state.State, to string) {
 // the live credential as a side effect, and it gives you whichever organization
 // the browser happens to be in — which on this machine was the same one three
 // times running, no matter what the browser was showing.
-func loginDirect(cfg *config.Config, st *state.State, v *vault.Vault, id, wantOrg, scope string, pinOrg bool, extra oauth.Extra, browser string) error {
+func loginDirect(cfg *config.Config, st *state.State, v *vault.Vault, id, wantOrg, scope string, pinOrg bool, extra oauth.Extra, browser, pool string) error {
 	// An unpinned account is fine here. --direct was originally about pinning the
 	// organization, which turned out not to work at all; what it actually buys is
 	// that the credential is obtained and vaulted WITHOUT the live one ever being
@@ -2522,7 +2798,8 @@ func loginDirect(cfg *config.Config, st *state.State, v *vault.Vault, id, wantOr
 	if err != nil {
 		return err
 	}
-	if err := flow.Save(oauth.Pending{AccountID: id, OrgID: wantOrg, Scope: scope, Pinned: pinOrg}); err != nil {
+	if err := flow.Save(oauth.Pending{AccountID: id, OrgID: wantOrg, Scope: scope, Pinned: pinOrg,
+		Profile: pool}); err != nil {
 		return fmt.Errorf("could not remember this login attempt: %w", err)
 	}
 
@@ -2566,6 +2843,9 @@ func loginDirect(cfg *config.Config, st *state.State, v *vault.Vault, id, wantOr
 	if !hasAccount(cfg, id) {
 		fmt.Printf("  %q is not in %s yet; finishing the login adds it, pinned to the seat\n", id, cfg.Path)
 		fmt.Printf("  that comes back (scope %s).\n", scope)
+		if pool != "" {
+			fmt.Printf("  It joins profile %q's pool.\n", pool)
+		}
 	}
 	fmt.Printf("  Then finish with:\n\n")
 	fmt.Printf("    claudeswitch login %s --code <the-code>\n\n", id)
@@ -2636,7 +2916,7 @@ func loginComplete(cfg *config.Config, st *state.State, v *vault.Vault, code, sc
 	} else {
 		fmt.Printf("    refresh token expires %s\n", humanUntil(e.RefreshExpiry))
 	}
-	reportSeatRecorded(cfg, id, scope, e)
+	reportSeatRecorded(cfg, id, scope, e, completionPool(cfg, pend))
 	fmt.Printf("    your live session was never touched\n\n")
 	return nil
 }
@@ -2654,8 +2934,8 @@ func hasAccount(cfg *config.Config, id string) bool {
 // reportSeatRecorded writes the verified seat into the config and says what it
 // did. The credential is already vaulted by now, so a failure here is reported
 // rather than returned: the account works, it just still needs its block.
-func reportSeatRecorded(cfg *config.Config, id, scope string, e *vault.Entry) {
-	msg, err := recordSeat(cfg, id, scope, e)
+func reportSeatRecorded(cfg *config.Config, id, scope string, e *vault.Entry, pool string) {
+	msg, err := recordSeat(cfg, id, scope, e, pool)
 	switch {
 	case err != nil:
 		fmt.Printf("    ⚠ the credential is vaulted, but the config was not updated:\n")
@@ -2762,11 +3042,18 @@ func cmdRemove(args []string) error {
 	who := v.DescribeOf(id)
 	_, org := v.IdentityOf(id)
 	twin := otherHoldingSameCredential(cfg, st, id)
-	if v.IsLive(id) && twin == "" {
+	// Any profile's live item, not only this shell's.
+	holderName, _, live := liveHolder(cliGhostTargets(cfg, st), v, id)
+	if live && twin == "" {
+		if multiProfile(cfg) {
+			return fmt.Errorf("%q holds the credential profile %q is using right now.\n"+
+				"  Switch it to another account first (`claudeswitch use <other> --profile %s`), "+
+				"then remove it", id, holderName, holderName)
+		}
 		return fmt.Errorf("%q holds the credential Claude Code is using right now.\n"+
 			"  Switch to another account first (`claudeswitch use <other>`), then remove it", id)
 	}
-	if v.IsLive(id) && twin != "" {
+	if live && twin != "" {
 		// The one case where removing a live entry is safe, and the only way
 		// out of the state `doctor` calls corrupted. Liveness is decided by
 		// comparing access tokens, so two entries sharing one token are both
@@ -2886,15 +3173,15 @@ func cmdSession(args []string) error {
 	switch {
 	case *since > 0:
 		from = to.Add(-*since)
-	case !st.LastSwitch.IsZero() && st.LastSwitch.After(to.Add(-24*time.Hour)):
+	case !st.Default().LastSwitch.IsZero() && st.Default().LastSwitch.After(to.Add(-24*time.Hour)):
 		// Default to something meaningful: the span the current rotation covers,
 		// widened to catch the work that led up to it.
-		if c := st.LastSwitch.Add(-8 * time.Hour); c.After(from) {
+		if c := st.Default().LastSwitch.Add(-8 * time.Hour); c.After(from) {
 			from = c
 		}
 	}
 
-	s, err := session.Build("", from, to, st.Active)
+	s, err := session.Build("", from, to, st.Default().Active)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "note: %v\n", err)
 	}
@@ -2982,7 +3269,7 @@ func truncateStr(s string, n int) string {
 // probeDue reports whether an idle account is overdue a liveness probe. The
 // vault records when each entry was last written, which is also when it was last
 // refreshed.
-func probeDue(v *vault.Vault, accountID string, every time.Duration) bool {
+func probeDue(v interface{ VaultedAt(string) time.Time }, accountID string, every time.Duration) bool {
 	last := v.VaultedAt(accountID)
 	if last.IsZero() {
 		return true // never recorded: probe once and find out
@@ -3305,27 +3592,63 @@ func idsOf(items []vaultedAccount) []string {
 
 // suggestName proposes an id from the account itself, so the common case is a
 // keypress rather than a decision.
+//
+// It only ever proposes an id the config would load (config.ValidName): the
+// organization's name, else the email's local part, lower-cased with every
+// other character mapped to '-', runs of '-' collapsed, '-' and '.' trimmed
+// from the ends, ".." collapsed, cut to the length limit; "account" when
+// nothing is left. A taken id gets -2, -3, … until it is free.
 func suggestName(pr *usage.Profile, taken map[string]string) string {
-	base := strings.ToLower(pr.Organization.Name)
-	base = strings.Map(func(r rune) rune {
+	base := sanitizeID(pr.Organization.Name)
+	if base == "" {
+		base = sanitizeID(strings.SplitN(pr.Account.Email, "@", 2)[0])
+	}
+	if base == "" {
+		base = "account"
+	}
+	used := map[string]bool{}
+	for k, id := range taken {
+		used[k], used[id] = true, true
+	}
+	if !used[base] {
+		return base
+	}
+	for n := 2; ; n++ {
+		suffix := "-" + strconv.Itoa(n)
+		cand := strings.TrimRight(truncateID(base, config.MaxNameLen-len(suffix)), "-.") + suffix
+		if !used[cand] {
+			return cand
+		}
+	}
+}
+
+// sanitizeID turns free text into a valid account id, or "".
+func sanitizeID(s string) string {
+	s = strings.Map(func(r rune) rune {
 		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
 			return r
-		case r == ' ', r == '-', r == '_':
-			return '-'
 		}
-		return -1
-	}, base)
-	base = strings.Trim(base, "-")
-	if base == "" || strings.Contains(base, "@") {
-		base = strings.SplitN(pr.Account.Email, "@", 2)[0]
+		return '-'
+	}, strings.ToLower(s))
+	for strings.Contains(s, "--") {
+		s = strings.ReplaceAll(s, "--", "-")
 	}
-	for _, id := range taken {
-		if id == base {
-			return base + "-2"
-		}
+	for strings.Contains(s, "..") {
+		s = strings.ReplaceAll(s, "..", ".")
 	}
-	return base
+	s = strings.Trim(truncateID(strings.Trim(s, "-."), config.MaxNameLen), "-.")
+	if config.ValidName("account id", s) != nil {
+		return ""
+	}
+	return s
+}
+
+func truncateID(s string, n int) string {
+	if len(s) > n {
+		return s[:n]
+	}
+	return s
 }
 
 // isTerminal reports whether we can prompt: stdin must be a terminal, and not
@@ -3416,12 +3739,26 @@ func blindLimit(cfg *config.Config) time.Duration {
 
 // readingsStale reports whether the active account's figure is old enough that
 // the daemon cannot be keeping up.
+// With more than one profile, any profile's active account counts; an
+// profile with nothing active (not logged in) does not.
 func readingsStale(cfg *config.Config, st *state.State, limit time.Duration) bool {
-	a, ok := st.Accounts[st.Active]
-	if !ok || a == nil || a.Last == nil {
-		return true
+	if !multiProfile(cfg) {
+		a, ok := st.Accounts[st.Default().Active]
+		if !ok || a == nil || a.Last == nil {
+			return true
+		}
+		return time.Since(a.LastAt) > limit
 	}
-	return time.Since(a.LastAt) > limit
+	for _, v := range profileViews(cfg, st, "") {
+		if v.ist.Active == "" {
+			continue
+		}
+		a, ok := st.Accounts[v.ist.Active]
+		if !ok || a == nil || a.Last == nil || time.Since(a.LastAt) > limit {
+			return true
+		}
+	}
+	return false
 }
 
 // lookahead is how far ahead the policy engine should look when deciding.
@@ -3448,28 +3785,21 @@ func cmdWhy(args []string) error {
 	fs := flag.NewFlagSet("why", flag.ExitOnError)
 	cfgPath := fs.String("config", "", "path to config.toml")
 	asJSON := fs.Bool("json", false, "machine-readable output")
+	only := fs.String("profile", "", "explain only this Claude Code profile (default: every one)")
 	parseInterleaved(fs, args)
 
 	cfg, st, err := load(*cfgPath)
 	if err != nil {
 		return err
 	}
-	dir := currentDir()
-	dec, verdicts := policy.Explain(policy.Input{
-		Cfg: cfg, St: st, Now: time.Now(), LastSwitch: st.LastSwitch,
-		Pinned: st.Pinned, Dir: dir, Lookahead: lookahead(cfg),
-	})
-
-	if *asJSON {
-		return emitJSON(map[string]any{
-			"decision": decisionJSON(dec),
-			"accounts": verdictsJSON(verdicts),
-			"dir":      dir,
-		})
+	if err := checkProfileFlag(cfg, *only); err != nil {
+		return err
 	}
-	render.Why(os.Stdout, render.WhyOptions{
-		Cfg: cfg, St: st, Decision: dec, Verdicts: verdicts, Dir: dir,
-	})
+	dir := currentDir()
+	if *asJSON {
+		return emitJSON(whyJSON(cfg, st, time.Now(), dir, *only))
+	}
+	renderWhy(os.Stdout, cfg, st, time.Now(), dir, *only)
 	return nil
 }
 
@@ -3522,8 +3852,9 @@ func statusJSON(cfg *config.Config, st *state.State, p *poller.Poller) map[strin
 	for _, a := range cfg.Ordered() {
 		m := map[string]any{
 			"id": a.ID, "scope": a.Scope, "vaulted": v.Has(a.ID),
-			"active": a.ID == st.Active,
+			"active": activeIn(cfg, st, a.ID) != "",
 		}
+		addProfileJSON(m, cfg, st, a.ID)
 		if plan := v.PlanOf(a.ID); plan != "" {
 			m["plan"] = plan
 		}
@@ -3568,7 +3899,7 @@ func statusJSON(cfg *config.Config, st *state.State, p *poller.Poller) map[strin
 	}
 	degraded, why := p.Degraded()
 	out := map[string]any{
-		"active":   st.Active,
+		"active":   st.Default().Active,
 		"accounts": accounts,
 		"thresholds": map[string]any{
 			"switch_at": cfg.SwitchAt, "hard_floor": cfg.HardFloor,
@@ -3580,8 +3911,29 @@ func statusJSON(cfg *config.Config, st *state.State, p *poller.Poller) map[strin
 	if degraded {
 		out["degraded"] = why
 	}
-	if !st.LastSwitch.IsZero() {
-		out["last_switch"] = st.LastSwitch
+	if !st.Default().LastSwitch.IsZero() {
+		out["last_switch"] = st.Default().LastSwitch
+	}
+	// With more than one profile, each one's active account, pool and
+	// effective thresholds (D4). The fields above stay as they were, the
+	// default profile's, so a script written for one profile keeps working.
+	if multiProfile(cfg) {
+		var list []map[string]any
+		for _, v := range profileViews(cfg, st, "") {
+			m := map[string]any{
+				"profile": v.in.Name, "active": v.ist.Active, "pool": v.pool,
+				"thresholds": thresholdsJSON(v.cfg),
+			}
+			markCurrent(m, cfg, v.in.Name)
+			if v.ist.Pinned != "" {
+				m["pinned"] = v.ist.Pinned
+			}
+			if !v.ist.LastSwitch.IsZero() {
+				m["last_switch"] = v.ist.LastSwitch
+			}
+			list = append(list, m)
+		}
+		out["profiles"] = list
 	}
 	return out
 }
@@ -3658,6 +4010,24 @@ func settings() []setting {
 				c.APIBudget = n
 				return nil
 			}, "usage calls per 5 minutes, across every process"},
+		{"landing_margin", func(c *config.Config) string { return fmt.Sprintf("%g", c.Margin()) },
+			func(c *config.Config, v string) error {
+				n, err := strconv.ParseFloat(strings.TrimSuffix(v, "%"), 64)
+				if err != nil {
+					return fmt.Errorf("%q is not a number of points", v)
+				}
+				c.LandingMargin = &n
+				return nil
+			}, "a switch target needs this many points below its own trigger (0 = off)"},
+		{"blind_failover_polls", func(c *config.Config) string { return strconv.Itoa(c.BlindPolls()) },
+			func(c *config.Config, v string) error {
+				n, err := strconv.Atoi(v)
+				if err != nil {
+					return fmt.Errorf("%q is not a number", v)
+				}
+				c.BlindFailoverPolls = &n
+				return nil
+			}, "fail over after this many unreadable polls of the account in use (0 = hold)"},
 		{"refresh_window", func(c *config.Config) string { return c.RefreshWindow.String() },
 			durSetter(func(c *config.Config) *config.Duration { return &c.RefreshWindow }),
 			"renew a credential this long before it expires"},
@@ -3767,7 +4137,13 @@ func cmdTop(args []string) error {
 	fs := flag.NewFlagSet("top", flag.ExitOnError)
 	cfgPath := fs.String("config", "", "path to config.toml")
 	every := fs.Duration("every", 2*time.Second, "how often to redraw")
+	only := fs.String("profile", "", "show only this Claude Code profile (default: every one)")
 	parseInterleaved(fs, args)
+	if cfg, err := config.Load(*cfgPath); err == nil {
+		if err := checkProfileFlag(cfg, *only); err != nil {
+			return err
+		}
+	}
 
 	if !canDraw() {
 		return fmt.Errorf("`cs top` draws to a terminal; use `cs status` when piping")
@@ -3795,21 +4171,17 @@ func cmdTop(args []string) error {
 		}
 		var buf strings.Builder
 		p := poller.New(cfg, st, logger(false))
-		dec := policy.Decide(policy.Input{
-			Cfg: cfg, St: st, Now: time.Now(), LastSwitch: st.LastSwitch,
-			Pinned: st.Pinned, Dir: currentDir(), Lookahead: lookahead(cfg),
-		})
 		vlt := vault.New(logger(false))
 		vaulted, plans := map[string]bool{}, map[string]string{}
 		for _, a := range cfg.Accounts {
 			vaulted[a.ID], plans[a.ID] = vlt.Has(a.ID), vlt.PlanOf(a.ID)
 		}
 		degraded, why := p.Degraded()
-		render.Status(&buf, render.Options{
-			Cfg: cfg, St: st, Budget: p.Budget(), Degraded: degraded, DegradedWhy: why,
+		renderStatus(&buf, cfg, st, render.Options{
+			Budget: p.Budget(), Degraded: degraded, DegradedWhy: why,
 			DaemonOwns: state.DaemonRunning(), Vaulted: vaulted, Plans: plans,
-			Switches: recentSwitches(5), Known: knownAccounts(cfg), Decision: &dec,
-		})
+			Known: knownAccounts(cfg),
+		}, recentSwitches(5), time.Now(), currentDir(), *only)
 		// Home the cursor and clear as we go, rather than clearing first: a
 		// clear-then-draw flickers.
 		fmt.Print("\033[H\033[J")

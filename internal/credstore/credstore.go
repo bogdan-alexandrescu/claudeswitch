@@ -1,9 +1,11 @@
 // Package credstore holds Claude credentials, wherever the platform keeps them.
 //
 // macOS uses a Keychain generic-password item; Linux uses a plain JSON file at
-// ~/.claude/.credentials.json. The Linux side is the simpler of the two — no
-// approval prompts, no separate tool to shell out to — but both must uphold the
-// same invariants:
+// <config dir>/.credentials.json. Which live item Claude Code reads depends on
+// CLAUDE_CONFIG_DIR; LiveService resolves it (live.go).
+//
+// The Linux side is the simpler of the two — no approval prompts, no separate
+// tool to shell out to — but both must uphold the same invariants:
 //
 //   - the live item holds mcpOAuth (the user's MCP server logins) alongside the
 //     Claude credential, and only claudeAiOauth is ever swapped
@@ -83,10 +85,6 @@ type Blob struct {
 	Meta          *Meta           `json:"claudeswitchMeta,omitempty"`
 }
 
-// LiveService names the item Claude Code itself reads. On Linux this is not a
-// service name but is kept as the sentinel for "the live credential".
-const LiveService = "Claude Code-credentials"
-
 // VaultService is the per-account item name in the vault.
 func VaultService(accountID string) string { return "claudeswitch:" + accountID }
 
@@ -146,6 +144,19 @@ func verifyWrite(service string, want *Blob) error {
 	}
 	return nil
 }
+
+// ErrNotFound marks a credential that is not stored at all: the keychain said
+// errSecItemNotFound, or the file does not exist. It is a definite answer —
+// the item holds nothing — and so differs from a read that failed, which says
+// nothing about what the item holds.
+var ErrNotFound = errors.New("no such credential")
+
+// notFoundError is a not-found with its own full message: errors.Is matches
+// ErrNotFound, and the text is unchanged for the person reading it.
+type notFoundError string
+
+func (e notFoundError) Error() string        { return string(e) }
+func (e notFoundError) Is(target error) bool { return target == ErrNotFound }
 
 // ErrUnavailable marks a store that did not answer at all — a keychain read or
 // write that ran out of time rather than returning something. It is worth its

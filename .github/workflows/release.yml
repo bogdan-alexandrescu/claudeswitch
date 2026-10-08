@@ -122,3 +122,38 @@ jobs:
           done
           echo "::error::release $version is still missing:$missing"
           exit 1
+
+  # The menu-bar app, built on macOS and attached to the release the build job
+  # created. Unsigned (ad-hoc signed): the README gives the one-time "Open
+  # Anyway" steps, and ./install-app.sh builds it locally without any warning.
+  macos-app:
+    needs: build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the app zip
+        run: |
+          set -eu
+          macos/scripts/app-zip.sh dist
+          ls -l dist
+      - name: Version matches the tag
+        run: |
+          set -eu
+          want="${GITHUB_REF_NAME#v}"
+          ls dist/ClaudeSwitch-"$want"-macos.zip >/dev/null || {
+            echo "::error::expected dist/ClaudeSwitch-$want-macos.zip"; ls dist; exit 1; }
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          version="${GITHUB_REF_NAME}"
+          for attempt in 1 2 3; do
+            gh release upload "$version" dist/ClaudeSwitch-*-macos.zip dist/ClaudeSwitch-*-macos.zip.sha256 --clobber && break || sleep 5
+          done
+          attached="$(gh release view "$version" --json assets -q '.assets[].name')"
+          for f in dist/ClaudeSwitch-*; do
+            printf '%s\n' "$attached" | grep -qxF "$(basename "$f")" || {
+              echo "::error::release $version is missing $(basename "$f")"; exit 1; }
+          done
+          echo "app attached"

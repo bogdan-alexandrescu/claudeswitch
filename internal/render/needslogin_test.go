@@ -23,7 +23,7 @@ func statusFor(t *testing.T, lastErr string, lastAt time.Time) string {
 		Accounts:   []config.Account{{ID: "work-a"}},
 		Priority:   []string{"work-a"},
 	}
-	st := &state.State{Active: "work-a", Accounts: map[string]*state.Account{
+	st := &state.State{Profiles: map[string]*state.ProfileState{state.DefaultProfile: {Active: "work-a"}}, Accounts: map[string]*state.Account{
 		"work-a": {
 			Last: &usage.Usage{
 				FiveHour: usage.Window{Utilization: ptr(10), ResetsAt: &resets},

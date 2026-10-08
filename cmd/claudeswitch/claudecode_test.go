@@ -155,7 +155,7 @@ func renderContextString(cfg *config.Config, st *state.State, now time.Time, dae
 
 func TestContextNormalCaseIsShort(t *testing.T) {
 	now := time.Now()
-	st := &state.State{Active: "a", DaemonLive: true, Accounts: map[string]*state.Account{
+	st := &state.State{Profiles: map[string]*state.ProfileState{state.DefaultProfile: {Active: "a"}}, DaemonLive: true, Accounts: map[string]*state.Account{
 		"a": at(40, 30, now), "b": at(5, 5, now),
 	}}
 	out := renderContextString(testCfg(), st, now, true)
@@ -176,7 +176,7 @@ func TestContextNormalCaseIsShort(t *testing.T) {
 
 func TestContextSaysWhenToSwitch(t *testing.T) {
 	now := time.Now()
-	st := &state.State{Active: "a", DaemonLive: true, Accounts: map[string]*state.Account{
+	st := &state.State{Profiles: map[string]*state.ProfileState{state.DefaultProfile: {Active: "a"}}, DaemonLive: true, Accounts: map[string]*state.Account{
 		"a": at(91, 30, now), "b": at(5, 5, now),
 	}}
 	out := renderContextString(testCfg(), st, now, true)
@@ -187,7 +187,7 @@ func TestContextSaysWhenToSwitch(t *testing.T) {
 
 func TestContextNamesADaemonThatWillNotAct(t *testing.T) {
 	now := time.Now()
-	st := &state.State{Active: "a", Accounts: map[string]*state.Account{"a": at(10, 10, now)}}
+	st := &state.State{Profiles: map[string]*state.ProfileState{state.DefaultProfile: {Active: "a"}}, Accounts: map[string]*state.Account{"a": at(10, 10, now)}}
 	if out := renderContextString(testCfg(), st, now, false); !strings.Contains(out, "NOT running") {
 		t.Errorf("stopped daemon not reported:\n%s", out)
 	}
@@ -204,7 +204,7 @@ func TestContextBeforeSetup(t *testing.T) {
 	if out := renderContextString(testCfg(), &state.State{}, now, false); !strings.Contains(out, "no account selected") {
 		t.Errorf("no active: %s", out)
 	}
-	st := &state.State{Active: "a", Accounts: map[string]*state.Account{"a": {}}}
+	st := &state.State{Profiles: map[string]*state.ProfileState{state.DefaultProfile: {Active: "a"}}, Accounts: map[string]*state.Account{"a": {}}}
 	if out := renderContextString(testCfg(), st, now, false); !strings.Contains(out, "no usage reading") {
 		t.Errorf("no reading: %s", out)
 	}
@@ -218,7 +218,7 @@ func TestContextStaleOnlyPastTenMinutes(t *testing.T) {
 		age  time.Duration
 		want bool
 	}{{4 * time.Minute, false}, {9 * time.Minute, false}, {12 * time.Minute, true}} {
-		st := &state.State{Active: "a", DaemonLive: true, Accounts: map[string]*state.Account{
+		st := &state.State{Profiles: map[string]*state.ProfileState{state.DefaultProfile: {Active: "a"}}, DaemonLive: true, Accounts: map[string]*state.Account{
 			"a": at(40, 30, now.Add(-tc.age)), "b": at(5, 5, now),
 		}}
 		out := renderContextString(testCfg(), st, now, true)

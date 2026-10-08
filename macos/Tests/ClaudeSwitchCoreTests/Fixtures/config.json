@@ -1,0 +1,18 @@
+{
+  "api_budget": "12",
+  "blind_failover_polls": "3",
+  "cooldown": "10m0s",
+  "hard_floor": "98",
+  "hot_threshold": "60",
+  "landing_margin": "10",
+  "max_switch_wait": "30s",
+  "path": "/Users/example/.config/claudeswitch/config.toml",
+  "poll_active": "1m0s",
+  "poll_hot": "1m0s",
+  "poll_idle": "10m0s",
+  "refresh_probe": "24h0m0s",
+  "refresh_window": "1h0m0s",
+  "switch_at": "90",
+  "switch_at_weekly": "95",
+  "switch_when": "idle"
+}

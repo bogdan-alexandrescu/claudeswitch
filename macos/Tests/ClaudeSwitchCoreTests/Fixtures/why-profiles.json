@@ -1,0 +1,66 @@
+{
+  "dir": "/Users/example",
+  "profiles": [
+    {
+      "accounts": [
+        {
+          "active": true,
+          "clears_at": "2026-10-11T01:57:16Z",
+          "eligible": true,
+          "id": "work-1",
+          "utilization": 41.628049104166664,
+          "why": "at 42%, 53 points of room",
+          "window": "seven_day"
+        },
+        {
+          "clears_at": "2026-10-08T03:57:16Z",
+          "eligible": true,
+          "id": "personal",
+          "utilization": 12,
+          "why": "at 12%, ready",
+          "window": "five_hour"
+        },
+        {
+          "clears_at": "2026-10-08T02:37:16Z",
+          "eligible": false,
+          "id": "work-2",
+          "utilization": 100,
+          "why": "refused on its five_hour window",
+          "window": "five_hour"
+        }
+      ],
+      "current": true,
+      "decision": {
+        "kind": "stay",
+        "reason": "active account at 42%, under the 95% trigger"
+      },
+      "pool": [
+        "work-1",
+        "work-2",
+        "personal"
+      ],
+      "profile": "default",
+      "thresholds": {
+        "hard_floor": 98,
+        "landing_margin": 10,
+        "switch_at": 90,
+        "switch_at_weekly": 95
+      }
+    },
+    {
+      "accounts": [],
+      "decision": {
+        "kind": "stay",
+        "reason": "pinned to personal; automatic rotation is off"
+      },
+      "pool": [],
+      "profile": "review",
+      "thresholds": {
+        "hard_floor": 98,
+        "landing_margin": 10,
+        "switch_at": 90,
+        "switch_at_weekly": 95
+      }
+    }
+  ]
+}

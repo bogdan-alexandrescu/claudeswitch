@@ -314,9 +314,11 @@ func holdLimit(cfg *config.Config) time.Duration {
 	return 2 * time.Minute
 }
 
-// afterReload notes whether the reload took the active account away.
-func (h *activeHold) afterReload(before string, st *state.State) {
-	if before != "" && before != state.Unattributed && st.Active == "" {
+// afterReload notes whether the reload took the profile's active account
+// away: before and after are its active account around the reload. One hold
+// per profile (profileLoop.hold).
+func (h *activeHold) afterReload(before, after string) {
+	if before != "" && before != state.Unattributed && after == "" {
 		h.lost, h.since = before, h.clock()
 	}
 }
@@ -335,12 +337,12 @@ func (h *activeHold) lift(why string) {
 // gate turns a Switch into a Stay while holding, and lifts the hold for good
 // once the live credential belongs to a configured account or the bound runs
 // out.
-func (h *activeHold) gate(dec policy.Decision, st *state.State, cfg *config.Config) policy.Decision {
+func (h *activeHold) gate(dec policy.Decision, active string, cfg *config.Config) policy.Decision {
 	if h.lost == "" {
 		return dec
 	}
-	if st.Active != "" && hasAccount(cfg, st.Active) {
-		h.lift(fmt.Sprintf("the live credential is attributed to %s", st.Active))
+	if active != "" && hasAccount(cfg, active) {
+		h.lift(fmt.Sprintf("the live credential is attributed to %s", active))
 		return dec
 	}
 	if limit := holdLimit(cfg); h.clock().Sub(h.since) >= limit {

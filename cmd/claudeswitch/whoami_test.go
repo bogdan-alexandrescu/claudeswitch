@@ -55,7 +55,7 @@ func TestWhoamiCallsAnOrgOnlyMatchUnconfirmed(t *testing.T) {
 	}
 }
 
-// When the profile could not be read there is no seat, only the organization.
+// When the identity lookup failed there is no seat, only the organization.
 // Then the organization is all there is to go on, and it has to say so.
 func TestWhoamiWithoutASeatSaysItCannotTellWhichPerson(t *testing.T) {
 	cfg := &config.Config{Accounts: []config.Account{

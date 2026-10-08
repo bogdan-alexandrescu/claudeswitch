@@ -19,14 +19,15 @@ onto a fresh one before you notice.
 
 ## Install
 
-There are three parts. The binary is required; the daemon and the Claude Code
-plugin are each optional, and each needs the binary.
+There are four parts. The binary is required; the daemon, the Claude Code
+plugin and the menu-bar app are each optional, and each needs the binary.
 
 | part | gives you | needs |
 |---|---|---|
 | binary | every command below | a release download, or Go to build it |
 | daemon | automatic rotation, credential renewal, notifications | a source checkout (`install.sh`) |
 | Claude Code plugin | quota context in every session, `/cs` skills | the binary |
+| menu-bar app (macOS) | every account's quota at a glance, one-click switching | a source checkout (`install-app.sh`) |
 
 ### From source (binary and daemon)
 
@@ -60,7 +61,7 @@ macOS and Linux on amd64 and arm64, and a `checksums.txt`. The archives are
 reproducible: the same tag always produces the same bytes.
 
 ```sh
-VERSION=v0.4.9
+VERSION=v0.5.0
 TARGET=darwin_arm64            # darwin_amd64, linux_amd64, linux_arm64
 curl -LO "https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION/claudeswitch_${VERSION}_${TARGET}.tar.gz"
 curl -LO "https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION/checksums.txt"
@@ -120,6 +121,19 @@ claude plugin uninstall claudeswitch@claudeswitch
 claude plugin marketplace update claudeswitch
 claude plugin install cs@claudeswitch
 ```
+
+### In the menu bar (macOS)
+
+```sh
+./install-app.sh
+```
+
+builds a native menu-bar app on your Mac with the Command Line Tools (no Xcode,
+no Apple Developer account) and installs it in `/Applications`. It shows the
+active account and its utilization in the menu bar, every account's windows
+and resets in its menu, and switches with `claudeswitch use`. It never reads
+the keychain. See [macos/README.md](macos/README.md), which also covers the
+unsigned release zip.
 
 ## Use
 
@@ -264,6 +278,24 @@ moment you need that account; with it, you find out within a day. `cs doctor`
 shows the policy and every account's standing, and `status` says when an
 account cannot be renewed.
 
+### Recovery copies
+
+Before a swap overwrites the live credential it saves it: into its account's
+vault entry when it can tell whose it is, otherwise into a recovery slot (up to
+five per profile), so a login is never destroyed by a swap. `cs doctor` warns
+when any slot holds something.
+
+```sh
+cs recovery                       # list kept credentials: slot, profile, when, seat, expiry
+cs recovery --identify            # also ask whose each one is (one API call each)
+cs recovery restore work-1 w1     # vault slot work-1 as w1, after checking its seat; clears the slot
+cs recovery clear work-1          # delete a slot (asks first; --yes without a terminal)
+```
+
+`restore` refuses a credential whose seat is not the account's pinned one, and
+will not replace a better vaulted credential without `--force`. No command ever
+prints a token.
+
 ## Sessions that span accounts
 
 Rotation makes "how much have I used?" a question no single account can answer:
@@ -406,6 +438,8 @@ hot_threshold    = 60     # above this, the account in use is polled every poll_
 poll_hot         = "1m"   # the default; faster drains the usage API's burst allowance
 cooldown         = "10m"
 max_switch_wait  = "30s"  # how long a due switch waits for an idle gap
+landing_margin   = 10     # a switch target needs this many points below its own trigger
+blind_failover_polls = 3  # unreadable polls of the account in use before failing over; 0 holds
 
 priority = ["work-a", "work-b", "personal"]
 
@@ -420,9 +454,114 @@ org_id       = "…"        # ...in this organization
 The two triggers differ on purpose: 85% of a 5-hour window is nearly gone and
 refills the same afternoon, while 85% of a weekly one still holds days of work.
 
+| setting | default | what it does |
+|---|---|---|
+| `landing_margin` | `10` (0–50) | A switch only lands on an account with at least this many points of room below **its own** trigger, so it never lands on one it must leave again at once. When every account with room is inside the margin, an ordinary rotation holds; past `hard_floor`, or after a refusal, it takes the best of them anyway. Settable per profile. `0` turns it off. |
+| `blind_failover_polls` | `3` | When the usage of the account in use cannot be read for this many polls in a row (and its last good reading is at least that many `poll_active` intervals old), switch to an account that can be read and clears the landing margin. A 429 from the usage endpoint does not count — it clears by itself within 15 minutes — and neither does an access token that merely expired on an idle session, which Claude Code refreshes on the next message. `0` always holds. |
+
 `cs config` lists every setting with its value, and `cs config <name> <value>`
 changes one with validation. A live credential that matches no pinned seat is
 reported as `ACTIVE, unattributed` rather than filed under a guess.
+
+## Multiple Claude Code profiles
+
+Claude Code can run as several independent profiles, one per config
+directory, each with its own live credential:
+
+```sh
+claude                                   # CLAUDE_CONFIG_DIR unset: ~/.claude
+CLAUDE_CONFIG_DIR=~/.claude-work claude  # a second profile
+```
+
+Declare each one with an `[[profile]]` block and give it a pool of accounts.
+One daemon drives them all, rotating each profile only within its own pool:
+
+```toml
+[[profile]]
+name = "default"        # no dir: Claude Code runs with CLAUDE_CONFIG_DIR unset
+pool = ["personal", "a4", "a5"]
+
+[[profile]]
+name      = "work"
+dir       = "~/.claude-work"
+pool      = ["work-1", "work-2"]
+switch_at = 75          # overrides the global 85 for this profile only
+```
+
+- **`dir` is `CLAUDE_CONFIG_DIR` exactly as you launch Claude Code with it.**
+  Leaving it out means `CLAUDE_CONFIG_DIR` unset, which is *not* the same as
+  `dir = "~/.claude"`: Claude Code keeps a different keychain item for each.
+  Only one profile may leave it out.
+- **Pools must not overlap.** Accounts in no pool join the profile named
+  `default`; with no `default` declared, an unlisted account is a config error.
+- `switch_at`, `switch_at_weekly`, `hard_floor` and `landing_margin` may be set per profile;
+  anything unset falls back to the global value.
+- No `[[profile]]` blocks at all means one profile holding every account,
+  which behaves exactly as before.
+- Profile names and account ids are plain names: letters, digits, `.`, `_`
+  and `-`, not starting with `-` or `.`, at most 64 characters. A config
+  with an older id that breaks this does not load; the error names it, and
+  `cs rename <old> <new>` fixes it everywhere (config, state and vault).
+- Removing a profile, or changing its `dir`, keeps its old credential
+  guarded: the account last live there is installed in no other profile
+  until that credential no longer holds it, or `cs profile forget <name>`.
+  This holds for edits made while the daemon is stopped too: the next daemon
+  start, and every `use`, `login`, `refresh` and `remove`, notice them. For
+  a profile whose credential was never recorded, the account itself stays
+  guarded until `cs profile forget <name>`. `status` and `doctor` list what
+  is still guarded.
+- A new account signed in (`login <id>`) or added (`add <id>`) through an
+  profile joins that profile's pool: the config edit writes the account and
+  the pool entry together.
+- Editing the profiles while the daemon runs needs no restart: a profile
+  added is started, one removed is stopped, and one whose `dir` changed is
+  stopped and started again, between swaps, never during one.
+
+**One credential is live in at most one profile.** Claude Code refreshes its
+own token, and a refresh revokes the previous one, so an account live in two
+profiles is logged out of whichever refreshes second. claudeswitch therefore
+never swaps an account into a profile while it is, or might be, live in
+another; when it cannot tell, it refuses and tries again later.
+
+### Which profile a command acts on
+
+`use`, `add`, `login` and `whoami` act on one profile:
+
+- `--profile NAME` names it.
+- Without the flag, the profile your shell's own `CLAUDE_CONFIG_DIR` belongs
+  to: unset is the profile with no `dir`, and a set one is matched against each
+  `dir` (as written first, then as the directory it names). So `/cs use x`
+  typed inside a work session switches the work profile, with no flag. A shell
+  whose `CLAUDE_CONFIG_DIR` matches no profile gets an error saying so, never a
+  guess.
+
+`use` (and `login`, and `add` for a configured id) refuses an account from
+another profile's pool, naming the profile that owns it. There is no
+`--force`: a swap across pools is how one credential ends up live in two
+profiles. `cs use work-1 --profile work` is how to switch the other one.
+
+`status`, `top`, `why` and `plan` show one block per profile — its pool, its
+active account, its decision and its effective thresholds — and take
+`--profile NAME` to show only one. The status line and the session-start
+context show the profile of the session they run in. `refresh` and `remove`
+check every profile's live credential before touching an account. `doctor`
+checks each profile: its directory, its live credential, and its pool.
+
+### Upgrading to the multi-profile release
+
+`state.json` now records the active account per profile and no longer writes
+the old top-level `active_account`, `pinned`, `last_switch` and `active_at`
+fields. Old files are still read and migrated. **Restart the daemon once
+after upgrading, before adding `[[profile]]` blocks**: the new daemon
+records which credential each profile uses, which is what lets a later
+config edit keep guarding an account still live in a profile you removed.
+Restart it (`./install.sh`, or `--live` if it was live) so no older daemon is
+left reading fields that are no longer written. Until you do, every command
+that reads state prints one line to stderr saying the running daemon is older
+than `cs` and how to restart it, and `doctor` reports it as a FAIL. The daemon
+records its build in `state.json` when it starts; builds are compared by commit
+time, or by release version, and a `dev` build with no git information is not
+compared at all.
 
 ## What it will not do
 
@@ -471,5 +610,6 @@ internal/config       declarative accounts
 internal/render       the status view
 internal/notify       desktop notifications
 plugin/               the Claude Code plugin: SessionStart hook and skills
+macos/                the menu-bar app (SwiftUI); install-app.sh builds it
 .claude-plugin/       the marketplace entry that lists the plugin
 ```

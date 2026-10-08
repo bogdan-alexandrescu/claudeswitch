@@ -44,6 +44,9 @@ claudeswitch login <id> --direct --browser "<Browser Name>" [--scope personal]
 Add `--sso` for an SSO-backed organization. Without `--browser` it prints a URL
 for the user to open themselves.
 
+`--direct` touches no live credential, so it works the same whichever Claude
+Code profile this session belongs to; it needs no `--profile`.
+
 ## 3. Get the code
 
 The browser shows a code after the user approves. Ask the user to paste it,

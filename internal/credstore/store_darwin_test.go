@@ -4,6 +4,7 @@ package credstore
 
 import (
 	"errors"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -67,7 +68,7 @@ func TestCreatingAVaultItemTrustsThisBinary(t *testing.T) {
 func TestTheLiveItemNeverGetsOurAccessList(t *testing.T) {
 	f := &fakeKeychain{exists: false}
 	f.install(t)
-	if err := Write(LiveService, vaultBlob()); err != nil {
+	if err := Write(liveServiceBase, vaultBlob()); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(f.commands[0], " -T ") {
@@ -100,5 +101,35 @@ func TestAWriteErrorNeverCarriesTheToken(t *testing.T) {
 	runSecurity = func(string) (bool, string, error) { return false, "boom", errors.New("exit status 1") }
 	if err := Write(VaultService("work"), vaultBlob()); err == nil || strings.Contains(err.Error(), "new-token") {
 		t.Errorf("error = %v", err)
+	}
+}
+
+// The metadata lookup must tell "not there" (exit 44) from "did not answer":
+// treating a hung keychain as a missing item would report a live credential
+// as absent.
+func TestLookupClassifiesSecurityExitCodes(t *testing.T) {
+	found, err := classifyLookup(nil, false)
+	if !found || err != nil {
+		t.Fatalf("exit 0 is found: %v %v", found, err)
+	}
+	notFound := exec.Command("sh", "-c", "exit 44").Run()
+	if found, err := classifyLookup(notFound, false); found || err != nil {
+		t.Fatalf("exit 44 is not found: %v %v", found, err)
+	}
+	other := exec.Command("sh", "-c", "exit 51").Run()
+	if _, err := classifyLookup(other, false); err == nil {
+		t.Fatal("any other failure is an error, not an answer")
+	}
+	if _, err := classifyLookup(errors.New("killed"), true); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("a timeout is ErrUnavailable: %v", err)
+	}
+}
+
+// The lookup must never ask for the secret: -w is what prompts.
+func TestLookupReadsMetadataOnly(t *testing.T) {
+	for _, a := range lookupArgs("Claude Code-credentials-147868d1") {
+		if a == "-w" || a == "-g" {
+			t.Fatalf("lookup asks for the secret: %v", lookupArgs("x"))
+		}
 	}
 }

@@ -39,7 +39,7 @@ func reading(five, seven float64, resets time.Time) *state.Account {
 }
 
 func st(active string, accounts map[string]*state.Account) *state.State {
-	return &state.State{Active: active, Accounts: accounts}
+	return &state.State{Profiles: map[string]*state.ProfileState{state.DefaultProfile: {Active: active}}, Accounts: accounts}
 }
 
 func TestStaysWhenActiveHasHeadroom(t *testing.T) {

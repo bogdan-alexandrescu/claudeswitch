@@ -54,6 +54,19 @@ type Account struct {
 	// RefreshExpiry is when this account's refresh token dies. Past that it
 	// needs an interactive login, and it cannot even be polled.
 	RefreshExpiry time.Time `json:"refresh_expiry,omitzero"`
+
+	// ReadFails counts consecutive polls of this account that failed to read
+	// its usage: a network error, a 5xx, a 401/403, an unparseable body. A
+	// good reading clears it. A 429 neither counts nor clears — it is the
+	// usage endpoint's own burst limit, which recovers on its own within 15
+	// minutes (GROUND_TRUTH §42) — and neither does a poll the call budget
+	// declined to make. The policy fails over from an active account blind
+	// for long enough (IMPROVEMENTS A2).
+	ReadFails int `json:"read_fails,omitempty"`
+	// TokenExpiry is when the access token last used to poll this account
+	// expires. An expired token on an idle session is not trouble: Claude
+	// Code refreshes it on the next message.
+	TokenExpiry time.Time `json:"token_expiry,omitzero"`
 }
 
 // BurnRate estimates utilization points per minute from the last two readings.
@@ -207,11 +220,20 @@ func (a *Account) AvailabilityAt(reserve float64, now time.Time) Availability {
 	return Available
 }
 
-// State is the whole persisted document.
-type State struct {
-	Version  int                 `json:"version"`
-	Accounts map[string]*Account `json:"accounts"`
-	Active   string              `json:"active_account,omitempty"`
+// DefaultProfile names the Claude Code profile every caller means until
+// profiles can be configured: the one CLAUDE_CONFIG_DIR resolves to.
+const DefaultProfile = "default"
+
+// ProfileState is what belongs to one live credential rather than to an
+// account: which account that credential is, and the rotation decisions made
+// about it. Each Claude Code profile has its own live credential, so each has
+// its own copy. Account readings are not here: an account's quota is the same
+// whichever profile spends it.
+//
+// The JSON names are the ones these fields had at the top level of State, so
+// a file from before profiles reads into this same struct (see UnmarshalJSON).
+type ProfileState struct {
+	Active string `json:"active_account,omitempty"`
 	// Pinned suspends automatic rotation until `claudeswitch auto` clears it.
 	Pinned string `json:"pinned,omitempty"`
 	// LastSwitch feeds the anti-flap cooldown across restarts.
@@ -222,12 +244,46 @@ type State struct {
 	// recency decides, not ownership. Without this, a CLI swap was silently
 	// reverted by the daemon's older belief on the next save.
 	ActiveAt time.Time `json:"active_at,omitzero"`
+	// Item is the live item the daemon last resolved for this profile, and
+	// the dir it resolved it from. It outlives the profile's config block,
+	// so a profile removed or re-pointed while no daemon ran can still be
+	// guarded as a ghost (see ghost.go).
+	Item *ItemRef `json:"item_ref,omitempty"`
+}
+
+// ItemRef is a resolved live item: its keychain service and Linux credential
+// file, with the profile's dir as configured (FromEnv for the implicit one).
+type ItemRef struct {
+	Service string `json:"service"`
+	File    string `json:"credential_file,omitempty"`
+	Dir     string `json:"dir,omitempty"`
+	FromEnv bool   `json:"from_env,omitempty"`
+}
+
+func (in *ProfileState) isZero() bool {
+	return in.Active == "" && in.Pinned == "" && in.LastSwitch.IsZero() && in.ActiveAt.IsZero()
+}
+
+// State is the whole persisted document.
+type State struct {
+	Version  int                 `json:"version"`
+	Accounts map[string]*Account `json:"accounts"`
+	// Profiles is the per-live-credential state, keyed by profile name.
+	// DefaultProfile is always present, and so is every profile named to
+	// Load (see Load for why).
+	Profiles map[string]*ProfileState `json:"profiles,omitempty"`
 	// DaemonLive records whether the running daemon will actually perform swaps.
 	// Written by the daemon at startup so the CLI can tell the truth about what
 	// is going to happen, rather than printing a fixed sentence that goes stale.
 	DaemonLive  bool      `json:"daemon_live"`
 	DaemonSince time.Time `json:"daemon_since,omitzero"`
-	SavedAt     time.Time `json:"saved_at"`
+	// The running daemon's build, written by the daemon at start, so a newer
+	// CLI can tell it is talking to an older daemon (the D10 upgrade gap).
+	// Absent on a file last started by a daemon from before the field.
+	DaemonVersion   string    `json:"daemon_version,omitempty"`
+	DaemonBuild     string    `json:"daemon_build,omitempty"` // VCS revision, "+dirty" when modified
+	DaemonBuildTime time.Time `json:"daemon_build_time,omitzero"`
+	SavedAt         time.Time `json:"saved_at"`
 	// Vaulted is every account id this program has stored a credential for,
 	// including ones the config does not mention — `add` will vault an account
 	// that is not configured, and says so while it does it.
@@ -243,6 +299,14 @@ type State struct {
 	// Reconcile must never prune this: "not in the config" is precisely the
 	// case it is here to remember.
 	Vaulted []string `json:"vaulted,omitempty"`
+
+	// Ghosts are the old live items of profiles removed from the config or
+	// re-pointed to another dir, kept so every §3 check still consults them
+	// (see ghost.go). Keyed by Ghost.Key.
+	Ghosts map[string]*Ghost `json:"ghosts,omitempty"`
+	// ghostAdds and ghostDrops are this process's changes to Ghosts since its
+	// last save; the save applies them to what is on disk (mergeGhosts).
+	ghostAdds, ghostDrops map[string]bool
 
 	path string
 
@@ -261,11 +325,23 @@ func DefaultPath() string {
 	return "state.json"
 }
 
-func Load(path string) (*State, error) {
+// Load reads the state file. profiles names every configured profile; each
+// is materialised, as the default one always is, so Profile(name) for any of
+// them on the loaded state only ever reads the map.
+//
+// That is the thread-safety rule for Profiles, chosen over a mutex: the
+// daemon reads state from more than one goroutine, and a first Profile() that
+// inserted would be a map write. A lock inside Profile() would not be enough
+// on its own — Save, Reconcile and MarshalJSON range over the map, and State
+// is copied by value in MarshalJSON — whereas materialising up front makes the
+// map's key set fixed after Load for every name the daemon will ask about.
+// Profile() on an unconfigured name still inserts; only single-goroutine
+// callers (the CLI) may do that.
+func Load(path string, profiles ...string) (*State, error) {
 	if path == "" {
 		path = DefaultPath()
 	}
-	s := &State{Version: version, Accounts: map[string]*Account{}, path: path}
+	s := fresh(path, profiles...)
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return s, nil
@@ -276,21 +352,100 @@ func Load(path string) (*State, error) {
 	if err := json.Unmarshal(b, s); err != nil {
 		// A corrupt state file must not stop the daemon: it is a cache of
 		// observations, all of which can be re-observed.
-		return &State{Version: version, Accounts: map[string]*Account{}, path: path},
+		return fresh(path, profiles...),
 			fmt.Errorf("state file %s was unreadable and has been reset: %w", path, err)
 	}
 	if s.Accounts == nil {
 		s.Accounts = map[string]*Account{}
 	}
+	s.materialise(profiles)
 	s.path = path
 	return s, nil
 }
 
+func fresh(path string, profiles ...string) *State {
+	s := &State{Version: version, Accounts: map[string]*Account{}, path: path}
+	s.materialise(profiles)
+	return s
+}
+
+// materialise creates the default profile and every named one that does not
+// exist yet. See Load for why.
+func (s *State) materialise(profiles []string) {
+	s.Default()
+	for _, name := range profiles {
+		s.Profile(name)
+	}
+}
+
+// Profile returns the named profile's state, creating it on first use so a
+// caller can always write through it.
+func (s *State) Profile(name string) *ProfileState {
+	if s.Profiles == nil {
+		s.Profiles = map[string]*ProfileState{}
+	}
+	in := s.Profiles[name]
+	if in == nil {
+		in = &ProfileState{}
+		s.Profiles[name] = in
+	}
+	return in
+}
+
+// Default is the DefaultProfile's state. Every caller that predates profiles
+// goes through here, so finding them when profiles arrive is a grep.
+func (s *State) Default() *ProfileState { return s.Profile(DefaultProfile) }
+
 // SetActive records which account the live credential belongs to, stamping when
 // that was established so a merge can tell whose belief is newer.
-func (s *State) SetActive(id string) {
-	s.Active = id
-	s.ActiveAt = time.Now()
+func (in *ProfileState) SetActive(id string) {
+	in.Active = id
+	in.ActiveAt = time.Now()
+}
+
+// plainState is State without its methods, so the JSON hooks below can use the
+// default encoding without recursing into themselves.
+type plainState State
+
+// MarshalJSON writes "profiles" only. Until the multi-profile release the
+// default profile was mirrored at the top level for binaries that predate
+// profiles; that release drops the mirror (D10) and its notes say to restart
+// the daemon after upgrading. The old fields are still read: see UnmarshalJSON.
+func (s State) MarshalJSON() ([]byte, error) {
+	return json.Marshal(plainState(s))
+}
+
+// UnmarshalJSON reads both shapes. A file with no default profile but with the
+// old top-level fields was written by an older binary (which drops "profiles"
+// whenever it saves), so those fields are the default profile. When both are
+// present (a 0.4.x-era mirror alongside "profiles"), "profiles" is the
+// authority.
+//
+// Dev builds before D19 wrote the same map as "instances". It is read when
+// "profiles" is absent, and the next save writes "profiles" only.
+func (s *State) UnmarshalJSON(b []byte) error {
+	in := struct {
+		plainState
+		ProfileState
+		DevInstances map[string]*ProfileState `json:"instances"`
+	}{plainState: plainState(*s)}
+	// Whether the file has a default profile is the question below, so the
+	// file alone must answer it.
+	in.Profiles = nil
+	if err := json.Unmarshal(b, &in); err != nil {
+		return err
+	}
+	if in.Profiles == nil && in.DevInstances != nil {
+		in.Profiles = in.DevInstances
+	}
+	path, dropped := s.path, s.dropped
+	*s = State(in.plainState)
+	s.path, s.dropped = path, dropped
+	if s.Profiles[DefaultProfile] == nil && !in.ProfileState.isZero() {
+		legacy := in.ProfileState
+		*s.Default() = legacy
+	}
+	return nil
 }
 
 // Drop removes an account record and remembers that it was removed, so a merge
@@ -356,9 +511,12 @@ func (s *State) Reconcile(pinned map[string]string) []string {
 		}
 		s.Drop(id)
 	}
-	if s.Active != "" {
-		if _, ok := s.Accounts[s.Active]; !ok {
-			s.Active = ""
+	for _, in := range s.Profiles {
+		if in == nil || in.Active == "" {
+			continue
+		}
+		if _, ok := s.Accounts[in.Active]; !ok {
+			in.Active = ""
 		}
 	}
 	return dropped
@@ -434,6 +592,9 @@ func (s *State) Get(id string) *Account {
 // Ownership, so that a CLI command and the daemon cannot lose each other's
 // writes:
 //
+// The rules for Active, Pinned and LastSwitch apply to each profile on its
+// own (see mergeProfiles).
+//
 //   - the daemon owns Accounts[*] and Active — Active is not a preference, it is
 //     an observation: whichever account the live credential actually belongs to.
 //     An earlier version let the CLI's stored Active override the daemon's
@@ -463,28 +624,36 @@ func (s *State) SaveAs(as owner) error {
 	defer lk.Release()
 
 	if disk, err := readFile(s.path); err == nil && disk != nil {
+		s.mergeGhosts(disk)
 		switch as {
 		case OwnerCLIKeepDaemonFields:
 			// unreachable; kept for exhaustiveness
 			fallthrough
 		case OwnerDaemon:
-			// Take whichever side observed the live account more recently — a
-			// `use` that happened while we were sleeping is newer than our belief.
-			if disk.ActiveAt.After(s.ActiveAt) {
-				s.Active, s.ActiveAt = disk.Active, disk.ActiveAt
-			}
-			s.Pinned = disk.Pinned
-			if disk.LastSwitch.After(s.LastSwitch) {
-				s.LastSwitch = disk.LastSwitch
-			}
+			s.mergeProfiles(disk, func(mine, disk *ProfileState) {
+				// Take whichever side observed the live account more recently — a
+				// `use` that happened while we were sleeping is newer than our belief.
+				if disk.ActiveAt.After(mine.ActiveAt) {
+					mine.Active, mine.ActiveAt = disk.Active, disk.ActiveAt
+				}
+				mine.Pinned = disk.Pinned
+				if disk.LastSwitch.After(mine.LastSwitch) {
+					mine.LastSwitch = disk.LastSwitch
+				}
+			})
 		case OwnerCLI:
-			// Same rule from the other side: keep the daemon's Active unless we
-			// have just established a newer one ourselves.
-			if disk.ActiveAt.After(s.ActiveAt) {
-				s.Active, s.ActiveAt = disk.Active, disk.ActiveAt
-			}
+			s.mergeProfiles(disk, func(mine, disk *ProfileState) {
+				// Same rule from the other side: keep the daemon's Active unless we
+				// have just established a newer one ourselves.
+				if disk.ActiveAt.After(mine.ActiveAt) {
+					mine.Active, mine.ActiveAt = disk.Active, disk.ActiveAt
+				}
+				// The daemon owns the resolved item; a CLI copy may be stale.
+				mine.Item = disk.Item
+			})
 			s.DaemonLive = disk.DaemonLive
 			s.DaemonSince = disk.DaemonSince
+			s.DaemonVersion, s.DaemonBuild, s.DaemonBuildTime = disk.DaemonVersion, disk.DaemonBuild, disk.DaemonBuildTime
 			// Keep the daemon's observations; they are fresher than ours — but
 			// never resurrect a record this process deliberately dropped.
 			for id, a := range disk.Accounts {
@@ -511,7 +680,29 @@ func (s *State) SaveAs(as owner) error {
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, s.path)
+	if err := os.Rename(tmp, s.path); err != nil {
+		return err
+	}
+	// The disk now has this process's ghost changes; from here on its copy
+	// is the base the next save merges onto.
+	s.ghostAdds, s.ghostDrops = nil, nil
+	return nil
+}
+
+// mergeProfiles applies merge to every profile both sides have, and adopts
+// whole any profile only the disk has: this process never loaded it, so
+// nothing it holds about it can be newer.
+func (s *State) mergeProfiles(disk *State, merge func(mine, disk *ProfileState)) {
+	for name, d := range disk.Profiles {
+		if d == nil {
+			continue
+		}
+		if mine := s.Profiles[name]; mine != nil {
+			merge(mine, d)
+			continue
+		}
+		*s.Profile(name) = *d
+	}
 }
 
 // readFile loads state without touching locks or defaults.

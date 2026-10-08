@@ -66,7 +66,7 @@ func TestPenalizeBlocksEvenPriorityCallsWithThatCredential(t *testing.T) {
 // budget. A budget
 // the vault could walk around is not a budget: that is how the daemon and the
 // CLI together blew past the limit on 2026-09-09.
-func TestSharedBudgetIsOneInstance(t *testing.T) {
+func TestSharedBudgetIsOneProfile(t *testing.T) {
 	a, b := Shared(), Shared()
 	if a != b {
 		t.Fatal("Shared() must return the same budget to every caller")

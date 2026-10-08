@@ -59,7 +59,7 @@ func TestRotatesOnceTheTriggerIsCrossed(t *testing.T) {
 	} {
 		in := policy.Input{
 			Cfg: testCfg(), Now: now,
-			St: &state.State{Active: "a", Accounts: map[string]*state.Account{
+			St: &state.State{Profiles: map[string]*state.ProfileState{state.DefaultProfile: {Active: "a"}}, Accounts: map[string]*state.Account{
 				"a": at(tc.active, 10, now),
 				"b": at(5, 5, now),
 			}},
@@ -80,7 +80,7 @@ func TestHardFloorForcesImmediately(t *testing.T) {
 	now := time.Now()
 	in := policy.Input{
 		Cfg: testCfg(), Now: now, LastSwitch: now.Add(-time.Second),
-		St: &state.State{Active: "a", Accounts: map[string]*state.Account{
+		St: &state.State{Profiles: map[string]*state.ProfileState{state.DefaultProfile: {Active: "a"}}, Accounts: map[string]*state.Account{
 			"a": at(97, 10, now), "b": at(5, 5, now),
 		}},
 	}
@@ -97,7 +97,7 @@ func TestWeeklyWindowAlsoTriggers(t *testing.T) {
 	now := time.Now()
 	in := policy.Input{
 		Cfg: testCfg(), Now: now,
-		St: &state.State{Active: "a", Accounts: map[string]*state.Account{
+		St: &state.State{Profiles: map[string]*state.ProfileState{state.DefaultProfile: {Active: "a"}}, Accounts: map[string]*state.Account{
 			"a": at(10, 88, now), "b": at(5, 5, now),
 		}},
 	}
@@ -113,7 +113,7 @@ func TestStaleReadingStillTriggersViaProjection(t *testing.T) {
 	a.PrevWorst, a.PrevAt = 68, now.Add(-8*time.Minute) // 3 points/min
 	in := policy.Input{
 		Cfg: testCfg(), Now: now,
-		St: &state.State{Active: "a", Accounts: map[string]*state.Account{
+		St: &state.State{Profiles: map[string]*state.ProfileState{state.DefaultProfile: {Active: "a"}}, Accounts: map[string]*state.Account{
 			"a": a, "b": at(5, 5, now),
 		}},
 	}
@@ -129,7 +129,7 @@ func TestNowhereToGoReportsRecovery(t *testing.T) {
 	now := time.Now()
 	in := policy.Input{
 		Cfg: testCfg(), Now: now,
-		St: &state.State{Active: "a", Accounts: map[string]*state.Account{
+		St: &state.State{Profiles: map[string]*state.ProfileState{state.DefaultProfile: {Active: "a"}}, Accounts: map[string]*state.Account{
 			"a": at(99, 10, now), "b": at(100, 10, now),
 		}},
 	}
@@ -159,7 +159,7 @@ func TestRotatesBeforeCrossingWhenBurningFast(t *testing.T) {
 	a.PrevWorst, a.PrevAt = 74, now.Add(-2*time.Minute)
 	in := policy.Input{
 		Cfg: cfg, Now: now, Lookahead: look,
-		St: &state.State{Active: "a", Accounts: map[string]*state.Account{
+		St: &state.State{Profiles: map[string]*state.ProfileState{state.DefaultProfile: {Active: "a"}}, Accounts: map[string]*state.Account{
 			"a": a, "b": at(5, 5, now),
 		}},
 	}
@@ -189,7 +189,7 @@ func TestWithoutLookaheadTheDecisionComesLate(t *testing.T) {
 	a.PrevWorst, a.PrevAt = 68, now.Add(-2*time.Minute) // 6 points/min
 	in := policy.Input{
 		Cfg: testCfg(), Now: now, // no Lookahead
-		St: &state.State{Active: "a", Accounts: map[string]*state.Account{
+		St: &state.State{Profiles: map[string]*state.ProfileState{state.DefaultProfile: {Active: "a"}}, Accounts: map[string]*state.Account{
 			"a": a, "b": at(5, 5, now),
 		}},
 	}
@@ -207,7 +207,7 @@ func TestLookaheadDoesNotInventUsageOnAnIdleAccount(t *testing.T) {
 	b.PrevWorst, b.PrevAt = 40, now.Add(-5*time.Minute) // 6 points/min, historic
 	in := policy.Input{
 		Cfg: cfg, Now: now, Lookahead: 5 * time.Minute,
-		St: &state.State{Active: "a", Accounts: map[string]*state.Account{
+		St: &state.State{Profiles: map[string]*state.ProfileState{state.DefaultProfile: {Active: "a"}}, Accounts: map[string]*state.Account{
 			"a": at(90, 10, now), "b": b,
 		}},
 	}

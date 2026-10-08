@@ -16,7 +16,7 @@ import (
 
 // --- 1. a reload that drops the active account ---
 
-// The trace: Reconcile clears st.Active when its record is dropped, and Decide
+// The trace: Reconcile clears st.Default().Active when its record is dropped, and Decide
 // with no active account picks the best eligible one and says Switch. On its
 // own that is right for a daemon that has never seen a live account; after a
 // reload it would swap away from a credential that is still live and working.
@@ -34,18 +34,18 @@ func TestReloadThatDropsTheActiveAccountHoldsInsteadOfSwapping(t *testing.T) {
 	next := testCfg()
 	next.Accounts = []config.Account{{ID: "b", Scope: "work"}}
 	next.Priority = []string{"b"}
-	st := &state.State{Active: "a", Accounts: map[string]*state.Account{
+	st := &state.State{Profiles: map[string]*state.ProfileState{state.DefaultProfile: {Active: "a"}}, Accounts: map[string]*state.Account{
 		"a": at(40, 10, now), "b": at(5, 5, now)}}
 
 	var h activeHold
-	before := st.Active
+	before := st.Default().Active
 	st.Reconcile(pinnedOf(next))
-	h.afterReload(before, st)
-	if st.Active != "" {
-		t.Fatalf("precondition: Reconcile clears the dropped active account, got %q", st.Active)
+	h.afterReload(before, st.Default().Active)
+	if st.Default().Active != "" {
+		t.Fatalf("precondition: Reconcile clears the dropped active account, got %q", st.Default().Active)
 	}
 
-	d := h.gate(policy.Decide(policy.Input{Cfg: next, St: st, Now: now}), st, next)
+	d := h.gate(policy.Decide(policy.Input{Cfg: next, St: st, Now: now}), st.Default().Active, next)
 	if d.Kind == policy.Switch {
 		t.Fatalf("a reload alone must not swap the live credential: %v", d)
 	}
@@ -54,29 +54,29 @@ func TestReloadThatDropsTheActiveAccountHoldsInsteadOfSwapping(t *testing.T) {
 	}
 
 	// Still unattributed after a re-poll: still holding.
-	st.SetActive(state.Unattributed)
-	if d := h.gate(policy.Decision{Kind: policy.Switch, Target: "b"}, st, next); d.Kind == policy.Switch {
+	st.Default().SetActive(state.Unattributed)
+	if d := h.gate(policy.Decision{Kind: policy.Switch, Target: "b"}, st.Default().Active, next); d.Kind == policy.Switch {
 		t.Error("an unattributed live credential is still no reason to swap")
 	}
 
 	// Re-attributed to a configured account: back to normal.
-	st.SetActive("b")
+	st.Default().SetActive("b")
 	want := policy.Decision{Kind: policy.Switch, Target: "x", Reason: "r"}
-	if d := h.gate(want, st, next); d != want {
+	if d := h.gate(want, st.Default().Active, next); d != want {
 		t.Errorf("once attributed, decisions pass through; got %v", d)
 	}
-	st.Active = ""
-	if d := h.gate(want, st, next); d != want {
+	st.Default().Active = ""
+	if d := h.gate(want, st.Default().Active, next); d != want {
 		t.Error("the hold ends once lifted; it is not a permanent veto")
 	}
 }
 
 func TestAReloadThatKeepsTheActiveAccountDoesNotHold(t *testing.T) {
 	var h activeHold
-	st := &state.State{Active: "b"}
-	h.afterReload("b", st)
+	st := &state.State{Profiles: map[string]*state.ProfileState{state.DefaultProfile: {Active: "b"}}}
+	h.afterReload("b", "b")
 	want := policy.Decision{Kind: policy.Switch, Target: "a"}
-	if d := h.gate(want, st, testCfg()); d != want {
+	if d := h.gate(want, st.Default().Active, testCfg()); d != want {
 		t.Errorf("got %v", d)
 	}
 }
@@ -216,7 +216,7 @@ org_id       = "org-1"
 // id, saying "last in priority" would be a claim about the file that is false.
 func TestRecordSeatSaysWhenItCouldNotNameTheAccountInPriority(t *testing.T) {
 	path := writeConfig(t, multiLinePriority)
-	msg, err := recordSeat(loadOrFail(t, path), "work-b", "work", gotSeat("p3", "o3"))
+	msg, err := recordSeat(loadOrFail(t, path), "work-b", "work", gotSeat("p3", "o3"), "")
 	if err != nil {
 		t.Fatal(err)
 	}

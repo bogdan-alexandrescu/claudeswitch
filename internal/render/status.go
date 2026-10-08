@@ -53,6 +53,46 @@ type Options struct {
 	// that was never set up — and telling the user "no credential" when there is
 	// one is worse than saying nothing.
 	Vaulted map[string]bool
+	// Profile, when set, is the Claude Code profile this view is for: its
+	// active account is the one marked and headlined. Empty means the default
+	// profile, which is every view from before profiles.
+	Profile string
+	// Pool, when non-nil, limits the accounts shown to that profile's pool.
+	Pool []string
+	// Block marks this view as one of several, one per profile: it ends
+	// without the footer and legend, which SharedFooter prints once after the
+	// last block.
+	Block bool
+}
+
+// active is the account the view's live credential holds.
+func (o Options) active() string {
+	if o.Profile == "" {
+		return o.St.Default().Active
+	}
+	if in := o.St.Profiles[o.Profile]; in != nil {
+		return in.Active
+	}
+	return ""
+}
+
+// accounts are the configured accounts this view shows, in priority order.
+func (o Options) accounts() []config.Account {
+	all := o.Cfg.Ordered()
+	if o.Pool == nil {
+		return all
+	}
+	in := map[string]bool{}
+	for _, id := range o.Pool {
+		in[id] = true
+	}
+	var out []config.Account
+	for _, a := range all {
+		if in[a.ID] {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 func bar(pct float64, w int) string {
@@ -221,7 +261,7 @@ func statusCompact(out io.Writer, o Options) {
 	cfg, st := o.Cfg, o.St
 	fmt.Fprintln(out)
 
-	accounts := cfg.Ordered()
+	accounts := o.accounts()
 	if len(accounts) == 0 {
 		fmt.Fprintf(out, "  no accounts configured. See %s\n\n", cfg.Path)
 		return
@@ -269,7 +309,7 @@ func statusCompact(out io.Writer, o Options) {
 
 		marker := " "
 		nameCell := a.Name()
-		if a.ID == st.Active {
+		if a.ID == o.active() {
 			// Which account you are on should be visible without reading words.
 			marker = paint(green, "▸")
 			nameCell = paint(bold, nameCell)
@@ -378,7 +418,7 @@ func statusCompact(out io.Writer, o Options) {
 		if fix := loginFix(acct.LastErr); fix != "" {
 			warnings = append(warnings, fmt.Sprintf("%s needs a sign-in — %s",
 				a.ID, fmt.Sprintf(fix, a.ID)))
-		} else if age := time.Since(acct.LastAt); age > staleAfter(cfg, a.ID == st.Active) {
+		} else if age := time.Since(acct.LastAt); age > staleAfter(cfg, a.ID == o.active()) {
 			switch {
 			case holdingOff != "" && backingOff(acct.LastErr):
 				// Deliberately not polling is not the same as failing to keep
@@ -463,18 +503,36 @@ func statusCompact(out io.Writer, o Options) {
 	}
 
 	fmt.Fprintln(out)
+	if o.Block {
+		return // SharedFooter closes the whole view once
+	}
 	if o.DaemonOwns {
 		fmt.Fprintf(out, "  %s\n", paint(grey, "a daemon is polling; these are its readings"))
 	}
 	footer(out, o)
 }
 
+// SharedFooter closes a view made of several Block views, once: the daemon
+// note, the swap timing and budget, and the legend. Each block's thresholds
+// are in its own header, so they are not repeated here.
+func SharedFooter(out io.Writer, o Options) {
+	if o.DaemonOwns {
+		fmt.Fprintf(out, "  %s\n", paint(grey, "a daemon is polling; these are its readings"))
+	}
+	fmt.Fprintf(out, "  swap %s, forced after %s", o.Cfg.SwitchWhen, o.Cfg.MaxSwitchWait.Duration)
+	if o.Budget != nil {
+		fmt.Fprintf(out, "  ·  %d api call(s) spare", o.Budget.Remaining())
+	}
+	fmt.Fprintln(out)
+	legend(out)
+}
+
 // headline is the single line worth reading first: where you stand, and what
 // happens next.
 func headline(o Options) string {
 	st, cfg := o.St, o.Cfg
-	acct := st.Accounts[st.Active]
-	if st.Active == "" || acct == nil || acct.Last == nil {
+	acct := st.Accounts[o.active()]
+	if o.active() == "" || acct == nil || acct.Last == nil {
 		return paint(dim, "no reading for the active account yet")
 	}
 	which, _ := acct.Last.Worst()
@@ -485,7 +543,7 @@ func headline(o Options) string {
 	}
 
 	level := levelFor(proj, cfg.TriggerFor(which), severityName(acct.Last, which))
-	head := fmt.Sprintf("%s at %s of its %s", paint(bold, st.Active),
+	head := fmt.Sprintf("%s at %s of its %s", paint(bold, o.active()),
 		paint(level, fmt.Sprintf("%.0f%%", proj)), window)
 
 	switch {
@@ -626,6 +684,10 @@ func footer(out io.Writer, o Options) {
 		fmt.Fprintf(out, "  ·  %d api call(s) spare", o.Budget.Remaining())
 	}
 	fmt.Fprintln(out)
+	legend(out)
+}
+
+func legend(out io.Writer) {
 	legend := "  ! flagged by the API  ·  ~ projected from an older reading"
 	if useColor {
 		// These four are colour swatches, not words to read in sequence. Without
@@ -663,7 +725,7 @@ func statusDetailed(out io.Writer, o Options) {
 		fmt.Fprintf(out, "  (a daemon is running and owns the polling; these are its readings)\n\n")
 	}
 
-	accounts := cfg.Ordered()
+	accounts := o.accounts()
 	// Ids are the display name now, and they are not all short. Size the column
 	// to the widest one rather than truncating or letting it run ragged.
 	pad := padderFor(accounts)
@@ -710,7 +772,7 @@ func statusDetailed(out io.Writer, o Options) {
 				}
 			}
 		}
-		if a.ID == st.Active {
+		if a.ID == o.active() {
 			stateStr = "ACTIVE " + stateStr
 		}
 		if avail == state.Burnt {

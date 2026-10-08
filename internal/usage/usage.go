@@ -472,7 +472,7 @@ func (c *Client) FetchProfile(ctx context.Context, accessToken string) (*Profile
 
 	resp, err := c.do(req)
 	if err != nil {
-		return nil, fmt.Errorf("calling profile API: %w", err)
+		return nil, fmt.Errorf("identity lookup: %w", err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
@@ -483,14 +483,14 @@ func (c *Client) FetchProfile(ctx context.Context, accessToken string) (*Profile
 		return nil, &RateLimitedError{RetryAfter: 300 * time.Second}
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("profile API returned %d", resp.StatusCode)
+		return nil, fmt.Errorf("identity lookup returned %d", resp.StatusCode)
 	}
 	var pr Profile
 	if err := json.Unmarshal(body, &pr); err != nil {
 		return nil, &ShapeError{Detail: err.Error()}
 	}
 	if pr.Account.UUID == "" {
-		return nil, &ShapeError{Detail: "profile carried no account uuid"}
+		return nil, &ShapeError{Detail: "identity lookup carried no account uuid"}
 	}
 	return &pr, nil
 }

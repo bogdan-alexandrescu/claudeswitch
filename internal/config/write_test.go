@@ -85,19 +85,22 @@ func TestWrittenConfigIsPrivate(t *testing.T) {
 // requires all of it to survive.
 func TestWriteKeepsEverySetting(t *testing.T) {
 	on, off := true, false
+	margin, polls, workMargin := 0.0, 5, 20.0
 	in := &Config{
 		SwitchAt: 80, SwitchAtWeekly: 95, HardFloor: 99, SwitchWhen: "immediate",
-		HotThreshold:  88,
-		Cooldown:      Duration{7 * time.Minute},
-		MaxSwitchWait: Duration{45 * time.Second},
-		AutoRefresh:   &off,
-		RefreshWindow: Duration{2 * time.Hour},
-		RefreshProbe:  Duration{12 * time.Hour},
-		PollActive:    Duration{2 * time.Minute},
-		PollHot:       Duration{time.Minute},
-		PollIdle:      Duration{15 * time.Minute},
-		APIBudget:     10,
-		Priority:      []string{"work", "personal"},
+		HotThreshold:       88,
+		LandingMargin:      &margin,
+		BlindFailoverPolls: &polls,
+		Cooldown:           Duration{7 * time.Minute},
+		MaxSwitchWait:      Duration{45 * time.Second},
+		AutoRefresh:        &off,
+		RefreshWindow:      Duration{2 * time.Hour},
+		RefreshProbe:       Duration{12 * time.Hour},
+		PollActive:         Duration{2 * time.Minute},
+		PollHot:            Duration{time.Minute},
+		PollIdle:           Duration{15 * time.Minute},
+		APIBudget:          10,
+		Priority:           []string{"work", "personal"},
 		Accounts: []Account{
 			{ID: "work", Scope: "work", AccountUUID: "seat-1",
 				OrgID: "org-1", Reserve: 60, Enabled: &on},
@@ -108,11 +111,17 @@ func TestWriteKeepsEverySetting(t *testing.T) {
 			"~/work/*":     {Eligible: []string{"work"}, Prefer: []string{"work"}},
 			"/tmp/a b/[x]": {Eligible: []string{"work", "personal"}, Prefer: []string{"personal"}},
 		},
+		Profiles: []Profile{
+			{Name: "work", Dir: "~/.claude-work", Pool: []string{"work"},
+				SwitchAt: 75, SwitchAtWeekly: 90, HardFloor: 97, LandingMargin: &workMargin},
+			{Name: "default", Pool: []string{"personal"}}, // no dir: CLAUDE_CONFIG_DIR unset
+		},
 	}
 	requireEveryFieldSet(t, reflect.ValueOf(*in), "Config")
 	for i, a := range in.Accounts {
 		requireEveryFieldSet(t, reflect.ValueOf(a), fmt.Sprintf("Accounts[%d]", i))
 	}
+	requireEveryFieldSet(t, reflect.ValueOf(in.Profiles[0]), "Profiles[0]")
 
 	path := filepath.Join(t.TempDir(), "config.toml")
 	if err := in.Write(path); err != nil {

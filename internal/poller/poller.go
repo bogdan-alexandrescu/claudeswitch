@@ -78,8 +78,6 @@ type Poller struct {
 	// debug level. Tonight it sat at 93% that way.
 	lastOK  time.Time
 	started time.Time
-	// lastCandidateSweep throttles the on-demand re-read of rotation targets.
-	lastCandidateSweep time.Time
 
 	// lastSeverity tracks severity per account+limit kind so transitions can be
 	// recorded. Keyed "account/kind".
@@ -87,6 +85,110 @@ type Poller struct {
 
 	// OnSeverityChange, if set, is called for every severity transition.
 	OnSeverityChange func(account, kind, from, to string, percent float64)
+
+	// lives is each profile's live credential, set by the daemon. An
+	// profile with none set uses this process's environment, which is the
+	// implicit profile's item when no profiles are configured.
+	lives map[string]keychain.Live
+
+	// Busy reports whether a profile's detector has seen transcript activity
+	// recently. With more than one profile, only a busy profile's active
+	// account is polled hot (docs/PROFILES.md §8 D3). Nil means busy.
+	Busy func(profile string) bool
+
+	// candidateSweep throttles RefreshCandidatesIn per profile.
+	candidateSweep map[string]time.Time
+	// crossPool is the last cross-pool finding said per profile.
+	crossPool map[string]string
+}
+
+// readVault reads an account's vault entry. A seam, so tests never reach the
+// keychain.
+var readVault = func(accountID string) (*keychain.Blob, error) {
+	return keychain.Read(keychain.VaultService(accountID))
+}
+
+// SetLive names the live credential a profile's re-attribution reads, and
+// the one an unvaulted active account of that profile is polled through.
+func (p *Poller) SetLive(profile string, live keychain.Live) {
+	if p.lives == nil {
+		p.lives = map[string]keychain.Live{}
+	}
+	p.lives[profile] = live
+}
+
+func (p *Poller) liveOf(profile string) keychain.Live {
+	if l, ok := p.lives[profile]; ok && l != nil {
+		return l
+	}
+	if len(p.cfg.Profiles) == 0 && profile == state.DefaultProfile {
+		return keychain.EnvLive()
+	}
+	return noLive(profile)
+}
+
+// noLive is the live credential of a profile whose item has not been
+// resolved: reading it fails, so nothing is attributed or polled through it.
+type noLive string
+
+func (n noLive) Name() string { return "unresolved profile " + string(n) }
+func (n noLive) Read() (*keychain.Blob, error) {
+	return nil, fmt.Errorf("profile %q: its live credential has not been resolved", string(n))
+}
+func (n noLive) Write(*keychain.Blob) error {
+	return fmt.Errorf("profile %q: its live credential has not been resolved", string(n))
+}
+
+// activeIn names the profile whose live credential holds accountID. It only
+// reads the profile map, never inserts (state.Load materialised every
+// configured profile).
+func (p *Poller) activeIn(accountID string) (string, bool) {
+	if accountID == "" {
+		return "", false
+	}
+	for _, name := range p.cfg.ProfileNames() {
+		if in := p.st.Profiles[name]; in != nil && in.Active == accountID {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+func (p *Poller) isActive(accountID string) bool {
+	_, ok := p.activeIn(accountID)
+	return ok
+}
+
+// activeOf is a profile's active account, read without inserting.
+func (p *Poller) activeOf(profile string) string {
+	if in := p.st.Profiles[profile]; in != nil {
+		return in.Active
+	}
+	return ""
+}
+
+// tokenFor is TokenFor with the live fallback taken from the profile that
+// has the account live, never from this process's environment.
+func (p *Poller) tokenFor(accountID string) (string, error) {
+	tok, _, err := p.tokenInfo(accountID)
+	return tok, err
+}
+
+// tokenInfo is tokenFor with the access token's expiry, zero when unknown.
+func (p *Poller) tokenInfo(accountID string) (string, time.Time, error) {
+	b, err := readVault(accountID)
+	if err == nil {
+		return b.ClaudeAIOAuth.AccessToken, b.ClaudeAIOAuth.Expiry(), nil
+	}
+	prof, ok := p.activeIn(accountID)
+	if !ok {
+		return "", time.Time{}, err
+	}
+	live, lerr := p.liveOf(prof).Read()
+	if lerr != nil {
+		return "", time.Time{}, err
+	}
+	return live.ClaudeAIOAuth.AccessToken, live.ClaudeAIOAuth.Expiry(), nil
 }
 
 // sharedBudgetFor returns the process-wide budget with the configured
@@ -180,16 +282,16 @@ func (p *Poller) Degraded() (bool, string) { return p.degraded, p.degradedWhy }
 //
 // It reads the account's own vault entry, and uses the live credential only when
 // that entry actually holds the live token — compared directly, never inferred
-// from st.Active.
+// from st.Default().Active.
 //
-// Trusting st.Active here was a real fault: when the daemon's attribution was
+// Trusting st.Default().Active here was a real fault: when the daemon's attribution was
 // wrong (its startup poll had timed out), it polled the live credential in the
 // name of the wrong account. The live account's usage was then written under two
 // different names, and two accounts with entirely different utilization showed
 // identical numbers (observed 2026-09-10: both reading 54%/14% while actually at
 // 100%/29% and 75%/17%). A wrong belief must not silently redirect a read.
 func TokenFor(accountID string, activeID string) (string, error) {
-	b, err := keychain.Read(keychain.VaultService(accountID))
+	b, err := readVault(accountID)
 	if err != nil {
 		// No vault entry. Only fall back to the live credential if this really
 		// is the account we think is active, and say so if it is not.
@@ -209,7 +311,14 @@ func TokenFor(accountID string, activeID string) (string, error) {
 // account. This is the one call that must always be possible, so it may spend
 // the reserved slot.
 func (p *Poller) PollActive(ctx context.Context) (*state.Account, error) {
-	blob, err := keychain.ReadLive()
+	return p.PollActiveIn(ctx, state.DefaultProfile)
+}
+
+// PollActiveIn is PollActive for one profile: it reads that profile's live
+// credential and records the account it holds as that profile's active one.
+// Every other profile's attribution is left alone.
+func (p *Poller) PollActiveIn(ctx context.Context, profile string) (*state.Account, error) {
+	blob, err := p.liveOf(profile).Read()
 	if err != nil {
 		return nil, err
 	}
@@ -222,14 +331,27 @@ func (p *Poller) PollActive(ctx context.Context) (*state.Account, error) {
 		// We could not read the credential's organization, so we cannot say
 		// which account is live. Leave the previous attribution alone and
 		// report the failure rather than inventing confidence.
-		return p.st.Get(p.attribute("")), fmt.Errorf("could not confirm the active account: %s", scratch.LastErr)
+		//
+		// The failed read still counts against the account already attributed
+		// here (IMPROVEMENTS A2): it is that account being unreadable, through
+		// the very token the session runs on.
+		prev := p.attributeIn(profile, "")
+		if prev != Unattributed && scratch.ReadFails > 0 {
+			a := p.st.Get(prev)
+			a.ReadFails += scratch.ReadFails
+			a.LastErr = scratch.LastErr
+			a.TokenExpiry = blob.ClaudeAIOAuth.Expiry()
+		}
+		return p.st.Get(prev), fmt.Errorf("could not confirm the active account: %s", scratch.LastErr)
 	}
-	id := p.attribute(scratch.OrgID)
+	id := p.attributeIn(profile, scratch.OrgID)
 	acct := p.st.Get(id)
 	acct.OrgID = scratch.OrgID
 	acct.RefreshExpiry = blob.ClaudeAIOAuth.RefreshExpiry()
+	acct.TokenExpiry = blob.ClaudeAIOAuth.Expiry()
 	acct.LastErr = scratch.LastErr
 	if scratch.Last != nil {
+		acct.ReadFails = 0
 		acct.Last = scratch.Last
 		acct.LastAt = scratch.LastAt
 		if !acct.BurntTil.IsZero() && time.Now().After(acct.BurntTil) {
@@ -237,8 +359,53 @@ func (p *Poller) PollActive(ctx context.Context) (*state.Account, error) {
 			acct.BurntWin = ""
 		}
 	}
-	p.st.SetActive(id)
+	p.noteCrossPool(profile, id)
+	p.st.Profile(profile).SetActive(id)
 	return acct, nil
+}
+
+// noteCrossPool says when a profile is found holding an account from
+// another profile's pool (D17: record the truth, say it loudly; the next
+// decision moves it back into its own pool if the target is free), or one
+// live in a second profile (§3: whichever refreshes first revokes the
+// other's copy). Once per distinct finding: re-attribution runs on every
+// save tick, and the same error each time is noise that buries the next one.
+func (p *Poller) noteCrossPool(profile, id string) {
+	owner, ok := p.cfg.ProfileOf(id)
+	foreign := ok && owner != profile
+	other, two := p.activeIn(id)
+	two = two && other != profile && id != Unattributed
+	if !two {
+		other = ""
+	}
+	if p.crossPool == nil {
+		p.crossPool = map[string]string{}
+	}
+	if !foreign && !two {
+		delete(p.crossPool, profile)
+		return
+	}
+	sig := id + "|" + owner + "|" + other
+	if p.crossPool[profile] == sig {
+		return
+	}
+	p.crossPool[profile] = sig
+	if foreign {
+		p.log.Error("this profile holds an account from another profile's pool",
+			"profile", profile, "account", id, "pool_of", owner)
+	}
+	if two {
+		p.log.Error("one account is live in two profiles; the first to refresh will log the other out",
+			"account", id, "profile", profile, "also_in", other)
+	}
+}
+
+// poolOf is a profile's effective pool.
+func (p *Poller) poolOf(profile string) []string {
+	if in, ok := p.cfg.ProfileNamed(profile); ok {
+		return in.Pool
+	}
+	return nil
 }
 
 // attribute maps an organization id to a configured account.
@@ -248,21 +415,37 @@ func (p *Poller) PollActive(ctx context.Context) (*state.Account, error) {
 // against the pseudo-account "active" and the user is told to pin it. Adopting
 // "the first account in priority order" would cheerfully file a personal
 // credential under a work account, which is worse than saying nothing.
-func (p *Poller) attribute(orgID string) string {
+func (p *Poller) attribute(orgID string) string { return p.attributeIn(state.DefaultProfile, orgID) }
+
+// attributeIn is attribute for one profile. Its own pool is searched first,
+// so two accounts sharing an organization in different pools resolve to the
+// one this profile rotates; then every account, since what is live is a fact
+// whichever pool it is from. With no profiles configured the pool is every
+// account and the two passes find the same answer.
+func (p *Poller) attributeIn(profile, orgID string) string {
 	if orgID == "" {
-		if p.st.Active != "" {
-			return p.st.Active
+		if a := p.activeOf(profile); a != "" {
+			return a
 		}
 		return Unattributed
 	}
-	for _, a := range p.cfg.Ordered() {
-		if a.OrgID == orgID {
-			return a.ID
-		}
+	inPool := map[string]bool{}
+	for _, id := range p.poolOf(profile) {
+		inPool[id] = true
 	}
-	for _, a := range p.cfg.Ordered() {
-		if ex, ok := p.st.Accounts[a.ID]; ok && ex.OrgID == orgID {
-			return a.ID
+	for _, pass := range []func(string) bool{
+		func(id string) bool { return inPool[id] },
+		func(string) bool { return true },
+	} {
+		for _, a := range p.cfg.Ordered() {
+			if pass(a.ID) && a.OrgID == orgID {
+				return a.ID
+			}
+		}
+		for _, a := range p.cfg.Ordered() {
+			if ex, ok := p.st.Accounts[a.ID]; ok && pass(a.ID) && ex.OrgID == orgID {
+				return a.ID
+			}
 		}
 	}
 	return Unattributed
@@ -288,7 +471,7 @@ func (p *Poller) RefreshStale(ctx context.Context, maxAge time.Duration) (int, e
 		if acct.Last != nil && time.Since(acct.LastAt) < maxAge {
 			continue
 		}
-		tok, err := TokenFor(a.ID, p.st.Active)
+		tok, err := p.tokenFor(a.ID)
 		if err != nil {
 			acct.LastErr = "no stored credential"
 			continue
@@ -316,15 +499,30 @@ func (p *Poller) RefreshStale(ctx context.Context, maxAge time.Duration) (int, e
 // sitting at 100% believing there is nowhere to go. When the answer matters,
 // the figures are worth a call.
 func (p *Poller) RefreshCandidates(ctx context.Context, olderThan time.Duration) int {
+	return p.RefreshCandidatesIn(ctx, olderThan, state.DefaultProfile)
+}
+
+// RefreshCandidatesIn is RefreshCandidates for one profile: only its pool is
+// re-read, since nothing else is a candidate there, and its own active
+// account is skipped. Each profile is throttled on its own.
+func (p *Poller) RefreshCandidatesIn(ctx context.Context, olderThan time.Duration, profile string) int {
 	// Once a minute at most. The decision loop runs every twenty seconds, and
 	// re-reading every candidate each time is a burst by another name.
-	if time.Since(p.lastCandidateSweep) < time.Minute {
+	if time.Since(p.candidateSweep[profile]) < time.Minute {
 		return 0
 	}
-	p.lastCandidateSweep = time.Now()
+	if p.candidateSweep == nil {
+		p.candidateSweep = map[string]time.Time{}
+	}
+	p.candidateSweep[profile] = time.Now()
+	inPool := map[string]bool{}
+	for _, id := range p.poolOf(profile) {
+		inPool[id] = true
+	}
+	active := p.activeOf(profile)
 	done := 0
 	for _, a := range p.cfg.Ordered() {
-		if a.ID == p.st.Active {
+		if a.ID == active || !inPool[a.ID] {
 			continue
 		}
 		acct := p.st.Get(a.ID)
@@ -334,7 +532,7 @@ func (p *Poller) RefreshCandidates(ctx context.Context, olderThan time.Duration)
 			time.Since(acct.LastAt) < olderThan {
 			continue
 		}
-		tok, err := TokenFor(a.ID, p.st.Active)
+		tok, err := p.tokenFor(a.ID)
 		if err != nil {
 			continue
 		}
@@ -360,7 +558,7 @@ func (p *Poller) Tick(ctx context.Context) {
 		// account with no vault entry cannot be polled at all, and charging the
 		// budget for it burned real capacity on accounts that were only ever
 		// placeholders.
-		tok, err := TokenFor(a.ID, p.st.Active)
+		tok, exp, err := p.tokenInfo(a.ID)
 		if err != nil {
 			acct := p.st.Get(a.ID)
 			acct.LastErr = "no stored credential"
@@ -368,6 +566,7 @@ func (p *Poller) Tick(ctx context.Context) {
 			continue
 		}
 		acct := p.st.Get(a.ID)
+		acct.TokenExpiry = exp
 		switch reason := p.fetchInto(ctx, acct, tok, usage.Scheduled); reason {
 		case usage.ReasonOK:
 			p.schedule(a.ID, now, acct)
@@ -386,6 +585,19 @@ func (p *Poller) Tick(ctx context.Context) {
 	}
 }
 
+// mayPollHot reports whether a profile's active account may be polled at
+// poll_hot. With more than one profile, only a busy one may (D3): two hot
+// profiles would compete for one budget, and a quiet profile is not
+// spending, so a reading that is a little old costs it nothing. With one
+// profile there is nothing to compete with, and hot polling is as it always
+// was.
+func (p *Poller) mayPollHot(profile string) bool {
+	if len(p.cfg.EffectiveProfiles()) < 2 || p.Busy == nil {
+		return true
+	}
+	return p.Busy(profile)
+}
+
 // due lists accounts whose next poll time has arrived, active first.
 func (p *Poller) due(now time.Time) []config.Account {
 	var out []config.Account
@@ -393,7 +605,7 @@ func (p *Poller) due(now time.Time) []config.Account {
 		if t, ok := p.nextPoll[a.ID]; ok && now.Before(t) {
 			continue
 		}
-		if a.ID == p.st.Active {
+		if p.isActive(a.ID) {
 			out = append([]config.Account{a}, out...)
 			continue
 		}
@@ -418,12 +630,13 @@ func (p *Poller) schedule(id string, now time.Time, acct *state.Account) {
 	if iv <= 0 {
 		iv = IdleInterval
 	}
-	if id == p.st.Active {
+	// Active in any profile is active: it is the one being spent there.
+	if prof, active := p.activeIn(id); active {
 		iv = p.cfg.PollActive.Duration
 		if iv <= 0 {
 			iv = ActiveInterval
 		}
-		if acct.Last != nil {
+		if acct.Last != nil && p.mayPollHot(prof) {
 			_, worst := acct.Last.Worst()
 			// Poll faster when close to the line, and also when burning fast
 			// regardless of level: at 3 points a minute a four-minute gap is
@@ -463,7 +676,7 @@ func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token strin
 	u, err := p.client.Fetch(ctx, token)
 	if err != nil {
 		if rl, ok := usage.IsRateLimited(err); ok {
-			if acct.ID == p.st.Active || acct.ID == "active" {
+			if p.isActive(acct.ID) || acct.ID == "active" {
 				// "active" is PollActive's scratch record: the live
 				// credential before it is attributed.
 				p.budget.PenalizeLive(token, rl.RetryAfter)
@@ -487,8 +700,15 @@ func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token strin
 			p.degrade(err.Error())
 		}
 		acct.LastErr = err.Error()
+		// An unreadable poll, for the blind-failover count (IMPROVEMENTS A2).
+		// The 429 above is not one: it is the endpoint's own burst limit and
+		// clears by itself (GROUND_TRUTH §42). Nor is our own cancellation.
+		if ctx.Err() == nil {
+			acct.ReadFails++
+		}
 		return usage.ReasonOK
 	}
+	acct.ReadFails = 0
 	// Keep the previous reading so a burn rate can be computed.
 	if acct.Last != nil && !acct.LastAt.IsZero() {
 		_, prev := acct.Last.Worst()
@@ -576,7 +796,7 @@ func (p *Poller) ApplyRejection(accountID, window string, resetsAt time.Time) {
 // seatOfVault reads the seat annotation from an account's vault entry. Local,
 // no network.
 func seatOfVault(accountID string) string {
-	b, err := keychain.Read(keychain.VaultService(accountID))
+	b, err := readVault(accountID)
 	if err != nil || b.Meta == nil {
 		return ""
 	}

@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/ccdir"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -100,13 +101,13 @@ type Detector struct {
 	cwdFrom string
 }
 
-// ProjectsRoot is where Claude Code keeps transcripts.
+// ProjectsRoot is where Claude Code keeps transcripts: <config dir>/projects.
 func ProjectsRoot() string {
-	h, err := os.UserHomeDir()
+	p, err := ccdir.Projects()
 	if err != nil {
 		return "projects"
 	}
-	return filepath.Join(h, ".claude", "projects")
+	return p
 }
 
 func New(root string, log *slog.Logger) *Detector {

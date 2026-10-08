@@ -64,7 +64,9 @@ func TestLinuxCredentialsArePrivate(t *testing.T) {
 // land on top of it.
 func TestLinuxLiveAndVaultPathsAreDistinct(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	live, err := pathFor(LiveService)
+	unsetenv(t, "CLAUDE_CONFIG_DIR")
+	unsetenv(t, "CLAUDE_SECURESTORAGE_CONFIG_DIR")
+	live, err := pathFor(liveServiceBase)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,5 +121,64 @@ func TestLinuxWriteLeavesNoTempFileBehind(t *testing.T) {
 	p, _ := pathFor(VaultService("work"))
 	if _, err := os.Stat(p + ".tmp"); !os.IsNotExist(err) {
 		t.Fatal("a .tmp file was left beside the credential")
+	}
+}
+
+// Claude Code keeps the plaintext credential in its secure-storage dir, which
+// is CLAUDE_CONFIG_DIR unless CLAUDE_SECURESTORAGE_CONFIG_DIR says otherwise.
+func TestLinuxLiveCredentialFollowsTheConfigDir(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	unsetenv(t, "CLAUDE_SECURESTORAGE_CONFIG_DIR")
+	d := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", d)
+	live, err := pathFor(liveServiceFor(d))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(d, ".credentials.json"); live != want {
+		t.Fatalf("live credential = %s, want %s", live, want)
+	}
+}
+
+func TestLinuxLiveCredentialFollowsTheSecureStorageDir(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	d := t.TempDir()
+	t.Setenv("CLAUDE_SECURESTORAGE_CONFIG_DIR", d)
+	live, err := pathFor(liveServiceFor(d))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(d, ".credentials.json"); live != want {
+		t.Fatalf("live credential = %s, want %s", live, want)
+	}
+}
+
+// The vault is shared by every profile, so it stays put whatever
+// CLAUDE_CONFIG_DIR says: claudeswitch run from a acme session must see the
+// same accounts as the daemon.
+func TestLinuxVaultDoesNotFollowTheConfigDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	p, err := pathFor(VaultService("work"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(home, ".claude", "claudeswitch", "work.json"); p != want {
+		t.Fatalf("vault entry = %s, want %s", p, want)
+	}
+}
+
+// On Linux any name resolves to the one file, so resolution needs no lookup
+// and cannot fail for want of an item.
+func TestLinuxLiveServiceNeedsNoItemToExist(t *testing.T) {
+	resetLiveCache()
+	t.Cleanup(resetLiveCache)
+	t.Setenv("HOME", t.TempDir())
+	unsetenv(t, "CLAUDE_SECURESTORAGE_CONFIG_DIR")
+	t.Setenv("CLAUDE_CONFIG_DIR", "/nowhere/.claude-work")
+	if _, err := LiveService(); err != nil {
+		t.Fatal(err)
 	}
 }

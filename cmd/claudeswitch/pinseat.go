@@ -26,7 +26,7 @@ import (
 // The message says what changed, and is empty when nothing did. Every edit is
 // textual and parsed back before it replaces the file, so comments and order
 // survive and a config this could not produce cleanly is never left on disk.
-func recordSeat(cfg *config.Config, id, scope string, e *vault.Entry) (string, error) {
+func recordSeat(cfg *config.Config, id, scope string, e *vault.Entry, pool string) (string, error) {
 	if e == nil || e.AccountUUID == "" || e.OrgID == "" {
 		return "", fmt.Errorf("the credential did not say which seat it is, so %s cannot be pinned", id)
 	}
@@ -45,11 +45,14 @@ func recordSeat(cfg *config.Config, id, scope string, e *vault.Entry) (string, e
 	case existing == nil:
 		block := fmt.Sprintf("\n[[account]]\nid           = %q\nscope        = %q\n"+
 			"account_uuid = %q\norg_id       = %q\n", id, scope, e.AccountUUID, e.OrgID)
-		place, err := appendAccountPlaced(cfg.Path, id, block)
+		place, err := appendAccountInPool(cfg.Path, id, block, pool)
 		if err != nil {
 			return "", err
 		}
 		msg := fmt.Sprintf("added %s to %s, pinned to seat %s (scope %s)", id, cfg.Path, usage.ShortSeat(seat), scope)
+		if pool != "" {
+			msg += fmt.Sprintf(", in profile %q's pool", pool)
+		}
 		switch place {
 		case priorityNamed:
 			msg += ", last in priority"
@@ -89,7 +92,95 @@ var (
 	accountHdr  = regexp.MustCompile(`^\s*\[\[\s*account\s*\]\]\s*(#.*)?$`)
 	idLine      = regexp.MustCompile(`^\s*id\s*=\s*(?:"([^"]*)"|'([^']*)')`)
 	pinLine     = regexp.MustCompile(`^\s*(account_uuid|org_id)\s*=`)
+	profileHdr  = regexp.MustCompile(`^\s*\[\[\s*profile\s*\]\]\s*(#.*)?$`)
+	nameLine    = regexp.MustCompile(`^\s*name\s*=\s*(?:"([^"]*)"|'([^']*)')`)
+	poolLine    = regexp.MustCompile(`^\s*pool\s*=\s*\[`)
 )
+
+// addToPool names id last in the pool of the [[profile]] block called prof,
+// editing the text in place: comments and layout survive. A pool written on
+// one line or across several is extended where its list ends; a block with
+// no pool line gets one under its name line. The caller parses the result
+// back before it is written (writeConfigFile), so a layout this misreads is
+// discarded rather than installed.
+func addToPool(text, prof, id string) (string, error) {
+	lines := strings.Split(text, "\n")
+	start, end, nameAt := -1, len(lines), -1
+	for i := 0; i < len(lines); i++ {
+		if !profileHdr.MatchString(lines[i]) {
+			continue
+		}
+		j := i + 1
+		found := -1
+		for ; j < len(lines) && !tableHeader.MatchString(lines[j]); j++ {
+			if m := nameLine.FindStringSubmatch(lines[j]); m != nil && m[1]+m[2] == prof {
+				found = j
+			}
+		}
+		if found >= 0 {
+			start, end, nameAt = i, j, found
+			break
+		}
+		i = j - 1
+	}
+	if start < 0 {
+		return "", fmt.Errorf("no [[profile]] block named %q to add %s to", prof, id)
+	}
+	poolAt := -1
+	for k := start + 1; k < end; k++ {
+		if poolLine.MatchString(lines[k]) {
+			poolAt = k
+			break
+		}
+	}
+	quoted := strconv.Quote(id)
+	if poolAt < 0 {
+		out := append([]string{}, lines[:nameAt+1]...)
+		out = append(out, "pool = ["+quoted+"]")
+		out = append(out, lines[nameAt+1:]...)
+		return strings.Join(out, "\n"), nil
+	}
+
+	// Offset of the pool line's '[' in the whole text, then scan to its
+	// closing ']' past strings and comments, remembering the last character
+	// that was neither space nor comment.
+	off := 0
+	for k := 0; k < poolAt; k++ {
+		off += len(lines[k]) + 1
+	}
+	open := off + strings.Index(lines[poolAt], "[")
+	last := open // index of the last significant character before ']'
+	for i := open + 1; i < len(text); i++ {
+		switch c := text[i]; c {
+		case '#':
+			for i < len(text) && text[i] != '\n' {
+				i++
+			}
+		case '"', '\'':
+			j := i + 1
+			for j < len(text) && text[j] != c && text[j] != '\n' {
+				if c == '"' && text[j] == '\\' {
+					j++
+				}
+				j++
+			}
+			i, last = j, j
+		case ' ', '\t', '\r', '\n':
+		case ']':
+			sep := ", "
+			switch text[last] {
+			case '[':
+				sep = ""
+			case ',':
+				sep = " "
+			}
+			return text[:last+1] + sep + quoted + text[last+1:], nil
+		default:
+			last = i
+		}
+	}
+	return "", fmt.Errorf("profile %q's pool list is not closed", prof)
+}
 
 // pinAccount writes account_uuid and org_id into the existing [[account]] block
 // for id, directly under its id line, replacing any partial pin there. Only
