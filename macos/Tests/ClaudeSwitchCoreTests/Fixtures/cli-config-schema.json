@@ -1,0 +1,246 @@
+{
+  "settings": [
+    {
+      "default": "85",
+      "description": "rotate away at this much of the 5-hour window",
+      "enum": [],
+      "key": "switch_at",
+      "max": 100,
+      "min": 0,
+      "min_exclusive": true,
+      "scopes": [
+        "global",
+        "profile"
+      ],
+      "type": "percent"
+    },
+    {
+      "default": "98",
+      "description": "...and at this much of the weekly one",
+      "enum": [],
+      "key": "switch_at_weekly",
+      "max": 100,
+      "min": 0,
+      "min_exclusive": true,
+      "scopes": [
+        "global",
+        "profile"
+      ],
+      "type": "percent"
+    },
+    {
+      "default": "99",
+      "description": "above this, swap mid-turn rather than wait for an idle gap (at or above switch_at)",
+      "enum": [],
+      "key": "hard_floor",
+      "max": 100,
+      "min": 0,
+      "min_exclusive": true,
+      "scopes": [
+        "global",
+        "profile"
+      ],
+      "type": "percent"
+    },
+    {
+      "default": "60",
+      "description": "poll the account in use every poll_hot above this, rather than poll_active",
+      "enum": [],
+      "key": "hot_threshold",
+      "max": 100,
+      "min": 0,
+      "min_exclusive": false,
+      "scopes": [
+        "global"
+      ],
+      "type": "percent"
+    },
+    {
+      "default": "idle",
+      "description": "\"idle\" to prefer swapping between turns, or \"immediate\"",
+      "enum": [
+        "idle",
+        "immediate"
+      ],
+      "key": "switch_when",
+      "max": null,
+      "min": null,
+      "min_exclusive": false,
+      "scopes": [
+        "global"
+      ],
+      "type": "enum"
+    },
+    {
+      "default": "30s",
+      "description": "stop waiting for an idle gap after this",
+      "enum": [],
+      "key": "max_switch_wait",
+      "max": null,
+      "min": 0,
+      "min_exclusive": false,
+      "scopes": [
+        "global"
+      ],
+      "type": "duration"
+    },
+    {
+      "default": "10m0s",
+      "description": "minimum gap between rotations, to stop flapping",
+      "enum": [],
+      "key": "cooldown",
+      "max": null,
+      "min": 0,
+      "min_exclusive": false,
+      "scopes": [
+        "global"
+      ],
+      "type": "duration"
+    },
+    {
+      "default": "3m0s",
+      "description": "how often to read the account in use",
+      "enum": [],
+      "key": "poll_active",
+      "max": null,
+      "min": 120,
+      "min_exclusive": false,
+      "scopes": [
+        "global"
+      ],
+      "type": "duration"
+    },
+    {
+      "default": "1m0s",
+      "description": "...and when it is near the trigger or burning fast",
+      "enum": [],
+      "key": "poll_hot",
+      "max": null,
+      "min": 0,
+      "min_exclusive": true,
+      "scopes": [
+        "global"
+      ],
+      "type": "duration"
+    },
+    {
+      "default": "10m0s",
+      "description": "how often to read the others",
+      "enum": [],
+      "key": "poll_idle",
+      "max": null,
+      "min": 120,
+      "min_exclusive": false,
+      "scopes": [
+        "global"
+      ],
+      "type": "duration"
+    },
+    {
+      "default": "12",
+      "description": "usage calls per 5 minutes, across every process",
+      "enum": [],
+      "key": "api_budget",
+      "max": null,
+      "min": 2,
+      "min_exclusive": false,
+      "scopes": [
+        "global"
+      ],
+      "type": "int"
+    },
+    {
+      "default": "10",
+      "description": "a switch target needs this many points below its own trigger (0 = off)",
+      "enum": [],
+      "key": "landing_margin",
+      "max": 50,
+      "min": 0,
+      "min_exclusive": false,
+      "scopes": [
+        "global",
+        "profile"
+      ],
+      "type": "number"
+    },
+    {
+      "default": "3",
+      "description": "fail over after this many unreadable polls of the account in use (0 = hold)",
+      "enum": [],
+      "key": "blind_failover_polls",
+      "max": null,
+      "min": 0,
+      "min_exclusive": false,
+      "scopes": [
+        "global"
+      ],
+      "type": "int"
+    },
+    {
+      "default": "10",
+      "description": "advanced: usage calls per account held back for hot polling",
+      "enum": [],
+      "key": "hot_reserve",
+      "max": 15,
+      "min": 0,
+      "min_exclusive": false,
+      "scopes": [
+        "global"
+      ],
+      "type": "int"
+    },
+    {
+      "default": "2",
+      "description": "advanced: usage calls an hour set aside on a live account for Claude Code's own reads",
+      "enum": [],
+      "key": "unseen_calls_per_hour",
+      "max": 20,
+      "min": 0,
+      "min_exclusive": false,
+      "scopes": [
+        "global"
+      ],
+      "type": "number"
+    },
+    {
+      "default": "1h0m0s",
+      "description": "renew a credential this long before it expires",
+      "enum": [],
+      "key": "refresh_window",
+      "max": null,
+      "min": 0,
+      "min_exclusive": true,
+      "scopes": [
+        "global"
+      ],
+      "type": "duration"
+    },
+    {
+      "default": "24h0m0s",
+      "description": "also renew idle accounts this often, to catch a dead refresh token",
+      "enum": [],
+      "key": "refresh_probe",
+      "max": null,
+      "min": 0,
+      "min_exclusive": false,
+      "scopes": [
+        "global"
+      ],
+      "type": "duration"
+    },
+    {
+      "default": "",
+      "description": "models whose weekly limit counts like the weekly window (comma-separated; empty = none)",
+      "enum": [],
+      "key": "models",
+      "max": null,
+      "min": null,
+      "min_exclusive": false,
+      "scopes": [
+        "global",
+        "profile"
+      ],
+      "type": "list"
+    }
+  ]
+}

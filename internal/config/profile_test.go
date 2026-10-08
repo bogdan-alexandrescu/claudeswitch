@@ -1,9 +1,11 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -376,28 +378,26 @@ func hasWarning(c *Config, want string) bool {
 	return false
 }
 
-// Owner decision 2026-10-07: two profiles on one directory load, with a
-// warning rather than an error. They share transcripts, so activity and
-// refusals can be attributed to the wrong one.
-func TestSharedDirectoryIsAWarning(t *testing.T) {
-	c, err := loadString(t, profileAccounts+`
+// Lane 10 security review (owner decision): two profiles on one folder are
+// a config error, no longer D12's warning. That covers the lexical case D12
+// warned about (no dir beside "~/.claude", one dir spelled two ways) and
+// every real-path alias: a symlink, a different case on macOS, one dir
+// inside another. The warning folds into the error: its case cannot load.
+func TestSharedDirectoryIsRefused(t *testing.T) {
+	_, err := loadString(t, profileAccounts+`
 [[profile]]
 name = "default"
 [[profile]]
 name = "alt"
 dir = "~/.claude"
 `)
-	if err != nil {
-		t.Fatalf("a shared directory must load: %v", err)
-	}
-	want := `profiles "default" and "alt" share ~/.claude; activity and refusals may be attributed to the wrong one`
-	if !hasWarning(c, want) {
-		t.Fatalf("Warnings() = %q, want one containing %q", c.Warnings(), want)
+	if err == nil || !strings.Contains(err.Error(), `profiles "default" and "alt" are the same folder`) {
+		t.Fatalf("want a same-folder refusal, got %v", err)
 	}
 }
 
-func TestSameDirSpelledTwoWaysIsAWarning(t *testing.T) {
-	c, err := loadString(t, profileAccounts+`
+func TestSameDirSpelledTwoWaysIsRefused(t *testing.T) {
+	_, err := loadString(t, profileAccounts+`
 [[profile]]
 name = "default"
 [[profile]]
@@ -407,11 +407,117 @@ dir = "~/.claude-work"
 name = "b"
 dir = "~/.claude-work/"
 `)
-	if err != nil {
-		t.Fatalf("a shared directory must load: %v", err)
+	if err == nil || !strings.Contains(err.Error(), `profiles "a" and "b" are the same folder`) {
+		t.Fatalf("want a same-folder refusal, got %v", err)
 	}
-	if !hasWarning(c, `profiles "a" and "b" share ~/.claude-work;`) {
-		t.Fatalf("Warnings() = %q", c.Warnings())
+}
+
+func TestASymlinkedDirIsRefused(t *testing.T) {
+	home := t.TempDir()
+	real := filepath.Join(home, "real")
+	if err := os.MkdirAll(real, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(home, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "config.toml")
+	body := profileAccounts + fmt.Sprintf(`
+[[profile]]
+name = "default"
+[[profile]]
+name = "a"
+dir = %q
+[[profile]]
+name = "b"
+dir = %q
+`, real, link)
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	_, err := Load(path)
+	if err == nil || !strings.Contains(err.Error(), `profiles "a" and "b" are the same folder`) ||
+		!strings.Contains(err.Error(), "→") {
+		t.Fatalf("want a same-folder refusal showing the link, got %v", err)
+	}
+}
+
+func TestADirInsideAnotherIsRefused(t *testing.T) {
+	for name, body := range map[string]string{
+		"inside a dir": `
+[[profile]]
+name = "default"
+[[profile]]
+name = "a"
+dir = "~/cc"
+[[profile]]
+name = "b"
+dir = "~/cc/inner"
+`,
+		"inside the no-dir profile's ~/.claude": `
+[[profile]]
+name = "default"
+[[profile]]
+name = "b"
+dir = "~/.claude/inner"
+`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := loadString(t, profileAccounts+body)
+			if err == nil || !strings.Contains(err.Error(), "inside") {
+				t.Fatalf("want an inside refusal, got %v", err)
+			}
+		})
+	}
+}
+
+// A relative dir means whatever the reader's working directory makes it,
+// so the CLI and the launchd daemon would disagree about it (lane 10
+// re-review). Refused at load, naming the profile.
+func TestARelativeDirIsRefused(t *testing.T) {
+	for _, dir := range []string{"relative/cc", "./cc", "../cc", "cc"} {
+		_, err := loadString(t, profileAccounts+fmt.Sprintf(`
+[[profile]]
+name = "default"
+[[profile]]
+name = "rel"
+dir = %q
+`, dir))
+		if err == nil || !strings.Contains(err.Error(), `profile "rel"`) ||
+			!strings.Contains(err.Error(), "absolute") || !strings.Contains(err.Error(), "~/") {
+			t.Errorf("%q: want a refusal naming the profile and suggesting an absolute or ~ path, got %v", dir, err)
+		}
+	}
+	mustLoad(t, profileAccounts+`
+[[profile]]
+name = "default"
+[[profile]]
+name = "abs"
+dir = "/somewhere/cc"
+[[profile]]
+name = "home"
+dir = "~/cc"
+`)
+}
+
+func TestDirsDifferingInCaseAreOneFolderOnMacOS(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("case folding is macOS's")
+	}
+	_, err := loadString(t, profileAccounts+`
+[[profile]]
+name = "default"
+[[profile]]
+name = "a"
+dir = "~/CC-Work"
+[[profile]]
+name = "b"
+dir = "~/cc-work"
+`)
+	if err == nil || !strings.Contains(err.Error(), "same folder") {
+		t.Fatalf("want a same-folder refusal, got %v", err)
 	}
 }
 

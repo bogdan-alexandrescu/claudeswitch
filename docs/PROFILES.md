@@ -124,13 +124,14 @@ So the profile most people already have is written with no `dir`. Validation
 - `switch_at`, `switch_at_weekly`, `hard_floor` overrides are in (0, 100], and
   a profile's effective `hard_floor` is at or above its effective `switch_at`.
 
-Two profiles sharing a directory (`~` expanded, trailing `/` ignored, an
-omitted `dir` counting as `~/.claude`), such as no `dir` alongside
-`dir = "~/.claude"`, are **allowed with a warning** (owner decision
-2026-10-07), from `Config.Warnings()` and so shown by `doctor` and `status`:
-`profiles "default" and "alt" share ~/.claude; activity and refusals may be
-attributed to the wrong one`. Their keychain items differ, but their
-transcripts are one directory (and on Linux their credential file is one file).
+Two profiles on one folder, or one inside another's, are a **config error**
+(D27, superseding D12's warning): `profiles "default" and "alt" are the same
+folder (~/.claude → /Users/x/.claude)`. Folders are compared as real paths:
+`~` expanded, absolute, symlinks resolved as far as the path exists, an
+omitted `dir` counting as `~/.claude`, and case-folded on macOS. Their
+keychain items differ, but their transcripts are one directory (and on Linux
+their credential file is one file), and a link makes one profile's files the
+other's.
 A profile with an empty pool is allowed too; `doctor` warns about it without
 failing.
 
@@ -188,12 +189,14 @@ Inside it:
 
 ### Budget
 
-At the current config (`api_budget = 12`, `poll_active = 2m`, `poll_idle = 10m`,
-five accounts), two active accounts cost about 6.5 calls per five minutes
-against an allowance of 11, so it fits. Hot polling does not: at `poll_hot =
-20s` one hot account alone is 15 calls per five minutes and relies on the shared
-budget to throttle it. Two hot profiles would compete for that, so only a
-*busy* profile polls hot (§8 D3): hot needs the threshold crossed **and**
+At the current config (`api_budget = 12`, `poll_active = 3m`, `poll_idle = 10m`,
+five accounts), two active accounts cost about 4.8 calls per five minutes
+against an allowance of 11, so it fits. Each account also has its own
+allowance (DESIGN 4.3c), which is per account and so the same however many
+profiles there are. Hot polling is movement-driven (DESIGN 4.3c) and at
+`poll_hot = 60s` one hot account is 5 calls per five minutes on top of the
+rest. Two hot profiles would still compete for the shared window, so only a
+*busy* profile polls hot (§8 D3): hot needs movement within reach of the trigger **and**
 transcript activity within the idle window. A hot but quiet profile polls at
 `poll_active`. It is not spending, so a stale reading costs nothing.
 
@@ -275,16 +278,17 @@ without the rest.
 - **D11. Leaving out `dir` means `CLAUDE_CONFIG_DIR` unset** (plain keychain
   item, `~/.claude.json`, `~/.claude`). At most one profile may leave it out:
   two would share the plain item, which is the §3 failure.
-- **D12. Two profiles sharing a directory load with a warning**, not an
+- **D12 (superseded by D27). Two profiles sharing a directory load with a warning**, not an
   error: activity and refusals may be attributed to the wrong one.
 - **D13. An empty pool is allowed**; `doctor` warns that the profile will
   never be rotated.
 - **D14. `doctor` exits non-zero on any FAIL**, not only the profile checks.
   Warnings never fail it. Lands in lane 5.
 - **D15. "Busy" for D3 means transcript writes within `poll_active`.** An
-  profile between turns still counts as busy; the 8s idle gap would not.
+  profile between turns still counts as busy; the 8s idle gap would not. (3 minutes at the
+  default since lane 11.)
 - **D16. The D3 gate applies only with two or more profiles.** With none or
-  one, hot polling is exactly as before.
+  one, the busy gate does not apply (movement within reach, DESIGN 4.3c, always does).
 - **D17. A live credential from another profile's pool is recorded as it is**,
   with an error logged; that profile's next decision swaps it back into its
   own pool, provided the target is not live elsewhere.
@@ -411,6 +415,101 @@ As built (lane 7):
   re-pointed again before its new item was attributed leaves a ghost carrying
   the account its hold remembers; a profile started on a ghost's item (one
   declared again on its old dir) releases that ghost.
+
+As built (lane 10, IMPROVEMENTS I7):
+
+- `cs profile create <name> [--dir PATH] [--pool a,b] [--seed <account>]`.
+  Every check runs before anything is made, so a refusal leaves no dir and
+  no config edit. The dir defaults to `~/.claude-<name>` and is written to
+  the config absolute, the string `cs run` then sets, so the keychain item
+  Claude Code hashes from it (§2) is the one seeded. Refused: an existing
+  profile name; a dir that is, holds or sits inside `~/.claude`, another
+  profile's dir or this shell's `CLAUDE_CONFIG_DIR`, compared as real paths
+  (D27; inside `~/.claude` the links would loop); `--dir ~user/…`; an
+  unconfigured or repeated account; and an account another profile's pool
+  *lists* (D1, naming the owner). An account that joins `default` only by
+  D6 may be taken. With no `[[profile]]` blocks, a `default` block is
+  declared in the same edit, or the accounts left out would join nothing:
+  with this shell's `CLAUDE_CONFIG_DIR` set, its `dir` is that value as
+  written, so it stays the profile the implicit one was; unset, no `dir`
+  (D28). The edit is textual and parsed back (`writeConfigFile`: mode and
+  symlink kept). An existing dir not 0700, or any dir in a git work tree,
+  gets a warning: the MCP copy can carry secrets. Printed commands quote
+  the dir.
+- Shared by symlink from `~/.claude`, when present and not already in the
+  dir: `settings.json`, `CLAUDE.md`, `skills/`, `commands/`, `agents/`.
+  Never: `projects/`, history, plugins, credentials. User-scope
+  `mcpServers` from `~/.claude.json` are copied into a new
+  `<dir>/.claude.json` holding that key alone (0600, never over an existing
+  file); OAuth MCP logins live in the base profile's credential and are not
+  copied.
+- `--seed`: the account must be in the new pool, vaulted and renewable; the
+  new profile must have no credential under any spelling of its dir (a
+  failed lookup refuses); and the account must not be live or maybe-live
+  elsewhere — `liveElsewhereOf` over every profile and ghost, unknown
+  counting as live (D18) — checked before anything is made and again just
+  before the write, against the config and state read afresh. With a daemon
+  running the seed first waits (up to 10 s) for it to load the new profile
+  (D29): the daemon writes `daemon_profiles` (name → dir) to state at start
+  and on every reload, and until the profile is there the daemon's own §3
+  checks do not know it. Timing out refuses the seed — the profile itself is
+  made — and says to retry with `cs profile seed <name> <account>`, which
+  makes every create-time seed check on an existing profile with a dir.
+  With no daemon it seeds at once. The write creates the
+  item Claude Code names for the dir (`LiveServiceName`): on macOS
+  `add-generic-password` without `-U` (create-only, after a metadata lookup
+  says it is absent) and without `-T` (§41), within the 4032-byte line
+  (§43); on Linux `<dir>/.credentials.json`, 0600, linked into place so an
+  existing file is never replaced. It holds Claude Code's two credential
+  locks for the dir (cclock). Afterwards the item is resolved as every later
+  command resolves it (`LiveServiceFor`) and must be the one written. The
+  blob is the vaulted `claudeAiOauth` alone. State records the account
+  active in the new profile, so other profiles' checks see it at once.
+- `cs run <profile> [-- args]` execs `claude` with `envForProfile`'s
+  environment (`CLAUDE_CONFIG_DIR` the dir as written, unset for the no-dir
+  profile, `CLAUDE_SECURESTORAGE_CONFIG_DIR` removed). A profile whose live
+  credential does not resolve (on Linux, whose file is missing) is started
+  anyway, with one stderr note (D30): `profile "work" is not signed in yet —
+  use /login, then claudeswitch takes over`. No daemon interaction: D21
+  reloads the config.
+- `cs profile list`: name, dir, pool, the account state records live, and
+  whether the credential resolves.
+
+Owner decisions from the lane 10 security review:
+
+- **D27. Profiles on one folder are a config error**, at load and in
+  `profile create`: the same real path (links resolved, case-folded on
+  macOS) or one inside another's, the no-dir profile counting as
+  `~/.claude`. It supersedes D12: every case D12 warned about is one of
+  these, so the warning is gone.
+- **D28. The `default` block `profile create` adds** to a config without
+  profiles takes this shell's `CLAUDE_CONFIG_DIR` as its `dir` when set, and
+  has no `dir` when unset.
+- **D29. A seed waits for a running daemon** to load the new profile, then
+  checks §3 afresh; on timeout it refuses, leaving the profile made.
+- **D30. `cs run` starts a profile that is not signed in**, with a note,
+  rather than refusing: /login inside it is how it is signed in.
+
+Re-review (lane 10): a starting daemon replaces `daemon_profiles` with its
+own set and saves it first thing, before any network call, so a seed
+waiting through a daemon restart never reads the previous daemon's entry as
+"loaded". A relative profile `dir` (`cc`, `./cc`, `../cc`) is a config
+error naming the profile: the CLI and the launchd daemon have different
+working directories, so it would name two folders; write it absolute or
+from `~/`.
+
+As built (lane 15):
+
+- `cs profile remove <name> [--to <profile>]` removes a `[[profile]]` block
+  (docs/APP_CLI.md). Its pool moves to `--to`, else to `default` (D6);
+  with neither, an enabled account would be in no pool and the command
+  refuses (`would_orphan`). The last profile cannot be removed, nor
+  `default` without `--to` while others exist. The profile's folder and
+  keychain item are never deleted. The account last live there becomes a
+  ghost (D22): a running daemon's reload makes it (D21) and the command
+  waits for it to load the edit; with no daemon the command records it
+  itself under the daemon lock, as `adoptOfflineGhosts` would at the next
+  start (D25).
 
 - **D26. The profiles release is 0.5.0**, and it publishes the menu-bar app as
   an unsigned zip from the public repo's release workflow (macOS runner,

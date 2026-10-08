@@ -1,0 +1,20 @@
+{
+  "declared": true,
+  "dir": "~/.claude-lab",
+  "from_env": false,
+  "live": "work-2",
+  "name": "lab",
+  "overrides": {},
+  "pinned": null,
+  "pool": [
+    "work-2"
+  ],
+  "seeded": "work-2",
+  "signed_in": "yes",
+  "thresholds": {
+    "hard_floor": 98,
+    "landing_margin": 10,
+    "switch_at": 90,
+    "switch_at_weekly": 95
+  }
+}

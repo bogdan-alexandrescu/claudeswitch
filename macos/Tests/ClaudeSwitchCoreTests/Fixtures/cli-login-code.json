@@ -1,0 +1,18 @@
+{
+  "access_expires_at": "2026-10-08T14:00:00Z",
+  "account": "work-3",
+  "configured": true,
+  "email": "person4@example.com",
+  "new_account": true,
+  "org_id": "44444444-4444-4444-4444-444444444444",
+  "plan": "team",
+  "pool": [
+    "work-1",
+    "work-2",
+    "work-3"
+  ],
+  "profile": "default",
+  "refresh_expires_at": null,
+  "renewable": true,
+  "seat": "cccccccc-cccc-cccc-cccc-cccccccccccc@44444444-4444-4444-4444-444444444444"
+}

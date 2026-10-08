@@ -1,0 +1,7 @@
+{
+  "daemon_running": false,
+  "key": "switch_at",
+  "path": "/Users/example/.config/claudeswitch/config.toml",
+  "previous": "90",
+  "value": "85"
+}

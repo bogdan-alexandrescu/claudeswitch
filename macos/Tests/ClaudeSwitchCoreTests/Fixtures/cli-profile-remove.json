@@ -1,0 +1,26 @@
+{
+  "daemon_loaded": null,
+  "daemon_running": false,
+  "ghost": {
+    "account": "personal",
+    "profile": "review",
+    "since": "2026-10-08T06:10:08.617211Z",
+    "why": "removed"
+  },
+  "kept": {
+    "credential": null,
+    "dir": "/Users/example/.claude-review"
+  },
+  "moved": [
+    "personal"
+  ],
+  "pools": {
+    "default": [
+      "work-1",
+      "work-2",
+      "personal"
+    ]
+  },
+  "profile": "review",
+  "to": "default"
+}

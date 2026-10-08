@@ -1248,6 +1248,12 @@ other seat   200   t+485s   (a different account, same machine, same moment)
 
 This contradicts claude-swap's trailing-hour figure for these accounts; §34's "burst
 allowance" reading was right, but its 12-call sample stopped short of the edge.
+
+What the measurement does **not** settle is the refill rate: the refusal at +5 and +10
+minutes could be a slow refill or a penalty lockout. The budget therefore models the most
+generous pair consistent with the 24th call at 20 s — a bucket of 20 refilling one call
+per 2 minutes (~30/h, claude-swap's figure) — and defers rather than calls below a reserve
+of 3 (DESIGN 4.3c). Re-measuring the sustained rate (I5's probe) would tighten it.
 The probe's raw usage response also confirmed per-model weekly limits: `limits[]` carries
 `{"kind": "weekly_scoped", "scope": {"model": {"display_name": "Fable"}}}` alongside
 `session` and `weekly_all` (IMPROVEMENTS I6).

@@ -55,7 +55,7 @@ func TestDirectLoginCarriesTheProfileToItsCompletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = oauth.ClearPending() })
-	if err := loginDirect(cfg, st, nil, "w2", "", "work", false, oauth.Extra{}, "", "work"); err != nil {
+	if err := loginDirect(cfg, st, nil, "w2", "", false, oauth.Extra{}, "", "work"); err != nil {
 		t.Fatal(err)
 	}
 	_, pend, err := oauth.LoadPending()
@@ -70,7 +70,7 @@ func TestDirectLoginCarriesTheProfileToItsCompletion(t *testing.T) {
 	}
 	// The pool a completion joins is the one the person named, and the edit
 	// it makes loads even with no default profile.
-	if _, err := recordSeat(cfg, "w2", "work", gotSeat("p2", "o2"), completionPool(cfg, pend)); err != nil {
+	if _, err := recordSeat(cfg, "w2", gotSeat("p2", "o2"), completionPool(cfg, pend)); err != nil {
 		t.Fatalf("completing into work's pool: %v", err)
 	}
 	if owner, _ := loadOrFail(t, cfg.Path).ProfileOf("w2"); owner != "work" {

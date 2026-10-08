@@ -34,7 +34,7 @@ switch_at = 75
 // writes the account block and the pool entry together, and says so.
 func TestRecordSeatPutsANewAccountInTheProfilesPool(t *testing.T) {
 	path := writeConfig(t, poolConfig)
-	msg, err := recordSeat(loadOrFail(t, path), "w2", "work", gotSeat("p2", "o2"), "work")
+	msg, err := recordSeat(loadOrFail(t, path), "w2", gotSeat("p2", "o2"), "work")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestRecordSeatPutsANewAccountInTheProfilesPool(t *testing.T) {
 func TestRecordSeatWithNoDefaultProfileStillAddsTheAccount(t *testing.T) {
 	body := strings.Replace(poolConfig, `name = "default"`, `name = "home"`, 1)
 	path := writeConfig(t, body)
-	if _, err := recordSeat(loadOrFail(t, path), "w2", "work", gotSeat("p2", "o2"), "work"); err != nil {
+	if _, err := recordSeat(loadOrFail(t, path), "w2", gotSeat("p2", "o2"), "work"); err != nil {
 		t.Fatalf("adding an account to work's pool failed: %v", err)
 	}
 	if owner, _ := loadOrFail(t, path).ProfileOf("w2"); owner != "work" {
@@ -88,7 +88,7 @@ func TestRecordSeatEditsPoolsHoweverTheyAreWritten(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := writeConfig(t, c.body)
-			if _, err := recordSeat(loadOrFail(t, path), "w2", "work", gotSeat("p2", "o2"), "work"); err != nil {
+			if _, err := recordSeat(loadOrFail(t, path), "w2", gotSeat("p2", "o2"), "work"); err != nil {
 				t.Fatal(err)
 			}
 			in, _ := loadOrFail(t, path).ProfileNamed("work")
@@ -104,7 +104,7 @@ func TestRecordSeatEditsPoolsHoweverTheyAreWritten(t *testing.T) {
 // implicit profile as before, and no profile block appears.
 func TestRecordSeatWithoutProfilesWritesNoPool(t *testing.T) {
 	path := writeConfig(t, baseConfig)
-	if _, err := recordSeat(loadOrFail(t, path), "work-b", "work", gotSeat("p3", "o3"), ""); err != nil {
+	if _, err := recordSeat(loadOrFail(t, path), "work-b", gotSeat("p3", "o3"), ""); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(path)
@@ -125,7 +125,7 @@ func TestRecordSeatPoolEditKeepsModeAndSymlink(t *testing.T) {
 	if err := os.Symlink(real, link); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := recordSeat(loadOrFail(t, link), "w2", "work", gotSeat("p2", "o2"), "work"); err != nil {
+	if _, err := recordSeat(loadOrFail(t, link), "w2", gotSeat("p2", "o2"), "work"); err != nil {
 		t.Fatal(err)
 	}
 	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
@@ -144,7 +144,7 @@ func TestRecordSeatPoolEditKeepsModeAndSymlink(t *testing.T) {
 func TestNewAccountNoticeNamesThePoolItJoins(t *testing.T) {
 	cfg := loadOrFail(t, writeConfig(t, poolConfig))
 	work, _ := cfg.ProfileNamed("work")
-	got := newAccountNotice(cfg, work, "w2", "work")
+	got := newAccountNotice(cfg, work, "w2")
 	if !strings.Contains(got, `"work"`) || !strings.Contains(got, "pool") {
 		t.Errorf("notice does not name work's pool:\n%s", got)
 	}
@@ -153,7 +153,7 @@ func TestNewAccountNoticeNamesThePoolItJoins(t *testing.T) {
 	}
 	// No profiles: nothing about pools.
 	plain := loadOrFail(t, writeConfig(t, baseConfig))
-	if got := newAccountNotice(plain, config.Profile{Name: "default", FromEnv: true}, "x", "work"); strings.Contains(got, "pool") {
+	if got := newAccountNotice(plain, config.Profile{Name: "default", FromEnv: true}, "x"); strings.Contains(got, "pool") {
 		t.Errorf("a config without profiles mentions pools:\n%s", got)
 	}
 }

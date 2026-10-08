@@ -56,7 +56,9 @@ func TestAnInteractiveCallIsStillRecorded(t *testing.T) {
 func TestOnlyScheduledPollingKeepsTheReserve(t *testing.T) {
 	b := NewBudget()
 	for i := 0; i < DefaultAllowance-ReservedForSwap; i++ {
-		if ok, _ := b.Allow("tok", Scheduled); !ok {
+		// One credential per call: this is the machine-wide window, and one
+		// credential alone would meet its own allowance first (DESIGN 4.3c).
+		if ok, _ := b.Allow(string(rune('a'+i)), Scheduled); !ok {
 			t.Fatalf("call %d should fit under the reserve", i)
 		}
 	}

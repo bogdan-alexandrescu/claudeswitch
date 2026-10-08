@@ -26,12 +26,9 @@ import (
 // The message says what changed, and is empty when nothing did. Every edit is
 // textual and parsed back before it replaces the file, so comments and order
 // survive and a config this could not produce cleanly is never left on disk.
-func recordSeat(cfg *config.Config, id, scope string, e *vault.Entry, pool string) (string, error) {
+func recordSeat(cfg *config.Config, id string, e *vault.Entry, pool string) (string, error) {
 	if e == nil || e.AccountUUID == "" || e.OrgID == "" {
 		return "", fmt.Errorf("the credential did not say which seat it is, so %s cannot be pinned", id)
-	}
-	if scope == "" {
-		scope = "work"
 	}
 	seat := e.AccountUUID + "@" + e.OrgID
 
@@ -43,13 +40,13 @@ func recordSeat(cfg *config.Config, id, scope string, e *vault.Entry, pool strin
 	}
 	switch {
 	case existing == nil:
-		block := fmt.Sprintf("\n[[account]]\nid           = %q\nscope        = %q\n"+
-			"account_uuid = %q\norg_id       = %q\n", id, scope, e.AccountUUID, e.OrgID)
+		block := fmt.Sprintf("\n[[account]]\nid           = %q\n"+
+			"account_uuid = %q\norg_id       = %q\n", id, e.AccountUUID, e.OrgID)
 		place, err := appendAccountInPool(cfg.Path, id, block, pool)
 		if err != nil {
 			return "", err
 		}
-		msg := fmt.Sprintf("added %s to %s, pinned to seat %s (scope %s)", id, cfg.Path, usage.ShortSeat(seat), scope)
+		msg := fmt.Sprintf("added %s to %s, pinned to seat %s", id, cfg.Path, usage.ShortSeat(seat))
 		if pool != "" {
 			msg += fmt.Sprintf(", in profile %q's pool", pool)
 		}

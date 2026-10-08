@@ -15,7 +15,6 @@ type WhyOptions struct {
 	St       *state.State
 	Decision policy.Decision
 	Verdicts []policy.Verdict
-	Dir      string
 }
 
 // Why renders the reasoning behind the current decision.
@@ -46,18 +45,6 @@ func Why(out io.Writer, o WhyOptions) {
 			o.Decision.RecoversAt.Local().Format("15:04"))))
 	}
 
-	if o.Dir != "" {
-		if pr, ok := o.Cfg.ProjectFor(o.Dir); ok && (len(pr.Eligible) > 0 || len(pr.Prefer) > 0) {
-			fmt.Fprintf(out, "\n  %s %s\n", paint(dim, "here"), o.Dir)
-			if len(pr.Eligible) > 0 {
-				fmt.Fprintf(out, "  %s only %v may serve this directory\n", paint(dim, "rule"), pr.Eligible)
-			}
-			if len(pr.Prefer) > 0 {
-				fmt.Fprintf(out, "  %s %v preferred here\n", paint(dim, "rule"), pr.Prefer)
-			}
-		}
-	}
-
 	fmt.Fprintf(out, "\n  %s\n", paint(dim, "CONSIDERED, in order"))
 	t := &table{}
 	for _, v := range o.Verdicts {
@@ -77,5 +64,39 @@ func Why(out io.Writer, o WhyOptions) {
 		t.add(mark, name, why)
 	}
 	fmt.Fprint(out, t.render("  "))
+	weeklySection(out, o)
 	fmt.Fprintln(out)
+}
+
+// weeklySection is each account's weekly pace and per-model weekly limits
+// (IMPROVEMENTS I6, I8), in the order considered. Display only: nothing here
+// changes the decision above, except a model the config counts, which the
+// verdicts already reflect.
+func weeklySection(out io.Writer, o WhyOptions) {
+	t := &table{}
+	now := time.Now()
+	for _, v := range o.Verdicts {
+		acct := o.St.Accounts[v.ID]
+		if !acct.HasReading() {
+			continue
+		}
+		p, ok := acct.WeeklyPace(now)
+		models := modelLimitsText(acct.Last)
+		if !ok && models == "" {
+			continue
+		}
+		first := models
+		if ok {
+			first = paceLine(p)
+		}
+		t.add(" ", v.ID, first)
+		if ok && models != "" {
+			t.add("", "", models)
+		}
+	}
+	if len(t.rows) == 0 {
+		return
+	}
+	fmt.Fprintf(out, "\n  %s\n", paint(dim, "WEEKLY, at the pace so far"))
+	fmt.Fprint(out, t.render("  "))
 }

@@ -21,9 +21,9 @@ public struct WindowReading: Equatable {
     public var known: Bool { utilization != nil }
 }
 
-/// One entry of the API's limits[] array (Go: usage.Limit). "scope" is not
-/// stored by the Go code today, so a per-model limit arrives as kind
-/// "weekly_scoped" without a model name; it is read here in case it is added.
+/// One entry of the API's limits[] array (Go: usage.Limit), stored in the
+/// API's own shape: a per-model weekly limit is kind "weekly_scoped" with the
+/// model's name in scope.model.display_name. A null percent is unknown.
 public struct LimitReading: Equatable {
     public var kind: String
     public var group: String
@@ -81,8 +81,16 @@ public struct AccountRecord: Equatable {
     public var burntUntil: Date?
     public var burntWindow: String?
     public var refreshExpiry: Date?
+    /// "account-uuid@org-uuid": who the stored credential signs in as.
+    public var seat: String?
+    public var orgID: String?
+    /// When the access token runs out (renewed by refresh while renewable).
+    public var tokenExpiry: Date?
 
     init(id: String, _ j: JSON) {
+        seat = j["seat"].string.flatMap { $0.isEmpty ? nil : $0 }
+        orgID = j["org_id"].string.flatMap { $0.isEmpty ? nil : $0 }
+        tokenExpiry = j["token_expiry"].date
         self.id = j["id"].string ?? id
         last = j["last_usage"].isNull ? nil : UsageReading(j["last_usage"])
         lastAt = j["last_at"].date
@@ -122,6 +130,9 @@ public struct StateFile: Equatable {
     public var daemonLive: Bool
     public var daemonSince: Date?
     public var savedAt: Date?
+    /// Each account's email, recorded by the CLI when it was vaulted or
+    /// identified (lane 13), so it is known without the keychain.
+    public var emails: [String: String]
 
     public init?(data: Data) {
         guard let j = JSON(data: data), j.raw is [String: Any] else { return nil }
@@ -146,6 +157,7 @@ public struct StateFile: Equatable {
         daemonLive = j["daemon_live"].bool ?? false
         daemonSince = j["daemon_since"].date
         savedAt = j["saved_at"].date
+        emails = j["emails"].object.compactMapValues { $0.string }
     }
 
     public var defaultProfile: ProfileRecord {
@@ -173,6 +185,33 @@ public struct Decision: Equatable {
     }
 }
 
+/// How an account's weekly window is being spent against the clock (Go:
+/// state.Pace, as addWeeklyJSON writes it). Display only. atReset and
+/// unusedAtReset are absent until the week is far enough along to estimate.
+public struct WeeklyPace: Equatable {
+    /// Share of the week elapsed, in percent.
+    public var expected: Double
+    /// Weekly utilization now.
+    public var actual: Double
+    public var atReset: Double?
+    public var unusedAtReset: Double?
+    public var resetsAt: Date?
+
+    public init(expected: Double, actual: Double, atReset: Double?, unusedAtReset: Double?, resetsAt: Date?) {
+        self.expected = expected
+        self.actual = actual
+        self.atReset = atReset
+        self.unusedAtReset = unusedAtReset
+        self.resetsAt = resetsAt
+    }
+
+    init?(_ j: JSON) {
+        guard let e = j["expected"].double, let a = j["actual"].double else { return nil }
+        self.init(expected: e, actual: a, atReset: j["at_reset"].double,
+                  unusedAtReset: j["unused_at_reset"].double, resetsAt: j["resets_at"].date)
+    }
+}
+
 /// The policy's verdict on one account (Go: verdictsJSON).
 public struct Verdict: Equatable {
     public var id: String
@@ -182,6 +221,7 @@ public struct Verdict: Equatable {
     public var window: String?
     public var active: Bool
     public var clearsAt: Date?
+    public var pace: WeeklyPace?
 
     init(_ j: JSON) {
         id = j["id"].string ?? ""
@@ -191,6 +231,7 @@ public struct Verdict: Equatable {
         window = j["window"].string
         active = j["active"].bool ?? false
         clearsAt = j["clears_at"].date
+        pace = WeeklyPace(j["weekly_pace"])
     }
 }
 
@@ -202,6 +243,13 @@ public struct ProfileWhy: Equatable {
     public var accounts: [Verdict]
     public var switchAt: Double?
     public var switchAtWeekly: Double?
+    /// The profile's effective pool, when the binary reports it.
+    public var pool: [String] = []
+    /// Where "Switch to best" would go now (lane 16): the best eligible
+    /// account other than the live one, by the policy's own ordering.
+    public var best: String?
+    /// Why there is none, when `best` is nil.
+    public var bestWhy: String?
 }
 
 /// `claudeswitch why --json`. With one profile it is
@@ -221,17 +269,22 @@ public struct WhyReport: Equatable {
                 decision: Decision(b["decision"]),
                 accounts: b["accounts"].array.map(Verdict.init),
                 switchAt: b["thresholds"]["switch_at"].double,
-                switchAtWeekly: b["thresholds"]["switch_at_weekly"].double))
+                switchAtWeekly: b["thresholds"]["switch_at_weekly"].double,
+                pool: b["pool"].array.compactMap(\.string),
+                best: Self.text(b["best"]), bestWhy: Self.text(b["best_why"])))
         }
         if list.isEmpty {
             let d = Decision(j["decision"])
             let a = j["accounts"].array.map(Verdict.init)
             guard d != nil || !a.isEmpty else { return nil }
             list.append(ProfileWhy(profile: StateFile.defaultProfile, current: true,
-                                    decision: d, accounts: a, switchAt: nil, switchAtWeekly: nil))
+                                    decision: d, accounts: a, switchAt: nil, switchAtWeekly: nil,
+                                    best: Self.text(j["best"]), bestWhy: Self.text(j["best_why"])))
         }
         profiles = list
     }
+
+    static func text(_ j: JSON) -> String? { j.string.flatMap { $0.isEmpty ? nil : $0 } }
 
     /// The block this app reports on: the default profile, which is the one
     /// `claudeswitch use` acts on when run without CLAUDE_CONFIG_DIR.

@@ -124,13 +124,13 @@ func refuseOutsidePool(cfg *config.Config, target config.Profile, accountID stri
 		}
 	}
 	if owner, ok := cfg.ProfileOf(accountID); ok {
-		return fmt.Errorf("account %q is in profile %q's pool, not profile %q's; pools are fixed, "+
+		return &appError{Code: codeOutsidePool, Message: fmt.Sprintf("account %q is in the pool of profile %q, not of profile %q; pools are fixed, "+
 			"since one credential live in two profiles is logged out by whichever refreshes first. "+
 			"To use it there: `claudeswitch use %s --profile %s`",
-			accountID, owner, target.Name, accountID, owner)
+			accountID, owner, target.Name, accountID, owner)}
 	}
-	return fmt.Errorf("account %q is in no profile's pool, so no profile may use it; "+
-		"add it to a pool in the config first", accountID)
+	return &appError{Code: codeOutsidePool, Message: fmt.Sprintf("account %q is in no profile's pool, so no profile may use it; "+
+		"add it to a pool in the config first", accountID)}
 }
 
 // liveTarget is one profile's live credential as a §3 check sees it: the

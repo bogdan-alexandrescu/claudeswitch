@@ -18,7 +18,9 @@ func fixedBudget(start time.Time) (*Budget, *time.Time) {
 func TestBudgetHoldsBackOneCallForSwaps(t *testing.T) {
 	b, _ := fixedBudget(time.Now())
 	for i := 0; i < DefaultAllowance-ReservedForSwap; i++ {
-		if ok, _ := b.Allow("tok", Scheduled); !ok {
+		// One credential per call: this is the machine-wide window, and one
+		// credential alone would meet its own allowance first (DESIGN 4.3c).
+		if ok, _ := b.Allow(string(rune('a'+i)), Scheduled); !ok {
 			t.Fatalf("scheduled call %d refused, expected allowed", i)
 		}
 	}
@@ -36,7 +38,9 @@ func TestBudgetHoldsBackOneCallForSwaps(t *testing.T) {
 func TestBudgetRecoversAfterWindow(t *testing.T) {
 	b, now := fixedBudget(time.Now())
 	for i := 0; i < DefaultAllowance; i++ {
-		b.Allow("tok", Swap)
+		// One credential per call: this is the machine-wide window, and one
+		// credential alone would meet its own allowance first (DESIGN 4.3c).
+		b.Allow(string(rune('a'+i)), Swap)
 	}
 	if ok, _ := b.Allow("tok", Scheduled); ok {
 		t.Fatal("expected exhausted budget")
@@ -114,8 +118,11 @@ func TestBackoffGrowsWithConsecutiveRefusals(t *testing.T) {
 		waits = append(waits, d)
 		*now = now.Add(d + time.Second) // wait it out, then be refused again
 	}
+	// It grows until it reaches the cap, then holds there. (With the old
+	// one-minute start it grew for all five; from five minutes it reaches
+	// twenty on the third, §42.)
 	for i := 1; i < len(waits); i++ {
-		if waits[i] <= waits[i-1] {
+		if waits[i] <= waits[i-1] && waits[i-1] < MaxBackoff {
 			t.Fatalf("backoff did not grow: %v then %v", waits[i-1], waits[i])
 		}
 	}

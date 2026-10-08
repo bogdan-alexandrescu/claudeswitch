@@ -1,0 +1,10 @@
+{
+  "account": "personal",
+  "dry_run": false,
+  "five_hour": 12.5,
+  "from": "work-1",
+  "org_id": "33333333-3333-3333-3333-333333333333",
+  "profile": "default",
+  "seven_day": 40,
+  "verified": true
+}

@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "not_found",
+    "hint": "set one up with: cs chrome add work-2",
+    "message": "no Chrome profile for account \"work-2\""
+  }
+}

@@ -107,6 +107,88 @@ that starved the poller and corrupted the daemon's idea of which account was liv
 `usage.Shared()` is the single instance every caller must use, and a 429 always yields at
 least a 60-second backoff however small the `Retry-After` header is.
 
+### 4.3c Each account has its own allowance, and the cadence follows movement
+
+(2026-10-07, IMPROVEMENTS I5.) The endpoint's limit is per **account**
+(GROUND_TRUTH §42): about 24 calls at 20-second spacing, then refused for 10–15
+minutes with a meaningless `Retry-After: 0`, while other accounts are answered
+normally. The machine-wide window of 4.3b cannot see that — one account read
+every minute is 5 calls per 5 minutes, well inside it, and still empties that
+account. So the budget holds a second allowance per credential, in the same
+shared ledger, keyed by the same digest as the 429 locks:
+
+| | value | why |
+|---|---|---|
+| burst | 20 calls | below the measured 24; the difference is room for Claude Code's own calls on the live account (§40), which we cannot see |
+| refill | 1 call per 2 min (~30/h) | the fastest refill that, with a burst of 20, still runs dry by the 24th call at 20 s — any faster predicts calls the endpoint refused; it also matches claude-swap's ~30/h |
+| swap reserve | 3 calls | only a swap check (verifying the incoming account, re-reading the live one) may spend them, down to the last call |
+| hot reserve | 10 calls (`hot_reserve`, 0–15) | routine polls stop above it, so it rebuilds between spells (at the 3m default, 20 reads an hour against a live refill of ~28: ~8 an hour); a hot poll may spend it — a hot spell needs 7.5 — and so may an *overdue* read of the account in use (reading older than `poll_active` + 1/12, 3m15s at the default), down to 1 above the swap reserve, so after a spell the reading stays under the daemon's 4m stale-decision cap. In the day simulation a second full spell 56 minutes after the first began with the reserve full and kept its readings within 55 s |
+| unseen spend | 2 calls/h (`unseen_calls_per_hour`, 0–20) | a credential some profile is running on (marked live in the ledger whenever its item is read) is modelled as refilling 2/h slower, for Claude Code's own reads of the endpoint (§40, rate not measured) |
+
+Burst, refill and swap reserve are constants (measured or structural); the hot
+reserve and the unseen spend are advanced settings (owner decision 2026-10-07),
+global only, shown on `doctor`'s account-rate row.
+
+A poll that would dip into its tier's reserve is **deferred**, not made: the
+poller reschedules that account for when its allowance has refilled and gives
+the tick to the next due account. Interactive calls are charged and never
+refused (4.3b's deadlock still applies).
+
+What the numbers mean in practice: polling an idle account every 2 minutes or
+slower never drains it. `poll_active = 3m` (the default, owner decision
+2026-10-07, superseding 2m) is 20/h on the account in use against a live refill
+of ~28/h, so the hot reserve rebuilds about 8 calls an hour after a spell and
+routine reads are not deferred. A hot spell at 60 s for the 15-minute lookahead
+spends 15 and regains 7.5, net 7.5 of the 10 held for it. 20-second polling
+runs dry in ~8 minutes, as observed.
+
+The daemon warns "deciding on a stale reading" past `min(3 × poll_active, 4m)`
+(4m at the default), so routine operation never warns: a read at 3m plus its
+tick, or an overdue read at 3m15s after a spell, stays under it. The watchdog's
+blind-exit limit is `min(10 × poll_active, 10m)` (floor 2m); blind failover
+(4.4) takes `blind_failover_polls` unreadable polls and a last good reading at
+least that many `poll_active` old: 3 × 3m = 9 minutes at the defaults.
+
+A `poll_active` or `poll_idle` under 2 minutes is **not refused** (owner
+decision 2026-10-07): every `cs config` on 0.3.x–0.5.0 wrote `poll_active =
+"1m0s"`, because `Write` pinned the defaults it had been filled with, and
+refusing that file would stop the daemon and the `cs config` that could fix it.
+It loads at 2 minutes, `status` and `doctor` warn with the fix (`cs config
+poll_active 3m`), and `cs config` refuses to set such a value anew. `Write` now
+writes a setting only when the file carried it, `cs config` set it, or it
+differs from the default; every other one is a commented default. A
+`poll_active` of exactly `1m0s` — the value 0.3.x–0.5.0 `cs config` pinned — is
+dropped by the next write, so the file returns to the 3m default; any other
+`poll_active` or `poll_idle` under 2m is the person's own, written back as they
+wrote it, and keeps loading at 2m with the warning. A fast `poll_hot`
+stays a warning, as decided earlier, since the allowance defers its excess.
+`doctor` prints the per-account rates.
+
+**Hot polling is movement-driven.** The account in use is read every
+`poll_hot` only while it is *moving* — its reading rose recently (within the
+time 1.5 points take at its burn rate, at least two hot polls and at most 5
+minutes) at ≥ 0.1 points/min — **and** at that rate it reaches its trigger
+within the 15-minute lookahead (`hot_threshold` stays a floor, crossed early only
+by a burn of 1.5 points/min). Sitting still at 90% is not hot: nothing is
+changing, and a faster reading would say the same thing. Leaving hot, the
+interval doubles back toward `poll_active` rather than jumping. D3/D16 still
+gate hot polling to a busy profile when there are several. A re-attribution
+read of the live account counts as its poll, and an account that becomes the
+one in use is read once its reading is `poll_active` old rather than waiting out
+an idle schedule.
+
+**After a 429** the account backs off on our own schedule: 5 minutes, doubling,
+at most 20 (at most 10 for the account in use, since 5 + 10 covers the measured
+recovery). "In use" is any credential marked live in the ledger in the last hour,
+so the cap holds whoever is refused — the vault's swap and probe calls included. A longer `Retry-After` is still honoured up to `MaxLock`. A 429 never
+counts toward blind failover (4.4), and the transcript detector still re-decides
+at once on a refusal, whatever any lock says.
+
+`internal/poller/simulation_test.go` replays a working day (two trigger
+crossings on one account, three idle accounts, Claude Code's own reads, a
+transcript refusal) against a fake endpoint enforcing §42 on a fake clock, and
+asserts zero 429s and readings no older than `poll_hot` while hot and moving.
+
 ### 4.4 Unknown is not "fine"
 
 An account whose usage cannot be read is `unknown`, and `unknown` is never a rotation
@@ -117,14 +199,27 @@ rotating away from a working session on no evidence is worse than waiting for th
 right while the poller is about to catch up; it stops being right once it plainly is not.
 A daemon blind on the account being spent cannot see it approach its limit, and the
 stale reading's projection is only a guess. So when the active account's usage has been
-unreadable for `blind_failover_polls` consecutive polls (default 3), and its last good
-reading is at least that many `poll_active` intervals old, the policy fails over to a
-*healthy* account: one whose own last poll succeeded and that sits at least
-`landing_margin` points under its trigger. It is an ordinary rotation for timing — it
-respects the cooldown and the idle-gap preference, and D18/§3 still refuses a target live
-in another profile. With no healthy account, it keeps holding (a Stay, not a Wait).
+unreadable for `blind_failover_polls` consecutive polls (default 3), and that streak has
+itself lasted at least that many `poll_active` intervals (counted from
+`FailSince`, the first counted failure), the policy fails over to a *healthy* account:
+one whose own last poll succeeded, under its triggers and clear of the landing margin
+(4.4a). It respects the cooldown, and D18/§3 still refuses a target live in another
+profile. It is marked `Failover` and is never forced: the swap waits for an idle gap
+and `max_switch_wait` does not apply (a refusal still switches at once). With no
+healthy account, it keeps holding (a Stay, not a Wait).
 
-Two things are deliberately not blindness:
+**It never splits a turn** (owner decision 2026-10-07). Other rotations wait for an idle
+gap only up to `max_switch_wait` and then go ahead mid-turn; a blind failover waits for the
+gap however long it takes. Nothing says the work is in trouble — only that we cannot see
+the account — and a refusal, which does say so, still switches as before (4.6).
+
+**The streak is measured from its first failure, not from the last good reading**, and
+a daemon starts with no streak. After a long sleep the last reading is hours old while the
+reads have been failing for seconds (the network is not up yet); measuring from the reading
+would fail over a working session on wake. A streak inherited from an earlier process is
+time this one did not watch.
+
+Three things are deliberately not blindness:
 
 - **A 429** from the usage endpoint is its own burst limit, per account, clearing within
   10–15 minutes (GROUND_TRUTH §42), and says nothing about whether the account can work.
@@ -134,15 +229,28 @@ Two things are deliberately not blindness:
   Code refreshes it on the next message and the daemon re-captures it; failing over would
   move an idle session for nothing. The same expired token on a *busy* session is not
   explained that way — Claude Code would have refreshed it to keep working — so it counts.
+- **A 401 on a stale copy.** The scheduled poll reads the active account through its
+  vault entry, and Claude Code's own refresh revokes that token until the daemon
+  re-captures it. When the profile's live item holds a different token, the 401 is about
+  our copy, not the account, and it is not counted. Re-attribution polls through the live
+  token itself, so a live token that really is rejected still counts.
 
 `blind_failover_polls = 0` restores the unconditional hold.
 
 ### 4.4a A switch lands with room to spare
 
-A rotation target needs `landing_margin` points (default 10) of room below **its own**
-trigger, on the same figures eligibility uses (IMPROVEMENTS A1). Landing one point under
-the line means the next poll rotates away again — or, with the cooldown, holds the session
-on an account with no headroom. When every account with room is inside the margin:
+A rotation target's **session (5-hour) window** needs `landing_margin` points (default 10)
+of room below `switch_at`, on the same figures eligibility uses (IMPROVEMENTS A1). Landing
+one point under the line means the next poll rotates away again — or, with the cooldown,
+holds the session on an account with no headroom.
+
+The weekly window has **no margin** (owner decision 2026-10-07): any account under
+`switch_at_weekly` is a valid target. The weekly trigger sits near 100 on purpose (a
+weekly window at 92% still holds days of work), and a margin there would rule out exactly
+the accounts worth landing on — an active account at 98.4% weekly should move to one at
+92% now, not wait.
+
+When every account with room is inside the margin:
 
 - an ordinary rotation (over the trigger, under the hard floor) **holds** and says which
   accounts the margin excluded. It is a Stay, not a Wait: "every account is out" would be
@@ -151,8 +259,9 @@ on an account with no headroom. When every account with room is inside the margi
   a trigger, so it takes the best account inside the margin and says so;
 - with no active account at all it does the same, since there is nothing to stay on.
 
-`why` marks an account excluded by the margin and gives its room; `plan` names them in
-the reason.
+`why` marks an account excluded by the margin and gives its session room; `plan` names
+them in the reason. `landing_margin` and `blind_failover_polls` are written to the config
+only once set, so an untouched install follows the defaults as they change.
 
 ### 4.5 The reserve governs entry, not tenancy
 

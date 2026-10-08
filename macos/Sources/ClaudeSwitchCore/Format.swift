@@ -65,6 +65,19 @@ public enum Format {
         }
     }
 
+    /// The weekly pace (Go: render.PaceText): "20% used · 57% of the week gone".
+    public static func pace(_ p: WeeklyPace) -> String {
+        String(format: "%.0f%% used · %.0f%% of the week gone", p.actual, p.expected)
+    }
+
+    /// The expiry estimate (Go: render.ExpiryText), or nil when it is too
+    /// early in the week to make one.
+    public static func paceExpiry(_ p: WeeklyPace) -> String? {
+        guard let unused = p.unusedAtReset else { return nil }
+        if unused >= 0.5 { return String(format: "~%.0f%% would expire unused at reset", unused) }
+        return "on pace to use it all"
+    }
+
     /// A per-model or otherwise scoped limit's label.
     public static func limitName(_ l: LimitReading) -> String {
         if let m = l.model, !m.isEmpty { return m + " weekly" }
@@ -75,12 +88,50 @@ public enum Format {
     }
 }
 
+public extension Format {
+    /// A collapsed card's line: "work-1 · session 3% · week 41%"; trouble
+    /// first, "needs login · work-1", since figures mean nothing then.
+    static func cardSummary(_ c: ProfileCard) -> String {
+        guard let a = c.active else { return "no account live" }
+        switch a.status {
+        case .needsLogin, .refused: return "\(a.status.label) · \(a.id)"
+        default: return "\(a.id) · session \(pct(a.fiveHour?.utilization)) · week \(pct(a.sevenDay?.utilization))"
+        }
+    }
+}
+
 /// What the menu bar shows.
 public struct MenuTitle: Equatable {
     public var text: String
     public var level: Level
     /// True when there is something to fix rather than a figure to read.
     public var problem: Bool
+    /// True before the first data load: neither a figure nor a problem.
+    public var loading: Bool
+
+    public init(text: String, level: Level, problem: Bool, loading: Bool = false) {
+        self.text = text
+        self.level = level
+        self.problem = problem
+        self.loading = loading
+    }
+
+    /// The label, told what went wrong reaching the binary. Only a binary
+    /// that is missing or too old is a problem (the question mark); with no
+    /// data yet and nothing wrong it is loading, which shows the ordinary
+    /// gauge — before the first load is not an error. Data, when there is
+    /// any, wins over a later failure.
+    public static func of(_ s: Snapshot?, compact: Bool, profile: String?, problem: CLIError?) -> MenuTitle {
+        if let s = s { return of(s, compact: compact, profile: profile) }
+        switch problem {
+        case .missing?, .tooOld?, .unsupportedContract?:
+            return MenuTitle(text: compact ? "" : "cs", level: .ok, problem: true)
+        case nil:
+            return MenuTitle(text: compact ? "" : "cs …", level: .ok, problem: false, loading: true)
+        default:
+            return MenuTitle(text: compact ? "" : "cs", level: .ok, problem: false)
+        }
+    }
 
     public static func of(_ s: Snapshot?, compact: Bool) -> MenuTitle {
         guard let s = s else { return MenuTitle(text: compact ? "" : "cs", level: .ok, problem: true) }
@@ -92,5 +143,21 @@ public struct MenuTitle: Equatable {
         let marker = level == .over ? "!" : ""
         if compact { return MenuTitle(text: marker, level: level, problem: false) }
         return MenuTitle(text: "\(a.id) \(Format.pct(a.bindingPct))\(marker)", level: level, problem: false)
+    }
+
+    /// The title following one profile (IMPROVEMENTS M7): its live account,
+    /// prefixed with the profile's name when there is more than one.
+    public static func of(_ s: Snapshot?, compact: Bool, profile: String?) -> MenuTitle {
+        guard let s = s else { return MenuTitle(text: compact ? "" : "cs", level: .ok, problem: true) }
+        guard let card = s.card(s.followed(profile)) else { return of(s, compact: compact) }
+        let prefix = s.cards.count > 1 ? card.name + " · " : ""
+        guard let a = card.active else {
+            return MenuTitle(text: compact ? "" : prefix + "–", level: .ok, problem: false)
+        }
+        var level = a.level
+        if a.status == .needsLogin { level = .over }
+        let marker = level == .over ? "!" : ""
+        if compact { return MenuTitle(text: marker, level: level, problem: false) }
+        return MenuTitle(text: "\(prefix)\(a.id) \(Format.pct(a.bindingPct))\(marker)", level: level, problem: false)
     }
 }

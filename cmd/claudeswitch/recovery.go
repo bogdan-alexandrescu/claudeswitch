@@ -28,7 +28,7 @@ type recoveryDeps struct {
 	confirm func(prompt string) bool
 }
 
-type recoveryOpts struct{ identify, force, yes bool }
+type recoveryOpts struct{ identify, force, yes, json bool }
 
 func defaultRecoveryDeps() recoveryDeps {
 	v := vault.New(logger(false))
@@ -54,6 +54,7 @@ func cmdRecovery(args []string) error {
 		"ask whose each kept credential is (one identity lookup each, through the shared call budget)")
 	force := fs.Bool("force", false, "restore: replace the vaulted credential even when it looks better")
 	yes := fs.Bool("yes", false, "clear: do not ask for confirmation")
+	asJSON := fs.Bool("json", false, "machine-readable output; never prompts")
 	positional := parseInterleaved(fs, args)
 	cfg, err := config.Load(*cfgPath)
 	if err != nil && cfg == nil {
@@ -62,7 +63,7 @@ func cmdRecovery(args []string) error {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "note: %v\n", err)
 	}
-	return runRecovery(os.Stdout, cfg, positional, recoveryOpts{identify: *identify, force: *force, yes: *yes},
+	return runRecovery(os.Stdout, cfg, positional, recoveryOpts{identify: *identify, force: *force, yes: *yes, json: *asJSON},
 		defaultRecoveryDeps())
 }
 
@@ -76,20 +77,23 @@ func runRecovery(w io.Writer, cfg *config.Config, args []string, o recoveryOpts,
 		return listRecovery(w, cfg, o, deps)
 	case "restore":
 		if len(args) != 3 {
-			return fmt.Errorf("usage: claudeswitch recovery restore <slot> <account> [--force]")
+			return appErr(codeUsage, "", "usage: claudeswitch recovery restore <slot> <account> [--force]")
 		}
 		return restoreRecovery(w, cfg, args[1], args[2], o, deps)
 	case "clear":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: claudeswitch recovery clear <slot> [--yes]")
+			return appErr(codeUsage, "", "usage: claudeswitch recovery clear <slot> [--yes]")
 		}
 		return clearRecovery(w, cfg, args[1], o, deps)
 	}
-	return fmt.Errorf("usage: claudeswitch recovery [--identify] | restore <slot> <account> [--force] | clear <slot> [--yes]")
+	return appErr(codeUsage, "", "usage: claudeswitch recovery [--identify] | restore <slot> <account> [--force] | clear <slot> [--yes]")
 }
 
 func listRecovery(w io.Writer, cfg *config.Config, o recoveryOpts, deps recoveryDeps) error {
 	items := deps.list(cfg.ProfileNames())
+	if o.json {
+		return recoveryListJSON(w, cfg, items, o, deps)
+	}
 	fmt.Fprintln(w)
 	if len(items) == 0 {
 		fmt.Fprintln(w, "  no recovery copies kept")
@@ -178,17 +182,26 @@ func recoveryValidity(it vault.RecoveryItem, now time.Time) string {
 
 func restoreRecovery(w io.Writer, cfg *config.Config, slot, account string, o recoveryOpts, deps recoveryDeps) error {
 	if !hasAccount(cfg, account) {
-		return fmt.Errorf("%q is not a configured account; restore files a credential under an account the "+
+		return appErr(codeNotFound, "", "%q is not a configured account; restore files a credential under an account the "+
 			"config already has, after checking it is that account's seat", account)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	defer cancel()
 	e, err := deps.restore(ctx, slot, account, cfg.SeatOf(account), o.force)
 	if err != nil {
-		if e != nil {
+		if e != nil && !o.json {
 			fmt.Fprintf(w, "\n  ✓ vaulted slot %s as %s\n", slot, account)
 		}
+		if e != nil {
+			// Vaulted, but the slot could not be cleared.
+			return wrapErr(codeFailed, fmt.Sprintf("slot %s was vaulted as %s but not cleared; clear it with: "+
+				"claudeswitch recovery clear %s --yes", slot, account, slot), err)
+		}
 		return err
+	}
+	if o.json {
+		return emitTo(w, map[string]any{"slot": slot, "account": account,
+			"seat": orNull(seatOf(e.AccountUUID, e.OrgID)), "renewable": !e.NoRefreshToken, "cleared": true})
 	}
 	fmt.Fprintf(w, "\n  ✓ vaulted slot %s as %s (seat %s) and cleared the slot\n", slot, account,
 		usage.ShortSeat(e.AccountUUID+"@"+e.OrgID))
@@ -201,8 +214,8 @@ func restoreRecovery(w io.Writer, cfg *config.Config, slot, account string, o re
 
 func clearRecovery(w io.Writer, cfg *config.Config, slot string, o recoveryOpts, deps recoveryDeps) error {
 	if !o.yes {
-		if deps.confirm == nil {
-			return fmt.Errorf("clearing slot %s deletes what may be the only copy of a login; "+
+		if deps.confirm == nil || o.json {
+			return appErr(codeConfirm, "pass --yes to clear it", "clearing slot %s deletes what may be the only copy of a login; "+
 				"run it at a terminal to confirm, or pass --yes", slot)
 		}
 		what := ""
@@ -217,6 +230,9 @@ func clearRecovery(w io.Writer, cfg *config.Config, slot string, o recoveryOpts,
 	}
 	if err := deps.clear(slot); err != nil {
 		return err
+	}
+	if o.json {
+		return emitTo(w, map[string]any{"slot": slot, "cleared": true})
 	}
 	fmt.Fprintf(w, "  cleared recovery slot %s\n", slot)
 	return nil
@@ -250,4 +266,52 @@ func doctorRecoveryLine(items []vault.RecoveryItem, now time.Time) string {
 		s += fmt.Sprintf(", oldest %s ago", ageShort(now.Sub(oldest)))
 	}
 	return s + "\n         └ `cs recovery` lists them; restore or clear each\n"
+}
+
+func seatOf(accountUUID, orgID string) string {
+	if accountUUID == "" {
+		return ""
+	}
+	return accountUUID + "@" + orgID
+}
+
+func timeOrNull(t time.Time) any {
+	if t.IsZero() {
+		return nil
+	}
+	return t.UTC()
+}
+
+// recoveryListJSON is `recovery --json`.
+func recoveryListJSON(w io.Writer, cfg *config.Config, items []vault.RecoveryItem, o recoveryOpts, deps recoveryDeps) error {
+	out := []map[string]any{}
+	for _, it := range items {
+		m := map[string]any{"slot": it.Slot, "profile": orNull(it.Profile), "error": nil,
+			"kept_at": timeOrNull(it.KeptAt), "seat": orNull(it.Seat), "account": nil, "who": nil,
+			"access_expires_at": timeOrNull(it.Expiry), "refresh_expires_at": timeOrNull(it.RefreshExpiry),
+			"renewable": it.HasRefresh && (it.RefreshExpiry.IsZero() || it.RefreshExpiry.After(time.Now()))}
+		if it.Err != nil {
+			m["error"] = it.Err.Error()
+			out = append(out, m)
+			continue
+		}
+		seat := it.Seat
+		if o.identify {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			pr, err := deps.identify(ctx, it)
+			cancel()
+			if err != nil {
+				m["error"] = "could not identify: " + err.Error()
+			} else {
+				seat = pr.Seat()
+				m["who"] = pr.Describe()
+			}
+		}
+		m["seat"] = orNull(seat)
+		if seat != "" {
+			m["account"] = orNull(cfg.AccountBySeat(seat))
+		}
+		out = append(out, m)
+	}
+	return emitTo(w, map[string]any{"items": out})
 }

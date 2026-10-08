@@ -1,0 +1,28 @@
+{
+  "items": [
+    {
+      "access_expires_at": "2026-10-08T12:00:00Z",
+      "account": "personal",
+      "error": null,
+      "kept_at": "2026-10-07T08:00:00Z",
+      "profile": "default",
+      "refresh_expires_at": null,
+      "renewable": true,
+      "seat": "cccccccc-cccc-cccc-cccc-cccccccccccc@33333333-3333-3333-3333-333333333333",
+      "slot": "r1",
+      "who": null
+    },
+    {
+      "access_expires_at": null,
+      "account": null,
+      "error": "unreadable item",
+      "kept_at": null,
+      "profile": null,
+      "refresh_expires_at": null,
+      "renewable": false,
+      "seat": null,
+      "slot": "r2",
+      "who": null
+    }
+  ]
+}

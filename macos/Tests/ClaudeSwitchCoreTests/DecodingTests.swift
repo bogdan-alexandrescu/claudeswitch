@@ -43,7 +43,7 @@ func encode(_ obj: Any) throws -> Data { try JSONSerialization.data(withJSONObje
         #expect(last.fiveHour.resetsAt != nil)
         #expect(last.limits.map(\.kind) == ["session", "weekly_all", "weekly_scoped"])
         #expect(last.scopedWeekly.map(\.percent) == [12])
-        #expect(last.scopedWeekly[0].model == nil, "Go does not store the scope today")
+        #expect(last.scopedWeekly[0].model == "Modelname", "Go stores the scope (IMPROVEMENTS I6)")
         #expect(last.limits[1].isActive)
         #expect(last.worst?.window == "seven_day")
         #expect(last.worst?.pct == 41)
@@ -137,6 +137,25 @@ func encode(_ obj: Any) throws -> Data { try JSONSerialization.data(withJSONObje
         #expect(!(p.accounts[2].eligible))
         #expect(p.accounts[2].why == "refused on its five_hour window")
         #expect(p.accounts[2].clearsAt != nil)
+    }
+
+    /// IMPROVEMENTS I8: each account's weekly pace, as `why --json` reports it.
+    @Test func testDecodesTheWeeklyPace() throws {
+        let p = try #require(WhyReport(data: try fixture("why.json"))?.primary)
+        let pace = try #require(p.accounts[0].pace, "work-1 is four days into its week")
+        #expect(abs(pace.expected - 400.0 / 7) < 0.5)
+        #expect(abs(pace.actual - 41) < 1)
+        let unused = try #require(pace.unusedAtReset)
+        #expect(unused > 20 && unused < 35, "41% four days in reaches about 72% by the reset")
+        #expect(pace.resetsAt != nil)
+    }
+
+    @Test func testAPaceWithoutAnEstimateHasNoExpiry() throws {
+        let j = #"{"decision": {"kind": "stay", "reason": ""}, "accounts": [{"id": "a", "weekly_pace": "#
+            + #"{"expected": 5, "actual": 2, "resets_at": "2026-10-11T01:57:15Z"}}]}"#
+        let pace = try #require(WhyReport(data: Data(j.utf8))?.primary?.accounts.first?.pace)
+        #expect(pace.unusedAtReset == nil)
+        #expect(pace.atReset == nil)
     }
 
     @Test func testDecodesThePerProfileShape() throws {

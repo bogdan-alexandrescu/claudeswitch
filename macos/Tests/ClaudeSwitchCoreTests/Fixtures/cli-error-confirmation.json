@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "confirmation_required",
+    "hint": "pass --yes",
+    "message": "delete account \"work-2\" (seat bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb@22222222-2222-2222-2222-222222222222): its stored credential, its [[account]] block, its pool and priority entries and its state record"
+  }
+}

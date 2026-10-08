@@ -1,0 +1,11 @@
+{
+  "account": "work-2",
+  "created": true,
+  "email": "person2@example.com",
+  "opened": true,
+  "profile_dir": "claudeswitch-work-2",
+  "urls": [
+    "https://claude.ai/login",
+    "https://chromewebstore.google.com/detail/fcoeoabgfenejglbffodgkkbkcdhcgfn"
+  ]
+}

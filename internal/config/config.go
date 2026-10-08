@@ -5,11 +5,13 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -38,18 +40,19 @@ const (
 	// anti-flap cooldown and the preference for swapping between turns.
 	DefaultHardFloor = 99.0 // above this, swap mid-turn rather than wait for idle
 	DefaultReserve   = 70.0 // personal is ineligible for overflow above this
-	// DefaultLandingMargin is how far below its own trigger a switch target
-	// must be (IMPROVEMENTS A1), so a rotation never lands on an account it is
-	// about to rotate away from.
+	// DefaultLandingMargin is how far below the session trigger a switch
+	// target's 5-hour window must be (IMPROVEMENTS A1), so a rotation never
+	// lands on an account it is about to rotate away from. The weekly window
+	// has no margin: it only has to be under its trigger.
 	DefaultLandingMargin = 10.0
 	// MaxLandingMargin bounds it: past half the scale almost nothing
 	// qualifies, and the margin would quietly turn rotation off.
 	MaxLandingMargin = 50.0
 	// DefaultBlindFailoverPolls is how many consecutive unreadable polls of the
-	// active account end DESIGN 4.4's hold (IMPROVEMENTS A2). At poll_active 2m
-	// that is about six minutes. A 429 never counts: the usage endpoint's
-	// refusals clear on their own in 10–15 minutes (GROUND_TRUTH §42) and say
-	// nothing about the account.
+	// active account end DESIGN 4.4's hold (IMPROVEMENTS A2). At poll_active 3m
+	// that is about nine minutes (3 × 3m, the policy's age test). A 429 never
+	// counts: the usage endpoint's refusals clear on their own in 10–15
+	// minutes (GROUND_TRUTH §42) and say nothing about the account.
 	DefaultBlindFailoverPolls = 3
 	// DefaultHotThreshold is where close watching begins, as a percentage of
 	// whichever window is worse. It is far below either trigger on purpose:
@@ -62,7 +65,6 @@ const (
 type Account struct {
 	ID    string `toml:"id"`
 	Label string `toml:"label"`
-	Scope string `toml:"scope"`
 	// AccountUUID pins this entry to a Claude SEAT — the thing that actually owns
 	// a quota pool. Prefer it to OrgID: a team organization has one seat per
 	// member, each with separate limits, so an organization does not identify an
@@ -129,6 +131,103 @@ const (
 	// DefaultPollHotSetting is DefaultPollHot as a person would type it.
 	DefaultPollHotSetting = "60s"
 )
+
+// HotLookahead is how far ahead hot polling looks: the account in use is
+// polled every poll_hot only while it is moving and, at its current burn
+// rate, would reach its trigger within this long (docs/DESIGN.md 4.3c). It
+// also bounds a hot spell — at a steady burn, one lasts about this long
+// before the account is rotated away — which is what the per-account
+// arithmetic below charges for one.
+const HotLookahead = 15 * time.Minute
+
+// AccountRates is the per-account arithmetic of the cadence against one
+// account's own usage allowance (usage.AccountBurst, usage.AccountRefill,
+// GROUND_TRUTH §42). Rates are calls an hour.
+type AccountRates struct {
+	ActivePerHour, HotPerHour, IdlePerHour float64
+	RefillPerHour                          float64
+	// HotSpellNet is what one hot spell of HotLookahead spends beyond the
+	// refill; Spare is what routine polling holds back for it (hot_reserve).
+	HotSpellNet float64
+	Spare       int
+	// Unseen is unseen_calls_per_hour: what a live account is modelled as
+	// losing to Claude Code's own reads.
+	Unseen float64
+	// PollActive is the poll_active that runs, and ActiveEvery how often the
+	// account in use can actually be read in steady state: poll_active, or
+	// slower when the live refill (RefillPerHour - Unseen) cannot sustain it.
+	PollActive, ActiveEvery time.Duration
+}
+
+// OverdueAfter is how old the reading of the account in use may get before a
+// routine read of it is overdue and may spend the hot reserve down to the swap
+// reserve + 1: poll_active + 1/12 (3m15s at the 3m default). Routine reads at
+// poll_active keep the full hot-reserve floor; after a hot spell has spent it,
+// the overdue read keeps the reading under the daemon's stale-decision cap
+// (min(3 × poll_active, 4m): 4m at the default) while the reserve rebuilds.
+func OverdueAfter(pollActive time.Duration) time.Duration { return pollActive + pollActive/12 }
+
+// ActiveStarved reports that the live refill, less unseen_calls_per_hour,
+// cannot read the account in use even as often as a read becomes overdue, so
+// its reading runs routinely older than poll_active by more than a quarter.
+// At the defaults it is about every 2m9s against 2m, which is not.
+func (r AccountRates) ActiveStarved() bool {
+	return r.PollActive > 0 && r.ActiveEvery > OverdueAfter(r.PollActive)
+}
+
+// ActiveDrains and IdleDrains report a steady cadence faster than the refill:
+// such an account empties however the machine-wide budget is set.
+func (r AccountRates) ActiveDrains() bool { return r.ActivePerHour > r.RefillPerHour+1e-9 }
+func (r AccountRates) IdleDrains() bool   { return r.IdlePerHour > r.RefillPerHour+1e-9 }
+
+// HotDrains reports a hot spell that would spend more than the spare
+// allowance; the excess would be deferred, so readings would be older than
+// poll_hot when it matters.
+func (r AccountRates) HotDrains() bool { return r.HotSpellNet > float64(r.Spare)+1e-9 }
+
+// Drains is any of the three.
+func (r AccountRates) Drains() bool { return r.ActiveDrains() || r.IdleDrains() || r.HotDrains() }
+
+// AccountCadence computes AccountRates for this config.
+func (c *Config) AccountCadence() AccountRates {
+	perHour := func(d time.Duration) float64 {
+		if d <= 0 {
+			return 0
+		}
+		return float64(time.Hour) / float64(d)
+	}
+	// What runs: anything under the floor is raised to it on load.
+	floor := func(d time.Duration) time.Duration {
+		if d > 0 && d < MinPoll {
+			return MinPoll
+		}
+		return d
+	}
+	r := AccountRates{
+		ActivePerHour: perHour(floor(c.PollActive.Duration)),
+		HotPerHour:    perHour(c.PollHot.Duration),
+		IdlePerHour:   perHour(floor(c.PollIdle.Duration)),
+		RefillPerHour: perHour(usage.AccountRefill),
+		Spare:         c.HotReserveCalls(),
+		Unseen:        c.UnseenPerHour(),
+	}
+	r.PollActive = floor(c.PollActive.Duration)
+	r.ActiveEvery = r.PollActive
+	if live := r.RefillPerHour - r.Unseen; live <= 0 {
+		r.ActiveEvery = time.Duration(1<<62 - 1)
+	} else if every := time.Duration(float64(time.Hour) / live); every > r.ActiveEvery {
+		r.ActiveEvery = every
+	}
+	spell := HotLookahead.Hours()
+	r.HotSpellNet = (r.HotPerHour - r.RefillPerHour) * spell
+	if r.HotSpellNet < 0 {
+		r.HotSpellNet = 0
+	}
+	return r
+}
+
+// SuggestedPollActive is what an error or doctor tells someone to set.
+const SuggestedPollActive = "3m"
 
 // HotDrainMinutes is how long a hot cadence takes to spend an account's burst
 // allowance, and whether it is faster than the default — the threshold at
@@ -203,6 +302,50 @@ func (c *Config) Margin() float64 {
 	return *c.LandingMargin
 }
 
+// CountsModel reports whether a model's weekly limit counts like the weekly
+// window under this config (IMPROVEMENTS I6).
+func (c *Config) CountsModel(name string) bool {
+	for _, m := range c.Models {
+		if strings.EqualFold(strings.TrimSpace(m), strings.TrimSpace(name)) {
+			return true
+		}
+	}
+	return false
+}
+
+// validModels refuses a blank model name, which would match nothing and so
+// silently count nothing.
+func validModels(key string, models []string) error {
+	for _, m := range models {
+		if strings.TrimSpace(m) == "" {
+			return fmt.Errorf("%s holds a blank model name; list display names such as the ones `cs status --detail` shows", key)
+		}
+	}
+	return nil
+}
+
+// Ranges for the advanced model settings.
+const (
+	MaxHotReserve         = 15
+	MaxUnseenCallsPerHour = 20.0
+)
+
+// HotReserveCalls is hot_reserve, or its default.
+func (c *Config) HotReserveCalls() int {
+	if c.HotReserve == nil {
+		return usage.DefaultHotReserve
+	}
+	return *c.HotReserve
+}
+
+// UnseenPerHour is unseen_calls_per_hour, or its default.
+func (c *Config) UnseenPerHour() float64 {
+	if c.UnseenCallsPerHour == nil {
+		return usage.DefaultLiveUnseenPerHour
+	}
+	return *c.UnseenCallsPerHour
+}
+
 // BlindPolls is the effective blind-failover threshold; zero means off.
 func (c *Config) BlindPolls() int {
 	if c.BlindFailoverPolls == nil {
@@ -224,8 +367,8 @@ type Config struct {
 	// because the two windows recover on completely different timescales.
 	SwitchAtWeekly float64 `toml:"switch_at_weekly"`
 	HardFloor      float64 `toml:"hard_floor"`
-	// HotThreshold is the utilization at which the active account is polled at
-	// PollHot rather than PollActive.
+	// HotThreshold is the floor for polling the active account at PollHot: it
+	// must also be moving within reach of its trigger (DESIGN 4.3c).
 	HotThreshold float64  `toml:"hot_threshold"`
 	SwitchWhen   string   `toml:"switch_when"`
 	Cooldown     Duration `toml:"cooldown"`
@@ -236,8 +379,8 @@ type Config struct {
 	// deferred all the way to the hard floor. Observed 2026-09-10 at 85%.
 	MaxSwitchWait Duration `toml:"max_switch_wait"`
 
-	// LandingMargin is the room, in points below its own trigger, a switch
-	// target must have (IMPROVEMENTS A1). Nil means DefaultLandingMargin; zero
+	// LandingMargin is the room, in points below the session trigger, a switch
+	// target's 5-hour window must have (IMPROVEMENTS A1). Nil means DefaultLandingMargin; zero
 	// is a real value and turns the margin off. Read it through Margin().
 	LandingMargin *float64 `toml:"landing_margin"`
 	// BlindFailoverPolls is how many consecutive unreadable polls of the active
@@ -245,6 +388,20 @@ type Config struct {
 	// means DefaultBlindFailoverPolls; zero turns failover off and restores
 	// DESIGN 4.4's unconditional hold. Read it through BlindPolls().
 	BlindFailoverPolls *int `toml:"blind_failover_polls"`
+	// HotReserve and UnseenCallsPerHour are the per-account model's two
+	// advanced numbers (owner decision 2026-10-07; DESIGN 4.3c): calls held
+	// back from routine polling for a hot spell, and calls an hour a live
+	// account is modelled as losing to Claude Code's own reads. Nil means
+	// the default. Read them through HotReserveCalls and UnseenPerHour.
+	HotReserve         *int     `toml:"hot_reserve"`
+	UnseenCallsPerHour *float64 `toml:"unseen_calls_per_hour"`
+
+	// Models names the models whose per-model weekly limits count like the
+	// weekly window for triggering and eligibility (IMPROVEMENTS I6), matched
+	// against limits[] scope.model.display_name without regard to case. Empty
+	// means none: those limits are shown, never acted on. Per profile through
+	// ForProfile; read it there, or through CountsModel.
+	Models []string `toml:"models"`
 
 	// AutoRefresh keeps vaulted credentials alive. Nil means on.
 	//
@@ -260,15 +417,15 @@ type Config struct {
 	// rather than at the moment the account is needed. Zero disables it.
 	RefreshProbe Duration `toml:"refresh_probe"`
 
-	// Polling cadence. The usage endpoint's limit is a burst allowance that
-	// refills rather than a sustained cap — measured at one call every 20
-	// seconds for eleven consecutive calls without a refusal — so a brisk
-	// cadence is fine and the earlier four-minute default was self-imposed.
-	// validate() still does the arithmetic, because a tight enough loop can
-	// trip the burst guard and a locked-out daemon runs blind.
+	// Polling cadence. The usage endpoint's limit is a burst allowance per
+	// ACCOUNT that refills (GROUND_TRUTH §42: ~24 calls, then refused for
+	// 10–15 minutes). validate() does the arithmetic twice: per account
+	// against that allowance (AccountCadence), and for the machine against
+	// api_budget, because a locked-out daemon runs blind.
 	PollActive Duration `toml:"poll_active"`
-	// PollHot is used when the active account is near the trigger or burning
-	// fast, where a stale reading actually costs something.
+	// PollHot is used while the active account is moving and within reach
+	// of its trigger (DESIGN 4.3c), where a stale reading actually costs
+	// something.
 	PollHot Duration `toml:"poll_hot"`
 	// PollIdle is for accounts nobody is using. Their utilization can only fall,
 	// so they need checking just often enough to notice a recovery.
@@ -280,20 +437,26 @@ type Config struct {
 	Priority  []string  `toml:"priority"`
 	Accounts  []Account `toml:"account"`
 
-	// Projects restricts which account scopes may serve which directories.
-	//
-	// Without this, `scope` is a label and nothing more: work quota can fund
-	// personal work and vice versa, silently. For anyone whose employer cares
-	// where their Claude usage is billed, that is the difference between a tool
-	// they can use and one they cannot.
-	Projects map[string]Project `toml:"project"`
-
 	// Profiles are the declared [[profile]] blocks, exactly as written. Most
 	// callers want EffectiveProfiles, which adds the implicit default and the
 	// unlisted accounts that join it.
 	Profiles []Profile `toml:"profile"`
 
 	Path string `toml:"-"`
+	// Hash is ContentHash of the bytes this config was decoded from, ""
+	// for one built in code or read from no file. The daemon records the
+	// hash of the config it runs, so a command that edited the config can
+	// wait until the daemon runs exactly that edit (lane 12 re-review).
+	Hash string `toml:"-"`
+
+	// set names the top-level settings the file carries or `cs config`
+	// changed (MarkSet); Write keeps those and leaves the rest to defaults.
+	set map[string]bool
+	// raised is each poll setting floorPolls raised, with what it was.
+	raised map[string]time.Duration
+	// legacy is what the file still carries of account scope and [project]
+	// rules, removed in lane 16 (S1): read, ignored, warned about.
+	legacy Legacy
 }
 
 // Duration lets the TOML carry "10m" instead of a nanosecond count.
@@ -315,12 +478,17 @@ func DefaultPath() string {
 	return "config.toml"
 }
 
-// decode reads the file over the defaults, without validating.
-func decode(path string) (*Config, error) {
-	if path == "" {
-		path = DefaultPath()
-	}
-	c := &Config{
+// ContentHash identifies a config file's content: hex SHA-256.
+func ContentHash(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+// Defaults is the config with nothing set: every value a file that omits
+// it gets. `cs config schema` reports its defaults from here, so the app and
+// the loader cannot disagree.
+func Defaults() *Config {
+	return &Config{
 		SwitchAt:       DefaultSwitchAt,
 		SwitchAtWeekly: DefaultSwitchAtWeekly,
 		HardFloor:      DefaultHardFloor,
@@ -330,20 +498,39 @@ func decode(path string) (*Config, error) {
 		MaxSwitchWait:  Duration{30 * time.Second},
 		RefreshWindow:  Duration{time.Hour},
 		RefreshProbe:   Duration{24 * time.Hour},
-		PollActive:     Duration{60 * time.Second},
+		// Three minutes (owner decision 2026-10-07, superseding 2m): twenty
+		// calls an hour on the account in use against a live refill of ~28
+		// (GROUND_TRUTH §42, less unseen_calls_per_hour), so the hot reserve
+		// rebuilds ~8 an hour after a spell. Faster buys nothing while it is
+		// not moving, and while it is, poll_hot takes over (docs/DESIGN.md
+		// 4.3c). The daemon's stale-decision cap is 4m to match.
+		PollActive: Duration{3 * time.Minute},
 		// 60s, not 20s: the usage endpoint allows about 25 calls per account in
 		// a burst and takes 10-15 minutes to recover, so 20-second hot polling
 		// emptied it in about 8 minutes (GROUND_TRUTH §42, multi-profile).
 		PollHot:   Duration{DefaultPollHot},
 		PollIdle:  Duration{10 * time.Minute},
 		APIBudget: 12,
-		Path:      path,
 	}
-	md, err := toml.DecodeFile(path, c)
+}
+
+// decode reads the file over the defaults, without validating.
+func decode(path string) (*Config, error) {
+	if path == "" {
+		path = DefaultPath()
+	}
+	c := Defaults()
+	c.Path = path
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return c, fmt.Errorf("no config at %s (run `claudeswitch init`): %w", path, err)
 		}
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	c.Hash = ContentHash(raw)
+	md, err := toml.Decode(string(raw), c)
+	if err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
 	// Builds before D19 called these blocks [[instance]]. No release read
@@ -353,12 +540,127 @@ func decode(path string) (*Config, error) {
 		return nil, fmt.Errorf("%s: [[instance]] blocks are now called [[profile]]; "+
 			"rename each [[instance]] to [[profile]] (the keys inside are unchanged)", path)
 	}
+	c.legacy = findLegacy(string(raw))
+	// Which top-level settings the file actually carries, so Write keeps
+	// those and leaves every other one to its default.
+	for _, k := range md.Keys() {
+		if len(k) == 1 {
+			c.MarkSet(k[0])
+		}
+	}
 	return c, nil
+}
+
+// MarkSet records that a setting was chosen — by the file or by `cs config`
+// — rather than filled in by default, so Write keeps it.
+func (c *Config) MarkSet(key string) {
+	if c.set == nil {
+		c.set = map[string]bool{}
+	}
+	c.set[key] = true
+	// A value chosen now replaces whatever was raised on load; it is
+	// checked as it stands (CheckSetting), not as the file had it.
+	delete(c.raised, key)
+}
+
+// MinPoll is the fastest poll_active or poll_idle that runs: one account's
+// usage allowance refills one call per usage.AccountRefill (GROUND_TRUTH §42),
+// so a steady cadence faster than that drains it.
+const MinPoll = usage.AccountRefill
+
+// OldPinnedPollActive is the poll_active default of 0.3.x–0.5.0, which their
+// `cs config` wrote into every file it touched ("1m0s"). Only this exact value
+// is dropped by a write; see floorPolls.
+const OldPinnedPollActive = time.Minute
+
+// floorPolls raises a poll_active or poll_idle below MinPoll to MinPoll and
+// remembers the value it replaced, for Warnings.
+//
+// Not an error, by owner decision (2026-10-07): every `cs config` on
+// 0.3.x–0.5.0 wrote poll_active = "1m0s", because Write pinned the defaults
+// it was filled with. Refusing that file would stop the daemon and even the
+// `cs config` that could fix it.
+func (c *Config) floorPolls() {
+	raise := func(key string, d *Duration, def time.Duration) {
+		if d.Duration <= 0 || d.Duration >= MinPoll {
+			return
+		}
+		if c.raised == nil {
+			c.raised = map[string]time.Duration{}
+		}
+		c.raised[key] = d.Duration
+		d.Duration = MinPoll
+		// A poll_active of exactly the old default, 1m0s, is the value
+		// 0.3.x–0.5.0 `cs config` pinned on every write, not a choice:
+		// unpin it, so the next write heals the file to today's default.
+		// Any other value under the floor is the person's own, and is kept
+		// as written (Write writes it back and the warning stays), as
+		// poll_idle always is.
+		if (key == "poll_active" && c.raised[key] == OldPinnedPollActive) || MinPoll == def {
+			delete(c.set, key)
+		}
+	}
+	def := Defaults()
+	raise("poll_active", &c.PollActive, def.PollActive.Duration)
+	raise("poll_idle", &c.PollIdle, def.PollIdle.Duration)
+}
+
+// FlooredPoll is a poll_active or poll_idle that runs at MinPoll instead of
+// what was asked: raised on load, or set in code below the floor.
+type FlooredPoll struct {
+	Key      string
+	Was, Now time.Duration
+	Fix      string // the command that removes the warning
+}
+
+func (c *Config) FlooredPolls() []FlooredPoll {
+	var out []FlooredPoll
+	for _, k := range []struct {
+		key, fix string
+		d        time.Duration
+	}{
+		{"poll_active", "cs config poll_active " + SuggestedPollActive, c.PollActive.Duration},
+		{"poll_idle", "cs config poll_idle " + shortDuration(Defaults().PollIdle.Duration), c.PollIdle.Duration},
+	} {
+		if was, ok := c.raised[k.key]; ok {
+			out = append(out, FlooredPoll{k.key, was, MinPoll, k.fix})
+		} else if k.d > 0 && k.d < MinPoll {
+			out = append(out, FlooredPoll{k.key, k.d, MinPoll, k.fix})
+		}
+	}
+	return out
+}
+
+// shortDuration is d as a person would type it: "10m", not "10m0s".
+func shortDuration(d time.Duration) string {
+	s := d.String()
+	if strings.HasSuffix(s, "m0s") {
+		s = strings.TrimSuffix(s, "0s")
+	}
+	if strings.HasSuffix(s, "h0m") {
+		s = strings.TrimSuffix(s, "0m")
+	}
+	return s
+}
+
+// CheckSetting refuses a value `cs config` is about to write that would not
+// run as written.
+func (c *Config) CheckSetting(key string) error {
+	for _, f := range c.FlooredPolls() {
+		if f.Key == key {
+			return fmt.Errorf("%s %s is faster than one account's usage allowance refills, so it "+
+				"would run at %s anyway (GROUND_TRUTH §42); the minimum is %s", key, f.Was, f.Now, MinPoll)
+		}
+	}
+	return nil
 }
 
 // Load reads and validates the config.
 func Load(path string) (*Config, error) {
 	c, err := decode(path)
+	if c != nil {
+		c.floorPolls()
+	}
 	if err != nil {
 		return c, err
 	}
@@ -383,10 +685,16 @@ func (c *Config) Validate() error { return c.validate() }
 // each one clears the floor by definition.
 func (c *Config) Warnings() []string {
 	var out []string
+	for _, f := range c.FlooredPolls() {
+		out = append(out, fmt.Sprintf(
+			"%s is %s, faster than one account's usage allowance refills (~30 calls an hour per "+
+				"account, GROUND_TRUTH §42), so it runs at %s. Fix: %s",
+			f.Key, f.Was, f.Now, f.Fix))
+	}
 	if mins, fast := HotDrainMinutes(c.PollHot.Duration); fast {
 		out = append(out, fmt.Sprintf(
 			"poll_hot (%s) drains an account's ~%d-call usage allowance in ~%d min, and it takes "+
-				"10-15 min to recover. Fix: cs config set poll_hot %s",
+				"10-15 min to recover. Fix: cs config poll_hot %s",
 			c.PollHot.Duration, UsageBurstCalls, mins, DefaultPollHotSetting))
 	}
 	if c.SwitchAtWeekly > 0 && c.HardFloor < c.SwitchAtWeekly {
@@ -414,6 +722,26 @@ func (c *Config) validate() error {
 }
 
 func (c *Config) validateRest() error {
+	// NaN compares false against every bound below, so it would pass them
+	// all; Inf is no threshold either.
+	nums := map[string]float64{"switch_at": c.SwitchAt, "switch_at_weekly": c.SwitchAtWeekly,
+		"hard_floor": c.HardFloor, "hot_threshold": c.HotThreshold, "landing_margin": c.Margin()}
+	for _, a := range c.Accounts {
+		nums["account "+a.ID+" reserve"] = a.Reserve
+	}
+	for _, in := range c.Profiles {
+		nums["profile "+in.Name+" switch_at"] = in.SwitchAt
+		nums["profile "+in.Name+" switch_at_weekly"] = in.SwitchAtWeekly
+		nums["profile "+in.Name+" hard_floor"] = in.HardFloor
+		if in.LandingMargin != nil {
+			nums["profile "+in.Name+" landing_margin"] = *in.LandingMargin
+		}
+	}
+	for k, v := range nums {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return fmt.Errorf("%s must be a finite number, got %v", k, v)
+		}
+	}
 	if c.SwitchAt <= 0 || c.SwitchAt > 100 {
 		return fmt.Errorf("switch_at must be between 0 and 100, got %v", c.SwitchAt)
 	}
@@ -425,6 +753,15 @@ func (c *Config) validateRest() error {
 	}
 	if m := c.Margin(); m < 0 || m > MaxLandingMargin {
 		return fmt.Errorf("landing_margin must be between 0 and %g, got %v", MaxLandingMargin, m)
+	}
+	if err := validModels("models", c.Models); err != nil {
+		return err
+	}
+	if n := c.HotReserveCalls(); n < 0 || n > MaxHotReserve {
+		return fmt.Errorf("hot_reserve must be between 0 and %d, got %d", MaxHotReserve, n)
+	}
+	if u := c.UnseenPerHour(); u < 0 || u > MaxUnseenCallsPerHour {
+		return fmt.Errorf("unseen_calls_per_hour must be between 0 and %g, got %g", MaxUnseenCallsPerHour, u)
 	}
 	if n := c.BlindPolls(); n < 0 {
 		return fmt.Errorf("blind_failover_polls cannot be negative (0 turns failover off), got %d", n)
@@ -448,6 +785,10 @@ func (c *Config) validateRest() error {
 	if c.PollActive.Duration <= 0 || c.PollIdle.Duration <= 0 || c.PollHot.Duration <= 0 {
 		return fmt.Errorf("poll_active, poll_hot and poll_idle must all be positive")
 	}
+	// Per account (GROUND_TRUTH §42) nothing is refused here: a poll_active or
+	// poll_idle under MinPoll was raised to it on load (floorPolls) and is
+	// warned about, and a fast poll_hot is kept and warned about too (owner
+	// decisions); the per-account allowance defers any excess.
 	if used, avail := c.CallsPerWindow(), float64(c.APIBudget-1); used > avail {
 		return fmt.Errorf(
 			"this cadence needs %.1f calls per 5 minutes but only %.0f are available "+
@@ -479,21 +820,6 @@ func (c *Config) validateRest() error {
 	for _, id := range c.Priority {
 		if !seen[id] {
 			return fmt.Errorf("priority names unknown account %q", id)
-		}
-	}
-	// A project rule that no account can satisfy would silently strand that
-	// directory, so say so at load time rather than at rotation time.
-	scopes := map[string]bool{}
-	for _, a := range c.Accounts {
-		scopes[a.Scope] = true
-	}
-	for pattern, pr := range c.Projects {
-		for _, e := range pr.Eligible {
-			if e == "*" || scopes[e] {
-				continue
-			}
-			return fmt.Errorf("project %q allows scope %q, but no configured account has it "+
-				"(scopes in use: %s)", pattern, e, strings.Join(keysOf(scopes), ", "))
 		}
 	}
 	return c.validateProfiles()
@@ -535,63 +861,106 @@ func (c *Config) Write(path string) error {
 	}
 	var b strings.Builder
 	b.WriteString("# claudeswitch — written by `cs setup`. Safe to edit.\n")
-	b.WriteString("# Thresholds are the tuning surface; `cs status` shows them.\n\n")
-	// Thresholds are written at their effective values, not their raw ones. A
-	// Config built in code rather than loaded leaves them zero, and zero is not
-	// a threshold anyone means — written out literally it produces a file that
-	// will not load, which is the one thing a generated config must never do.
-	or := func(v, def float64) float64 {
-		if v <= 0 {
-			return def
+	b.WriteString("# Thresholds are the tuning surface; `cs status` shows them. A line\n")
+	b.WriteString("# starting with # is a default: uncomment it, or `cs config <key> <value>`,\n")
+	b.WriteString("# to choose a value of your own.\n\n")
+	// A setting is written as a value only when it was chosen — carried by the
+	// file it was loaded from, set by `cs config` (MarkSet), or given a
+	// non-default value in code — and otherwise as a commented default.
+	// Writing every effective value pinned the defaults: each `cs config` on
+	// 0.3.x–0.5.0 wrote poll_active = "1m0s", so the default could never
+	// change for anyone who had ever changed anything (2026-10-07).
+	//
+	// Values are effective, not raw: a Config built in code leaves thresholds
+	// zero, and zero is not a threshold anyone means — written out literally
+	// it produces a file that will not load.
+	def := Defaults()
+	line := func(key string, chosen bool, value, help string) {
+		if c.set[key] || chosen {
+			fmt.Fprintf(&b, "%-15s = %s", key, value)
+		} else {
+			fmt.Fprintf(&b, "# %-13s = %s", key, value)
 		}
-		return v
+		if help != "" {
+			fmt.Fprintf(&b, "   # %s", help)
+		}
+		b.WriteString("\n")
 	}
-	fmt.Fprintf(&b, "switch_at       = %g     # rotate away at this much of the 5-hour window\n",
-		or(c.SwitchAt, DefaultSwitchAt))
-	fmt.Fprintf(&b, "switch_at_weekly = %g    # and at this much of the weekly one — a weekly window\n",
-		or(c.SwitchAtWeekly, DefaultSwitchAtWeekly))
-	b.WriteString("                         # spent is gone for days, a session one refills today\n")
-	fmt.Fprintf(&b, "hard_floor      = %g     # above this, swap mid-turn rather than wait for idle\n",
-		or(c.HardFloor, DefaultHardFloor))
-	fmt.Fprintf(&b, "switch_when     = %q\n", c.SwitchWhen)
-	fmt.Fprintf(&b, "hot_threshold   = %g     # poll every poll_hot above this, rather than poll_active\n",
-		or(c.HotThreshold, DefaultHotThreshold))
-	fmt.Fprintf(&b, "cooldown        = %q   # anti-flap\n", c.Cooldown.String())
-	fmt.Fprintf(&b, "max_switch_wait = %q   # stop waiting for an idle gap after this\n", c.MaxSwitchWait.String())
-	fmt.Fprintf(&b, "landing_margin  = %g     # a switch target needs this much room below its own trigger\n",
-		c.Margin())
-	fmt.Fprintf(&b, "blind_failover_polls = %d # fail over after this many unreadable polls of the active account; 0 holds\n",
-		c.BlindPolls())
+	num := func(key string, v, d float64, help string) {
+		if v <= 0 {
+			v = d
+		}
+		line(key, v != d, fmt.Sprintf("%g", v), help)
+	}
+	dur := func(key string, v, d Duration, help string) {
+		if v.Duration <= 0 {
+			v = d
+		}
+		// A poll raised to the floor on load is written back as the person
+		// wrote it, still warned about — never as the raised value, which
+		// would silently replace their setting. A poll_active of exactly
+		// OldPinnedPollActive was unpinned by floorPolls (the default old
+		// writes pinned) and is dropped, so the file returns to today's
+		// default.
+		if was, ok := c.raised[key]; ok {
+			if c.set[key] {
+				v = Duration{was}
+			} else {
+				v = d // unpinned by floorPolls: back to the default
+			}
+		}
+		line(key, v.Duration != d.Duration, fmt.Sprintf("%q", v.String()), help)
+	}
+	num("switch_at", c.SwitchAt, def.SwitchAt, "rotate away at this much of the 5-hour window")
+	num("switch_at_weekly", c.SwitchAtWeekly, def.SwitchAtWeekly,
+		"and at this much of the weekly one: a weekly window spent is gone for days")
+	num("hard_floor", c.HardFloor, def.HardFloor, "above this, swap mid-turn rather than wait for idle")
+	when := c.SwitchWhen
+	if when == "" {
+		when = def.SwitchWhen
+	}
+	line("switch_when", when != def.SwitchWhen, fmt.Sprintf("%q", when), "")
+	num("hot_threshold", c.HotThreshold, def.HotThreshold,
+		"poll_hot only above this (or burning fast), and only while moving toward the trigger")
+	dur("cooldown", c.Cooldown, def.Cooldown, "anti-flap")
+	dur("max_switch_wait", c.MaxSwitchWait, def.MaxSwitchWait, "stop waiting for an idle gap after this")
+	line("landing_margin", c.LandingMargin != nil, fmt.Sprintf("%g", c.Margin()),
+		"a switch target's 5-hour window needs this much room below its trigger")
+	line("blind_failover_polls", c.BlindFailoverPolls != nil, fmt.Sprintf("%d", c.BlindPolls()),
+		"fail over after this many unreadable polls of the active account; 0 holds")
+	// Written only when set, so a config without it reads back unchanged.
+	if len(c.Models) > 0 {
+		fmt.Fprintf(&b, "models          = %s # these models' weekly limits count like the weekly window\n",
+			tomlStrings(c.Models))
+	}
 	b.WriteString("\n# Keeping vaulted credentials alive. Refreshing revokes the previous token,\n")
 	b.WriteString("# so a stored credential goes stale on its own without this.\n")
-	fmt.Fprintf(&b, "refresh_window  = %q\n", c.RefreshWindow.String())
-	fmt.Fprintf(&b, "refresh_probe   = %q   # catch a dead refresh token before you need the account\n",
-		c.RefreshProbe.String())
+	dur("refresh_window", c.RefreshWindow, def.RefreshWindow, "")
+	dur("refresh_probe", c.RefreshProbe, def.RefreshProbe, "catch a dead refresh token before you need the account")
 	if c.AutoRefresh != nil {
 		fmt.Fprintf(&b, "auto_refresh    = %t\n", *c.AutoRefresh)
 	}
 	b.WriteString("\n")
 
-	// Polling is written only when set: a Config built in code (as `setup`
-	// builds one) leaves it zero, and zero written out would be a real value
-	// rather than "use the default". Everything `cs config` can change must be
-	// written here, or changing one setting silently deletes the others.
-	if c.PollActive.Duration > 0 || c.PollHot.Duration > 0 || c.PollIdle.Duration > 0 || c.APIBudget > 0 {
-		b.WriteString("# Polling cadence and the usage API call budget.\n")
-		if c.PollActive.Duration > 0 {
-			fmt.Fprintf(&b, "poll_active     = %q\n", c.PollActive.String())
-		}
-		if c.PollHot.Duration > 0 {
-			fmt.Fprintf(&b, "poll_hot        = %q\n", c.PollHot.String())
-		}
-		if c.PollIdle.Duration > 0 {
-			fmt.Fprintf(&b, "poll_idle       = %q\n", c.PollIdle.String())
-		}
-		if c.APIBudget > 0 {
-			fmt.Fprintf(&b, "api_budget      = %d\n", c.APIBudget)
-		}
-		b.WriteString("\n")
+	// Everything `cs config` can change must be handled here, or changing one
+	// setting silently deletes the others.
+	b.WriteString("# Polling cadence and the usage API call budget.\n")
+	dur("poll_active", c.PollActive, def.PollActive, "")
+	dur("poll_hot", c.PollHot, def.PollHot, "")
+	dur("poll_idle", c.PollIdle, def.PollIdle, "")
+	budget := c.APIBudget
+	if budget <= 0 {
+		budget = def.APIBudget
 	}
+	line("api_budget", budget != def.APIBudget, fmt.Sprintf("%d", budget), "")
+	b.WriteString("\n")
+
+	b.WriteString("# Advanced: the per-account usage model (DESIGN 4.3c).\n")
+	line("hot_reserve", c.HotReserve != nil, fmt.Sprintf("%d", c.HotReserveCalls()),
+		"calls held back from routine polling for a hot spell")
+	line("unseen_calls_per_hour", c.UnseenCallsPerHour != nil, fmt.Sprintf("%g", c.UnseenPerHour()),
+		"set aside on a live account for Claude Code's own reads")
+	b.WriteString("\n")
 
 	b.WriteString("# Rotation order. Earlier accounts are spent first.\n")
 	b.WriteString("priority = [")
@@ -615,9 +984,6 @@ func (c *Config) Write(path string) error {
 		if a.Enabled != nil {
 			fmt.Fprintf(&b, "enabled      = %t\n", *a.Enabled)
 		}
-		if a.Scope != "" {
-			fmt.Fprintf(&b, "scope        = %q\n", a.Scope)
-		}
 		if a.Reserve > 0 {
 			fmt.Fprintf(&b, "reserve      = %g\n", a.Reserve)
 		}
@@ -631,33 +997,11 @@ func (c *Config) Write(path string) error {
 
 	c.writeProfiles(&b)
 
-	patterns := make([]string, 0, len(c.Projects))
-	for pattern := range c.Projects {
-		patterns = append(patterns, pattern)
-	}
-	sort.Strings(patterns)
-	for _, pattern := range patterns {
-		pr := c.Projects[pattern]
-		fmt.Fprintf(&b, "\n[project.%s]\n", tomlKey(pattern))
-		if len(pr.Eligible) > 0 {
-			fmt.Fprintf(&b, "eligible = %s\n", tomlStrings(pr.Eligible))
-		}
-		if len(pr.Prefer) > 0 {
-			fmt.Fprintf(&b, "prefer   = %s\n", tomlStrings(pr.Prefer))
-		}
-	}
-
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(b.String()), 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
-}
-
-// tomlKey quotes a table key. A project key is a path, and a path is full of
-// characters a bare TOML key cannot hold.
-func tomlKey(k string) string {
-	return strconv.Quote(k)
 }
 
 func tomlStrings(v []string) string {
@@ -666,98 +1010,4 @@ func tomlStrings(v []string) string {
 		q[i] = strconv.Quote(s)
 	}
 	return "[" + strings.Join(q, ", ") + "]"
-}
-
-// Project is a rule about which accounts may serve a directory.
-type Project struct {
-	// Eligible lists the account scopes allowed here. Empty means no
-	// restriction.
-	Eligible []string `toml:"eligible"`
-	// Prefer orders scopes within the eligible set, ahead of the global
-	// priority. Useful for "work first here, personal first there" without
-	// forbidding either.
-	Prefer []string `toml:"prefer"`
-}
-
-// expandHome resolves a leading ~ so rules can be written the way people think
-// about their own directories.
-func expandHome(p string) string {
-	if !strings.HasPrefix(p, "~") {
-		return p
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return p
-	}
-	return filepath.Join(home, strings.TrimPrefix(p, "~"))
-}
-
-// matchDir reports whether a directory falls under a pattern.
-//
-// Patterns are paths, optionally ending in "**" to include everything beneath.
-// filepath.Match alone is not enough: it does not cross separators, so
-// "~/work/**" would fail to match "~/work/a/b". A prefix test is both simpler
-// and closer to what someone writing the rule means.
-func matchDir(pattern, dir string) bool {
-	pattern = filepath.Clean(expandHome(pattern))
-	dir = filepath.Clean(dir)
-
-	if strings.HasSuffix(pattern, string(filepath.Separator)+"**") || strings.HasSuffix(pattern, "**") {
-		base := filepath.Clean(strings.TrimSuffix(strings.TrimSuffix(pattern, "**"), string(filepath.Separator)))
-		return dir == base || strings.HasPrefix(dir, base+string(filepath.Separator))
-	}
-	if pattern == dir {
-		return true
-	}
-	// A bare directory still covers what is inside it: "~/work" meaning only
-	// that exact directory and not its contents would surprise everyone.
-	if strings.HasPrefix(dir, pattern+string(filepath.Separator)) {
-		return true
-	}
-	ok, err := filepath.Match(pattern, dir)
-	return err == nil && ok
-}
-
-// ProjectFor returns the rule covering a directory, and whether one was found.
-// The most specific matching pattern wins, so a rule for a subdirectory can
-// override a broader one above it.
-func (c *Config) ProjectFor(dir string) (Project, bool) {
-	if dir == "" || len(c.Projects) == 0 {
-		return Project{}, false
-	}
-	best, bestLen, found := Project{}, -1, false
-	for pattern, pr := range c.Projects {
-		if !matchDir(pattern, dir) {
-			continue
-		}
-		if n := len(filepath.Clean(expandHome(pattern))); n > bestLen {
-			best, bestLen, found = pr, n, true
-		}
-	}
-	return best, found
-}
-
-// ScopeAllowed reports whether an account scope may serve a directory.
-func (c *Config) ScopeAllowed(scope, dir string) bool {
-	pr, ok := c.ProjectFor(dir)
-	if !ok || len(pr.Eligible) == 0 {
-		return true
-	}
-	for _, e := range pr.Eligible {
-		if e == scope || e == "*" {
-			return true
-		}
-	}
-	return false
-}
-
-func keysOf(m map[string]bool) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		if k != "" {
-			out = append(out, k)
-		}
-	}
-	sort.Strings(out)
-	return out
 }

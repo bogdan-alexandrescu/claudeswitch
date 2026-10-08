@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/keychain"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/state"
 )
@@ -131,12 +132,14 @@ pool = ["w1"]
 	}
 }
 
-// Two profiles on one directory spelled two ways (a D12 warning): the
-// spelling the caller used decides, since that is what Claude Code hashed.
+// Two profiles on one directory spelled two ways: the spelling the caller
+// used decides, since that is what Claude Code hashed. Such a config no
+// longer loads (lane 10 security review), so it is built directly here to
+// keep pickProfile's own answer to it pinned.
 func TestPickProfilePrefersTheExactSpelling(t *testing.T) {
 	h := t.TempDir()
 	t.Setenv("HOME", h)
-	cfg := doctorConfig(t, fmt.Sprintf(`
+	if _, err := config.Load(writeConfig(t, fmt.Sprintf(`
 [[account]]
 id = "a"
 [[account]]
@@ -149,7 +152,16 @@ pool = ["a"]
 name = "abs"
 dir = %q
 pool = ["b"]
-`, filepath.Join(h, "x")))
+`, filepath.Join(h, "x")))); err == nil {
+		t.Fatal("two profiles on one folder must not load")
+	}
+	cfg := &config.Config{
+		Accounts: []config.Account{{ID: "a"}, {ID: "b"}},
+		Profiles: []config.Profile{
+			{Name: "default", Dir: "~/x", Pool: []string{"a"}},
+			{Name: "abs", Dir: filepath.Join(h, "x"), Pool: []string{"b"}},
+		},
+	}
 	setCCDir(t, "~/x")
 	if in, err := pickProfile(cfg, ""); err != nil || in.Name != "default" {
 		t.Fatalf("~/x = %+v, %v", in, err)

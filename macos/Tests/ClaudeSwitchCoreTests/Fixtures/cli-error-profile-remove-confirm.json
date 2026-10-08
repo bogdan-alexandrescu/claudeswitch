@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "confirmation_required",
+    "hint": "pass --yes to remove it",
+    "message": "removing profile \"review\" deletes its [[profile]] block; its accounts (personal) move to profile \"default\". Its folder /Users/example/.claude-review and its saved login stay on disk: nothing is deleted. personal was last live there and may still be signed in, so it stays guarded (a ghost): it is installed in no other profile until that login is gone, or `claudeswitch profile forget review`."
+  }
+}

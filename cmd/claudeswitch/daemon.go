@@ -38,7 +38,7 @@ import (
 // insert profiles it finds on disk (mergeProfiles), and a map write racing
 // any of those reads is a crash, not a stale value.
 //
-// The detector's own methods (CurrentDir, IdleFor, LastActivity,
+// The detector's own methods (IdleFor, LastActivity,
 // WorstLatency) take its internal lock, so calling them from run is safe.
 
 // daemonPoller is the poller as the daemon drives it.
@@ -77,7 +77,6 @@ type daemonVault interface {
 type activity interface {
 	Run(stop <-chan struct{}) error
 	Rejections() <-chan detector.Rejection
-	CurrentDir() string
 	IdleFor(time.Duration) bool
 	LastActivity() time.Time
 	WorstLatency() time.Duration
@@ -113,6 +112,9 @@ type profileLoop struct {
 	// wantSwitchSince tracks how long a switch has been wanted but deferred, so
 	// the idle-gap preference cannot defer it forever.
 	wantSwitchSince time.Time
+	// wantSwitchSig is which switch that clock is for: failover or not, and
+	// the target. A different one restarts the clock.
+	wantSwitchSig   string
 	lastDecisionSig string
 	// lastWaitSig stops the exhausted-everything warning repeating every tick.
 	lastWaitSig string
@@ -256,7 +258,6 @@ func (quietDetector) Run(stop <-chan struct{}) error {
 	return nil
 }
 func (quietDetector) Rejections() <-chan detector.Rejection { return nil }
-func (quietDetector) CurrentDir() string                    { return "" }
 func (quietDetector) IdleFor(time.Duration) bool            { return true }
 func (quietDetector) LastActivity() time.Time               { return time.Time{} }
 func (quietDetector) WorstLatency() time.Duration           { return 0 }
@@ -324,6 +325,13 @@ func (d *daemon) busy(name string) bool {
 // start is the daemon's startup: announce, attribute every profile's live
 // credential, persist, decide once.
 func (d *daemon) start(ctx context.Context) {
+	// First, before any network call: replace the profiles a previous
+	// daemon recorded with this one's, and save. Until then state.json
+	// says the old daemon's set, and a seed waiting for its profile could
+	// take a stale entry for "loaded" (lane 10 re-review).
+	d.recordLoaded()
+	_ = d.save()
+
 	mode := "DRY RUN — decisions are reported, nothing is changed"
 	if d.live {
 		mode = "LIVE — swaps will be performed"
@@ -360,6 +368,12 @@ func (d *daemon) start(ctx context.Context) {
 
 	d.st.DaemonLive = d.live
 	d.st.DaemonSince = time.Now()
+	// A failure streak recorded before this process started is not time this
+	// process watched the account be unreadable — a restart or a long sleep
+	// sits inside it. Blind failover counts only what this daemon observes.
+	for _, a := range d.st.Accounts {
+		a.ReadFails, a.FailSince = 0, time.Time{}
+	}
 	// Recorded so a newer CLI can tell it is talking to an older daemon.
 	b := currentBuild()
 	d.st.DaemonVersion, d.st.DaemonBuild, d.st.DaemonBuildTime = b.Version, b.Revision, b.Time
@@ -372,6 +386,7 @@ func (d *daemon) start(ctx context.Context) {
 		}
 	}
 	d.lastReattribute = time.Now() // PollActive already ran at startup
+	d.recordLoaded()
 	_ = d.save()
 
 	for _, il := range d.profs {
@@ -392,7 +407,7 @@ func (d *daemon) evaluate(ctx context.Context, il *profileLoop, trigger string) 
 	input := func() policy.Input {
 		return policy.Input{
 			Cfg: il.cfg, St: d.st, Now: time.Now(), LastSwitch: ist.LastSwitch, Pinned: ist.Pinned,
-			Dir: il.det.CurrentDir(), Lookahead: lookahead(il.cfg), Pool: il.pool, Live: ist,
+			Lookahead: lookahead(il.cfg), Pool: il.pool, Live: ist,
 			// Whether an expired token explains an unreadable active account
 			// (IMPROVEMENTS A2): on an idle session it does.
 			SessionBusy: !il.det.IdleFor(d.idleGap),
@@ -460,11 +475,26 @@ func (d *daemon) evaluate(ctx context.Context, il *profileLoop, trigger string) 
 	// only for so long. A session in continuous use never goes quiet, so
 	// holding out indefinitely means the switch never happens until the hard
 	// floor, which is the opposite of what this tool is for.
+	// The wait belongs to one wanted switch. A blind failover that becomes an
+	// ordinary rotation (or the reverse), or a new target, starts its own
+	// clock: otherwise time spent waiting out a never-forced failover would
+	// let the ordinary switch go ahead mid-turn at once.
+	if want := fmt.Sprintf("%t|%s", dec.Failover, dec.Target); want != il.wantSwitchSig {
+		il.wantSwitchSig, il.wantSwitchSince = want, time.Time{}
+	}
 	if il.wantSwitchSince.IsZero() {
 		il.wantSwitchSince = time.Now()
 	}
 	waited := time.Since(il.wantSwitchSince)
 	if !dec.Forced && !il.det.IdleFor(d.idleGap) {
+		// A blind failover never splits a turn, however long it has waited
+		// (owner decision 2026-10-07): nothing says the work itself is in
+		// trouble, only that we cannot see the account.
+		if dec.Failover {
+			il.log.Info("blind failover wanted, session busy — waiting for an idle gap, never mid-turn",
+				"target", dec.Target, "reason", dec.Reason, "waited", waited.Round(time.Second))
+			return
+		}
 		if waited < il.cfg.MaxSwitchWait.Duration {
 			il.log.Info("switch wanted, session busy — waiting for an idle gap",
 				"target", dec.Target, "reason", dec.Reason,
@@ -549,6 +579,11 @@ func (d *daemon) evaluate(ctx context.Context, il *profileLoop, trigger string) 
 		headroom = fmt.Sprintf("%.0f%% used", worst)
 	}
 	d.nt.Switched(d.tag(il, from), dec.Target, dec.Reason, headroom)
+	// IMPROVEMENTS C1: the save above merged in the CLI's Chrome mappings.
+	if msg := chromeRotationNotice(d.st, from, dec.Target); msg != "" {
+		il.log.Info(msg)
+		d.nt.Send("chrome:"+il.name+":"+from+":"+dec.Target, "Claude in Chrome", msg)
+	}
 }
 
 // exhausted announces that a profile has nowhere to rotate to. With more
@@ -655,7 +690,7 @@ func (d *daemon) maintainVault(ctx context.Context) {
 				if owner := cfg.AccountBySeat(foreign.GotOrg); owner != "" {
 					il.log.Info("the live credential belongs to a different account than we thought",
 						"was", ist.Active, "is", owner)
-					d.noteCrossPool(il, owner)
+					d.noteCrossPool(il, owner, ist.Active)
 					ist.Active = owner
 				} else {
 					il.log.Info("the live credential is an account we do not know; clearing",
@@ -791,7 +826,14 @@ func whereLiveQ(other string) string {
 // The vault sync runs every two minutes, so a finding is said once and again
 // only when it changes; an account back in this profile's own pool and live
 // nowhere else clears it.
-func (d *daemon) noteCrossPool(il *profileLoop, accountID string) {
+//
+// was is the account the daemon thought was live. Empty (or unattributed),
+// the credential was an account the config did not know until it was added
+// — the state `add --from S --profile T` leaves, the owner's choice (lane
+// 16) — so finding it in another pool is expected and said at Info; this
+// loop moves off it. A credential that changed from one configured account
+// to another pool's stays an error.
+func (d *daemon) noteCrossPool(il *profileLoop, accountID, was string) {
 	owner, ok := d.cfg.ProfileOf(accountID)
 	foreign := ok && owner != il.name
 	other := d.activeElsewhere(il.name, accountID)
@@ -804,7 +846,10 @@ func (d *daemon) noteCrossPool(il *profileLoop, accountID string) {
 		return
 	}
 	il.lastCrossPoolSig = sig
-	if foreign {
+	if foreign && other == "" && (was == "" || was == state.Unattributed) {
+		il.log.Info("this profile holds an account from another profile's pool; moving off it",
+			"account", accountID, "pool_of", owner)
+	} else if foreign {
 		il.log.Error("this profile holds an account from another profile's pool",
 			"account", accountID, "pool_of", owner)
 	}
@@ -1093,10 +1138,25 @@ func (d *daemon) reload(ctx context.Context) {
 		}
 		d.lastReattribute = time.Now()
 	}
+	d.recordLoaded()
 	_ = d.save()
 	for _, il := range d.profs {
 		d.evaluate(ctx, il, "config")
 	}
+}
+
+// recordLoaded writes the profiles this daemon runs into state, name to dir
+// as configured: the marker `profile create --seed` waits for, so a seed is
+// made only once the daemon's §3 checks know the new profile.
+func (d *daemon) recordLoaded() {
+	m := make(map[string]string, len(d.profs))
+	for _, il := range d.profs {
+		m[il.name] = il.conf.Dir
+	}
+	d.st.DaemonProfiles = m
+	// And which config it runs, by content: `account delete` and a seed
+	// wait for the hash of the config they wrote (lane 12 re-review).
+	d.st.DaemonConfigHash = d.cfg.Hash
 }
 
 // startProfile builds, registers and launches a profile a reload added

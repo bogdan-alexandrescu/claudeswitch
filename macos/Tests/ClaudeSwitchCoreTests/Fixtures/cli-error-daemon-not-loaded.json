@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "daemon_not_loaded",
+    "hint": "check the daemon log, then try again",
+    "message": "the running daemon did not load the edited config within 10s; the config was put back and the credential kept"
+  }
+}

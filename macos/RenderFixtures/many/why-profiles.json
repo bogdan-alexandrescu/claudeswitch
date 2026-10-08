@@ -1,0 +1,248 @@
+{
+ "dir": "/Users/example",
+ "profiles": [
+  {
+   "accounts": [
+    {
+     "active": true,
+     "eligible": true,
+     "id": "personal",
+     "utilization": 10,
+     "why": "ready",
+     "window": "five_hour"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "x-unpooled",
+     "utilization": 11,
+     "why": "ready",
+     "window": "five_hour"
+    }
+   ],
+   "best": "x-unpooled",
+   "best_why": null,
+   "current": true,
+   "decision": {
+    "kind": "stay",
+    "reason": "active account at 69%, under the 95% trigger"
+   },
+   "pool": [
+    "personal",
+    "x-unpooled"
+   ],
+   "profile": "default",
+   "thresholds": {
+    "hard_floor": 98,
+    "landing_margin": 10,
+    "switch_at": 90,
+    "switch_at_weekly": 95
+   }
+  },
+  {
+   "accounts": [
+    {
+     "active": true,
+     "eligible": true,
+     "id": "w01",
+     "utilization": 10,
+     "why": "ready",
+     "window": "five_hour"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "w02",
+     "utilization": 11,
+     "why": "ready",
+     "window": "five_hour"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "w03",
+     "utilization": 12,
+     "why": "ready",
+     "window": "five_hour"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "w04",
+     "utilization": 13,
+     "why": "ready",
+     "window": "five_hour"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "w05",
+     "utilization": 14,
+     "why": "ready",
+     "window": "five_hour"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "w06",
+     "utilization": 15,
+     "why": "ready",
+     "window": "five_hour"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "w07",
+     "utilization": 16,
+     "why": "ready",
+     "window": "five_hour"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "w08",
+     "utilization": 17,
+     "why": "ready",
+     "window": "five_hour"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "w09",
+     "utilization": 18,
+     "why": "ready",
+     "window": "five_hour"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "w10",
+     "utilization": 19,
+     "why": "ready",
+     "window": "five_hour"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "w11",
+     "utilization": 20,
+     "why": "ready",
+     "window": "five_hour"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "w12",
+     "utilization": 21,
+     "why": "ready",
+     "window": "five_hour"
+    }
+   ],
+   "best": "w02",
+   "best_why": null,
+   "current": false,
+   "decision": {
+    "kind": "switch",
+    "reason": "w01's Modelthree Extended Thinking Preview weekly limit is at 93%, over the 90% trigger, and w02 has 88 points of room on both windows",
+    "target": "w02"
+   },
+   "pool": [
+    "w01",
+    "w02",
+    "w03",
+    "w04",
+    "w05",
+    "w06",
+    "w07",
+    "w08",
+    "w09",
+    "w10",
+    "w11",
+    "w12"
+   ],
+   "profile": "work",
+   "thresholds": {
+    "hard_floor": 98,
+    "landing_margin": 10,
+    "switch_at": 75,
+    "switch_at_weekly": 98
+   }
+  },
+  {
+   "accounts": [
+    {
+     "active": true,
+     "eligible": true,
+     "id": "old-sso",
+     "utilization": 10,
+     "why": "ready",
+     "window": "five_hour"
+    }
+   ],
+   "best": null,
+   "best_why": "review has no other account",
+   "current": false,
+   "decision": {
+    "kind": "stay",
+    "reason": "pinned to old-sso; automatic rotation is off"
+   },
+   "pool": [
+    "old-sso"
+   ],
+   "profile": "review",
+   "thresholds": {
+    "hard_floor": 98,
+    "landing_margin": 10,
+    "switch_at": 90,
+    "switch_at_weekly": 95
+   }
+  },
+  {
+   "accounts": [
+    {
+     "active": true,
+     "eligible": true,
+     "id": "research-team-extremely-long-account-name",
+     "utilization": 10,
+     "why": "ready",
+     "window": "five_hour"
+    }
+   ],
+   "best": null,
+   "best_why": "client-example-enterprise-integration has no other account",
+   "current": false,
+   "decision": {
+    "kind": "wait",
+    "reason": "only account in the pool"
+   },
+   "pool": [
+    "research-team-extremely-long-account-name"
+   ],
+   "profile": "client-example-enterprise-integration",
+   "thresholds": {
+    "hard_floor": 98,
+    "landing_margin": 10,
+    "switch_at": 90,
+    "switch_at_weekly": 95
+   }
+  },
+  {
+   "accounts": [],
+   "best": null,
+   "best_why": "scratch has no accounts",
+   "current": false,
+   "decision": {
+    "kind": "stay",
+    "reason": "no account in the pool"
+   },
+   "pool": [],
+   "profile": "scratch",
+   "thresholds": {
+    "hard_floor": 98,
+    "landing_margin": 10,
+    "switch_at": 90,
+    "switch_at_weekly": 95
+   }
+  }
+ ]
+}

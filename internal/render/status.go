@@ -181,7 +181,7 @@ func severityName(u *usage.Usage, which string) string {
 		if which == "five_hour" && l.Group == "session" {
 			return l.Severity
 		}
-		if which == "seven_day" && l.Group == "weekly" {
+		if which == "seven_day" && l.Group == "weekly" && l.Class() != usage.LimitModelWeekly {
 			return l.Severity
 		}
 	}
@@ -201,7 +201,7 @@ func severityOf(u *usage.Usage, which string) bool {
 		if which == "five_hour" && l.Group == "session" {
 			return true
 		}
-		if which == "seven_day" && l.Group == "weekly" {
+		if which == "seven_day" && l.Group == "weekly" && l.Class() != usage.LimitModelWeekly {
 			return true
 		}
 	}
@@ -439,9 +439,11 @@ func statusCompact(out io.Writer, o Options) {
 			warnings = append(warnings, fmt.Sprintf("%s needs a login within %s",
 				a.ID, time.Until(acct.RefreshExpiry).Round(time.Hour)))
 		}
+		warnings = append(warnings, unknownLimitWarnings(a.ID, acct.Last)...)
 	}
 
 	fmt.Fprint(out, t.render("  "))
+	modelBlock(out, o, accounts)
 
 	if len(o.Switches) > 0 {
 		fmt.Fprintf(out, "\n  %s\n", paint(dim, "RECENT SWITCHES"))
@@ -535,11 +537,17 @@ func headline(o Options) string {
 	if o.active() == "" || acct == nil || acct.Last == nil {
 		return paint(dim, "no reading for the active account yet")
 	}
+	// A model the config counts stands in for the weekly window where higher
+	// (IMPROVEMENTS I6), as the policy judges it; with none, acct as it is.
+	acct, model, _ := acct.WithModels(cfg.Models)
 	which, _ := acct.Last.Worst()
 	proj := acct.Projected(time.Now())
 	window := "5-hour"
 	if which == "seven_day" {
 		window = "weekly"
+		if model != "" {
+			window = model + " weekly"
+		}
 	}
 
 	level := levelFor(proj, cfg.TriggerFor(which), severityName(acct.Last, which))
@@ -823,9 +831,14 @@ func statusDetailed(out io.Writer, o Options) {
 				// Anthropic's own early warning. Observed at 78% on 2026-09-09.
 				flag = "  ⚠ the API itself is flagging this"
 			}
-			fmt.Fprintf(out, "  %s   ↳ binding: %s (%s) %.0f%%, resets %s%s\n",
-				pad(""), b.Kind, b.Severity, b.Percent, until(b.ResetsAt), flag)
+			kind := b.Kind
+			if m := b.ModelName(); m != "" {
+				kind += " " + m
+			}
+			fmt.Fprintf(out, "  %s   ↳ binding: %s (%s) %s, resets %s%s\n",
+				pad(""), kind, b.Severity, limitPct(*b), until(b.ResetsAt), flag)
 		}
+		detailLimits(out, pad, cfg, acct)
 		if !acct.RefreshExpiry.IsZero() && time.Until(acct.RefreshExpiry) < 7*24*time.Hour {
 			fmt.Fprintf(out, "  %s   ⚠ refresh token expires in %s — this account needs a login before then\n",
 				pad(""), time.Until(acct.RefreshExpiry).Round(time.Hour))
@@ -899,6 +912,10 @@ func firstLine(s string) string {
 // retrying fixes it — so a row in that state must say so rather than claim it
 // is being re-read.
 func needsLogin(lastErr string) bool { return loginFix(lastErr) != "" }
+
+// NeedsLogin is needsLogin for other packages: an error only an
+// interactive sign-in cures.
+func NeedsLogin(lastErr string) bool { return needsLogin(lastErr) }
 
 // loginFix returns the command that puts an account back in service, or "" when
 // nothing a person does would help. Retrying is useless for all of these: the

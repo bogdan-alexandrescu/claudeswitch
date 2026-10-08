@@ -3,8 +3,9 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
+	"io"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -185,16 +186,19 @@ func allGhosts(cfg *config.Config, st *state.State) []*state.Ghost {
 	if st == nil {
 		return nil
 	}
-	declared := map[string]bool{}
+	declared := map[string]config.Profile{}
 	if cfg != nil {
 		for _, in := range cfg.EffectiveProfiles() {
-			declared[in.Name] = true
+			declared[in.Name] = in
 		}
 	}
 	var gs []*state.Ghost
 	have := map[string]bool{}
 	for _, g := range st.GhostList() {
-		if g.Service == "" && declared[g.Profile] {
+		// A by-name ghost of a profile declared again is covered by that
+		// profile's record — unless it guards a re-pointed profile's old dir.
+		if in, ok := declared[g.Profile]; ok && g.Service == "" &&
+			!(g.Why == state.GhostRepointed && g.Dir != in.Dir) {
 			continue
 		}
 		gs = append(gs, g)
@@ -308,10 +312,13 @@ func (d *daemon) ghostItemFn() func(service, file string) keychain.Live {
 
 // makeGhost records a stopping profile's old item as a ghost when an
 // account was last live there. It runs before the profile's state changes.
+//
+// An item that never resolved, or cannot be named, leaves no item to watch,
+// but the account recorded live there may still be: it is guarded by name,
+// as an offline edit's is (offlineGhosts), until `cs profile forget`. The
+// reload clears the profile's record next, so without this the account
+// would lose its only guard (lane 15 review).
 func (d *daemon) makeGhost(il *profileLoop, why string) {
-	if il.live == nil {
-		return // never resolved: no item to guard
-	}
 	active := d.profState(il).Active
 	if active == "" && il.hold.holding() {
 		// Started by a reload and not attributed yet (re-pointed twice in
@@ -322,15 +329,18 @@ func (d *daemon) makeGhost(il *profileLoop, why string) {
 	if active == "" || active == state.Unattributed {
 		return // nothing of ours was recorded live there
 	}
-	id := itemOf(il.live, d.itemRef)
-	if id.service == "" {
-		il.log.Error("could not name this profile's old credential, so it cannot be guarded; "+
-			"check that it is not live elsewhere before rotating", "account", active)
-		return
+	var id itemID
+	if il.live != nil {
+		id = itemOf(il.live, d.itemRef)
 	}
 	g := &state.Ghost{Profile: il.name, Why: why, Dir: il.conf.Dir, Service: id.service, File: id.file,
 		Account: active, Seat: d.cfg.SeatOf(active), Since: time.Now()}
 	d.st.AddGhost(g)
+	if id.service == "" {
+		il.log.Warn("this profile's old credential could not be named, so its account is guarded by name",
+			"account", active, "why", why, "released", "`cs profile forget "+il.name+"`")
+		return
+	}
 	il.log.Warn("guarding this profile's old credential as a ghost: its account may still be live there",
 		"account", active, "item", il.live.Name(), "why", why,
 		"released", "when the item no longer holds it, or `cs profile forget "+il.name+"`")
@@ -348,7 +358,11 @@ func (d *daemon) dropGhostsOfItem(il *profileLoop) {
 		id = itemOf(il.live, d.itemRef)
 	}
 	for _, g := range d.st.GhostList() {
-		byName := g.Service == "" && g.Profile == il.name
+		// A by-name ghost is released when its profile is declared again —
+		// but not by the restart of a re-pointing: that ghost guards the old
+		// dir's item, which the profile no longer reads.
+		byName := g.Service == "" && g.Profile == il.name &&
+			!(g.Why == state.GhostRepointed && g.Dir != il.conf.Dir)
 		if byName || (id.service != "" && g.Service != "" && id.same(itemID{g.Service, g.File})) {
 			d.st.DropGhost(g.Key())
 			d.log.Info("ghost released: a profile runs on its item again", "profile", il.name,
@@ -406,16 +420,80 @@ func doctorGhostLine(gs []*state.Ghost) string {
 	return b.String()
 }
 
-// cmdProfile is `cs profile forget <name>`.
+// profileUsage lists the profile subcommands.
+const profileUsage = "usage: claudeswitch profile create <name> [--dir PATH] [--pool a,b] [--seed <account>]\n" +
+	"       claudeswitch profile seed <name> <account>\n" +
+	"       claudeswitch profile list\n" +
+	"       claudeswitch profile remove <name> [--to <profile>] [--yes]\n" +
+	"       claudeswitch profile forget <name>\n" +
+	"       claudeswitch profile pool <name> add|remove <account> [--to <profile>]\n" +
+	"       claudeswitch profile set <name> <key> <value|inherit>\n" +
+	"  each takes --json; forget releases the guard on a removed or re-pointed profile's old credential"
+
+// cmdProfile is `cs profile create|seed|list|remove|forget|pool|set`.
 func cmdProfile(args []string) error {
-	fs := flag.NewFlagSet("profile", flag.ExitOnError)
-	cfgPath := fs.String("config", "", "path to config.toml")
-	positional := parseInterleaved(fs, args)
-	if len(positional) != 2 || positional[0] != "forget" {
-		return fmt.Errorf("usage: claudeswitch profile forget <name>\n" +
-			"  releases the guard on a removed or re-pointed profile's old credential")
+	if len(args) == 0 {
+		return appErr(codeUsage, profileUsage, "name a profile command")
 	}
-	name := positional[1]
+	if args[0] == "create" {
+		return cmdProfileCreate(args[1:])
+	}
+	fs := appFlags("profile " + args[0])
+	cfgPath := fs.String("config", "", "path to config.toml")
+	asJSON := fs.Bool("json", false, "machine-readable output")
+	to := fs.String("to", "", "pool remove, remove: the profile whose pool the accounts join instead")
+	yes := fs.Bool("yes", false, "remove: do not ask for confirmation")
+	p, err := parseApp(fs, args[1:], profileUsage)
+	if err != nil {
+		return err
+	}
+	w := io.Writer(os.Stdout)
+	switch args[0] {
+	case "seed":
+		if len(p) != 2 {
+			return appErr(codeUsage, profileUsage, "seed takes a profile and an account")
+		}
+		if err := humanToStderr(*asJSON, func() error { return profileSeed(os.Stdout, *cfgPath, p[0], p[1]) }); err != nil {
+			return err
+		}
+		if *asJSON {
+			return emitTo(w, map[string]any{"profile": p[0], "seeded": p[1]})
+		}
+		return nil
+	case "list":
+		if len(p) != 0 {
+			return appErr(codeUsage, profileUsage, "list takes no arguments")
+		}
+		if *asJSON {
+			return profileListJSON(w, *cfgPath)
+		}
+		return profileList(w, *cfgPath)
+	case "pool":
+		if len(p) != 3 {
+			return appErr(codeUsage, poolUsage, "pool takes a profile, add or remove, and an account")
+		}
+		return profilePool(w, *cfgPath, p[0], p[1], p[2], *to, *asJSON)
+	case "set":
+		if len(p) != 3 {
+			return appErr(codeUsage, profileUsage, "set takes a profile, a key and a value")
+		}
+		return profileSet(w, *cfgPath, p[0], p[1], p[2], *asJSON)
+	case "remove":
+		if len(p) != 1 {
+			return appErr(codeUsage, profileRemoveUsage, "remove takes one profile name")
+		}
+		return profileRemove(w, *cfgPath, p[0], *to, *yes, *asJSON)
+	case "forget":
+		if len(p) != 1 {
+			return appErr(codeUsage, profileUsage, "forget takes one profile name")
+		}
+		return profileForget(w, *cfgPath, p[0], *asJSON)
+	}
+	return appErr(codeUsage, profileUsage, "unknown profile command %q", args[0])
+}
+
+// profileForget is `cs profile forget <name>`.
+func profileForget(w io.Writer, cfgPath, name string, asJSON bool) error {
 	// The state alone: the guard can be released whatever the config says,
 	// and nothing here should reconcile observations against it.
 	st, err := state.Load("")
@@ -424,7 +502,7 @@ func cmdProfile(args []string) error {
 	}
 	// The config only to see which guards an offline edit implies; an
 	// unreadable one implies none, and the recorded ghosts are still released.
-	cfg, _ := loadIgnoringBadNames(*cfgPath)
+	cfg, _ := loadIgnoringBadNames(cfgPath)
 	gs := allGhosts(cfg, st)
 	n := st.DropGhostsOf(name)
 	for _, g := range offlineGhosts(cfg, st) {
@@ -438,14 +516,18 @@ func cmdProfile(args []string) error {
 			names = append(names, g.Profile)
 		}
 		if len(names) == 0 {
-			return fmt.Errorf("no old credential of profile %q is guarded; nothing is", name)
+			return appErr(codeNotFound, "", "no old credential of profile %q is guarded; nothing is", name)
 		}
-		return fmt.Errorf("no old credential of profile %q is guarded; guarded: %s", name, strings.Join(names, ", "))
+		return appErr(codeNotFound, "guarded: "+strings.Join(names, ", "),
+			"no old credential of profile %q is guarded; guarded: %s", name, strings.Join(names, ", "))
 	}
 	if err := st.Save(); err != nil {
 		return errors.Join(errors.New("could not save the state"), err)
 	}
-	fmt.Printf("  released %d guarded credential(s) of profile %s; its account(s) may be used elsewhere again\n",
+	if asJSON {
+		return emitTo(w, map[string]any{"profile": name, "released": n})
+	}
+	fmt.Fprintf(w, "  released %d guarded credential(s) of profile %s; its account(s) may be used elsewhere again\n",
 		n, name)
 	return nil
 }

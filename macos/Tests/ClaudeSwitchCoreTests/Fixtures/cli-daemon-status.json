@@ -1,0 +1,16 @@
+{
+  "action": "status",
+  "binary": "/Users/example/.local/bin/claudeswitch",
+  "binary_is_this": true,
+  "daemon_live": true,
+  "daemon_version": "0.5.0",
+  "file": "/Users/example/Library/LaunchAgents/xyz.claudeswitch.daemon.plist",
+  "installed": true,
+  "loaded": true,
+  "log": "/Users/example/.local/state/claudeswitch/daemon.log",
+  "mode": "live",
+  "platform": "launchd",
+  "running": true,
+  "since": "2026-10-08T05:00:00Z",
+  "this_binary": "/Users/example/.local/bin/claudeswitch"
+}

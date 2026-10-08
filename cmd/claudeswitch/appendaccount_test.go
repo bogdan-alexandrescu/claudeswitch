@@ -17,13 +17,11 @@ priority = ["work-a", "personal"]
 
 [[account]]
 id           = "work-a"
-scope        = "work"
 account_uuid = "person-1"
 org_id       = "org-1"
 
 [[account]]
 id           = "personal"
-scope        = "personal"
 account_uuid = "person-2"
 org_id       = "org-2"
 `

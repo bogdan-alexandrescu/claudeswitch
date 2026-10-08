@@ -16,7 +16,7 @@ import (
 
 func holdFixture() (*config.Config, *state.State) {
 	next := testCfg() // poll_active 1m
-	next.Accounts = []config.Account{{ID: "b", Scope: "work"}}
+	next.Accounts = []config.Account{{ID: "b"}}
 	return next, &state.State{Profiles: map[string]*state.ProfileState{state.DefaultProfile: {Active: "a"}}, Accounts: map[string]*state.Account{"a": {}, "b": {}}}
 }
 
@@ -150,11 +150,14 @@ func TestConfigWritesRemoveStaleTemporaryFiles(t *testing.T) {
 
 func TestDoctorWarnsAboutAFastHotCadence(t *testing.T) {
 	cfg := testCfg()
+	// testCfg's poll_active of 1m is below the per-account floor and warned
+	// about on its own (DESIGN 4.3c); this test is about poll_hot alone.
+	cfg.PollActive = config.Duration{Duration: 2 * time.Minute}
 	cfg.PollHot = config.Duration{Duration: 20 * time.Second}
 	out := strings.Join(pollCadenceLines(cfg), "\n")
 	for _, want := range []string{
 		"[warn] poll cadence  hot 20s drains an account's ~25-call allowance in ~8 min",
-		"fix: cs config set poll_hot 60s",
+		"fix: cs config poll_hot 60s",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
@@ -167,6 +170,9 @@ func TestDoctorWarnsAboutAFastHotCadence(t *testing.T) {
 
 func TestDoctorIsQuietAboutTheDefaultHotCadence(t *testing.T) {
 	cfg := testCfg()
+	// testCfg's poll_active of 1m is below the per-account floor and warned
+	// about on its own (DESIGN 4.3c); this test is about poll_hot.
+	cfg.PollActive = config.Duration{Duration: 2 * time.Minute}
 	cfg.PollHot = config.Duration{Duration: time.Minute}
 	out := strings.Join(pollCadenceLines(cfg), "\n")
 	if strings.Contains(out, "[warn]") || !strings.Contains(out, "[ok  ] poll cadence") {

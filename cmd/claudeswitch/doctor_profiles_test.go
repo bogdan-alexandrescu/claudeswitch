@@ -150,24 +150,26 @@ func TestDoctorExit(t *testing.T) {
 	}
 }
 
-// doctor shows the config's warnings, including a shared profile directory.
+// doctor shows the config's warnings, including a profile's own. (A shared
+// profile directory was the example here; since the lane 10 security review
+// it is a config error, so the config would not load.)
 func TestDoctorShowsConfigWarnings(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	cfg := doctorConfig(t, `
+switch_at = 80
+
 [[account]]
 id = "personal"
 
 [[profile]]
 name = "default"
-
-[[profile]]
-name = "alt"
-dir  = "~/.claude"
+switch_at_weekly = 95
+hard_floor = 90
 `)
 	var b strings.Builder
 	doctorWarnings(&b, cfg)
-	if !strings.Contains(b.String(), `profiles "default" and "alt" share ~/.claude`) {
-		t.Fatalf("doctor output lacks the shared-directory warning:\n%s", b.String())
+	if !strings.Contains(b.String(), `profile "default": hard_floor (90) is below switch_at_weekly (95)`) {
+		t.Fatalf("doctor output lacks the profile's warning:\n%s", b.String())
 	}
 }
 

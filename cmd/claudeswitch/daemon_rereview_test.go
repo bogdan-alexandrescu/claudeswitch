@@ -71,20 +71,20 @@ func TestDaemonCrossPoolErrorIsReportedOnce(t *testing.T) {
 	r := newRig(t, twoProfiles(), true)
 	r.d.st.Profile("work").SetActive("w1")
 	il := r.prof("default")
-	r.d.noteCrossPool(il, "w2")
-	r.d.noteCrossPool(il, "w2")
+	r.d.noteCrossPool(il, "w2", "a")
+	r.d.noteCrossPool(il, "w2", "a")
 	if n := strings.Count(r.logs.String(), "another profile's pool"); n != 1 {
 		t.Fatalf("%d cross-pool lines for one finding, want 1", n)
 	}
-	r.d.noteCrossPool(il, "w1") // a different account, and live in work too
+	r.d.noteCrossPool(il, "w1", "a") // a different account, and live in work too
 	if n := strings.Count(r.logs.String(), "another profile's pool"); n != 2 {
 		t.Fatalf("%d cross-pool lines after a new finding, want 2", n)
 	}
 	if n := strings.Count(r.logs.String(), "live in two profiles"); n != 1 {
 		t.Fatalf("%d two-profile lines, want 1", n)
 	}
-	r.d.noteCrossPool(il, "a") // back in its own pool: clears
-	r.d.noteCrossPool(il, "w2")
+	r.d.noteCrossPool(il, "a", "a") // back in its own pool: clears
+	r.d.noteCrossPool(il, "w2", "a")
 	if n := strings.Count(r.logs.String(), "another profile's pool"); n != 3 {
 		t.Fatalf("%d cross-pool lines after it cleared and recurred, want 3", n)
 	}

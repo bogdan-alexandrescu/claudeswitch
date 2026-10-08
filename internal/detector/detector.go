@@ -94,8 +94,8 @@ type Detector struct {
 	worstLatency time.Duration
 
 	// lastCWD is the working directory of the most recent session activity, and
-	// cwdFrom is the transcript it came from. Project rules need to know where
-	// work is happening; the transcripts record it on every line, but parsing
+	// cwdFrom is the transcript it came from. Project rules used to need to
+	// know where work is happening (removed in lane 16; kept for diagnostics); the transcripts record it on every line, but parsing
 	// every line is ruinous, so one per file is enough.
 	lastCWD string
 	cwdFrom string
@@ -238,7 +238,7 @@ func (d *Detector) scanFile(path string) {
 	for sc.Scan() {
 		b := sc.Bytes()
 		read += int64(len(b)) + 1
-		// Note where the work is happening, for project rules — but only once per
+		// Note where the work is happening — but only once per
 		// file. Every transcript line carries a cwd, and unmarshalling each one
 		// was enough allocation churn to starve the whole daemon: it stopped
 		// polling entirely and its readings went stale while it burned CPU in
@@ -422,7 +422,8 @@ func (d *Detector) IdleFor(dur time.Duration) bool {
 }
 
 // CurrentDir is the working directory of the most recent session activity, or
-// empty when nothing has been seen yet. Project rules are applied against it.
+// empty when nothing has been seen yet. Nothing decides on it since project
+// rules were removed (lane 16).
 func (d *Detector) CurrentDir() string {
 	d.mu.Lock()
 	defer d.mu.Unlock()

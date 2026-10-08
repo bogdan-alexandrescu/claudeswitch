@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "last_profile",
+    "hint": "every account needs a profile; create another first: claudeswitch profile create \u003cname\u003e",
+    "message": "profile \"default\" is the only profile, so it cannot be removed"
+  }
+}

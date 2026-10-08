@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "name_required",
+    "hint": "person4",
+    "message": "name the account: claudeswitch add <name>"
+  }
+}

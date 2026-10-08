@@ -58,7 +58,7 @@ func cmdContext(args []string) error {
 		view = &v
 	}
 	running := daemonRunning()
-	renderContextIn(os.Stdout, cfg, st, view, time.Now(), running, currentDir())
+	renderContextIn(os.Stdout, cfg, st, view, time.Now(), running)
 	if st != nil && staleDaemonLine(st, currentBuild(), running, runtime.GOOS) != "" {
 		fmt.Println("[claudeswitch] the running daemon is older than this claudeswitch, so it may act " +
 			"on rules this version has changed; ask the user to restart it: " + restartHint(runtime.GOOS))
@@ -78,14 +78,14 @@ const staleReadingAfter = 10 * time.Minute
 // Every line is prefixed so that, among other hooks' output, it is obvious
 // where it came from. The normal case is two lines; anything more means
 // something needs attention.
-func renderContext(w io.Writer, cfg *config.Config, st *state.State, now time.Time, daemon bool, dir string) {
-	renderContextIn(w, cfg, st, nil, now, daemon, dir)
+func renderContext(w io.Writer, cfg *config.Config, st *state.State, now time.Time, daemon bool) {
+	renderContextIn(w, cfg, st, nil, now, daemon)
 }
 
 // renderContextIn is renderContext for one profile's session. A nil view is
 // the default profile, as before profiles.
 func renderContextIn(w io.Writer, cfg *config.Config, st *state.State, view *profileView,
-	now time.Time, daemon bool, dir string) {
+	now time.Time, daemon bool) {
 	p := "[claudeswitch] "
 	if len(cfg.Accounts) == 0 {
 		fmt.Fprintln(w, p+"no accounts set up yet; run `claudeswitch setup` in a terminal")
@@ -137,10 +137,10 @@ func renderContextIn(w io.Writer, cfg *config.Config, st *state.State, view *pro
 
 	in := policy.Input{
 		Cfg: cfg, St: st, Now: now, LastSwitch: ist.LastSwitch,
-		Pinned: ist.Pinned, Dir: dir, Lookahead: lookahead(cfg),
+		Pinned: ist.Pinned, Lookahead: lookahead(cfg),
 	}
 	if view != nil {
-		in = view.input(st, now, dir)
+		in = view.input(st, now)
 	}
 	dec, _ := policy.Explain(in)
 	switch dec.Kind {

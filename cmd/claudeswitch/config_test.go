@@ -16,7 +16,8 @@ func TestEveryConfigSettingIsWritten(t *testing.T) {
 		"switch_when": "immediate", "hot_threshold": "88", "max_switch_wait": "45s", "cooldown": "7m0s",
 		"poll_active": "2m0s", "poll_hot": "1m0s", "poll_idle": "15m0s",
 		"api_budget": "10", "refresh_window": "2h0m0s", "refresh_probe": "12h0m0s",
-		"landing_margin": "5", "blind_failover_polls": "4",
+		"landing_margin": "5", "blind_failover_polls": "4", "models": "Modelname,Othermodel",
+		"hot_reserve": "6", "unseen_calls_per_hour": "4.5",
 	}
 	for _, s := range settings() {
 		v, ok := values[s.name]
@@ -27,7 +28,7 @@ func TestEveryConfigSettingIsWritten(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "config.toml")
 		cfg, _ := config.Load(path) // missing file: the defaults
 		cfg.Priority = []string{"a"}
-		cfg.Accounts = []config.Account{{ID: "a", Scope: "work"}}
+		cfg.Accounts = []config.Account{{ID: "a"}}
 		if err := s.set(cfg, v); err != nil {
 			t.Fatalf("%s: %v", s.name, err)
 		}

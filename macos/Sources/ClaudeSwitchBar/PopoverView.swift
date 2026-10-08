@@ -2,105 +2,518 @@ import AppKit
 import ClaudeSwitchCore
 import SwiftUI
 
+/// The menu-bar popover: a card per profile (IMPROVEMENTS M7, mockup 1).
+/// The profile the menu-bar title follows is expanded and outlined; the
+/// others are compact rows that expand on demand.
 struct PopoverView: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var login: LoginItem
+    @Environment(\.openWindow) private var openWindow
+    @State var expanded: Set<String> = []
+    /// The cards' measured height: they scroll only past what the screen
+    /// can show (QA: a fixed 520-pt cap cut short lists and wasted tall
+    /// screens).
+    @State private var cardsHeight: CGFloat = 0
+
+    /// Header, banners and footer, around the cards.
+    static let chrome: CGFloat = 140
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             header
             if let p = store.problem { ProblemBanner(problem: p) }
             if let s = store.snapshot {
-                NextLine(decision: s.decision)
-                if s.profiles.count > 1 { ProfilesSection(profiles: s.profiles) }
-                Divider()
-                let rows = VStack(alignment: .leading, spacing: 12) {
-                    ForEach(s.accounts) { a in
-                        AccountRow(account: a, settings: s.settings, now: s.now)
+                let followed = s.followed(store.menuProfile)
+                let cards = VStack(spacing: 8) {
+                    ForEach(s.cards) { c in
+                        if c.name == followed || expanded.contains(c.name) || s.cards.count == 1 {
+                            ProfileCardView(card: c, followed: c.name == followed, now: s.now,
+                                            collapse: c.name == followed ? nil : { expanded.remove(c.name) })
+                        } else {
+                            CompactCardView(card: c) { expanded.insert(c.name) }
+                        }
                     }
                 }
-                // A scroll view has no height of its own in a menu-bar window,
-                // so only a list too long for the screen gets one.
-                if s.accounts.count > 5 {
-                    ScrollView { rows }.frame(height: 460)
+                .background(GeometryReader { g in
+                    Color.clear.preference(key: CardsHeight.self, value: g.size.height)
+                })
+                let room = PopoverLayout.maxHeight(visible: Self.visibleHeight) - Self.chrome
+                if cardsHeight > room {
+                    ScrollView { cards }.frame(height: room)
                 } else {
-                    rows
+                    cards
                 }
             } else if store.problem == nil {
                 Text(store.refreshing ? "Reading…" : "No state yet: is the daemon installed? Run `claudeswitch setup`.")
                     .foregroundStyle(.secondary)
             }
-            if let r = store.lastSwitch { SwitchResult(id: r.id, outcome: r.outcome) }
+            if let n = store.note(on: .popover) { NoteBanner(text: n) { store.clearNote(on: .popover) } }
             Divider()
             footer
         }
-        .padding(14)
-        .frame(width: 380)
+        .padding(16)
+        .frame(width: 384)
+        .onPreferenceChange(CardsHeight.self) { cardsHeight = $0 }
         .onAppear {
+            store.acting(in: .popover)
             login.reload()
-            store.refresh(full: false)
+            store.refresh(full: true, profiles: true)
         }
+        .alert(item: store.alertBinding(.popover)) { a in
+            Alert(title: Text(a.title), message: Text(a.hint.isEmpty ? a.message : a.message + "\n\n" + a.hint))
+        }
+    }
+
+    /// The visible frame of the screen the popover opens on (menu bar and
+    /// Dock excluded).
+    static var visibleHeight: CGFloat {
+        (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.height ?? 800
     }
 
     var header: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("claudeswitch").font(.headline)
-            if let d = store.snapshot?.daemon {
-                Text(d.mode)
-                    .font(.caption)
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Capsule().fill(daemonColor(d).opacity(0.18)))
-                    .foregroundStyle(daemonColor(d))
-            }
+            Text("ClaudeSwitch").font(.headline)
             Spacer()
             if let s = store.snapshot {
-                Text("polled " + Format.age(s.daemon.lastPoll, now: s.now))
-                    .font(.caption).foregroundStyle(.secondary)
+                DaemonBadge(daemon: s.daemon)
             }
-        }
-    }
-
-    func daemonColor(_ d: DaemonView) -> Color {
-        switch d.health {
-        case .never, .stale: return .red
-        case .polling: return d.live ? .green : .orange
         }
     }
 
     var footer: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if login.available {
-                Toggle("Launch at login", isOn: Binding(get: { login.enabled }, set: { login.set($0) }))
-                if let e = login.error { Text(e).font(.caption).foregroundStyle(.red) }
+        HStack(spacing: 8) {
+            let canAdd = store.binaryPath != nil
+            Button {
+                store.addAccount = AddAccountRequest(profile: store.snapshot?.followed(store.menuProfile))
+                showSettings()
+            } label: {
+                Label("Add account", systemImage: "plus")
             }
-            Toggle("Icon only in the menu bar", isOn: $store.compact)
-            HStack {
-                Text(store.binaryPath.map { "\($0)" + (store.binaryVersion.map { " · \($0)" } ?? "") }
-                     ?? "claudeswitch not found")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .lineLimit(1).truncationMode(.middle)
-                Spacer()
-                Button("Binary…") { chooseBinary() }.controlSize(.small)
+            .buttonStyle(.borderless)
+            // Accent only when it can be used: a disabled link in the accent
+            // colour read as active (QA).
+            .foregroundStyle(canAdd ? Color.accentColor : Color.secondary)
+            .disabled(!canAdd)
+            Spacer()
+            Button("Settings…") { showSettings() }
+                .buttonStyle(.borderless)
+                .keyboardShortcut(",", modifiers: .command)
+            Menu {
+                Button("Refresh") { store.refresh(full: true, profiles: true) }
+                Divider()
+                Button("Quit ClaudeSwitch") { NSApp.terminate(nil) }
+            } label: {
+                Image(systemName: "ellipsis.circle")
             }
-            HStack {
-                Button("Refresh") { store.refresh(full: true) }
-                Spacer()
-                Button("Quit") { NSApp.terminate(nil) }
-            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel("More")
         }
-        .toggleStyle(.checkbox)
     }
 
-    func chooseBinary() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.message = "Choose the claudeswitch binary"
-        panel.showsHiddenFiles = true
+    func showSettings() {
         NSApp.activate(ignoringOtherApps: true)
-        if panel.runModal() == .OK, let url = panel.url {
-            store.configuredBinary = url.path
+        openWindow(id: SettingsView.windowID)
+    }
+}
+
+private struct CardsHeight: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+/// "Live · polled 40s ago", with a coloured dot.
+struct DaemonBadge: View {
+    let daemon: DaemonView
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle().fill(color).frame(width: 8, height: 8)
+            Text(text).font(.caption).foregroundStyle(.secondary)
         }
+        .accessibilityElement(children: .combine)
+    }
+
+    var text: String {
+        switch daemon.health {
+        case .never: return "No daemon"
+        case .stale: return daemon.mode.prefix(1).uppercased() + daemon.mode.dropFirst()
+        case .polling:
+            return (daemon.live ? "Live" : "Dry run") + " · polled " + Format.age(daemon.lastPoll, now: daemon.now)
+        }
+    }
+
+    var color: Color {
+        switch daemon.health {
+        case .never, .stale: return .red
+        case .polling: return daemon.live ? .green : .orange
+        }
+    }
+}
+
+/// "Menu bar": which profile the menu-bar title follows.
+struct MenuBarBadge: View {
+    var body: some View {
+        Label("Menu bar", systemImage: "menubar.rectangle")
+            .labelStyle(.titleAndIcon)
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 8).padding(.vertical, 2)
+            .background(Capsule().fill(Color.accentColor))
+            .foregroundStyle(.white)
+            .accessibilityLabel("Shown in the menu bar")
+    }
+}
+
+/// The expanded card: account picker, session and week bars against the
+/// profile's thresholds, Open Claude Code and Switch to best.
+struct ProfileCardView: View {
+    @EnvironmentObject var store: Store
+    let card: ProfileCard
+    let followed: Bool
+    let now: Date
+    var collapse: (() -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            titleRow
+            HStack(spacing: 8) {
+                AccountPicker(card: card)
+                if let a = card.active, store.chrome?.supported != false {
+                    IconButton(symbol: "globe", label: "Open Chrome for \(a.id)",
+                               busy: store.isBusy("chrome:\(a.id)")) { store.openChrome(a.id) }
+                }
+            }
+            if let a = card.active {
+                VStack(alignment: .leading, spacing: 8) {
+                    UsageBar(title: "Session", window: a.fiveHour, trigger: card.switchAt, now: now)
+                    UsageBar(title: "Week", window: a.sevenDay, trigger: card.switchAtWeekly, now: now)
+                    ForEach(Array(a.scopedWeekly.enumerated()), id: \.offset) { _, l in
+                        ModelLimitRow(limit: l, level: card.level(of: l), now: now)
+                    }
+                    if a.status == .needsLogin || a.lastError != nil {
+                        Label(a.lastError ?? "needs login", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption).foregroundStyle(.red).lineLimit(2)
+                            .help(a.lastError ?? "needs login")
+                    }
+                }
+                .padding(.top, 4)
+            }
+            HStack(spacing: 8) {
+                Button {
+                    store.openClaudeCode(card.name)
+                } label: {
+                    Text("Open Claude Code").lineLimit(1).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(store.binaryPath == nil || !card.canOpen)
+                .help(card.openBlocked ?? "Open Claude Code in \(card.name)")
+                BestButton(card: card)
+            }
+            .padding(.top, 4)
+            if let why = card.openBlocked {
+                Label(why, systemImage: "person.crop.circle.badge.exclamationmark")
+                    .font(.caption).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let why = card.bestUnavailable {
+                Text(why).font(.caption).foregroundStyle(.secondary).lineLimit(2).help(why)
+            } else if let warn = card.bestWarning {
+                Label(warn, systemImage: "exclamationmark.triangle")
+                    .font(.caption).foregroundStyle(.orange).lineLimit(2).help(warn)
+            }
+            HStack(alignment: .top, spacing: 8) {
+                if card.nextVisible {
+                    Text("Next: " + nextText)
+                        .font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(3)
+                        .help(nextText)
+                }
+                Spacer(minLength: 0)
+                PinToggle(card: card)
+            }
+        }
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 10)
+            .strokeBorder(followed ? Color.accentColor : Color.secondary.opacity(0.25), lineWidth: followed ? 2 : 1))
+    }
+
+    var titleRow: some View {
+        HStack(spacing: 8) {
+            Text(card.name).font(.headline).lineLimit(1).truncationMode(.tail)
+                .help(card.name)
+                .layoutPriority(1)
+            if followed {
+                MenuBarBadge()
+            } else {
+                Button("Show in menu bar") { store.menuProfile = card.name }
+                    .buttonStyle(.borderless).font(.caption)
+            }
+            Spacer(minLength: 8)
+            Text(card.dirLabel).font(.caption).foregroundStyle(.secondary)
+                .lineLimit(1).truncationMode(.middle)
+                .help(card.dirLabel)
+            if let c = collapse {
+                IconButton(symbol: "chevron.up", label: "Collapse \(card.name)", action: c)
+            }
+        }
+    }
+
+    var nextText: String {
+        guard let d = card.decision else { return "unknown" }
+        let head = Format.next(d)
+        return d.reason.isEmpty ? head : head + " — " + d.reason
+    }
+}
+
+/// "Switch to best: w02 12%": the account why would pick now (owner
+/// decision; the picker beside it switches to any other).
+struct BestButton: View {
+    @EnvironmentObject var store: Store
+    let card: ProfileCard
+
+    var body: some View {
+        Button {
+            store.switchToBest(card)
+        } label: {
+            if store.isBusy("use:\(card.name)") {
+                ProgressView().controlSize(.small).frame(maxWidth: .infinity)
+            } else {
+                // Two lines, so a long id is never cut out of the verb.
+                VStack(spacing: 0) {
+                    Text("Switch to best").lineLimit(1)
+                    if let b = card.best {
+                        Text("\(b.id) · \(Format.pct(b.bindingPct))").font(.caption)
+                            .lineLimit(1).truncationMode(.middle)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .controlSize(.large)
+        .disabled(card.best == nil || store.binaryPath == nil || store.isBusy("use:\(card.name)"))
+        .help(card.bestUnavailable ?? "Switch \(card.name) to \(card.best?.id ?? "")")
+        .accessibilityLabel(card.best.map { "Switch \(card.name) to \($0.id)" } ?? "No account to switch to")
+    }
+}
+
+/// One per-model weekly limit: its name, a mini bar and the figure,
+/// coloured by how close it is to the weekly trigger.
+struct ModelLimitRow: View {
+    let limit: LimitReading
+    let level: Level?
+    let now: Date
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(Format.limitName(limit)).lineLimit(1).truncationMode(.tail)
+                .help(Format.limitName(limit))
+            Spacer(minLength: 8)
+            Capsule().fill(Color.secondary.opacity(0.18))
+                .frame(width: 48, height: 4)
+                .overlay(alignment: .leading) {
+                    Capsule().fill(levelColor(level))
+                        .frame(width: 48 * CGFloat(min(max(limit.percent ?? 0, 0), 100) / 100), height: 4)
+                }
+                .accessibilityHidden(true)
+            Text(Format.pct(limit.percent) + " · " + Format.resets(limit.resetsAt, now: now))
+                .foregroundStyle(level.map { $0 == .ok ? Color.secondary : levelColor($0) } ?? .secondary)
+                .monospacedDigit()
+                .lineLimit(1)
+        }
+        .font(.caption)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+func levelColor(_ l: Level?) -> Color {
+    switch l {
+    case .ok?: return .accentColor
+    case .near?: return .orange
+    case .over?: return .red
+    case nil: return .clear
+    }
+}
+
+/// The live account, as a menu of the profile's pool.
+struct AccountPicker: View {
+    @EnvironmentObject var store: Store
+    let card: ProfileCard
+
+    var body: some View {
+        Menu {
+            AccountMenuItems(card: card)
+        } label: {
+            HStack {
+                if let a = card.active {
+                    (Text(a.id).bold() + Text(detail(a.id)).foregroundColor(.secondary))
+                        .lineLimit(1).truncationMode(.tail)
+                } else {
+                    Text("No account live").foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 8).padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.08)))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.secondary.opacity(0.25)))
+        .disabled(store.isBusy("use:\(card.name)") || card.accounts.isEmpty)
+        .help(card.active.flatMap { store.state?.emails[$0.id] } ?? "")
+        .accessibilityLabel("Account live in \(card.name): \(card.active?.id ?? "none")")
+    }
+
+    /// The plan, as the account list records it (no scope since lane 16).
+    func detail(_ id: String) -> String {
+        store.accountList?.account(id)?.plan.map { " · " + $0 } ?? ""
+    }
+}
+
+/// The pool's accounts, with their headroom; choosing one runs
+/// `use <id> --profile P --json`.
+struct AccountMenuItems: View {
+    @EnvironmentObject var store: Store
+    let card: ProfileCard
+
+    var body: some View {
+        ForEach(card.accounts) { a in
+            Button {
+                if !a.isActive { store.use(a.id, profile: card.name) }
+            } label: {
+                Text((a.isActive ? "✓ " : "") + a.id + "  " + Format.pct(a.bindingPct) + " · " + a.status.label)
+            }
+            .disabled(a.isActive)
+        }
+    }
+}
+
+/// Pin: freeze the profile on its live account (`account pin`), or let
+/// rotation run again (`account unpin --profile`).
+struct PinToggle: View {
+    @EnvironmentObject var store: Store
+    let card: ProfileCard
+
+    var body: some View {
+        Toggle(isOn: Binding(get: { card.isPinned },
+                             set: { store.setPinned($0, profile: card.name, account: card.active?.id) })) {
+            Label(card.isPinned ? "Pinned" : "Pin", systemImage: card.isPinned ? "pin.fill" : "pin")
+                .font(.caption)
+        }
+        .toggleStyle(.button)
+        .controlSize(.small)
+        .disabled(card.active == nil || store.isBusy("pin:\(card.name)"))
+        .help(card.isPinned ? "Rotation is off in \(card.name): let it rotate again"
+              : "Keep \(card.name) on \(card.active?.id ?? "its account"): turn rotation off")
+        .accessibilityLabel(card.isPinned ? "Unpin \(card.name)" : "Pin \(card.name) to its account")
+    }
+}
+
+/// A collapsed card: name, one summary line (trouble first), Open Claude
+/// Code and expand.
+struct CompactCardView: View {
+    @EnvironmentObject var store: Store
+    let card: ProfileCard
+    let expand: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 4) {
+                    Text(card.name).font(.headline).lineLimit(1).truncationMode(.tail).help(card.name)
+                    if card.isPinned {
+                        Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary)
+                            .accessibilityLabel("pinned")
+                    }
+                }
+                Text(Format.cardSummary(card)).font(.caption)
+                    .foregroundStyle(trouble ? Color.red : Color.secondary)
+                    .lineLimit(1).truncationMode(.tail)
+                    .help(Format.cardSummary(card))
+            }
+            Spacer(minLength: 8)
+            IconButton(symbol: "play.fill", label: card.openBlocked ?? "Open Claude Code in \(card.name)",
+                       busy: store.isBusy("run:\(card.name)")) { store.openClaudeCode(card.name) }
+                .disabled(!card.canOpen)
+            IconButton(symbol: "chevron.down", label: "Expand \(card.name)", action: expand)
+        }
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.secondary.opacity(0.25)))
+    }
+
+    var trouble: Bool {
+        switch card.active?.status {
+        case .needsLogin?, .refused?: return true
+        default: return false
+        }
+    }
+}
+
+/// A square bordered icon button with a VoiceOver label.
+struct IconButton: View {
+    let symbol: String
+    let label: String
+    var busy = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Group {
+                if busy { ProgressView().controlSize(.small) } else { Image(systemName: symbol) }
+            }
+            .frame(width: 16, height: 16)
+        }
+        .buttonStyle(.bordered)
+        .help(label)
+        .accessibilityLabel(label)
+        .disabled(busy)
+    }
+}
+
+/// "Session 62% · resets 2h 10m" over a bar with a tick at the threshold.
+struct UsageBar: View {
+    let title: String
+    let window: WindowReading?
+    let trigger: Double
+    let now: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(detail).foregroundStyle(.secondary).monospacedDigit()
+            }
+            .font(.caption)
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.secondary.opacity(0.18))
+                    Capsule().fill(color)
+                        .frame(width: g.size.width * CGFloat(min(max(pct ?? 0, 0), 100) / 100))
+                    // The switch threshold, so "near" is visible, not inferred.
+                    RoundedRectangle(cornerRadius: 1).fill(Color.primary.opacity(0.6))
+                        .frame(width: 2, height: 10)
+                        .offset(x: g.size.width * CGFloat(min(trigger, 100) / 100) - 1)
+                }
+            }
+            .frame(height: 6)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title): \(detail), switches at \(Int(trigger))%")
+    }
+
+    var pct: Double? { window?.utilization }
+
+    var detail: String {
+        let r = Format.resets(window?.resetsAt, now: now)
+        return Format.pct(pct) + (r.isEmpty ? "" : " · " + r)
+    }
+
+    var color: Color {
+        guard let p = pct else { return .clear }
+        return levelColor(Level.of(p, trigger: trigger))
     }
 }
 
@@ -108,20 +521,25 @@ struct ProblemBanner: View {
     let problem: CLIError
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Label(problem.message, systemImage: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
-                .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 8) {
+            Label {
+                Text(problem.message).foregroundStyle(.primary)
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            }
+            .fixedSize(horizontal: false, vertical: true)
             if problem == .missing || isTooOld {
                 Text(CLI.installSteps)
                     .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.primary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(8)
-        .background(RoundedRectangle(cornerRadius: 6).fill(Color.orange.opacity(0.1)))
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.orange.opacity(0.5)))
     }
 
     var isTooOld: Bool {
@@ -130,177 +548,20 @@ struct ProblemBanner: View {
     }
 }
 
-struct NextLine: View {
-    let decision: Decision?
+struct NoteBanner: View {
+    let text: String
+    let dismiss: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 4) {
-                Text("Next:").foregroundStyle(.secondary)
-                Text(Format.next(decision)).bold()
-            }
-            if let r = decision?.reason, !r.isEmpty {
-                Text(r).font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-}
-
-struct ProfilesSection: View {
-    let profiles: [ProfileView]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Profiles").font(.caption).foregroundStyle(.secondary)
-            ForEach(profiles) { i in
-                HStack(spacing: 6) {
-                    Text(i.name).font(.caption.monospaced())
-                    Text("→ " + (i.active ?? "–")).font(.caption)
-                    if i.pinned != nil { Image(systemName: "pin.fill").font(.caption2) }
-                    Spacer()
-                    if let d = i.decision {
-                        Text(Format.next(d)).font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
-    }
-}
-
-struct AccountRow: View {
-    @EnvironmentObject var store: Store
-    let account: AccountView
-    let settings: ConfigSettings
-    let now: Date
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Image(systemName: account.isActive ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(account.isActive ? Color.accentColor : .secondary)
-                Text(account.id).bold()
-                if account.isPinned { Image(systemName: "pin.fill").font(.caption) }
-                StatusChip(status: account.status, now: now)
-                Spacer()
-                if !account.isActive { switchButton }
-            }
-            WindowBar(label: "5h", window: account.fiveHour,
-                      trigger: settings.trigger(for: "five_hour"), now: now)
-            WindowBar(label: "7d", window: account.sevenDay,
-                      trigger: settings.trigger(for: "seven_day"), now: now)
-            ForEach(Array(account.scopedWeekly.enumerated()), id: \.offset) { _, l in
-                HStack {
-                    Text(Format.limitName(l)).font(.caption)
-                    Text(Format.pct(l.percent)).font(.caption.monospacedDigit())
-                    Spacer()
-                    Text(Format.resets(l.resetsAt, now: now)).font(.caption).foregroundStyle(.secondary)
-                }
-                .padding(.leading, 22)
-            }
-            if let why = account.why, !why.isEmpty {
-                Text(why).font(.caption).foregroundStyle(.secondary).padding(.leading, 22)
-            }
-            if let e = account.lastError {
-                Text(e).font(.caption).foregroundStyle(.red).lineLimit(2).padding(.leading, 22)
-            }
-        }
-    }
-
-    @ViewBuilder var switchButton: some View {
-        if store.switching == account.id {
-            ProgressView().controlSize(.small)
-        } else {
-            Button("Switch") { store.switchTo(account.id) }
-                .controlSize(.small)
-                .disabled(store.switching != nil || store.binaryPath == nil)
-                .help("Run `claudeswitch use \(account.id)`")
-        }
-    }
-}
-
-struct StatusChip: View {
-    let status: AccountStatus
-    let now: Date
-
-    var body: some View {
-        Text(Format.status(status, now: now))
-            .font(.caption2)
-            .padding(.horizontal, 5).padding(.vertical, 1)
-            .background(Capsule().fill(color.opacity(0.18)))
-            .foregroundStyle(color)
-    }
-
-    var color: Color {
-        switch status {
-        case .available: return .green
-        case .noHeadroom, .windowReset: return .orange
-        case .refused, .needsLogin: return .red
-        case .unknown: return .secondary
-        }
-    }
-}
-
-struct WindowBar: View {
-    let label: String
-    let window: WindowReading?
-    let trigger: Double
-    let now: Date
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Text(label).font(.caption.monospaced()).frame(width: 16, alignment: .leading)
-            GeometryReader { g in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.secondary.opacity(0.2))
-                    Capsule().fill(color)
-                        .frame(width: g.size.width * CGFloat(min(max(pct ?? 0, 0), 100) / 100))
-                    // The switch threshold, so "near" is visible, not inferred.
-                    Rectangle().fill(Color.primary.opacity(0.5))
-                        .frame(width: 1)
-                        .offset(x: g.size.width * CGFloat(min(trigger, 100) / 100))
-                }
-            }
-            .frame(height: 6)
-            Text(Format.pct(pct)).font(.caption.monospacedDigit()).frame(width: 34, alignment: .trailing)
-            Text(Format.resets(window?.resetsAt, now: now))
-                .font(.caption).foregroundStyle(.secondary)
-                .frame(width: 104, alignment: .leading)
-        }
-        .padding(.leading, 22)
-    }
-
-    var pct: Double? { window?.utilization }
-
-    var color: Color {
-        guard let p = pct else { return .clear }
-        switch Level.of(p, trigger: trigger) {
-        case .ok: return .green
-        case .near: return .orange
-        case .over: return .red
-        }
-    }
-}
-
-struct SwitchResult: View {
-    @EnvironmentObject var store: Store
-    let id: String
-    let outcome: UseOutcome
-
-    var body: some View {
-        HStack(alignment: .top) {
-            Image(systemName: outcome.ok ? "checkmark.circle.fill" : "xmark.octagon.fill")
-                .foregroundStyle(outcome.ok ? .green : .red)
-            Text(outcome.message)
-                .font(.caption)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            Text(text).font(.caption).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
             Spacer()
-            Button { store.dismissSwitchResult() } label: { Image(systemName: "xmark") }
+            Button(action: dismiss) { Image(systemName: "xmark") }
                 .buttonStyle(.borderless)
+                .accessibilityLabel("Dismiss")
         }
         .padding(8)
-        .background(RoundedRectangle(cornerRadius: 6)
-            .fill((outcome.ok ? Color.green : Color.red).opacity(0.1)))
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.green.opacity(0.1)))
     }
 }

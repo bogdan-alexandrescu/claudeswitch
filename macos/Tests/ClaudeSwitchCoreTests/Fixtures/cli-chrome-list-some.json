@@ -1,0 +1,19 @@
+{
+  "chrome_profiles": [
+    {
+      "account": "work-1",
+      "added": "2026-10-07T12:00:00Z",
+      "live_in": [
+        "default"
+      ],
+      "profile_dir": "claudeswitch-work-1"
+    },
+    {
+      "account": "personal",
+      "added": null,
+      "live_in": [],
+      "profile_dir": "claudeswitch-personal"
+    }
+  ],
+  "supported": true
+}

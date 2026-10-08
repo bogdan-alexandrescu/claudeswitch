@@ -63,7 +63,6 @@ type pendingFlow struct {
 	AccountID string    `json:"account_id"`
 	OrgID     string    `json:"org_id"`
 	Pinned    bool      `json:"pinned"`
-	Scope     string    `json:"scope,omitempty"`
 	Profile   string    `json:"profile,omitempty"`
 	URL       string    `json:"url"`
 	Verifier  string    `json:"verifier"`
@@ -94,12 +93,11 @@ func pendingPath() (string, error) {
 }
 
 // Pending is what a half-finished login was started for: the account name,
-// the seat it must turn out to be (empty when not yet known), and the scope to
-// give it if the config has no block for it yet.
+// the seat it must turn out to be (empty when not yet known), and the pool a
+// new account joins.
 type Pending struct {
 	AccountID string
 	OrgID     string
-	Scope     string
 	Pinned    bool
 	// Profile is the declared profile whose pool a new account joins when
 	// the login completes (PROFILES D20), "" for none.
@@ -114,7 +112,7 @@ func (f *AuthFlow) Save(p Pending) error {
 		return err
 	}
 	b, err := json.Marshal(pendingFlow{
-		AccountID: p.AccountID, OrgID: p.OrgID, Pinned: p.Pinned, Scope: p.Scope, Profile: p.Profile, URL: f.URL,
+		AccountID: p.AccountID, OrgID: p.OrgID, Pinned: p.Pinned, Profile: p.Profile, URL: f.URL,
 		Verifier: f.verifier, State: f.state, StartedAt: time.Now(),
 	})
 	if err != nil {
@@ -147,7 +145,7 @@ func LoadPending() (*AuthFlow, Pending, error) {
 			time.Since(pf.StartedAt).Round(time.Minute))
 	}
 	return &AuthFlow{URL: pf.URL, verifier: pf.Verifier, state: pf.State},
-		Pending{AccountID: pf.AccountID, OrgID: pf.OrgID, Scope: pf.Scope, Pinned: pf.Pinned,
+		Pending{AccountID: pf.AccountID, OrgID: pf.OrgID, Pinned: pf.Pinned,
 			Profile: pf.Profile}, nil
 }
 

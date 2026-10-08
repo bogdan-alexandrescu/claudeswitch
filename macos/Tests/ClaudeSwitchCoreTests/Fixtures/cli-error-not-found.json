@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "not_found",
+    "hint": "the settings are: switch_at, switch_at_weekly, hard_floor, hot_threshold, switch_when, max_switch_wait, cooldown, poll_active, poll_hot, poll_idle, api_budget, landing_margin, blind_failover_polls, hot_reserve, unseen_calls_per_hour, refresh_window, refresh_probe, models",
+    "message": "no setting called \"no_such_setting\""
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "config_changed",
+    "hint": "look at config.toml: the other change is kept, and so is the credential",
+    "message": "config.toml changed while the delete was undoing its edit"
+  }
+}

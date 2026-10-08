@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "outside_pool",
+    "hint": "move it first: claudeswitch profile pool review remove personal --to default",
+    "message": "account \"personal\" is not in profile \"default\"'s pool"
+  }
+}

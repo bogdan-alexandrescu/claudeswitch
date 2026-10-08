@@ -6,6 +6,7 @@ allowed-tools:
   - Bash(claudeswitch why:*)
   - Bash(claudeswitch use:*)
   - Bash(claudeswitch statusline:*)
+  - Bash(claudeswitch chrome:*)
 ---
 
 # claudeswitch switch
@@ -56,6 +57,12 @@ wants that profile switched instead.
 
 One line: from which account to which, with the new account's session and
 weekly utilization from the output.
+
+If the output has a `Claude in Chrome: use the <id> Chrome profile` line,
+repeat it: Claude in Chrome answers only when the extension is signed in to
+the same claude.ai account as Claude Code, and the user keeps one Chrome
+profile per account. `claudeswitch chrome <id>` opens it; run it only if the
+user asks.
 
 If `use` fails because the account is not in the vault, or its credential no
 longer works, suggest `/cs login <id>`. Do not start a login yourself.

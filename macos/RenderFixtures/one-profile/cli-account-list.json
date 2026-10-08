@@ -1,0 +1,40 @@
+{
+ "accounts": [
+  {
+   "active_in": null,
+   "email": null,
+   "enabled": true,
+   "id": "personal",
+   "pinned": false,
+   "plan": "Max 20x",
+   "profile": "default",
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  },
+  {
+   "active_in": null,
+   "email": null,
+   "enabled": true,
+   "id": "x-unpooled",
+   "pinned": false,
+   "plan": "Max 20x",
+   "profile": "default",
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  },
+  {
+   "active_in": null,
+   "email": null,
+   "enabled": true,
+   "id": "w01",
+   "pinned": false,
+   "plan": "Max 20x",
+   "profile": "default",
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  }
+ ]
+}

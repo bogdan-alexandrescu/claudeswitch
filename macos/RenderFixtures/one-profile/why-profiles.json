@@ -1,0 +1,52 @@
+{
+ "dir": "/Users/example",
+ "profiles": [
+  {
+   "accounts": [
+    {
+     "active": true,
+     "eligible": true,
+     "id": "personal",
+     "utilization": 10,
+     "why": "ready",
+     "window": "five_hour"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "x-unpooled",
+     "utilization": 11,
+     "why": "ready",
+     "window": "five_hour"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "w01",
+     "utilization": 12,
+     "why": "ready",
+     "window": "five_hour"
+    }
+   ],
+   "best": "x-unpooled",
+   "best_why": null,
+   "current": true,
+   "decision": {
+    "kind": "stay",
+    "reason": "active account at 69%, under the 95% trigger"
+   },
+   "pool": [
+    "personal",
+    "x-unpooled",
+    "w01"
+   ],
+   "profile": "default",
+   "thresholds": {
+    "hard_floor": 98,
+    "landing_margin": 10,
+    "switch_at": 90,
+    "switch_at_weekly": 95
+   }
+  }
+ ]
+}

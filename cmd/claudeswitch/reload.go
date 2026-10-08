@@ -56,6 +56,11 @@ func (r *configReloader) reload() (*config.Config, []string) {
 		return r.cur, nil
 	}
 	r.lastErr = ""
+	// Scope and [project] lines are ignored (lane 16): say so once more
+	// only when an edit changed what is left of them.
+	if w := next.LegacyWarning(); w != "" && w != r.cur.LegacyWarning() {
+		r.log.Warn(w)
+	}
 	changes := configChanges(r.cur, next)
 	r.cur = next
 	if len(changes) > 0 {
@@ -85,7 +90,7 @@ func configChanges(old, next *config.Config) []string {
 			added = append(added, a.ID)
 		case was.Seat() != a.Seat():
 			repinned = append(repinned, a.ID)
-		case was.Scope != a.Scope || was.Reserve != a.Reserve || was.IsEnabled() != a.IsEnabled() ||
+		case was.Reserve != a.Reserve || was.IsEnabled() != a.IsEnabled() ||
 			was.Label != a.Label:
 			other = append(other, a.ID)
 		}
@@ -136,9 +141,6 @@ func configChanges(old, next *config.Config) []string {
 	}
 	if old.RefreshEnabled() != next.RefreshEnabled() {
 		out = append(out, fmt.Sprintf("auto_refresh %v → %v", old.RefreshEnabled(), next.RefreshEnabled()))
-	}
-	if len(old.Projects) != len(next.Projects) || fmt.Sprint(old.Projects) != fmt.Sprint(next.Projects) {
-		out = append(out, "project rules changed")
 	}
 	return out
 }

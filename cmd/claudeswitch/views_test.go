@@ -95,7 +95,7 @@ func TestStatuslineShowsItsOwnProfile(t *testing.T) {
 func TestStatusShowsOneBlockPerProfile(t *testing.T) {
 	_, cfg, st := multiWorld(t)
 	var b bytes.Buffer
-	renderStatus(&b, cfg, st, render.Options{}, nil, time.Now(), "", "")
+	renderStatus(&b, cfg, st, render.Options{}, nil, time.Now(), "")
 	bl := blocks(t, b.String())
 
 	if !strings.Contains(bl["default"], "personal") || strings.Contains(bl["default"], "w1") {
@@ -118,7 +118,7 @@ func TestStatusShowsOneBlockPerProfile(t *testing.T) {
 func TestStatusMultiProfileFooterOnce(t *testing.T) {
 	_, cfg, st := multiWorld(t)
 	var b bytes.Buffer
-	renderStatus(&b, cfg, st, render.Options{}, nil, time.Now(), "", "")
+	renderStatus(&b, cfg, st, render.Options{}, nil, time.Now(), "")
 	out := b.String()
 	for _, once := range []string{"! flagged by the API", "swap idle, forced after"} {
 		if n := strings.Count(out, once); n != 1 {
@@ -140,14 +140,14 @@ func TestStatusSingleProfileIsUnchanged(t *testing.T) {
 	_, cfg, st := pinWorld(t, 40)
 	var b bytes.Buffer
 	renderStatus(&b, cfg, st, render.Options{Vaulted: map[string]bool{"a": true, "b": true},
-		Plans: map[string]string{}, Known: knownAccounts(cfg)}, nil, time.Now(), "", "")
+		Plans: map[string]string{}, Known: knownAccounts(cfg)}, nil, time.Now(), "")
 	checkGolden(t, "status", b.String())
 }
 
 func TestWhyShowsOneBlockPerProfile(t *testing.T) {
 	_, cfg, st := multiWorld(t)
 	var b bytes.Buffer
-	renderWhy(&b, cfg, st, time.Now(), "", "")
+	renderWhy(&b, cfg, st, time.Now(), "")
 	bl := blocks(t, b.String())
 	if !strings.Contains(bl["work"], "rotating to w2") || strings.Contains(bl["work"], "personal") {
 		t.Fatalf("work's reasoning must consider its pool only:\n%s", bl["work"])
@@ -163,7 +163,7 @@ func TestWhyShowsOneBlockPerProfile(t *testing.T) {
 func TestWhySingleProfileIsUnchanged(t *testing.T) {
 	_, cfg, st := pinWorld(t, 90)
 	var b bytes.Buffer
-	renderWhy(&b, cfg, st, time.Now(), "", "")
+	renderWhy(&b, cfg, st, time.Now(), "")
 	checkGolden(t, "why", b.String())
 }
 
@@ -172,7 +172,7 @@ func TestWhySingleProfileIsUnchanged(t *testing.T) {
 func TestWhyJSONMarksTheCurrentProfile(t *testing.T) {
 	_, cfg, st := multiWorld(t)
 	setCCDir(t, "~/.claude-work")
-	out := whyJSON(cfg, st, time.Now(), "", "")
+	out := whyJSON(cfg, st, time.Now(), "")
 	list, _ := out["profiles"].([]map[string]any)
 	if len(list) != 2 {
 		t.Fatalf("profiles = %v", out)
@@ -193,7 +193,7 @@ func TestContextDescribesItsOwnProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	var b bytes.Buffer
-	renderContextIn(&b, cfg, st, &v, time.Now(), true, "")
+	renderContextIn(&b, cfg, st, &v, time.Now(), true)
 	got := b.String()
 	if !strings.Contains(got, "profile work") || !strings.Contains(got, "active w1") ||
 		!strings.Contains(got, "session 75%") || strings.Contains(got, "personal") {

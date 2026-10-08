@@ -24,9 +24,9 @@ func TestWrittenConfigRoundTrips(t *testing.T) {
 		RefreshProbe:  Duration{24 * time.Hour},
 		Priority:      []string{"work", "personal"},
 		Accounts: []Account{
-			{ID: "work", Scope: "work", AccountUUID: "seat-1", OrgID: "org-1",
+			{ID: "work", AccountUUID: "seat-1", OrgID: "org-1",
 				Comment: "someone@example.com · Max 20x"},
-			{ID: "personal", Scope: "personal", Reserve: 70,
+			{ID: "personal", Reserve: 70,
 				AccountUUID: "seat-2", OrgID: "org-2"},
 		},
 	}
@@ -86,34 +86,35 @@ func TestWrittenConfigIsPrivate(t *testing.T) {
 func TestWriteKeepsEverySetting(t *testing.T) {
 	on, off := true, false
 	margin, polls, workMargin := 0.0, 5, 20.0
+	hotReserve, unseen := 0, 4.5 // 0 is a value, not "unset": no hot reserve
 	in := &Config{
 		SwitchAt: 80, SwitchAtWeekly: 95, HardFloor: 99, SwitchWhen: "immediate",
 		HotThreshold:       88,
 		LandingMargin:      &margin,
 		BlindFailoverPolls: &polls,
+		Models:             []string{"Modelname"},
 		Cooldown:           Duration{7 * time.Minute},
 		MaxSwitchWait:      Duration{45 * time.Second},
 		AutoRefresh:        &off,
 		RefreshWindow:      Duration{2 * time.Hour},
 		RefreshProbe:       Duration{12 * time.Hour},
 		PollActive:         Duration{2 * time.Minute},
+		HotReserve:         &hotReserve,
+		UnseenCallsPerHour: &unseen,
 		PollHot:            Duration{time.Minute},
 		PollIdle:           Duration{15 * time.Minute},
 		APIBudget:          10,
 		Priority:           []string{"work", "personal"},
 		Accounts: []Account{
-			{ID: "work", Scope: "work", AccountUUID: "seat-1",
+			{ID: "work", AccountUUID: "seat-1",
 				OrgID: "org-1", Reserve: 60, Enabled: &on},
-			{ID: "personal", Scope: "personal", AccountUUID: "seat-2",
+			{ID: "personal", AccountUUID: "seat-2",
 				OrgID: "org-2", Reserve: 70, Enabled: &off},
-		},
-		Projects: map[string]Project{
-			"~/work/*":     {Eligible: []string{"work"}, Prefer: []string{"work"}},
-			"/tmp/a b/[x]": {Eligible: []string{"work", "personal"}, Prefer: []string{"personal"}},
 		},
 		Profiles: []Profile{
 			{Name: "work", Dir: "~/.claude-work", Pool: []string{"work"},
-				SwitchAt: 75, SwitchAtWeekly: 90, HardFloor: 97, LandingMargin: &workMargin},
+				SwitchAt: 75, SwitchAtWeekly: 90, HardFloor: 97, LandingMargin: &workMargin,
+				Models: []string{"Othermodel"}},
 			{Name: "default", Pool: []string{"personal"}}, // no dir: CLAUDE_CONFIG_DIR unset
 		},
 	}
@@ -132,7 +133,10 @@ func TestWriteKeepsEverySetting(t *testing.T) {
 		raw, _ := os.ReadFile(path)
 		t.Fatalf("what we wrote does not load: %v\n%s", err, raw)
 	}
-	out.Path = ""
+	out.Path, out.Hash = "", "" // where it was read from, and its content hash
+	// Which keys the file carried is bookkeeping for the next Write, not a
+	// setting; it is compared by TestWriteDoesNotPinDefaults instead.
+	out.set = nil
 	if !reflect.DeepEqual(in, out) {
 		raw, _ := os.ReadFile(path)
 		t.Errorf("settings changed on the way through the file:\n in: %+v\nout: %+v\n%s", *in, *out, raw)

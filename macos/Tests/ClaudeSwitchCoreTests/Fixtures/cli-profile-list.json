@@ -1,0 +1,54 @@
+{
+  "ghosts": [
+    {
+      "account": "work-2",
+      "profile": "old",
+      "since": "2026-10-01T09:00:00Z",
+      "why": "removed"
+    }
+  ],
+  "profiles": [
+    {
+      "declared": true,
+      "dir": null,
+      "from_env": false,
+      "live": "work-1",
+      "name": "default",
+      "overrides": {},
+      "pinned": null,
+      "pool": [
+        "work-1",
+        "work-2"
+      ],
+      "signed_in": "yes",
+      "thresholds": {
+        "hard_floor": 98,
+        "landing_margin": 10,
+        "switch_at": 90,
+        "switch_at_weekly": 95
+      }
+    },
+    {
+      "declared": true,
+      "dir": "~/.claude-review",
+      "from_env": false,
+      "live": "personal",
+      "name": "review",
+      "overrides": {
+        "models": "Modelname",
+        "switch_at": "75"
+      },
+      "pinned": "personal",
+      "pool": [
+        "personal"
+      ],
+      "signed_in": "unknown",
+      "thresholds": {
+        "hard_floor": 98,
+        "landing_margin": 10,
+        "switch_at": 75,
+        "switch_at_weekly": 95
+      }
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "action": "status",
+  "binary": null,
+  "binary_is_this": false,
+  "file": "/Users/example/Library/LaunchAgents/xyz.claudeswitch.daemon.plist",
+  "installed": false,
+  "loaded": false,
+  "log": "/Users/example/.local/state/claudeswitch/daemon.log",
+  "mode": null,
+  "platform": "launchd",
+  "running": false,
+  "this_binary": "/Users/example/.local/bin/claudeswitch"
+}

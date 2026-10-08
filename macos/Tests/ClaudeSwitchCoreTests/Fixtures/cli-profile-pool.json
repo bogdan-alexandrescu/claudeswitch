@@ -1,0 +1,14 @@
+{
+  "account": "work-2",
+  "changed": true,
+  "pools": {
+    "default": [
+      "work-1"
+    ],
+    "review": [
+      "personal",
+      "work-2"
+    ]
+  },
+  "profile": "review"
+}

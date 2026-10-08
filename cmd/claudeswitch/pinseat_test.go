@@ -33,7 +33,7 @@ func TestRecordSeatAppendsAPinnedBlockForANewAccount(t *testing.T) {
 	path := writeConfig(t, baseConfig)
 	cfg := loadOrFail(t, path)
 
-	msg, err := recordSeat(cfg, "work-b", "work", gotSeat("person-3", "org-3"), "")
+	msg, err := recordSeat(cfg, "work-b", gotSeat("person-3", "org-3"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,25 +45,11 @@ func TestRecordSeatAppendsAPinnedBlockForANewAccount(t *testing.T) {
 	if len(ord) == 0 || ord[len(ord)-1] != "work-b" {
 		t.Errorf("the new account must be named last in priority, got %v", ord)
 	}
-	for _, a := range after.Accounts {
-		if a.ID == "work-b" && a.Scope != "work" {
-			t.Errorf("scope defaults to work, got %q", a.Scope)
-		}
+	if raw, _ := os.ReadFile(path); strings.Contains(string(raw), "scope") {
+		t.Errorf("a new block has no scope line (lane 16):\n%s", raw)
 	}
 	if !strings.Contains(msg, "work-b") || !strings.Contains(msg, "pinned") {
 		t.Errorf("the message must say what was written: %q", msg)
-	}
-}
-
-func TestRecordSeatRespectsTheScopeAskedFor(t *testing.T) {
-	path := writeConfig(t, baseConfig)
-	if _, err := recordSeat(loadOrFail(t, path), "home", "personal", gotSeat("person-9", "org-9"), ""); err != nil {
-		t.Fatal(err)
-	}
-	for _, a := range loadOrFail(t, path).Accounts {
-		if a.ID == "home" && a.Scope != "personal" {
-			t.Errorf("scope = %q, want personal", a.Scope)
-		}
 	}
 }
 
@@ -91,7 +77,7 @@ eligible = ["work"]
 // account half-added. The login knows the seat; it writes it in place.
 func TestRecordSeatPinsAKnownUnpinnedAccountInPlace(t *testing.T) {
 	path := writeConfig(t, unpinnedConfig)
-	if _, err := recordSeat(loadOrFail(t, path), "fresh", "work", gotSeat("person-5", "org-5"), ""); err != nil {
+	if _, err := recordSeat(loadOrFail(t, path), "fresh", gotSeat("person-5", "org-5"), ""); err != nil {
 		t.Fatal(err)
 	}
 	after := loadOrFail(t, path)
@@ -115,14 +101,14 @@ func TestRecordSeatPinsAKnownUnpinnedAccountInPlace(t *testing.T) {
 			t.Errorf("lost %q:\n%s", want, raw)
 		}
 	}
-	if len(after.Projects) != 1 {
-		t.Errorf("the project table after the block must survive, got %v", after.Projects)
+	if after.Legacy().Projects != 1 {
+		t.Errorf("the legacy project table after the block must survive the edit, got %+v", after.Legacy())
 	}
 }
 
 func TestRecordSeatLeavesAPinnedAccountAlone(t *testing.T) {
 	path := writeConfig(t, baseConfig)
-	msg, err := recordSeat(loadOrFail(t, path), "work-a", "work", gotSeat("person-1", "org-1"), "")
+	msg, err := recordSeat(loadOrFail(t, path), "work-a", gotSeat("person-1", "org-1"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +128,7 @@ func TestRecordSeatRefusesToOverwriteADisagreeingHalfPin(t *testing.T) {
 	body := strings.Replace(unpinnedConfig, `scope = "work"`+"\n\n[project",
 		`scope = "work"`+"\norg_id = \"org-OTHER\"\n\n[project", 1)
 	path := writeConfig(t, body)
-	if _, err := recordSeat(loadOrFail(t, path), "fresh", "work", gotSeat("person-5", "org-5"), ""); err == nil {
+	if _, err := recordSeat(loadOrFail(t, path), "fresh", gotSeat("person-5", "org-5"), ""); err == nil {
 		t.Fatal("a hand-pinned organization that disagrees must be refused")
 	}
 	raw, _ := os.ReadFile(path)
@@ -158,15 +144,15 @@ func TestLoginAcceptsAnAccountTheConfigDoesNotKnow(t *testing.T) {
 	t.Setenv("HOME", home)
 	path := writeConfig(t, baseConfig)
 
-	if err := cmdLogin([]string{"brand-new", "--config", path, "--direct", "--scope", "personal"}); err != nil {
+	if err := cmdLogin([]string{"brand-new", "--config", path, "--direct"}); err != nil {
 		t.Fatalf("login must accept a name the config does not have yet: %v", err)
 	}
 	_, p, err := oauth.LoadPending()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.AccountID != "brand-new" || p.Scope != "personal" {
-		t.Errorf("the pending login must remember the name and scope for --code, got %+v", p)
+	if p.AccountID != "brand-new" {
+		t.Errorf("the pending login must remember the name for --code, got %+v", p)
 	}
 	if _, err := os.Stat(filepath.Join(home, ".local", "state", "claudeswitch", "pending-login.json")); err != nil {
 		t.Errorf("the attempt must be saved under the temporary HOME: %v", err)

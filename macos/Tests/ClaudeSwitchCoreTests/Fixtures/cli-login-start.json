@@ -1,0 +1,10 @@
+{
+  "expires_at": "2026-10-08T06:00:00Z",
+  "pending": {
+    "account": "work-3",
+    "new_account": true,
+    "org_id": null,
+    "profile": "default"
+  },
+  "url": "https://example.com/oauth/authorize?code=true&state=abc"
+}

@@ -2,11 +2,7 @@ package config
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
-
-	"github.com/bogdan-alexandrescu/claudeswitch/internal/ccdir"
 )
 
 // DefaultProfile is the profile unlisted accounts join (D6), and the name of
@@ -34,9 +30,10 @@ const DefaultProfile = "default"
 // in the first case and a suffixed one in the second, and keeps .claude.json in
 // the home directory in the first case and inside ~/.claude in the second.
 //
-// Both may be declared, but they share ~/.claude and its transcripts, so the
-// config loads with a warning (Config.Warnings): activity and refusals may be
-// attributed to the wrong one. Only one profile may omit dir.
+// Declaring both is a config error (lane 10 security review; D12 allowed it
+// with a warning): they share ~/.claude and its transcripts. So is any pair
+// of profiles on one folder, or one inside another's (validateFolders). Only
+// one profile may omit dir.
 type Profile struct {
 	Name string   `toml:"name"`
 	Dir  string   `toml:"dir"`
@@ -48,6 +45,9 @@ type Profile struct {
 	// LandingMargin overrides the global landing_margin. A pointer, because
 	// zero is a real override (no margin) rather than "unset".
 	LandingMargin *float64 `toml:"landing_margin"`
+	// Models overrides the global models list (IMPROVEMENTS I6). Nil
+	// inherits it; an empty list counts no model's limit in this profile.
+	Models []string `toml:"models"`
 
 	// FromEnv marks the implicit profile of a config with no [[profile]]
 	// blocks. Its dir is whatever this process's CLAUDE_CONFIG_DIR says, which
@@ -178,19 +178,17 @@ func (c *Config) ForProfile(profile string) *Config {
 	cp.HardFloor = c.HardFloorFor(profile)
 	m := c.LandingMarginFor(profile)
 	cp.LandingMargin = &m
+	cp.Models = c.ModelsFor(profile)
 	return &cp
 }
 
-// profileDirKey is the directory a profile's files live in, for spotting
-// two profiles that would share one. An omitted dir is ~/.claude.
-func profileDirKey(dir string) string {
-	if dir == "" {
-		dir = "~/.claude"
+// ModelsFor is a profile's effective models list: its own when it declares
+// one, even empty, else the global one.
+func (c *Config) ModelsFor(profile string) []string {
+	if in := c.declared(profile); in.Models != nil {
+		return in.Models
 	}
-	if exp, err := ccdir.ExpandHome(dir); err == nil {
-		dir = exp
-	}
-	return filepath.Clean(dir)
+	return c.Models
 }
 
 func (c *Config) validateProfiles() error {
@@ -215,15 +213,22 @@ func (c *Config) validateProfiles() error {
 
 		// Two profiles without a dir are one profile to Claude Code: they
 		// read the same bare keychain item, so one credential would be live in
-		// both. Two that merely share a directory (no dir and "~/.claude", or
-		// one dir spelled two ways) have separate items and are only a warning
-		// (see sharedDirWarnings).
+		// both. Two that merely share a directory (no dir and "~/.claude", one
+		// dir spelled two ways, a link) have separate items but share their
+		// files, which validateFolders refuses.
 		if in.Dir == "" {
 			if unsetBy != "" {
 				return fmt.Errorf("profiles %q and %q both omit dir; only one profile can be "+
 					"the one Claude Code runs with CLAUDE_CONFIG_DIR unset", unsetBy, in.Name)
 			}
 			unsetBy = in.Name
+		} else if !relativeOK(in.Dir) {
+			// Relative to what? The CLI's working directory and the launchd
+			// daemon's differ, so the two would resolve it to different
+			// folders and disagree about the profile (lane 10 re-review).
+			return fmt.Errorf("profile %q: dir %q is relative, so it would name a different folder "+
+				"for each process that reads it; write it absolute (/…) or from your home (~/…)",
+				in.Name, in.Dir)
 		}
 
 		for _, id := range in.Pool {
@@ -249,6 +254,9 @@ func (c *Config) validateProfiles() error {
 				return fmt.Errorf("profile %q: %s must be between 0 and 100, got %v", in.Name, o.key, o.v)
 			}
 		}
+		if err := validModels(fmt.Sprintf("profile %q: models", in.Name), in.Models); err != nil {
+			return err
+		}
 		if m := in.LandingMargin; m != nil && (*m < 0 || *m > MaxLandingMargin) {
 			return fmt.Errorf("profile %q: landing_margin must be between 0 and %g, got %v",
 				in.Name, MaxLandingMargin, *m)
@@ -257,6 +265,10 @@ func (c *Config) validateProfiles() error {
 			return fmt.Errorf("profile %q: hard_floor (%v) must be at or above switch_at (%v)",
 				in.Name, floor, at)
 		}
+	}
+
+	if err := c.validateFolders(); err != nil {
+		return err
 	}
 
 	if !names[DefaultProfile] {
@@ -275,44 +287,12 @@ func (c *Config) validateProfiles() error {
 	return nil
 }
 
-// sharedDirWarnings names each pair of profiles whose files live in one
-// directory. Owner decision 2026-10-07: allowed, with a warning, rather than a
-// config error. Their keychain items differ, but the transcripts are one
-// directory, so activity and rate-limit refusals cannot be told apart.
-func (c *Config) sharedDirWarnings() []string {
-	var out []string
-	owner := map[string]string{}
-	for _, in := range c.Profiles {
-		key := profileDirKey(in.Dir)
-		if other, ok := owner[key]; ok {
-			out = append(out, fmt.Sprintf("profiles %q and %q share %s; activity and refusals "+
-				"may be attributed to the wrong one", other, in.Name, homeAbbrev(key)))
-			continue
-		}
-		owner[key] = in.Name
-	}
-	return out
-}
-
-// homeAbbrev writes a path under the home directory with a leading ~.
-func homeAbbrev(p string) string {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return p
-	}
-	if p == home {
-		return "~"
-	}
-	if rest, ok := strings.CutPrefix(p, home+string(filepath.Separator)); ok {
-		return "~/" + rest
-	}
-	return p
-}
-
-// profileWarnings is the per-profile part of Warnings: shared directories,
-// and the hard_floor check for each profile that overrides either side of it.
+// profileWarnings is the per-profile part of Warnings: the hard_floor check
+// for each profile that overrides either side of it. (Two profiles on one
+// directory were D12's warning here; since the lane 10 security review they
+// are a config error, validateFolders.)
 func (c *Config) profileWarnings() []string {
-	out := c.sharedDirWarnings()
+	var out []string
 	for _, in := range c.Profiles {
 		weekly, floor := c.SwitchAtWeeklyFor(in.Name), c.HardFloorFor(in.Name)
 		if in.SwitchAtWeekly == 0 && in.HardFloor == 0 {
@@ -345,7 +325,7 @@ func (c *Config) writeProfiles(b *strings.Builder) {
 	b.WriteString("# not overlap. Accounts in no pool join the profile named \"default\".\n")
 	b.WriteString("# dir is CLAUDE_CONFIG_DIR exactly as you launch Claude Code with it;\n")
 	b.WriteString("# no dir means CLAUDE_CONFIG_DIR unset, which is not the same as \"~/.claude\".\n")
-	b.WriteString("# Two profiles on one directory load with a warning: their activity mixes.\n")
+	b.WriteString("# Two profiles may not share a folder, or nest one inside another.\n")
 	for _, in := range c.Profiles {
 		b.WriteString("\n[[profile]]\n")
 		fmt.Fprintf(b, "name = %q\n", in.Name)
@@ -368,6 +348,11 @@ func (c *Config) writeProfiles(b *strings.Builder) {
 		}
 		if in.LandingMargin != nil {
 			fmt.Fprintf(b, "landing_margin   = %g\n", *in.LandingMargin)
+		}
+		// Nil inherits the global list; an empty one turns it off here, so
+		// the two are written differently.
+		if in.Models != nil {
+			fmt.Fprintf(b, "models           = %s\n", tomlStrings(in.Models))
 		}
 	}
 }

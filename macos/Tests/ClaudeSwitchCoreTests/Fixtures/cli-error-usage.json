@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "usage",
+    "hint": "usage: claudeswitch priority \u003cid\u003e...",
+    "message": "name the accounts in order"
+  }
+}

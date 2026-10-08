@@ -19,12 +19,13 @@ func blindCfg() *config.Config {
 	return c
 }
 
-// blindActive is an account whose last good reading is old and whose polls
-// have failed n times in a row since.
+// blindActive is an account whose polls have failed n times in a row, the
+// streak having begun ten minutes ago (over 3 × poll_active).
 func blindActive(n int, five float64) *state.Account {
 	a := reading(five, 20, now.Add(time.Hour))
 	a.LastAt = now.Add(-10 * time.Minute)
 	a.ReadFails = n
+	a.FailSince = now.Add(-10 * time.Minute)
 	a.LastErr = "usage API returned 500"
 	return a
 }
@@ -53,6 +54,11 @@ func TestBlindForThreePollsFailsOverToAHealthyAccount(t *testing.T) {
 	if d.Forced {
 		t.Error("a blind failover must not be forced: it waits for an idle gap like any rotation")
 	}
+	// Owner decision 2026-10-07: never mid-turn, not even after
+	// max_switch_wait. The decision says so, so the daemon can tell.
+	if !d.Failover {
+		t.Error("a blind failover must be marked Failover so the daemon never forces it mid-turn")
+	}
 	if !strings.Contains(d.Reason, "unreadable") {
 		t.Errorf("reason %q does not say the active account was unreadable", d.Reason)
 	}
@@ -62,7 +68,8 @@ func TestBlindForThreePollsFailsOverToAHealthyAccount(t *testing.T) {
 // fails over too.
 func TestNeverReadAndBlindFailsOver(t *testing.T) {
 	in := Input{Cfg: blindCfg(), Now: now, St: st("work-a", map[string]*state.Account{
-		"work-a": {ID: "work-a", ReadFails: 3, LastErr: "usage API returned 500"},
+		"work-a": {ID: "work-a", ReadFails: 3, FailSince: now.Add(-10 * time.Minute),
+			LastErr: "usage API returned 500"},
 		"work-b": reading(20, 20, now.Add(time.Hour)),
 	})}
 	if d := Decide(in); d.Kind != Switch || d.Target != "work-b" {
@@ -94,17 +101,46 @@ func TestBlindFailoverZeroDisablesIt(t *testing.T) {
 }
 
 // Three failures in quick succession (hot polling every 20 s) are not three
-// polls' worth of blindness: the last good reading must also be at least that
-// many active poll intervals old.
+// polls' worth of blindness: the failure streak itself must have lasted at
+// least that many active poll intervals.
 func TestAQuickBurstOfFailuresIsNotBlindness(t *testing.T) {
 	a := blindActive(3, 40)
-	a.LastAt = now.Add(-90 * time.Second) // under 3 × poll_active (6 min)
+	a.FailSince = now.Add(-90 * time.Second) // under 3 × poll_active (6 min)
 	in := Input{Cfg: blindCfg(), Now: now, St: st("work-a", map[string]*state.Account{
 		"work-a": a,
 		"work-b": reading(20, 20, now.Add(time.Hour)),
 	})}
 	if d := Decide(in); d.Kind != Stay {
-		t.Fatalf("got %v, want stay: the last reading is only 90 s old", d)
+		t.Fatalf("got %v, want stay: the reads have only been failing for 90 s", d)
+	}
+}
+
+// Waking from a long sleep: the last good reading is hours old, and the
+// first few polls after wake fail within seconds (network not up yet). Stale
+// readings are not failure duration — the streak is seconds long, so hold.
+func TestWakingFromSleepIsNotBlindness(t *testing.T) {
+	a := blindActive(3, 40)
+	a.LastAt = now.Add(-3 * time.Hour)
+	a.FailSince = now.Add(-15 * time.Second)
+	in := Input{Cfg: blindCfg(), Now: now, St: st("work-a", map[string]*state.Account{
+		"work-a": a,
+		"work-b": reading(20, 20, now.Add(time.Hour)),
+	})}
+	if d := Decide(in); d.Kind != Stay {
+		t.Fatalf("got %v, want stay: three failures in 15 s after wake", d)
+	}
+}
+
+// A count with no recorded start (an older state file) proves no duration.
+func TestAStreakWithNoStartIsNotBlindness(t *testing.T) {
+	a := blindActive(5, 40)
+	a.FailSince = time.Time{}
+	in := Input{Cfg: blindCfg(), Now: now, St: st("work-a", map[string]*state.Account{
+		"work-a": a,
+		"work-b": reading(20, 20, now.Add(time.Hour)),
+	})}
+	if d := Decide(in); d.Kind != Stay {
+		t.Fatalf("got %v, want stay", d)
 	}
 }
 

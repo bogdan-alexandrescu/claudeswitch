@@ -104,11 +104,22 @@ func TestHotPollingFollowsTheConfiguredThreshold(t *testing.T) {
 			slog.New(slog.NewTextHandler(io.Discard, nil)))
 		acct := at(10, c.weekly, now)
 		acct.ID = "a"
+		// Hot polling now also needs movement within reach (DESIGN 4.3c);
+		// this test is about the threshold, so the account is moving.
+		movingAt(p, acct, 1, now)
 		p.schedule("a", now, acct)
 		if got := p.nextPoll["a"].Sub(now); got != c.want {
 			t.Errorf("at %.0f%% weekly the next poll is in %v, want %v", c.weekly, got, c.want)
 		}
 	}
+}
+
+// movingAt makes acct's reading one that rose at rate points a minute over
+// the last minute, as two polls would have left it.
+func movingAt(p *Poller, acct *state.Account, rate float64, now time.Time) {
+	_, worst := acct.Last.Worst()
+	acct.PrevWorst, acct.PrevAt = worst-rate, now.Add(-time.Minute)
+	p.lastMoved[acct.ID] = now
 }
 
 // at builds an account with a reading, for scheduling tests.

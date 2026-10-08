@@ -49,6 +49,15 @@ var (
 
 	// ErrNotFound: the item is not stored at all, so it holds nothing.
 	ErrNotFound = credstore.ErrNotFound
+
+	// For seeding a new profile (I7): the item Claude Code would read for a
+	// dir, whether any spelling of it exists, and a create-only write.
+	LiveServiceName = credstore.LiveServiceName
+	LiveServiceFor  = credstore.LiveServiceFor
+	LiveExistsFor   = credstore.LiveExistsFor
+	CreateLiveItem  = credstore.CreateLiveItem
+	// ErrExists: a create found the item already there; nothing was written.
+	ErrExists = credstore.ErrExists
 )
 
 // Backend describes where credentials live on this platform.

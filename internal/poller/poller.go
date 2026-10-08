@@ -44,10 +44,18 @@ const (
 	// two minutes on top of everything else.
 	ReattributeInterval = 15 * time.Minute
 
-	// FastBurn is utilization points per minute above which the active account
-	// is polled on the short interval whatever its level. Measured 2026-09-10:
-	// heavy use moved 8 points in 3 minutes.
+	// FastBurn is utilization points per minute above which a moving account
+	// within reach of its trigger is polled hot even below hot_threshold.
+	// Measured 2026-09-10: heavy use moved 8 points in 3 minutes.
 	FastBurn = 1.5
+
+	// MovingBurn is the slowest burn, in points a minute, that counts as
+	// moving for the hot cadence (docs/DESIGN.md 4.3c). StillAfter is how
+	// long without a rise in the reading ends "moving": readings are whole
+	// points, so at half a point a minute one in two minute-apart readings
+	// shows no change, and a pair that matches is not yet a pause.
+	MovingBurn = 0.1
+	StillAfter = 5 * time.Minute
 
 	// burstSpacing separates calls made in one on-demand sweep. The endpoint's
 	// limit is a burst allowance; spacing is what keeps a multi-account refresh
@@ -71,6 +79,18 @@ type Poller struct {
 	degradedWhy string
 
 	nextPoll map[string]time.Time
+
+	// now is the clock; a seam so a simulated day can run on a fake one.
+	now func() time.Time
+	// hot is whether each account's last scheduling chose poll_hot.
+	hot map[string]bool
+	// lastIv is each account's last scheduled interval, so cooling from hot
+	// drifts back to poll_active rather than jumping.
+	lastIv map[string]time.Duration
+	// lastMoved is when each account's reading was last seen to rise.
+	lastMoved map[string]time.Time
+	// held is when a budget refusal lets each account be polled again.
+	held map[string]time.Time
 
 	// lastOK is when a poll last succeeded. A daemon that keeps running while
 	// seeing nothing is the most dangerous state this program has: it decides
@@ -174,10 +194,40 @@ func (p *Poller) tokenFor(accountID string) (string, error) {
 	return tok, err
 }
 
+// countFailure adds one unreadable poll to acct's streak, starting the
+// streak's clock on the first.
+func (p *Poller) countFailure(acct *state.Account) {
+	if acct.ReadFails == 0 || acct.FailSince.IsZero() {
+		acct.FailSince = time.Now()
+	}
+	acct.ReadFails++
+}
+
+// staleCopy reports whether token is not the one live in the profile that
+// holds accountID — a vault copy superseded by Claude Code's own refresh.
+// Unknown (not active anywhere, or the live item unreadable) is not stale:
+// the failure then counts.
+func (p *Poller) staleCopy(accountID, token string) bool {
+	inst, ok := p.activeIn(accountID)
+	if !ok {
+		return false
+	}
+	live, err := p.liveOf(inst).Read()
+	if err != nil || live == nil || live.ClaudeAIOAuth == nil {
+		return false
+	}
+	return live.ClaudeAIOAuth.AccessToken != token
+}
+
 // tokenInfo is tokenFor with the access token's expiry, zero when unknown.
 func (p *Poller) tokenInfo(accountID string) (string, time.Time, error) {
 	b, err := readVault(accountID)
 	if err == nil {
+		// The entry names the plan it was vaulted with; recorded so `cs
+		// account list` can show it without the keychain (lane 15).
+		if b.Meta != nil {
+			p.st.SetPlan(accountID, b.Meta.Plan)
+		}
 		return b.ClaudeAIOAuth.AccessToken, b.ClaudeAIOAuth.Expiry(), nil
 	}
 	prof, ok := p.activeIn(accountID)
@@ -200,6 +250,11 @@ func sharedBudgetFor(cfg *config.Config) *usage.Budget {
 	if cfg != nil && cfg.APIBudget > 0 {
 		b.SetAllowance(cfg.APIBudget)
 	}
+	if cfg != nil {
+		if err := b.SetModel(cfg.HotReserveCalls(), cfg.UnseenPerHour()); err != nil {
+			slog.Default().Warn("usage model setting not applied", "err", err)
+		}
+	}
 	return b
 }
 
@@ -215,6 +270,10 @@ func New(cfg *config.Config, st *state.State, log *slog.Logger) *Poller {
 		budget:       sharedBudgetFor(cfg),
 		log:          log,
 		nextPoll:     map[string]time.Time{},
+		now:          time.Now,
+		hot:          map[string]bool{},
+		lastIv:       map[string]time.Duration{},
+		lastMoved:    map[string]time.Time{},
 		lastSeverity: map[string]string{},
 		started:      time.Now(),
 	}
@@ -231,6 +290,9 @@ func (p *Poller) SetConfig(cfg *config.Config) {
 	p.cfg = cfg
 	if cfg.APIBudget > 0 {
 		p.budget.SetAllowance(cfg.APIBudget)
+	}
+	if err := p.budget.SetModel(cfg.HotReserveCalls(), cfg.UnseenPerHour()); err != nil {
+		p.log.Warn("usage model setting not applied", "err", err)
 	}
 	keep := map[string]bool{}
 	for _, a := range cfg.Accounts {
@@ -252,7 +314,7 @@ func (p *Poller) Blind(limit time.Duration) (time.Duration, bool) {
 		// daemon that never gets going is caught too.
 		p.lastOK = p.started
 	}
-	d := time.Since(p.lastOK)
+	d := p.now().Sub(p.lastOK)
 	if d <= limit {
 		return d, false
 	}
@@ -325,6 +387,9 @@ func (p *Poller) PollActiveIn(ctx context.Context, profile string) (*state.Accou
 	// Read into a scratch record first: until the org id comes back we do not
 	// know which configured account this credential belongs to.
 	scratch := &state.Account{ID: "active"}
+	// Whoever is refused on this token next — the vault included — backs off
+	// no further than the live cap.
+	p.budget.MarkLive(blob.ClaudeAIOAuth.AccessToken)
 	p.fetchInto(ctx, scratch, blob.ClaudeAIOAuth.AccessToken, usage.Swap)
 
 	if scratch.Last == nil && scratch.OrgID == "" {
@@ -338,7 +403,7 @@ func (p *Poller) PollActiveIn(ctx context.Context, profile string) (*state.Accou
 		prev := p.attributeIn(profile, "")
 		if prev != Unattributed && scratch.ReadFails > 0 {
 			a := p.st.Get(prev)
-			a.ReadFails += scratch.ReadFails
+			p.countFailure(a)
 			a.LastErr = scratch.LastErr
 			a.TokenExpiry = blob.ClaudeAIOAuth.Expiry()
 		}
@@ -351,16 +416,22 @@ func (p *Poller) PollActiveIn(ctx context.Context, profile string) (*state.Accou
 	acct.TokenExpiry = blob.ClaudeAIOAuth.Expiry()
 	acct.LastErr = scratch.LastErr
 	if scratch.Last != nil {
-		acct.ReadFails = 0
+		acct.ReadFails, acct.FailSince = 0, time.Time{}
+		p.noteMovement(id, acct.Last, scratch.Last)
 		acct.Last = scratch.Last
 		acct.LastAt = scratch.LastAt
-		if !acct.BurntTil.IsZero() && time.Now().After(acct.BurntTil) {
+		if !acct.BurntTil.IsZero() && p.now().After(acct.BurntTil) {
 			acct.BurntTil = time.Time{}
 			acct.BurntWin = ""
 		}
 	}
 	p.noteCrossPool(profile, id)
 	p.st.Profile(profile).SetActive(id)
+	// This was the account's poll: its next scheduled one counts from here,
+	// rather than spending a second call of its allowance on the same figure.
+	if scratch.Last != nil && id != Unattributed {
+		p.schedule(id, p.now(), acct)
+	}
 	return acct, nil
 }
 
@@ -468,7 +539,7 @@ func (p *Poller) RefreshStale(ctx context.Context, maxAge time.Duration) (int, e
 	done := 0
 	for _, a := range p.cfg.Ordered() {
 		acct := p.st.Get(a.ID)
-		if acct.Last != nil && time.Since(acct.LastAt) < maxAge {
+		if acct.Last != nil && p.now().Sub(acct.LastAt) < maxAge {
 			continue
 		}
 		tok, err := p.tokenFor(a.ID)
@@ -479,7 +550,7 @@ func (p *Poller) RefreshStale(ctx context.Context, maxAge time.Duration) (int, e
 		p.budget.Pace(ctx)
 		switch p.fetchInto(ctx, acct, tok, usage.Scheduled) {
 		case usage.ReasonOK:
-		case usage.ReasonLockout:
+		case usage.ReasonLockout, usage.ReasonAccount:
 			continue // this account is backing off; the others are not
 		default:
 			return done, nil // out of budget; the rest keep what they had
@@ -508,13 +579,13 @@ func (p *Poller) RefreshCandidates(ctx context.Context, olderThan time.Duration)
 func (p *Poller) RefreshCandidatesIn(ctx context.Context, olderThan time.Duration, profile string) int {
 	// Once a minute at most. The decision loop runs every twenty seconds, and
 	// re-reading every candidate each time is a burst by another name.
-	if time.Since(p.candidateSweep[profile]) < time.Minute {
+	if p.now().Sub(p.candidateSweep[profile]) < time.Minute {
 		return 0
 	}
 	if p.candidateSweep == nil {
 		p.candidateSweep = map[string]time.Time{}
 	}
-	p.candidateSweep[profile] = time.Now()
+	p.candidateSweep[profile] = p.now()
 	inPool := map[string]bool{}
 	for _, id := range p.poolOf(profile) {
 		inPool[id] = true
@@ -528,8 +599,8 @@ func (p *Poller) RefreshCandidatesIn(ctx context.Context, olderThan time.Duratio
 		acct := p.st.Get(a.ID)
 		// Only what is actually doubtful: fresh figures need no re-reading, and
 		// an account whose reading has outlived its window certainly does.
-		if acct.Last != nil && !acct.ExpiredAt(time.Now()) &&
-			time.Since(acct.LastAt) < olderThan {
+		if acct.Last != nil && !acct.ExpiredAt(p.now()) &&
+			p.now().Sub(acct.LastAt) < olderThan {
 			continue
 		}
 		tok, err := p.tokenFor(a.ID)
@@ -540,7 +611,7 @@ func (p *Poller) RefreshCandidatesIn(ctx context.Context, olderThan time.Duratio
 		switch p.fetchInto(ctx, acct, tok, usage.Scheduled) {
 		case usage.ReasonOK:
 			done++
-		case usage.ReasonLockout:
+		case usage.ReasonLockout, usage.ReasonAccount:
 			continue
 		default:
 			return done
@@ -552,7 +623,7 @@ func (p *Poller) RefreshCandidatesIn(ctx context.Context, olderThan time.Duratio
 // Tick performs at most one scheduled poll, respecting the budget. The daemon
 // calls it on a short timer; it does its own pacing.
 func (p *Poller) Tick(ctx context.Context) {
-	now := time.Now()
+	now := p.now()
 	for _, a := range p.due(now) {
 		// Resolve the credential BEFORE spending from the call budget. An
 		// account with no vault entry cannot be polled at all, and charging the
@@ -567,7 +638,24 @@ func (p *Poller) Tick(ctx context.Context) {
 		}
 		acct := p.st.Get(a.ID)
 		acct.TokenExpiry = exp
-		switch reason := p.fetchInto(ctx, acct, tok, usage.Scheduled); reason {
+		// A hot poll may spend the allowance routine polls hold back for it.
+		// Routine reads keep the full floor, so the reserve rebuilds (at the
+		// 3m default, 20 an hour against a live refill of ~28). Only an
+		// overdue read of the account in use (config.OverdueAfter) may spend
+		// it, down to the swap reserve + 1 — after a hot spell has spent the
+		// reserve — so its reading never reaches the stale-decision cap.
+		priority := usage.Scheduled
+		overdueAt := time.Time{}
+		if p.isActive(a.ID) {
+			overdueAt = acct.LastAt.Add(p.overdueAfter())
+			switch {
+			case p.hot[a.ID]:
+				priority = usage.Hot
+			case !overdueAt.IsZero() && !acct.LastAt.IsZero() && !now.Before(overdueAt):
+				priority = usage.Overdue
+			}
+		}
+		switch reason := p.fetchInto(ctx, acct, tok, priority); reason {
 		case usage.ReasonOK:
 			p.schedule(a.ID, now, acct)
 			return // one API call per tick keeps the budget honest
@@ -575,8 +663,23 @@ func (p *Poller) Tick(ctx context.Context) {
 			// Only this account is backing off. Come back to it when its lock
 			// ends, and give the tick to the next account that is due.
 			if til, locked := p.budget.LockedUntil(tok); locked {
-				p.nextPoll[a.ID] = til
+				p.hold(a.ID, til)
 			}
+			continue
+		case usage.ReasonAccount:
+			// This account's own allowance is down to its reserve (§42).
+			// Come back when it has refilled enough, and give the tick to
+			// the next account: the others' allowances are their own.
+			til := p.budget.AccountReadyAt(tok, priority)
+			// A routine read of the account in use that is refused now comes
+			// back no later than when it becomes overdue, if the allowance
+			// allows an overdue read by then.
+			if priority == usage.Scheduled && !overdueAt.IsZero() && !acct.LastAt.IsZero() {
+				if alt := laterOf(overdueAt, p.budget.AccountReadyAt(tok, usage.Overdue)); alt.Before(til) {
+					til = alt
+				}
+			}
+			p.hold(a.ID, til)
 			continue
 		default:
 			p.log.Debug("skipping scheduled poll", "account", a.ID, "reason", string(reason))
@@ -598,11 +701,46 @@ func (p *Poller) mayPollHot(profile string) bool {
 	return p.Busy(profile)
 }
 
+// overdueAfter is how old the reading of the account in use may get before
+// a routine read of it is Overdue: config.OverdueAfter (3m15s at the 3m
+// default). With the overdue read's wait for its allowance it must stay below
+// the daemon's stale-decision cap (4m at the default), or every evaluation
+// after a hot spell logs "deciding on a stale reading".
+func (p *Poller) overdueAfter() time.Duration {
+	iv := p.cfg.PollActive.Duration
+	if iv <= 0 {
+		iv = ActiveInterval
+	}
+	return config.OverdueAfter(iv)
+}
+
+func laterOf(a, b time.Time) time.Time {
+	if a.After(b) {
+		return a
+	}
+	return b
+}
+
+// hold puts off an account's next poll until til because the budget refused
+// it: a 429's lock, or its own allowance. Unlike a schedule, a hold is not
+// pulled in when the account becomes the one in use.
+func (p *Poller) hold(id string, til time.Time) {
+	p.nextPoll[id] = til
+	if p.held == nil {
+		p.held = map[string]time.Time{}
+	}
+	p.held[id] = til
+}
+
 // due lists accounts whose next poll time has arrived, active first.
+//
+// An account that has just become the one in use may still carry an idle
+// schedule, up to poll_idle away; it is due once its reading is poll_active
+// old instead, unless the budget is holding it off.
 func (p *Poller) due(now time.Time) []config.Account {
 	var out []config.Account
 	for _, a := range p.cfg.Ordered() {
-		if t, ok := p.nextPoll[a.ID]; ok && now.Before(t) {
+		if t, ok := p.nextPoll[a.ID]; ok && now.Before(t) && !p.overdueActive(a.ID, now) {
 			continue
 		}
 		if p.isActive(a.ID) {
@@ -614,7 +752,91 @@ func (p *Poller) due(now time.Time) []config.Account {
 	return out
 }
 
+func (p *Poller) overdueActive(id string, now time.Time) bool {
+	if now.Before(p.held[id]) || !p.isActive(id) {
+		return false
+	}
+	acct, ok := p.st.Accounts[id]
+	if !ok || acct.LastAt.IsZero() {
+		return false
+	}
+	iv := p.cfg.PollActive.Duration
+	if iv <= 0 {
+		iv = ActiveInterval
+	}
+	return !now.Before(acct.LastAt.Add(iv))
+}
+
+// noteMovement records when an account's reading rose, for the hot cadence.
+// A fall is a window reset: whatever was moving has stopped.
+func (p *Poller) noteMovement(id string, prev, cur *usage.Usage) {
+	if prev == nil || cur == nil || p.lastMoved == nil {
+		return
+	}
+	_, was := prev.Worst()
+	_, is := cur.Worst()
+	switch {
+	case is > was:
+		p.lastMoved[id] = cur.FetchedAt
+	case is < was:
+		delete(p.lastMoved, id)
+	}
+}
+
+// stillAfter is how long without a rise ends "moving" at this burn rate: the
+// time a point and a half takes at that rate — a whole-point reading must
+// show a rise within it if the burn goes on — but at least two hot polls and
+// at most StillAfter. A fixed five minutes kept a spell that had stopped
+// polling hot for five more calls, spending the hot reserve on a reading that
+// was standing still, and left the next routine read waiting on its refill
+// past the daemon's 3m stale-decision cap (final review, 2026-10-07).
+func (p *Poller) stillAfter(rate float64) time.Duration {
+	hot := p.cfg.PollHot.Duration
+	if hot <= 0 {
+		hot = ActiveHotInterval
+	}
+	d := time.Duration(1.5 / rate * float64(time.Minute))
+	return max(2*hot, min(d, StillAfter))
+}
+
+// isHot is the movement-driven test (docs/DESIGN.md 4.3c): the account is
+// moving — its reading rose within StillAfter, at MovingBurn or faster — and
+// at that rate it reaches its trigger within config.HotLookahead. Standing
+// still near the line is not hot: nothing is changing, and a faster reading
+// would say the same thing. hot_threshold stays a floor, crossed early only
+// by a fast burn.
+func (p *Poller) isHot(id string, now time.Time, acct *state.Account) bool {
+	if acct.Last == nil {
+		return false
+	}
+	moved, ok := p.lastMoved[id]
+	if !ok {
+		return false
+	}
+	rate := acct.BurnRate()
+	if rate < MovingBurn || now.Sub(moved) >= p.stillAfter(rate) {
+		return false
+	}
+	five, seven := p.cfg.SwitchAt, p.cfg.SwitchAtWeekly
+	if five <= 0 {
+		five = config.DefaultSwitchAt
+	}
+	if seven <= 0 {
+		seven = config.DefaultSwitchAtWeekly
+	}
+	_, worst, over := acct.Last.WorstAgainst(five, seven)
+	if -over > rate*config.HotLookahead.Minutes() {
+		return false // moving, but the trigger is out of reach
+	}
+	floor := p.cfg.HotThreshold
+	if floor <= 0 {
+		floor = HotThreshold
+	}
+	return worst >= floor || rate >= FastBurn
+}
+
 func (p *Poller) schedule(id string, now time.Time, acct *state.Account) {
+	delete(p.held, id)
 	// An exhausted account becomes usable at a time the API already told us.
 	// Waiting out a ten-minute idle interval to notice means ten minutes of
 	// believing there is nowhere to rotate to, while there is.
@@ -630,29 +852,30 @@ func (p *Poller) schedule(id string, now time.Time, acct *state.Account) {
 	if iv <= 0 {
 		iv = IdleInterval
 	}
+	hot := false
 	// Active in any profile is active: it is the one being spent there.
 	if prof, active := p.activeIn(id); active {
 		iv = p.cfg.PollActive.Duration
 		if iv <= 0 {
 			iv = ActiveInterval
 		}
-		if acct.Last != nil && p.mayPollHot(prof) {
-			_, worst := acct.Last.Worst()
-			// Poll faster when close to the line, and also when burning fast
-			// regardless of level: at 3 points a minute a four-minute gap is
-			// twelve points of drift, which is enough to sail past the trigger
-			// between polls.
-			hot := p.cfg.HotThreshold
-			if hot <= 0 {
-				hot = HotThreshold
+		if p.mayPollHot(prof) && p.isHot(id, now, acct) {
+			hot = true
+			iv = p.cfg.PollHot.Duration
+			if iv <= 0 {
+				iv = ActiveHotInterval
 			}
-			if worst >= hot || acct.BurnRate() >= FastBurn {
-				iv = p.cfg.PollHot.Duration
-				if iv <= 0 {
-					iv = ActiveHotInterval
-				}
-			}
+		} else if prev := p.lastIv[id]; prev > 0 && 2*prev < iv {
+			// Cooling: drift back by doubling, so a pause between turns
+			// does not drop the close watch all at once.
+			iv = 2 * prev
 		}
+	}
+	if p.hot != nil {
+		p.hot[id] = hot
+	}
+	if p.lastIv != nil {
+		p.lastIv[id] = iv
 	}
 	p.nextPoll[id] = now.Add(iv)
 }
@@ -685,15 +908,10 @@ func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token strin
 			}
 			acct.LastErr = rl.Error()
 			// Report the backoff actually applied, not the header value: the
-			// endpoint sends Retry-After: 0, and logging that was misleading.
-			effective := rl.RetryAfter
-			if effective < usage.MinBackoff {
-				effective = usage.MinBackoff
-			}
+			// endpoint sends Retry-After: 0, which means nothing (§42).
 			wait, strikes := p.budget.CurrentBackoff(token)
 			p.log.Warn("usage API refused us; backing off",
 				"account", acct.ID, "consecutive", strikes, "waiting", wait.Round(time.Second))
-			_ = effective
 			return usage.ReasonOK
 		}
 		if usage.IsShapeError(err) {
@@ -703,17 +921,23 @@ func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token strin
 		// An unreadable poll, for the blind-failover count (IMPROVEMENTS A2).
 		// The 429 above is not one: it is the endpoint's own burst limit and
 		// clears by itself (GROUND_TRUTH §42). Nor is our own cancellation.
-		if ctx.Err() == nil {
-			acct.ReadFails++
+		//
+		// Nor is a rejected token that is only a stale copy: Claude Code's own
+		// refresh revokes the vault's copy of the active account's token until
+		// the daemon re-captures it. If the profile holding this account has
+		// a different token live, the 401 is about our copy, not the account.
+		if ctx.Err() == nil && !(usage.IsTokenRejected(err) && p.staleCopy(acct.ID, token)) {
+			p.countFailure(acct)
 		}
 		return usage.ReasonOK
 	}
-	acct.ReadFails = 0
+	acct.ReadFails, acct.FailSince = 0, time.Time{}
 	// Keep the previous reading so a burn rate can be computed.
 	if acct.Last != nil && !acct.LastAt.IsZero() {
 		_, prev := acct.Last.Worst()
 		acct.PrevWorst, acct.PrevAt = prev, acct.LastAt
 	}
+	p.noteMovement(acct.ID, acct.Last, u)
 	acct.Last = u
 	// Remember the rate while we can still see it. Once polling stalls the pair
 	// of readings goes flat and no rate can be derived from it, so the value
@@ -737,7 +961,7 @@ func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token strin
 		acct.Seat = seat
 	}
 	// A reading that shows headroom clears a burn whose window has reset.
-	if !acct.BurntTil.IsZero() && time.Now().After(acct.BurntTil) {
+	if !acct.BurntTil.IsZero() && p.now().After(acct.BurntTil) {
 		acct.BurntTil = time.Time{}
 		acct.BurntWin = ""
 	}
@@ -753,7 +977,13 @@ func (p *Poller) noteSeverity(accountID string, u *usage.Usage) {
 		if l.Severity == "" {
 			continue
 		}
-		key := accountID + "/" + l.Kind
+		// Per-model weekly limits share a kind, so the model is part of the
+		// key: otherwise two of them would read as one limit flapping.
+		name := l.Kind
+		if m := l.ModelName(); m != "" {
+			name += ":" + m
+		}
+		key := accountID + "/" + name
 		prev, seen := p.lastSeverity[key]
 		if seen && prev == l.Severity {
 			continue
@@ -762,10 +992,10 @@ func (p *Poller) noteSeverity(accountID string, u *usage.Usage) {
 		if !seen {
 			continue // first sighting is a baseline, not a transition
 		}
-		p.log.Info("severity changed", "account", accountID, "limit", l.Kind,
-			"from", prev, "to", l.Severity, "percent", l.Percent)
+		p.log.Info("severity changed", "account", accountID, "limit", name,
+			"from", prev, "to", l.Severity, "percent", l.Pct())
 		if p.OnSeverityChange != nil {
-			p.OnSeverityChange(accountID, l.Kind, prev, l.Severity, l.Percent)
+			p.OnSeverityChange(accountID, name, prev, l.Severity, l.Pct())
 		}
 	}
 }

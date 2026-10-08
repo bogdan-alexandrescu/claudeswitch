@@ -153,6 +153,8 @@ private final class Drain {
 public enum CLIError: Error, Equatable {
     case missing
     case tooOld(version: String)
+    /// A newer CLI whose app contract this app does not speak.
+    case unsupportedContract(version: String, contract: Int)
     case failed(String)
     case unreadable(String)
 
@@ -161,16 +163,15 @@ public enum CLIError: Error, Equatable {
         case .missing:
             return "claudeswitch is not installed, or not where this app looks."
         case .tooOld(let v):
-            return "claudeswitch \(v) is too old for this app (it needs \(CLI.minimumVersion) or later)."
+            return "claudeswitch \(v) is too old for this app: it needs \(CLI.minimumVersion) or later, "
+                + "speaking the app's contract \(CLI.requiredContract). Update claudeswitch."
+        case .unsupportedContract(let v, let c):
+            return "claudeswitch \(v) speaks the app's contract \(c); this app speaks "
+                + "\(CLI.supportedContracts.lowerBound). Update ClaudeSwitch (./install-app.sh) to match it."
         case .failed(let s): return s
         case .unreadable(let s): return s
         }
     }
-}
-
-public struct UseOutcome: Equatable {
-    public var ok: Bool
-    public var message: String
 }
 
 /// The claudeswitch binary, driven through its keychain-free commands.
@@ -180,14 +181,25 @@ public struct UseOutcome: Equatable {
 /// refreshes stale readings through the usage API. `why --json` and
 /// `config --json` read only config.toml and state.json.
 public struct CLI {
-    /// `why --json` and `config --json` first shipped before 0.4.1.
-    public static let minimumVersion = "0.4.0"
+    /// The JSON CLI the app acts through (docs/APP_CLI.md, lane 12) shipped
+    /// after 0.5.0.
+    public static let minimumVersion = "0.5.1"
+    /// The app contract this app is built against (docs/APP_CLI.md): 2 is
+    /// lane 16's (scope removed, `add --from`, `best`; with lane 15's
+    /// `listed`, `account list` and `profile remove`). A version string
+    /// cannot tell a dev build from before them from a current one, so
+    /// `version --json` is asked, and a binary without the contract is too
+    /// old (B8).
+    public static let requiredContract = 2
+    /// The contracts this app speaks: a newer one may have changed what it
+    /// reads, so it is refused too (review), naming the app as what to update.
+    public static let supportedContracts = 2...2
     public static let installSteps = """
-        Install it from a source checkout:
+        Install or update it from a source checkout:
           git clone https://github.com/bogdan-alexandrescu/claudeswitch
           cd claudeswitch && ./install.sh
         or download a release binary into ~/.local/bin/claudeswitch.
-        If it lives elsewhere, choose it with Binary… below.
+        If it lives elsewhere, choose it in Settings → Advanced → Choose….
         """
 
     public var path: String
@@ -220,11 +232,26 @@ public struct CLI {
         return true
     }
 
+    /// The app contract `version --json` names; nil from a binary that
+    /// predates it (its plain version line is not JSON).
+    public func contract() -> Int? {
+        let r = runner.run(path, ["version", "--json"], timeout: 10)
+        guard r.exitCode == 0, let j = JSON(data: r.stdout), let n = j["contract"].double else { return nil }
+        return Int(n)
+    }
+
+    /// The version, when it is new enough and speaks the app's contract.
     public func checkVersion() -> Result<String, CLIError> {
         guard let v = version() else {
             return .failure(.failed("`\(path) version` did not answer as claudeswitch does."))
         }
-        return Self.supports(version: v) ? .success(v) : .failure(.tooOld(version: v))
+        guard Self.supports(version: v), let c = contract(), c >= Self.requiredContract else {
+            return .failure(.tooOld(version: v))
+        }
+        guard Self.supportedContracts.contains(c) else {
+            return .failure(.unsupportedContract(version: v, contract: c))
+        }
+        return .success(v)
     }
 
     public func why() -> Result<WhyReport, CLIError> {
@@ -251,17 +278,6 @@ public struct CLI {
         guard let first = id.unicodeScalars.first, first != "-" else { return false }
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._-@"))
         return id.unicodeScalars.allSatisfy { allowed.contains($0) }
-    }
-
-    /// `claudeswitch use <id>`: swaps the live credential.
-    public func use(_ id: String) -> UseOutcome {
-        guard Self.validID(id) else { return UseOutcome(ok: false, message: "\"\(id)\" is not an account id.") }
-        let r = runner.run(path, ["use", id], timeout: 90)
-        if r.timedOut { return UseOutcome(ok: false, message: "`claudeswitch use \(id)` did not finish in time.") }
-        if r.exitCode == 0 {
-            return UseOutcome(ok: true, message: Self.tidy(r.stdoutText, fallback: "now using \(id)"))
-        }
-        return UseOutcome(ok: false, message: Self.tidy(r.stderrText, fallback: "exit status \(r.exitCode)"))
     }
 
     func commandError(_ r: CommandResult, _ what: String) -> CLIError? {

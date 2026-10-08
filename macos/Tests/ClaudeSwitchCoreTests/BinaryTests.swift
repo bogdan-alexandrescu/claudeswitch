@@ -68,15 +68,11 @@ enum FakeBinary {
         return try write(in: dir, script: """
             D="$(dirname "$0")"
             echo "$@" >> "$D/args.log"
-            case "$1" in
-              version) echo "claudeswitch 0.4.8" ;;
-              why) cat "$D/why.json" ;;
-              config) cat "$D/config.json" ;;
-              use)
-                if [ "$2" = "work-2" ]; then
-                  echo "claudeswitch: account \\"work-2\\" is not in the vault. Log in to it" >&2; exit 1
-                fi
-                printf '\\n  ✓ now using %s\\n    5-hour 3.0%%   7-day 41.0%%   org 11111111\\n\\n' "$2" ;;
+            case "$1 $2" in
+              "version --json") echo '{"version": "0.5.1", "contract": 2}' ;;
+              "version "*) echo "claudeswitch 0.5.1" ;;
+              "why "*) cat "$D/why.json" ;;
+              "config "*) cat "$D/config.json" ;;
               *) echo "usage" >&2; exit 2 ;;
             esac
             """)
@@ -98,32 +94,16 @@ enum FakeBinary {
 
     @Test func testReadsWhyAndConfigThroughTheBinary() throws {
         let cli = CLI(path: try FakeBinary.current(in: dir))
-        #expect(try cli.checkVersion().get() == "0.4.8")
+        #expect(try cli.checkVersion().get() == "0.5.1")
         #expect(try cli.why().get().primary?.decision?.kind == "stay")
         #expect(try cli.settings().get().switchAt == 90)
-        #expect(args() == ["version", "why --json", "config --json"], "only keychain-free commands are run to read")
+        #expect(args() == ["version", "version --json", "why --json", "config --json"], "only keychain-free commands are run to read")
     }
 
-    @Test func testUseReportsSuccess() throws {
-        let cli = CLI(path: try FakeBinary.current(in: dir))
-        let r = cli.use("work-1")
-        #expect(r.ok)
-        #expect(r.message == "✓ now using work-1\n5-hour 3.0%   7-day 41.0%   org 11111111")
-        #expect(args() == ["use work-1"])
-    }
-
-    @Test func testUseReportsTheBinarysError() throws {
-        let r = CLI(path: try FakeBinary.current(in: dir)).use("work-2")
-        #expect(!(r.ok))
-        #expect(r.message == "account \"work-2\" is not in the vault. Log in to it")
-    }
-
-    @Test func testUseRefusesAnIdThatCouldBeAFlag() throws {
-        let cli = CLI(path: try FakeBinary.current(in: dir))
-        #expect(!(cli.use("--dry-run").ok))
-        #expect(!(cli.use("a b").ok))
-        #expect(!(cli.use("").ok))
-        #expect(args() == [], "nothing was run")
+    @Test func testIDsThatCouldBeFlagsAreNotIDs() {
+        #expect(!CLI.validID("--dry-run"))
+        #expect(!CLI.validID("a b"))
+        #expect(!CLI.validID(""))
         #expect(CLI.validID("work-1"))
         #expect(CLI.validID("team.alpha_2"))
     }
@@ -155,12 +135,13 @@ enum FakeBinary {
     }
 
     @Test func testVersions() {
-        #expect(CLI.supports(version: "0.4.8"))
-        #expect(CLI.supports(version: "v0.4.0"))
+        #expect(CLI.supports(version: "0.5.1"))
+        #expect(CLI.supports(version: "v0.5.1"))
         #expect(CLI.supports(version: "1.0"))
         #expect(CLI.supports(version: "0.10.0"))
         #expect(CLI.supports(version: "dev"))
-        #expect(CLI.supports(version: "0.5.0-rc1"))
+        #expect(CLI.supports(version: "0.5.1-rc1"))
+        #expect(!(CLI.supports(version: "0.5.0")))
         #expect(!(CLI.supports(version: "0.3.9")))
         #expect(!(CLI.supports(version: "v0.1")))
     }
@@ -236,9 +217,9 @@ enum FakeBinary {
     @Test func testChecksOncePerBinary() throws {
         let p = try FakeBinary.current(in: dir)
         var cache = VersionCache()
-        #expect(try cache.check(CLI(path: p)).get() == "0.4.8")
-        #expect(try cache.check(CLI(path: p)).get() == "0.4.8")
-        #expect(calls() == 1, "the second check came from the cache")
+        #expect(try cache.check(CLI(path: p)).get() == "0.5.1")
+        #expect(try cache.check(CLI(path: p)).get() == "0.5.1")
+        #expect(calls() == 2, "version and the contract once; the second check came from the cache")
 
         // Replaced in place (an upgrade): checked again.
         try FakeBinary.write(in: dir, script: """
@@ -247,7 +228,7 @@ enum FakeBinary {
         try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)],
                                               ofItemAtPath: p)
         #expect(cache.check(CLI(path: p)) == .failure(.tooOld(version: "0.3.0")))
-        #expect(calls() == 2)
+        #expect(calls() == 3)
     }
 
     @Test func testAFailureIsNotCached() throws {

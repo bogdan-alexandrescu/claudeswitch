@@ -8,12 +8,12 @@
       "last_usage": {
         "five_hour": {
           "utilization": 12,
-          "resets_at": "2026-10-08T03:57:15Z",
+          "resets_at": "2026-10-08T04:46:41Z",
           "locked_reason": null
         },
         "seven_day": {
           "utilization": 8,
-          "resets_at": "2026-10-13T01:57:15Z",
+          "resets_at": "2026-10-13T02:46:41Z",
           "locked_reason": null
         },
         "limits": null,
@@ -36,7 +36,7 @@
           "currency": ""
         }
       },
-      "last_at": "2026-10-08T01:54:15Z",
+      "last_at": "2026-10-08T02:43:41Z",
       "last_error": "usage API: 401 Unauthorized",
       "prev_at": "0001-01-01T00:00:00Z",
       "burnt_until": "0001-01-01T00:00:00Z",
@@ -50,12 +50,12 @@
       "last_usage": {
         "five_hour": {
           "utilization": 3,
-          "resets_at": "2026-10-08T03:57:15Z",
+          "resets_at": "2026-10-08T04:46:41Z",
           "locked_reason": null
         },
         "seven_day": {
           "utilization": 41,
-          "resets_at": "2026-10-11T01:57:15Z",
+          "resets_at": "2026-10-11T02:46:41Z",
           "locked_reason": null
         },
         "limits": [
@@ -65,7 +65,8 @@
             "percent": 3,
             "severity": "normal",
             "is_active": false,
-            "resets_at": "2026-10-08T03:57:15Z"
+            "resets_at": "2026-10-08T04:46:41Z",
+            "scope": null
           },
           {
             "kind": "weekly_all",
@@ -73,7 +74,8 @@
             "percent": 41,
             "severity": "normal",
             "is_active": true,
-            "resets_at": "2026-10-11T01:57:15Z"
+            "resets_at": "2026-10-11T02:46:41Z",
+            "scope": null
           },
           {
             "kind": "weekly_scoped",
@@ -81,7 +83,14 @@
             "percent": 12,
             "severity": "normal",
             "is_active": false,
-            "resets_at": "2026-10-11T01:57:15Z"
+            "resets_at": "2026-10-11T02:46:41Z",
+            "scope": {
+              "model": {
+                "id": null,
+                "display_name": "Modelname"
+              },
+              "surface": null
+            }
           }
         ],
         "spend": {
@@ -103,9 +112,9 @@
           "currency": ""
         }
       },
-      "last_at": "2026-10-08T01:56:15Z",
+      "last_at": "2026-10-08T02:45:41Z",
       "prev_worst": 40.5,
-      "prev_at": "2026-10-08T01:54:15Z",
+      "prev_at": "2026-10-08T02:43:41Z",
       "burnt_until": "0001-01-01T00:00:00Z",
       "refresh_expiry": "0001-01-01T00:00:00Z",
       "token_expiry": "0001-01-01T00:00:00Z"
@@ -117,12 +126,12 @@
       "last_usage": {
         "five_hour": {
           "utilization": 100,
-          "resets_at": "2026-10-08T02:37:15Z",
+          "resets_at": "2026-10-08T03:26:41Z",
           "locked_reason": null
         },
         "seven_day": {
           "utilization": 77,
-          "resets_at": "2026-10-13T01:57:15Z",
+          "resets_at": "2026-10-13T02:46:41Z",
           "locked_reason": null
         },
         "limits": [
@@ -132,7 +141,8 @@
             "percent": 100,
             "severity": "exceeded",
             "is_active": true,
-            "resets_at": "2026-10-08T02:37:15Z"
+            "resets_at": "2026-10-08T03:26:41Z",
+            "scope": null
           }
         ],
         "spend": {
@@ -154,9 +164,9 @@
           "currency": ""
         }
       },
-      "last_at": "2026-10-08T01:56:15Z",
+      "last_at": "2026-10-08T02:45:41Z",
       "prev_at": "0001-01-01T00:00:00Z",
-      "burnt_until": "2026-10-08T02:37:15Z",
+      "burnt_until": "2026-10-08T03:26:41Z",
       "burnt_window": "five_hour",
       "refresh_expiry": "0001-01-01T00:00:00Z",
       "token_expiry": "0001-01-01T00:00:00Z"
@@ -165,8 +175,8 @@
   "profiles": {
     "default": {
       "active_account": "work-1",
-      "last_switch": "2026-10-08T01:54:15Z",
-      "active_at": "2026-10-08T01:54:15Z"
+      "last_switch": "2026-10-08T02:43:41Z",
+      "active_at": "2026-10-08T02:43:41Z"
     },
     "review": {
       "active_account": "personal",
@@ -176,7 +186,7 @@
     }
   },
   "daemon_live": false,
-  "daemon_since": "2026-10-08T01:54:15Z",
+  "daemon_since": "2026-10-08T02:43:41Z",
   "daemon_build_time": "0001-01-01T00:00:00Z",
-  "saved_at": "2026-10-07T18:57:15.637208-07:00"
+  "saved_at": "2026-10-07T19:46:42.423469-07:00"
 }

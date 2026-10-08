@@ -17,13 +17,13 @@ func checkNewAccountID(id string) error { return config.ValidName("account id", 
 // newAccountNotice is what login says before signing in to an account the
 // config does not have: where its block goes and, with profiles declared,
 // whose pool it joins (D20).
-func newAccountNotice(cfg *config.Config, target config.Profile, id, scope string) string {
+func newAccountNotice(cfg *config.Config, target config.Profile, id string) string {
 	s := fmt.Sprintf("  %q is new. Once signed in, it is vaulted and added to %s,\n", id, cfg.Path)
 	if pool := poolToJoin(cfg, target); pool != "" {
-		s += fmt.Sprintf("  pinned to the seat that signed in (scope %s), in profile %q's pool.\n\n", scope, pool)
+		s += fmt.Sprintf("  pinned to the seat that signed in, in profile %q's pool.\n\n", pool)
 		return s
 	}
-	s += fmt.Sprintf("  pinned to the seat that signed in (scope %s).\n\n", scope)
+	s += "  pinned to the seat that signed in.\n\n"
 	return s
 }
 

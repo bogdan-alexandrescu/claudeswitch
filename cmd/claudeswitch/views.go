@@ -50,10 +50,10 @@ func profileViews(cfg *config.Config, st *state.State, only string) []profileVie
 }
 
 // input is the policy question for this profile, asked as the daemon asks it.
-func (v profileView) input(st *state.State, now time.Time, dir string) policy.Input {
+func (v profileView) input(st *state.State, now time.Time) policy.Input {
 	in := policy.Input{
 		Cfg: v.cfg, St: st, Now: now, LastSwitch: v.ist.LastSwitch, Pinned: v.ist.Pinned,
-		Dir: dir, Lookahead: lookahead(v.cfg),
+		Lookahead: lookahead(v.cfg),
 	}
 	if v.declared {
 		in.Pool, in.Live = v.pool, v.ist
@@ -136,12 +136,12 @@ func switchesFor(evs []audit.Event, name string) []audit.Event {
 // profile, one block per profile, each with its own pool, active account,
 // decision and thresholds; otherwise the single view, unchanged.
 func renderStatus(w io.Writer, cfg *config.Config, st *state.State, base render.Options,
-	switches []audit.Event, now time.Time, dir, only string) {
+	switches []audit.Event, now time.Time, only string) {
 	views := profileViews(cfg, st, only)
 	multi := multiProfile(cfg)
 	for _, v := range views {
 		o := v.options(base, st)
-		dec := policy.Decide(v.input(st, now, dir))
+		dec := policy.Decide(v.input(st, now))
 		o.Decision = &dec
 		o.Switches = switches
 		if multi {
@@ -161,35 +161,80 @@ func renderStatus(w io.Writer, cfg *config.Config, st *state.State, base render.
 }
 
 // renderWhy writes `why`, one block per profile when there is more than one.
-func renderWhy(w io.Writer, cfg *config.Config, st *state.State, now time.Time, dir, only string) {
+func renderWhy(w io.Writer, cfg *config.Config, st *state.State, now time.Time, only string) {
 	for _, v := range profileViews(cfg, st, only) {
 		if multiProfile(cfg) {
 			v.heading(w)
 		}
-		dec, verdicts := policy.Explain(v.input(st, now, dir))
-		render.Why(w, render.WhyOptions{Cfg: v.cfg, St: st, Decision: dec, Verdicts: verdicts, Dir: dir})
+		dec, verdicts := policy.Explain(v.input(st, now))
+		render.Why(w, render.WhyOptions{Cfg: v.cfg, St: st, Decision: dec, Verdicts: verdicts})
 	}
 }
 
-// whyJSON is `why --json`: unchanged with one profile, and with more an
-// "profiles" list holding each one's decision and accounts.
-func whyJSON(cfg *config.Config, st *state.State, now time.Time, dir, only string) map[string]any {
+// whyJSON is `why --json`: with one profile {"decision", "accounts",
+// "best", "best_why"}, and with more a "profiles" list holding each one's
+// decision, accounts and best account.
+//
+// best is the account the app's "Switch to best" switches the profile to
+// now (policy.Best), null when there is none; best_why says why there is
+// none, null when there is one (lane 16).
+func whyJSON(cfg *config.Config, st *state.State, now time.Time, only string) map[string]any {
 	views := profileViews(cfg, st, only)
 	if !multiProfile(cfg) {
-		dec, verdicts := policy.Explain(views[0].input(st, now, dir))
-		return map[string]any{"decision": decisionJSON(dec), "accounts": verdictsJSON(verdicts), "dir": dir}
+		in := views[0].input(st, now)
+		dec, verdicts := policy.Explain(in)
+		m := map[string]any{"decision": decisionJSON(dec), "accounts": verdictsJSON(verdicts, views[0].cfg, st, now)}
+		addBest(m, in, "", cfg, st, now)
+		return m
 	}
 	var list []map[string]any
 	for _, v := range views {
-		dec, verdicts := policy.Explain(v.input(st, now, dir))
+		in := v.input(st, now)
+		dec, verdicts := policy.Explain(in)
 		m := map[string]any{
 			"profile": v.in.Name, "pool": v.pool, "thresholds": thresholdsJSON(v.cfg),
-			"decision": decisionJSON(dec), "accounts": verdictsJSON(verdicts),
+			"decision": decisionJSON(dec), "accounts": verdictsJSON(verdicts, v.cfg, st, now),
 		}
+		addBest(m, in, v.in.Name, cfg, st, now)
 		markCurrent(m, cfg, v.in.Name)
 		list = append(list, m)
 	}
-	return map[string]any{"profiles": list, "dir": dir}
+	return map[string]any{"profiles": list}
+}
+
+// addBest adds "best" and "best_why" for one profile's policy input.
+func addBest(m map[string]any, in policy.Input, name string, cfg *config.Config, st *state.State, now time.Time) {
+	in.Unavailable = bestExclusions(cfg, st, name, now)
+	best, why := policy.Best(in, name)
+	m["best"], m["best_why"] = orNull(best), orNull(why)
+}
+
+// bestExclusions are the accounts "Switch to best" must never offer in
+// profile name (owner decision, lane 16): live in another profile, or maybe
+// live there (a ghost guards it, D18/D22), and accounts only a sign-in
+// brings back. From config and state alone, like the rest of `why`.
+func bestExclusions(cfg *config.Config, st *state.State, name string, now time.Time) map[string]string {
+	if name == "" {
+		name = state.DefaultProfile
+	}
+	out := map[string]string{}
+	for _, a := range cfg.Accounts {
+		if acct := st.Accounts[a.ID]; acct != nil &&
+			(render.NeedsLogin(acct.LastErr) || (!acct.RefreshExpiry.IsZero() && now.After(acct.RefreshExpiry))) {
+			out[a.ID] = "needs a sign-in"
+		}
+	}
+	for _, v := range profileViews(cfg, st, "") {
+		if a := v.ist.Active; a != "" && a != state.Unattributed && v.in.Name != name {
+			out[a] = "live in " + v.in.Name
+		}
+	}
+	for _, g := range allGhosts(cfg, st) {
+		if g.Account != "" && g.Profile != name {
+			out[g.Account] = "may still be signed in in the old profile " + g.Profile
+		}
+	}
+	return out
 }
 
 // markCurrent flags the profile this process's CLAUDE_CONFIG_DIR belongs

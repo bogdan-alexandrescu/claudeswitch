@@ -87,6 +87,35 @@ func TestLandingMarginPerProfile(t *testing.T) {
 	}
 }
 
+// Unset means "the default", and Write must keep it that way rather than pin
+// today's default into the file, as it does for the other optional settings.
+func TestUnsetAutoSwitchSettingsAreNotWritten(t *testing.T) {
+	in := &Config{SwitchAt: 85, HardFloor: 96, SwitchWhen: "idle",
+		RefreshWindow: Duration{time.Hour}, Priority: []string{"a"}, Accounts: []Account{{ID: "a"}}}
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := in.Write(path); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"landing_margin", "blind_failover_polls"} {
+		for _, line := range strings.Split(string(raw), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), key) {
+				t.Errorf("unset %s was written: %q", key, line)
+			}
+		}
+	}
+	out, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.LandingMargin != nil || out.BlindFailoverPolls != nil {
+		t.Errorf("unset settings came back set: %v, %v", out.LandingMargin, out.BlindFailoverPolls)
+	}
+}
+
 // Everything `cs config` can change must survive Write, or changing one
 // setting silently resets another.
 func TestAutoSwitchSettingsRoundTrip(t *testing.T) {

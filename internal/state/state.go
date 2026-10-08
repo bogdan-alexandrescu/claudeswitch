@@ -63,6 +63,13 @@ type Account struct {
 	// declined to make. The policy fails over from an active account blind
 	// for long enough (IMPROVEMENTS A2).
 	ReadFails int `json:"read_fails,omitempty"`
+	// FailSince is when the current streak of unreadable polls began: set on
+	// the first counted failure, cleared with ReadFails by a good read.
+	// Blindness is measured from it, never from LastAt — after a long sleep
+	// the last reading is hours old, yet the reads have only been failing for
+	// seconds. The daemon clears both at startup: a streak it did not watch
+	// is no evidence of how long the account has been unreadable.
+	FailSince time.Time `json:"fail_since,omitzero"`
 	// TokenExpiry is when the access token last used to poll this account
 	// expires. An expired token on an idle session is not trouble: Claude
 	// Code refreshes it on the next message.
@@ -131,6 +138,107 @@ func (a *Account) Projected(now time.Time) float64 {
 		return 100
 	}
 	return p
+}
+
+// WithModels is this account as the policy judges it when the config counts
+// these models' weekly limits like the weekly window (IMPROVEMENTS I6; see
+// usage.Usage.WithModels). from names the model whose limit set the weekly
+// figure, unreadable a counted model whose limit has no figure.
+//
+// The copy's PrevWorst is moved by however much the worst figure moved, so its
+// burn rate is the rate the reading itself showed: the previous reading's
+// model figure was never kept, and comparing the new effective figure with the
+// old unscoped one would invent a burst. The original is never modified, and
+// with nothing changed it is returned as is.
+func (a *Account) WithModels(models []string) (eff *Account, from, unreadable string) {
+	if a == nil || a.Last == nil || len(models) == 0 {
+		return a, "", ""
+	}
+	u, from, unreadable := a.Last.WithModels(models)
+	if u == a.Last {
+		return a, from, unreadable
+	}
+	cp := *a
+	_, before := a.Last.Worst()
+	_, after := u.Worst()
+	if !cp.PrevAt.IsZero() {
+		cp.PrevWorst += after - before
+	}
+	cp.Last = u
+	return &cp, from, unreadable
+}
+
+// WeekLength is the weekly window's span, from which its start is found:
+// the API reports only when it resets.
+const WeekLength = 7 * 24 * time.Hour
+
+// MinPaceEstimate is how far into the week the pace view waits before
+// estimating what will expire unused. Before it, one busy morning
+// extrapolates to anything.
+const MinPaceEstimate = 24 * time.Hour
+
+// Pace is how the weekly window is being spent against the clock
+// (IMPROVEMENTS I8). Display only: no decision reads it.
+type Pace struct {
+	// Expected is the share of the week elapsed, in percent: what steady use
+	// would have spent by now.
+	Expected float64
+	// Actual is the weekly utilization now, projected forward from the
+	// reading when the weekly window is the one burning.
+	Actual float64
+	// Estimated says AtReset and Unused are set: far enough into the week to
+	// extrapolate.
+	Estimated bool
+	// AtReset is where the weekly window will stand at the reset if use keeps
+	// its average pace so far, capped at 100.
+	AtReset float64
+	// Unused is the share of the week's quota that would expire unused at the
+	// reset at that pace.
+	Unused   float64
+	ResetsAt time.Time
+}
+
+// WeeklyPace measures the weekly window against the clock. False when there
+// is nothing to measure: no reading, an unknown weekly window, no reset time,
+// or a reading of a week that has since reset.
+//
+// The projection to the reset uses the average rate since the window opened.
+// A short-term burn rate (BurnRate, points a minute) describes the current
+// session and would project one hot hour across days; the average is what the
+// week has actually been. The figure for now does use the existing projection,
+// when the weekly window is the one the burn rate measures.
+func (a *Account) WeeklyPace(now time.Time) (Pace, bool) {
+	if a == nil || a.Last == nil || !a.Last.SevenDay.Known() {
+		return Pace{}, false
+	}
+	r := a.Last.SevenDay.ResetsAt
+	if r == nil || r.IsZero() || !now.Before(*r) {
+		return Pace{}, false
+	}
+	elapsed := now.Sub(r.Add(-WeekLength))
+	if elapsed < 0 {
+		elapsed = 0
+	}
+	if elapsed > WeekLength {
+		elapsed = WeekLength
+	}
+	frac := float64(elapsed) / float64(WeekLength)
+	actual := a.Last.SevenDay.Pct()
+	if which, _ := a.Last.Worst(); which == usage.SevenDayKey {
+		if p := a.Projected(now); p > actual {
+			actual = p
+		}
+	}
+	p := Pace{Expected: frac * 100, Actual: actual, ResetsAt: *r}
+	if elapsed >= MinPaceEstimate && frac > 0 {
+		p.Estimated = true
+		p.AtReset = actual / frac
+		if p.AtReset > 100 {
+			p.AtReset = 100
+		}
+		p.Unused = 100 - p.AtReset
+	}
+	return p, true
 }
 
 // MaxProjection bounds how far a remembered burn rate will be carried forward.
@@ -283,7 +391,12 @@ type State struct {
 	DaemonVersion   string    `json:"daemon_version,omitempty"`
 	DaemonBuild     string    `json:"daemon_build,omitempty"` // VCS revision, "+dirty" when modified
 	DaemonBuildTime time.Time `json:"daemon_build_time,omitzero"`
-	SavedAt         time.Time `json:"saved_at"`
+	// DaemonProfiles is every profile the running daemon has loaded, name
+	// to dir as configured ("" for none), written at its start and on every
+	// config reload. `profile create --seed` waits for its new profile to
+	// appear here before seeding (lane 10 security review). Daemon-owned.
+	DaemonProfiles map[string]string `json:"daemon_profiles,omitempty"`
+	SavedAt        time.Time         `json:"saved_at"`
 	// Vaulted is every account id this program has stored a credential for,
 	// including ones the config does not mention — `add` will vault an account
 	// that is not configured, and says so while it does it.
@@ -299,6 +412,21 @@ type State struct {
 	// Reconcile must never prune this: "not in the config" is precisely the
 	// case it is here to remember.
 	Vaulted []string `json:"vaulted,omitempty"`
+	// vaultAdds and vaultDrops are this process's changes to Vaulted since
+	// its last save. Vaulted is the CLI's: only the CLI vaults or deletes a
+	// credential, so a CLI save applies its own changes to the disk's list
+	// and a daemon save keeps the disk's list as it is. Before, each side
+	// wrote its own copy, and a daemon's copy from its start brought back an
+	// id a CLI delete had dropped (lane 12 security review).
+	vaultAdds, vaultDrops map[string]bool
+
+	// DaemonConfigHash is config.ContentHash of the config the running
+	// daemon has loaded, written at its start and on every reload. A
+	// command that edits the config and must not act before the daemon
+	// runs that edit (`account delete`, `profile create --seed`) waits for
+	// the hash of what it wrote: a marker from an earlier run, or from the
+	// config before the edit, never matches it. Daemon-owned.
+	DaemonConfigHash string `json:"daemon_config_hash,omitempty"`
 
 	// Ghosts are the old live items of profiles removed from the config or
 	// re-pointed to another dir, kept so every §3 check still consults them
@@ -307,6 +435,26 @@ type State struct {
 	// ghostAdds and ghostDrops are this process's changes to Ghosts since its
 	// last save; the save applies them to what is on disk (mergeGhosts).
 	ghostAdds, ghostDrops map[string]bool
+
+	// Chrome maps an account to the Chrome profile `cs chrome add` made for
+	// it (chrome.go). ChromeHints is, per Claude Code profile, the rotation
+	// the browser-tool hint was last given for. Only the CLI changes either;
+	// a save merges this process's changes onto the disk (mergeChrome).
+	Chrome        map[string]*ChromeProfile `json:"chrome_profiles,omitempty"`
+	ChromeHints   map[string]string         `json:"chrome_hints,omitempty"`
+	chromeTouched map[string]bool
+	hintTouched   map[string]bool
+	// Emails is the email each account's credential belongs to, recorded
+	// when it was vaulted or identified, so a command can name it without
+	// reading the keychain. CLI-written and merged like Chrome.
+	Emails       map[string]string `json:"emails,omitempty"`
+	emailTouched map[string]bool
+	// Plans is the subscription behind each account ("Max 20x"), recorded
+	// when the CLI vaults or identifies it and when the daemon reads a vault
+	// entry that names one, so `cs account list` shows it without the
+	// keychain. Either side writes it; a save merges only its own changes.
+	Plans       map[string]string `json:"plans,omitempty"`
+	planTouched map[string]bool
 
 	path string
 
@@ -540,6 +688,11 @@ func short(s string) string {
 
 // AddVaulted records that a credential is stored under this id.
 func (s *State) AddVaulted(id string) {
+	if s.vaultAdds == nil {
+		s.vaultAdds = map[string]bool{}
+	}
+	s.vaultAdds[id] = true
+	delete(s.vaultDrops, id)
 	for _, v := range s.Vaulted {
 		if v == id {
 			return
@@ -550,6 +703,11 @@ func (s *State) AddVaulted(id string) {
 
 // DropVaulted forgets an id whose credential has been deleted.
 func (s *State) DropVaulted(id string) {
+	if s.vaultDrops == nil {
+		s.vaultDrops = map[string]bool{}
+	}
+	s.vaultDrops[id] = true
+	delete(s.vaultAdds, id)
 	out := s.Vaulted[:0]
 	for _, v := range s.Vaulted {
 		if v != id {
@@ -625,6 +783,7 @@ func (s *State) SaveAs(as owner) error {
 
 	if disk, err := readFile(s.path); err == nil && disk != nil {
 		s.mergeGhosts(disk)
+		s.mergeChrome(disk)
 		switch as {
 		case OwnerCLIKeepDaemonFields:
 			// unreachable; kept for exhaustiveness
@@ -641,6 +800,8 @@ func (s *State) SaveAs(as owner) error {
 					mine.LastSwitch = disk.LastSwitch
 				}
 			})
+			// The CLI's list, as it is on disk.
+			s.Vaulted = disk.Vaulted
 		case OwnerCLI:
 			s.mergeProfiles(disk, func(mine, disk *ProfileState) {
 				// Same rule from the other side: keep the daemon's Active unless we
@@ -654,6 +815,9 @@ func (s *State) SaveAs(as owner) error {
 			s.DaemonLive = disk.DaemonLive
 			s.DaemonSince = disk.DaemonSince
 			s.DaemonVersion, s.DaemonBuild, s.DaemonBuildTime = disk.DaemonVersion, disk.DaemonBuild, disk.DaemonBuildTime
+			s.DaemonProfiles = disk.DaemonProfiles
+			s.DaemonConfigHash = disk.DaemonConfigHash
+			s.mergeVaulted(disk)
 			// Keep the daemon's observations; they are fresher than ours — but
 			// never resurrect a record this process deliberately dropped.
 			for id, a := range disk.Accounts {
@@ -686,7 +850,32 @@ func (s *State) SaveAs(as owner) error {
 	// The disk now has this process's ghost changes; from here on its copy
 	// is the base the next save merges onto.
 	s.ghostAdds, s.ghostDrops = nil, nil
+	s.vaultAdds, s.vaultDrops = nil, nil
+	s.chromeTouched, s.hintTouched, s.emailTouched, s.planTouched = nil, nil, nil, nil
 	return nil
+}
+
+// mergeVaulted is the disk's Vaulted with this process's adds and drops
+// applied, in the disk's order, adds last.
+func (s *State) mergeVaulted(disk *State) {
+	out := make([]string, 0, len(disk.Vaulted)+len(s.vaultAdds))
+	seen := map[string]bool{}
+	for _, id := range disk.Vaulted {
+		if !s.vaultDrops[id] && !seen[id] {
+			out = append(out, id)
+			seen[id] = true
+		}
+	}
+	for _, id := range s.Vaulted {
+		if s.vaultAdds[id] && !seen[id] {
+			out = append(out, id)
+			seen[id] = true
+		}
+	}
+	if len(out) == 0 {
+		out = nil
+	}
+	s.Vaulted = out
 }
 
 // mergeProfiles applies merge to every profile both sides have, and adopts

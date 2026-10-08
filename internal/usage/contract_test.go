@@ -76,8 +76,8 @@ func TestContractLimitsArrayCarriesSeverityAndActiveFlag(t *testing.T) {
 		if l.IsActive {
 			sawActive = true
 		}
-		if l.Percent < 0 || l.Percent > 100 {
-			t.Errorf("limit %q percent %v is not a percentage", l.Kind, l.Percent)
+		if p := l.Pct(); p < 0 || p > 100 {
+			t.Errorf("limit %q percent %v is not a percentage", l.Kind, p)
 		}
 	}
 	for _, want := range []string{"session", "weekly_all"} {
@@ -110,27 +110,38 @@ func TestContractBindingAndWorstAgreeWithTheFixture(t *testing.T) {
 	}
 }
 
-// Per-model windows are null on a Max 20x account but may populate on another
-// tier. If they ever carry data, the policy engine needs to handle them, so
-// notice rather than ignore.
-func TestContractPerModelWindowsStillAbsent(t *testing.T) {
-	b, err := os.ReadFile("testdata/usage_response.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(b, &raw); err != nil {
-		t.Fatal(err)
-	}
-	for _, k := range []string{"seven_day_opus", "seven_day_sonnet"} {
-		v, present := raw[k]
-		if !present {
-			continue
+// Per-model weekly limits arrive in limits[] as kind "weekly_scoped" with a
+// scope naming the model (GROUND_TRUTH §42, IMPROVEMENTS I6); the top-level
+// seven_day_opus / seven_day_sonnet keys are obsolete and no longer watched.
+// Every entry must be one this code understands. A new kind or a new scope
+// dimension is classified unknown and shown as such — never counted as room —
+// but it is also a shape change, and this is the tripwire that says so.
+func TestContractLimitsEntriesAreAllUnderstood(t *testing.T) {
+	u := loadFixture(t)
+	sawModel := false
+	for i, l := range u.Limits {
+		switch l.Class() {
+		case LimitUnknown:
+			t.Errorf("limits[%d] is not understood: %s. Re-capture the fixture and decide "+
+				"how it should count before loosening this.", i, l.Describe())
+		case LimitModelWeekly:
+			sawModel = true
+			if l.ModelName() == "" {
+				t.Errorf("limits[%d] is a per-model weekly limit with no model name", i)
+			}
+			if l.Group != "weekly" {
+				t.Errorf("limits[%d] per-model limit has group %q, want weekly", i, l.Group)
+			}
 		}
-		if string(v) != "null" {
-			t.Logf("NOTE: %s is now populated (%s). The policy engine only handles "+
-				"five_hour and seven_day; per-model windows need support.", k, v)
+		if !l.Known() {
+			t.Errorf("limits[%d] (%s) carries no percent", i, l.Kind)
 		}
+		if l.ResetsAt == nil {
+			t.Errorf("limits[%d] (%s) carries no resets_at", i, l.Kind)
+		}
+	}
+	if !sawModel {
+		t.Error("limits[] no longer carries a per-model weekly limit (kind weekly_scoped with scope.model)")
 	}
 }
 

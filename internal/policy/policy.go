@@ -7,6 +7,7 @@ package policy
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -36,6 +37,11 @@ type Decision struct {
 	// Forced means the active account is past the hard floor, so the swap must
 	// happen even mid-turn rather than waiting for an idle gap.
 	Forced bool
+
+	// Failover marks a switch away from an active account whose usage could
+	// not be read (IMPROVEMENTS A2). It happens only in an idle gap: the
+	// daemon never gives up waiting and swaps mid-turn for one.
+	Failover bool
 
 	// For Wait: which account recovers first, and when.
 	RecoversAccount string
@@ -84,12 +90,6 @@ type Input struct {
 	// below 100.
 	Lookahead time.Duration
 
-	// Dir is where work is currently happening. Project rules are applied
-	// against it, so work quota need not silently fund personal work. Empty
-	// means unknown, which imposes no restriction — refusing to rotate because
-	// we cannot tell where we are would be worse than the thing it prevents.
-	Dir string
-
 	// Pool restricts the candidates to these account ids, in config order: the
 	// pool of the profile being decided for (docs/PROFILES.md §8 D1).
 	// Nil means every configured account, which is the single-profile case.
@@ -106,6 +106,11 @@ type Input struct {
 	// refreshes the token on the next message — so blind failover holds.
 	// False when unknown (the CLI has no detector), which errs toward holding.
 	SessionBusy bool
+
+	// Unavailable names accounts Best must not offer, each with why: live
+	// or maybe live in another profile, or needing a sign-in. Decide does
+	// not read it (the daemon's own §3 check guards a swap).
+	Unavailable map[string]string
 }
 
 // active is the account the live credential being decided about holds.
@@ -146,6 +151,21 @@ type candidate struct {
 	// exceedance is points past the trigger, negative when there is room. It
 	// orders candidates by how much trouble they are in, across windows.
 	exceedance float64
+	// model names the counted model whose weekly limit stands in for the
+	// weekly window (cfg.Models, IMPROVEMENTS I6); "" when it is the window
+	// itself. unreadable names a counted model whose limit has no figure,
+	// which makes the account unknown (DESIGN 4.4).
+	model      string
+	unreadable string
+}
+
+// windowLabel is windowName with the counted model, when its limit is the
+// weekly figure: "Modelname weekly".
+func (c candidate) windowLabel() string {
+	if c.model != "" && c.window == usage.SevenDayKey {
+		return c.model + " weekly"
+	}
+	return windowName(c.window)
 }
 
 // trigger is the threshold governing whichever window this candidate is judged
@@ -168,12 +188,18 @@ func Decide(in Input) Decision {
 	// With no active account yet, take the best eligible one — short of the
 	// landing margin if need be, since there is nothing to stay on.
 	if !hasActive {
+		why := "no active account yet"
+		if a := in.active(); a != "" && a != state.Unattributed && !in.inPool(a) {
+			// Live here but listed in another profile's accounts (moved, or
+			// saved from here into another profile by `add --from`): this
+			// profile moves off it so the other can use it.
+			why = a + " is not in this profile's accounts"
+		}
 		if c, ok := bestEligible(all, in); ok {
-			return Decision{Kind: Switch, Target: c.acct.ID, Reason: "no active account yet"}
+			return Decision{Kind: Switch, Target: c.acct.ID, Reason: why}
 		}
 		if c, ok := bestWithin(all, in, 0, false); ok {
-			return Decision{Kind: Switch, Target: c.acct.ID,
-				Reason: "no active account yet" + shortNote(c, in)}
+			return Decision{Kind: Switch, Target: c.acct.ID, Reason: why + shortNote(c, in)}
 		}
 		return waiting(all, in, "no account is currently usable")
 	}
@@ -192,6 +218,12 @@ func Decide(in Input) Decision {
 			return failover(all, in, active)
 		case held != "":
 			return Decision{Kind: Stay, Reason: held}
+		}
+		if active.unreadable != "" {
+			// A counted model's limit with no figure: the account's weekly
+			// standing is unknown, which holds like any unknown reading.
+			return Decision{Kind: Stay, Reason: fmt.Sprintf(
+				"active account's %s weekly limit has no figure; holding until it can be read", active.unreadable)}
 		}
 		if active.obs == nil || active.obs.Last == nil {
 			// Unknown is not "fine". But rotating away from a working session on
@@ -235,40 +267,48 @@ func Decide(in Input) Decision {
 		if activeBurnt {
 			why = "active account was refused and nothing else is usable"
 		}
-		// Distinguish "everything is exhausted" from "the accounts with room are
-		// not allowed here" — they call for completely different responses.
-		if blocked := scopeBlocked(all, in); blocked != "" {
-			why += fmt.Sprintf("; %s has room but this directory only allows %s",
-				blocked, strings.Join(allowedScopes(in), ", "))
-		}
 		return waiting(all, in, why)
 	}
 
 	reason := fmt.Sprintf("active account at %.0f%% of its %s, over the %.0f%% trigger",
-		active.worst, windowName(active.window), active.trigger(in.Cfg))
+		active.worst, active.windowLabel(), active.trigger(in.Cfg))
 	if activeBurnt {
 		reason = fmt.Sprintf("active account was refused on its %s window", active.obs.BurntWin)
 	}
 	return Decision{Kind: Switch, Target: c.acct.ID, Reason: reason + note, Forced: forced}
 }
 
-// room is how many points a candidate sits below its own trigger, on
-// whichever window is closest to its line.
-func (c candidate) room() float64 { return -c.exceedance }
+// sessionRoom is how many points a candidate's 5-hour window sits below the
+// session trigger, on the same reading eligibility uses. The landing margin
+// is judged on it alone (owner decision 2026-10-07): the weekly trigger sits
+// near 100 on purpose, and a margin there would rule out accounts with days
+// of work left, so a weekly window only has to be under its trigger. A
+// window with no reading imposes no margin.
+func sessionRoom(c candidate, in Input) float64 {
+	if c.obs == nil || c.obs.Last == nil || !c.obs.Last.FiveHour.Known() {
+		return math.Inf(1)
+	}
+	return in.Cfg.TriggerFor(usage.FiveHourKey) - c.obs.Last.FiveHour.Pct()
+}
+
+// shortOf says how a candidate falls short of the landing margin.
+func shortOf(c candidate, in Input) string {
+	return fmt.Sprintf("%s's session window has only %.0f points below its %.0f%% trigger",
+		c.acct.ID, sessionRoom(c, in), in.Cfg.TriggerFor(usage.FiveHourKey))
+}
 
 // shortNote is appended to a switch that lands inside the landing margin.
 func shortNote(c candidate, in Input) string {
-	return fmt.Sprintf("; %s has only %.0f points below its %.0f%% %s trigger, short of the %g-point landing margin, but it is the best there is",
-		c.acct.ID, c.room(), c.trigger(in.Cfg), windowName(c.window), in.Cfg.Margin())
+	return fmt.Sprintf("; %s, short of the %g-point landing margin, but it is the best there is",
+		shortOf(c, in), in.Cfg.Margin())
 }
 
 // shortList names the candidates the landing margin excluded, for a Stay.
 func shortList(all []candidate, in Input) string {
 	var parts []string
 	for _, c := range all {
-		if usable(c, in) && c.room() < in.Cfg.Margin() {
-			parts = append(parts, fmt.Sprintf("%s has only %.0f points below its %.0f%% %s trigger",
-				c.acct.ID, c.room(), c.trigger(in.Cfg), windowName(c.window)))
+		if usable(c, in) && sessionRoom(c, in) < in.Cfg.Margin() {
+			parts = append(parts, shortOf(c, in))
 		}
 	}
 	return strings.Join(parts, " and ") + fmt.Sprintf(", short of the %g-point landing margin", in.Cfg.Margin())
@@ -281,20 +321,22 @@ func shortList(all []candidate, in Input) string {
 // Blind means all of:
 //   - blind_failover_polls is not 0, and the account's last ReadFails polls in
 //     a row failed (the poller does not count a 429 or a declined poll);
-//   - its last good reading, if any, is at least that many poll_active
-//     intervals old — so a burst of fast hot-polling failures is not taken for
-//     minutes of blindness;
+//   - the failure streak itself has lasted at least that many poll_active
+//     intervals, measured from FailSince — so a burst of fast hot-polling
+//     failures, or a few failed polls in the seconds after waking from sleep
+//     (when the last reading is hours old but the reads have only just begun
+//     failing), is not taken for minutes of blindness. A streak with no
+//     recorded start proves no duration;
 //   - it is not an access token that expired on an idle session with a live
 //     refresh token: Claude Code refreshes that on the next message, and the
 //     daemon re-captures it.
 func blindness(active candidate, in Input) (blind bool, hold string) {
 	n := in.Cfg.BlindPolls()
 	o := active.obs
-	if n <= 0 || o == nil || o.ReadFails < n {
+	if n <= 0 || o == nil || o.ReadFails < n || o.FailSince.IsZero() {
 		return false, ""
 	}
-	if iv := in.Cfg.PollActive.Duration; iv > 0 && o.Last != nil &&
-		in.Now.Sub(o.LastAt) < time.Duration(n)*iv {
+	if iv := in.Cfg.PollActive.Duration; iv > 0 && in.Now.Sub(o.FailSince) < time.Duration(n)*iv {
 		return false, ""
 	}
 	expired := !o.TokenExpiry.IsZero() && !in.Now.Before(o.TokenExpiry)
@@ -307,9 +349,11 @@ func blindness(active candidate, in Input) (blind bool, hold string) {
 }
 
 // failover moves off a blind active account to a healthy one: readable (its
-// own last poll succeeded) and under its trigger by the landing margin. It is
-// an ordinary rotation for timing — not forced, so it waits for an idle gap,
-// and it respects the cooldown. With no healthy account it holds, as a Stay:
+// own last poll succeeded), under its triggers, and clear of the landing
+// margin. It is never forced and is marked Failover: the daemon swaps only in
+// an idle gap, never after max_switch_wait mid-turn (owner decision
+// 2026-10-07) — moving a working session on no evidence of trouble with the
+// work itself is not worth splitting a turn. It respects the cooldown. With no healthy account it holds, as a Stay:
 // a working session on an unreadable account beats one on a doubtful account.
 func failover(all []candidate, in Input, active candidate) Decision {
 	why := fmt.Sprintf("active account unreadable for %d consecutive polls", active.obs.ReadFails)
@@ -326,7 +370,8 @@ func failover(all []candidate, in Input, active candidate) Decision {
 	if !ok {
 		return Decision{Kind: Stay, Reason: why + "; no healthy account to fail over to, so holding"}
 	}
-	return Decision{Kind: Switch, Target: c.acct.ID, Reason: why + "; failing over to a healthy account"}
+	return Decision{Kind: Switch, Target: c.acct.ID, Reason: why + "; failing over to a healthy account",
+		Failover: true}
 }
 
 func gather(in Input) []candidate {
@@ -338,7 +383,16 @@ func gather(in Input) []candidate {
 		obs := in.St.Accounts[a.ID]
 		c := candidate{acct: a, obs: obs, avail: state.Unknown}
 		if obs != nil {
+			// Counted models' weekly limits stand in for the weekly window
+			// where higher (I6). With none configured obs is unchanged.
+			obs, c.model, c.unreadable = obs.WithModels(in.Cfg.Models)
+			c.obs = obs
 			c.avail = obs.AvailabilityAt(a.Reserve, in.Now)
+			if c.unreadable != "" && c.avail != state.Burnt {
+				// Unknown is not "fine": an account whose counted limit
+				// cannot be read is never a target.
+				c.avail = state.Unknown
+			}
 			// Only the ACTIVE account is projected forward. An idle account is
 			// not being spent, so projecting it would invent usage and rule out
 			// a perfectly good target.
@@ -393,30 +447,28 @@ func find(all []candidate, id string) (candidate, bool) {
 // at 97% against a 98% weekly trigger, sitting first in priority while a pool
 // that had just reset to 0% sat third.
 //
-// Only a project's scope preference outranks room, because that says which
-// accounts may serve this directory at all rather than how much is left in
-// them. Everything else is decided by headroom, with the configured priority
-// surviving as the tie-break: candidates arrive in that order and only a
-// strictly better one displaces the incumbent.
+// Headroom decides, with the configured priority surviving as the
+// tie-break: candidates arrive in that order and only a strictly better one
+// displaces the incumbent.
 //
 // Note what this means for an account placed last on purpose. A held-back
 // account is usually the emptiest precisely because it is held back, so it
 // becomes the preferred target as soon as it is eligible. Position in the
-// priority list no longer keeps it in reserve; use `reserve` for that, or a
-// scope the working directory does not allow.
+// priority list no longer keeps it in reserve; use `reserve` for that, or
+// another profile's pool.
 //
-// A target must also clear the landing margin (IMPROVEMENTS A1): at least
-// landing_margin points below its own trigger, on the same figures as above.
-// One point of room is not a landing place either; it is the same failure one
-// rotation later.
+// A target must also clear the landing margin (IMPROVEMENTS A1): its 5-hour
+// window at least landing_margin points below the session trigger, on the
+// same figures as above. One point of session room is not a landing place;
+// it is the same failure one rotation later. The weekly window only has to be
+// under its trigger (owner decision 2026-10-07; see sessionRoom).
 func bestEligible(all []candidate, in Input) (candidate, bool) {
 	return bestWithin(all, in, in.Cfg.Margin(), false)
 }
 
 // usable is everything bestEligible asks of a candidate except the margin.
 func usable(c candidate, in Input) bool {
-	return c.acct.ID != in.active() && c.avail == state.Available && !c.over &&
-		in.Cfg.ScopeAllowed(c.acct.Scope, in.Dir)
+	return c.acct.ID != in.active() && c.avail == state.Available && !c.over
 }
 
 // bestWithin is bestEligible with the margin given: zero for the hard-floor
@@ -426,7 +478,7 @@ func bestWithin(all []candidate, in Input, margin float64, readable bool) (candi
 	var best candidate
 	found := false
 	for _, c := range all {
-		if !usable(c, in) || c.room() < margin {
+		if !usable(c, in) || sessionRoom(c, in) < margin {
 			continue
 		}
 		if readable && c.obs.ReadFails > 0 {
@@ -440,9 +492,8 @@ func bestWithin(all []candidate, in Input, margin float64, readable bool) (candi
 	return best, found
 }
 
-// better reports whether a ranks ahead of b for selection: preferred scope
-// first, then scope order, then room. Equal on all three means the configured
-// priority decides, which is the order candidates already arrive in — so this
+// better reports whether a ranks ahead of b for selection: by room. Equal
+// room means the configured priority decides, which is the order candidates already arrive in — so this
 // answers false for a tie and the incumbent keeps its place.
 //
 // bestEligible and Explain share it, because `why` claiming to list accounts
@@ -450,50 +501,57 @@ func bestWithin(all []candidate, in Input, margin float64, readable bool) (candi
 // it showed an account with one point of room at the top, marked ready, when a
 // pool that had just reset would actually have been chosen.
 func better(a, b candidate, in Input) bool {
-	if ra, rb := scopeRank(a, in), scopeRank(b, in); ra != rb {
-		return ra < rb
-	}
 	// exceedance is points PAST the trigger, so it falls as room grows.
 	return a.exceedance < b.exceedance
 }
 
-// scopeRank is which of a project's preferred scopes an account belongs to,
-// lower being more preferred. A scope the project does not name ranks after
-// every scope it does, so an unlisted account is a fallback rather than a
-// forbidden one — ScopeAllowed is what forbids.
-func scopeRank(c candidate, in Input) int {
-	pr, ok := in.Cfg.ProjectFor(in.Dir)
-	if !ok || len(pr.Prefer) == 0 {
-		return 0
-	}
-	for i, scope := range pr.Prefer {
-		if c.acct.Scope == scope {
-			return i
-		}
-	}
-	return len(pr.Prefer)
-}
-
-// scopeBlocked names an account that would otherwise have served, but is not
-// permitted in this directory.
-func scopeBlocked(all []candidate, in Input) string {
-	for _, c := range all {
-		if c.acct.ID == in.active() || c.avail != state.Available || c.over {
+// Best is the account a manual switch of this profile would land on now
+// (the app's "Switch to best"), and a warning or why there is none. Owner
+// decision (lane 16): it is automatic rotation's own pick — usable
+// (readable, not refused, not reserved, under its trigger), clear of the
+// landing margin (bestEligible), ranked by better. When nothing clears the
+// margin, the best account inside it is still returned, with a warning of
+// how little room it has: a person may move anyway. A pin or the cooldown
+// holds automatic rotation only, so neither applies. Accounts in
+// in.Unavailable (live elsewhere, needing a sign-in) are never offered.
+// name is the profile, for the reasons.
+func Best(in Input, name string) (string, string) {
+	in.Pinned = ""
+	var all []candidate
+	var excluded []string
+	for _, c := range gather(in) {
+		if why, ok := in.Unavailable[c.acct.ID]; ok && c.acct.ID != in.active() {
+			excluded = append(excluded, c.acct.ID+": "+why)
 			continue
 		}
-		if !in.Cfg.ScopeAllowed(c.acct.Scope, in.Dir) {
-			return c.acct.ID
+		all = append(all, c)
+	}
+	if c, ok := bestEligible(all, in); ok {
+		return c.acct.ID, ""
+	}
+	if c, ok := bestWithin(all, in, 0, false); ok {
+		return c.acct.ID, fmt.Sprintf("%s, short of the %g-point landing margin", shortOf(c, in), in.Cfg.Margin())
+	}
+	others := 0
+	for _, c := range all {
+		if c.acct.ID != in.active() {
+			others++
 		}
 	}
-	return ""
-}
-
-func allowedScopes(in Input) []string {
-	pr, ok := in.Cfg.ProjectFor(in.Dir)
-	if !ok || len(pr.Eligible) == 0 {
-		return []string{"any scope"}
+	if name == "" {
+		name = "the pool"
 	}
-	return pr.Eligible
+	switch {
+	case others == 0 && len(excluded) == 0:
+		return "", name + " has no other account"
+	case others == 0:
+		return "", "no other account in " + name + " can be switched to (" + strings.Join(excluded, "; ") + ")"
+	}
+	why := "no other account in " + name + " has room (each is over its trigger, refused, reserved or unread)"
+	if len(excluded) > 0 {
+		why += "; not offered: " + strings.Join(excluded, "; ")
+	}
+	return "", why
 }
 
 // waiting reports the earliest recovery so the daemon can say something useful
@@ -598,28 +656,35 @@ func Explain(in Input) (Decision, []Verdict) {
 		switch {
 		case v.Active:
 			v.Eligible = true
-			if c.over {
+			switch {
+			case c.unreadable != "":
+				v.Why = fmt.Sprintf("its %s weekly limit has no figure; holding until it can be read", c.unreadable)
+			case c.over:
 				v.Why = fmt.Sprintf("at %.0f%%, over the %.0f%% %s trigger",
-					c.worst, c.trigger(in.Cfg), windowName(c.window))
-			} else {
+					c.worst, c.trigger(in.Cfg), c.windowLabel())
+			default:
 				v.Why = fmt.Sprintf("at %.0f%%, %.0f points of room", c.worst, -c.exceedance)
 			}
 		case c.avail == state.Burnt:
 			v.Why = "refused on its " + c.obs.BurntWin + " window"
 		case c.avail == state.Unknown:
 			v.Why = "no usable reading"
-			if c.obs != nil && c.obs.ExpiredAt(in.Now) {
+			switch {
+			case c.obs != nil && c.obs.ExpiredAt(in.Now):
 				v.Why = "its window reset — being re-read"
+			case c.unreadable != "":
+				v.Why = fmt.Sprintf("its %s weekly limit has no figure — unknown, never a target", c.unreadable)
 			}
 		case c.avail == state.Reserved:
 			v.Why = fmt.Sprintf("held in reserve above %.0f%%", c.acct.Reserve)
 		case c.over:
 			v.Why = fmt.Sprintf("at %.0f%%, no headroom", c.worst)
-		case !in.Cfg.ScopeAllowed(c.acct.Scope, in.Dir):
-			v.Why = fmt.Sprintf("scope %q not allowed in this directory", c.acct.Scope)
-		case c.room() < in.Cfg.Margin():
-			v.Why = fmt.Sprintf("at %.0f%%, only %.0f points below its %.0f%% %s trigger — short of the %g-point landing margin; a target only past the hard floor or after a refusal",
-				c.worst, c.room(), c.trigger(in.Cfg), windowName(c.window), in.Cfg.Margin())
+			if c.model != "" && c.window == usage.SevenDayKey {
+				v.Why += " on its " + c.windowLabel() + " limit"
+			}
+		case sessionRoom(c, in) < in.Cfg.Margin():
+			v.Why = fmt.Sprintf("session at %.0f%%, only %.0f points below its %.0f%% trigger — short of the %g-point landing margin; a target only past the hard floor or after a refusal",
+				c.obs.Last.FiveHour.Pct(), sessionRoom(c, in), in.Cfg.TriggerFor(usage.FiveHourKey), in.Cfg.Margin())
 		default:
 			v.Eligible = true
 			v.Why = fmt.Sprintf("at %.0f%%, ready", c.worst)

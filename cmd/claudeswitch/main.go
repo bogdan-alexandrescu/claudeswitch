@@ -55,6 +55,9 @@ func main() {
 	}
 	cmd := os.Args[1]
 	args := os.Args[2:]
+	asJSON := jsonRequested(args)
+	promptsOff = asJSON || flagPresent(args, "yes")
+	legacyQuiet = quietCommand(cmd, args)
 
 	var err error
 	switch cmd {
@@ -96,8 +99,16 @@ func main() {
 		err = cmdRecovery(args)
 	case "profile":
 		err = cmdProfile(args)
+	case "run":
+		err = cmdRun(args)
 	case "remove":
 		err = cmdRemove(args)
+	case "account":
+		err = cmdAccount(args)
+	case "priority":
+		err = cmdPriority(args)
+	case "daemon":
+		err = cmdDaemon(args)
 	case "session":
 		err = cmdSession(args)
 	case "setup":
@@ -116,13 +127,19 @@ func main() {
 		err = cmdWhoami(args)
 	case "refresh":
 		err = cmdRefresh(args)
+	case "chrome":
+		err = cmdChrome(args)
 	case "version", "-v", "--version":
-		fmt.Println("claudeswitch " + version)
+		err = cmdVersion(os.Stdout, args)
 	default:
 		usageText()
 		os.Exit(2)
 	}
 	if err != nil {
+		if asJSON {
+			writeJSONError(os.Stdout, err)
+			os.Exit(1)
+		}
 		fmt.Fprintln(os.Stderr, "claudeswitch: "+err.Error())
 		os.Exit(1)
 	}
@@ -137,7 +154,8 @@ func usageText() {
   session    token usage across every account used in a span of work
   doctor     check the things that have to be true for this to work
   setup      guided first run: vault your accounts, write the config, install
-  config     show the settings in force, or change one
+  config     show the settings in force, or change one; config clean removes
+             the scope lines and [project] tables older configs carry
   init       write a starter config by hand instead
   uninstall  stop the daemon and remove what claudeswitch installed
 
@@ -145,6 +163,7 @@ func usageText() {
              --direct leaves your live session untouched, whatever happens;
              finish it with: login <id> --code <code>
   add <id>   vault the credential that is live right now, as <id>
+             (--from <profile>: the one live in that profile)
   use <id>   swap Claude Code onto a vaulted account (hot; no restart needed)
   accounts   what is in the vault
   plan       the rotation decision right now (changes nothing)
@@ -152,8 +171,14 @@ func usageText() {
   top        a live view that refreshes in place (ctrl-c to leave)
   audit      what the daemon has observed, decided and done
   forget     drop an account's recorded observations (not its vault entry)
-  remove     delete an account's vault entry and observations
+  remove     delete an account everywhere: credential, config block, pool and
+             priority entries, observations (--yes to skip the question)
   rename     give a vaulted account a different id, keeping its credential
+  account    list | rename | delete | pin | unpin | priority
+  priority <id>...
+             set the rotation order
+  daemon     status | start | stop | restart | live | dry-run | install | uninstall
+             the background service, as install.sh sets it up
   statusline one compact line for Claude Code's status line (read-only)
              install / uninstall set it in ~/.claude/settings.json
   context    quota context for a Claude Code session start (read-only)
@@ -162,13 +187,37 @@ func usageText() {
   refresh    renew a vaulted account's credential (never the live one)
   recovery   credentials a swap kept because it could not tell whose they were;
              restore <slot> <account> vaults one, clear <slot> deletes one
+  profile create <name> [--dir PATH] [--pool a,b] [--seed <account>]
+             make a Claude Code profile: its dir, your settings, CLAUDE.md,
+             skills, commands and agents linked from ~/.claude, your MCP
+             servers copied, its [[profile]] block; --seed signs it in with a
+             vaulted account live nowhere else
+  profile list
+             each profile's dir, pool and live account
   profile forget <name>
              release the guard on a removed or re-pointed profile's old credential
+  profile pool <name> add|remove <account> [--to <profile>]
+             change a profile's pool (pools never overlap)
+  profile set <name> <key> <value|inherit>
+             a per-profile switch_at, switch_at_weekly, hard_floor,
+             landing_margin or models
+  run <profile> [-- claude args]
+             start Claude Code in a profile (CLAUDE_CONFIG_DIR set for it)
+  chrome add <account>
+             open a Chrome profile for that account, for Claude in Chrome
+  chrome [<account>]
+             open it (no account: the one live in this shell's profile)
+  chrome list | forget <account>
 
   Several Claude Code profiles ([[profile]] in the config): use, add, login,
   whoami, status, top, why and plan take --profile NAME. Without it, a command
   acts on the profile this shell's CLAUDE_CONFIG_DIR belongs to (use, add,
   login, whoami), or shows every profile (status, top, why, plan).
+
+  For scripts and the menu-bar app: config, profile, account, priority,
+  remove, recovery, use, add, login --direct/--code and daemon take --json,
+  never prompt, and fail with {"error":{"code","message","hint"}}
+  (docs/APP_CLI.md). version --json names the contract version.
 
 `)
 }
@@ -182,9 +231,20 @@ func usageText() {
 // wrong flag. This walks the argument list instead, letting the FlagSet decide
 // where each flag's value ends.
 func parseInterleaved(fs *flag.FlagSet, args []string) []string {
+	// With --json a bad flag must still answer with the error object, not
+	// with usage text and exit 2: parse without exiting, then answer.
+	asJSON := jsonRequested(args)
+	if asJSON {
+		fs.Init(fs.Name(), flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+	}
 	var positional []string
 	for {
 		if err := fs.Parse(args); err != nil {
+			if asJSON {
+				writeJSONError(os.Stdout, appErr(codeUsage, "", "%s: %v", fs.Name(), err))
+				exitProcess(1)
+			}
 			return positional
 		}
 		rest := fs.Args()
@@ -219,6 +279,7 @@ func loadWith(loader func(string) (*config.Config, error), cfgPath string) (*con
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "note: %v\n", err)
 	}
+	warnLegacy(os.Stderr, cfg)
 	// Every configured profile is materialised at load, so the daemon's
 	// goroutines only ever read the profile map (see state.Load).
 	st, serr := state.Load("", cfg.ProfileNames()...)
@@ -322,7 +383,7 @@ func cmdStatus(args []string) error {
 		Budget: p.Budget(), Degraded: degraded, DegradedWhy: why,
 		DaemonOwns: daemonOwns, Vaulted: vaulted, Plans: plans, Detail: *detail,
 		Known: knownAccounts(cfg),
-	}, recentSwitches(5), time.Now(), currentDir(), *only)
+	}, recentSwitches(5), time.Now(), *only)
 	fmt.Print(ghostLines(st.GhostList()))
 	return nil
 }
@@ -851,12 +912,10 @@ priority = ["work-a", "work-b", "work-c", "personal"]
 [[account]]
 id    = "work-a"
 label = "work-a"
-scope = "work"
 
 [[account]]
 id    = "personal"
 label = "personal"
-scope = "personal"
 reserve = 70        # never auto-used above this utilization
 
 # Several Claude Code profiles (one per CLAUDE_CONFIG_DIR) each rotate within
@@ -867,8 +926,8 @@ reserve = 70        # never auto-used above this utilization
 # dir is CLAUDE_CONFIG_DIR exactly as you launch Claude Code with it. Omit it
 # for the profile you run with CLAUDE_CONFIG_DIR unset: that is NOT the same
 # as dir = "~/.claude", which Claude Code keys to a different credential.
-# Declaring both is allowed with a warning: they share ~/.claude, so activity
-# and refusals may be attributed to the wrong one.
+# Declaring both is an error: they share ~/.claude. No two profiles may share
+# a folder, or nest one inside another.
 #
 # [[profile]]
 # name = "default"            # no dir: CLAUDE_CONFIG_DIR unset
@@ -890,21 +949,54 @@ reserve = 70        # never auto-used above this utilization
 func cmdAdd(args []string) error {
 	fs := flag.NewFlagSet("add", flag.ExitOnError)
 	cfgPath := fs.String("config", "", "path to config.toml")
-	scope := fs.String("scope", "work", `which projects may use it: "work" or "personal"`)
-	profName := fs.String("profile", "", "the Claude Code profile whose live credential to vault "+
-		"(default: the one this shell's CLAUDE_CONFIG_DIR belongs to)")
+	profName := fs.String("profile", "", "the profile whose pool the account joins, and without --from "+
+		"the one whose live credential is vaulted (default: the one this shell's CLAUDE_CONFIG_DIR belongs to)")
+	from := fs.String("from", "", "the Claude Code profile whose live credential to vault, when it is not "+
+		"--profile (the app's \"Save the login Claude Code is using in\")")
 	force := fs.Bool("force", false,
 		"re-add even when the live credential looks staler than the one already vaulted under that name")
+	asJSON := fs.Bool("json", false, "machine-readable output; never prompts")
 	positional := parseInterleaved(fs, args)
-
-	cfg, st, err := load(*cfgPath)
-	if err != nil {
+	var out map[string]any
+	err := humanToStderr(*asJSON, func() error {
+		var err error
+		out, err = addAccount(*cfgPath, *profName, *from, *force, positional)
+		return err
+	})
+	if err != nil || !*asJSON {
 		return err
 	}
-	// The profile is settled before the name: a suggested name comes from
+	return emitJSON(out)
+}
+
+// addAccount is `cs add`: it vaults the live credential, and returns the
+// account as `add --json` and `login --code --json` report it.
+//
+// from (lane 16, B2) is the profile whose live credential is read; profV is
+// the one whose pool a new account joins. Either defaults to the other, and
+// both to the profile this shell's CLAUDE_CONFIG_DIR names. A credential
+// read from one profile and filed in another's pool is still live in the
+// first: §3 holds, since no profile swaps in an account live elsewhere, and
+// the first rotates off it (it is outside that pool).
+func addAccount(cfgPathV, profV, fromV string, forceV bool, positional []string) (map[string]any, error) {
+	cfgPath, profName, force := &cfgPathV, &profV, &forceV
+	cfg, st, err := load(*cfgPath)
+	if err != nil {
+		return nil, err
+	}
+	if fromV == "" {
+		fromV = *profName
+	} else if _, ok := cfg.ProfileNamed(fromV); !ok {
+		return nil, noSuchProfile(cfg, fromV)
+	}
+	if *profName == "" {
+		*profName = fromV
+	}
+	// The source is settled before the name: a suggested name comes from
 	// whichever account is live in it.
-	if _, err := pickProfile(cfg, *profName); err != nil {
-		return err
+	source, err := pickProfile(cfg, fromV)
+	if err != nil {
+		return nil, err
 	}
 	var configured []string
 	for _, a := range cfg.Accounts {
@@ -915,23 +1007,22 @@ func cmdAdd(args []string) error {
 	// name could be given to a pool that already had one.
 	others := st.KnownAccounts(configured)
 
-	identity := func() (string, string, string) {
-		in, _ := pickProfile(cfg, *profName)
-		return cachedIdentity(in)
-	}
+	identity := func() (string, string, string) { return addIdentity(source) }
 	id, err := chooseAddName(positional, isTerminal(), identity, others, ask)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	// The credential is live in this profile already; vaulting it under an id
-	// from another profile's pool would let that profile swap it in too.
+	// The id must be new or already the target's: one another pool lists is
+	// refused (outside_pool). Filing it in the target while it is live in
+	// the source is the owner's choice (lane 16): §3 keeps the target from
+	// swapping it in until the source has moved off it.
 	target, err := profileForAccount(cfg, *profName, id, true)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	live, err := cliLiveFor(target)
+	live, err := cliLiveFor(source)
 	if err != nil {
-		return fmt.Errorf("profile %q: %w", target.Name, err)
+		return nil, fmt.Errorf("profile %q: %w", source.Name, err)
 	}
 
 	log := logger(false)
@@ -961,9 +1052,11 @@ func cmdAdd(args []string) error {
 	}
 	e, err := v.StoreGuardedFrom(ctx, live, id, addExpectSeat(cfg.SeatOf(id), vaultedSeat), others, guard)
 	if err != nil {
-		return addError(id, err)
+		return nil, addError(id, err)
 	}
 	st.AddVaulted(id)
+	st.SetEmail(id, e.Email)
+	st.SetPlan(id, e.Plan)
 	acct := st.Get(id)
 	acct.OrgID = e.OrgID
 	acct.RefreshExpiry = e.RefreshExpiry
@@ -972,7 +1065,7 @@ func cmdAdd(args []string) error {
 	}
 
 	fmt.Printf("\n  ✓ %s\n", addHeadline(id, existed))
-	if email, orgName, _ := cachedIdentity(target); orgName != "" {
+	if email, orgName, _ := addIdentity(source); orgName != "" {
 		fmt.Printf("    account       %s (as Claude Code labels it)\n", email)
 		fmt.Printf("    organization  %s\n", orgName)
 	}
@@ -995,9 +1088,27 @@ func cmdAdd(args []string) error {
 	// `accounts` did not list it, and the next command that read the state file
 	// discarded what `add` had just recorded. The seat is only knowable after
 	// signing in, which is why it is written here rather than asked for.
-	reportSeatRecorded(cfg, id, *scope, e, poolToJoin(cfg, target))
+	reportSeatRecorded(cfg, id, e, poolToJoin(cfg, target))
+	note := crossProfileNote(source.Name, target.Name)
+	if note != "" {
+		fmt.Printf("    from          profile %s: %s\n", source.Name, note)
+	}
 	fmt.Println()
-	return nil
+	out := vaultedAccountJSON(cfg.Path, id, e, !hasAccount(cfg, id))
+	out["from"] = source.Name
+	out["note"] = orNull(note)
+	return out, nil
+}
+
+// crossProfileNote is what `add --from S --profile T` tells the person when
+// S and T differ (owner decision, lane 16): the account stays signed in in
+// S until S's daemon loop moves off it (it is outside S's accounts now), and
+// T's loop swaps it in only after that (§3). "" when they are the same.
+func crossProfileNote(source, target string) string {
+	if source == target {
+		return ""
+	}
+	return "still signed in in " + source + " — " + source + " will move off it; " + target + " can use it after"
 }
 
 // chooseAddName decides what to vault the live credential under. Given a name,
@@ -1019,28 +1130,35 @@ func chooseAddName(positional []string, interactive bool,
 		return "", fmt.Errorf("usage: claudeswitch add [<name>]\n\n" +
 			"Log in to the account first (`claude` → /login), then add what you just logged into.")
 	}
-	if !interactive {
-		return "", fmt.Errorf("no name given, and nobody at a terminal to confirm one.\n" +
-			"  Name the account that is live right now:\n      cs add <name>")
-	}
-	email, orgName, orgID := identity()
-	if email == "" {
-		return "", fmt.Errorf("could not tell which account is live, so there is no name to suggest.\n" +
-			"  Name it yourself:\n      cs add <name>")
-	}
-	pr := &usage.Profile{}
-	pr.Account.Email = email
-	pr.Organization.Name = orgName
-	pr.Organization.UUID = orgID
+	email, orgName, orgID := "", "", ""
+	suggested := ""
 	takenMap := map[string]string{}
 	for _, id := range taken {
 		takenMap[id] = id
+	}
+	pr := &usage.Profile{}
+	if email, orgName, orgID = identity(); email != "" {
+		pr.Account.Email = email
+		pr.Organization.Name = orgName
+		pr.Organization.UUID = orgID
+		suggested = suggestName(pr, takenMap)
+	}
+	if !interactive {
+		// The app asks for the name itself: the suggestion travels in the
+		// hint, alone, so it can be offered as the default.
+		return "", &appError{Code: codeNameRequired, Hint: suggested,
+			Message: "no name given, and nobody at a terminal to confirm one.\n" +
+				"  Name the account that is live right now:\n      cs add <name>"}
+	}
+	if email == "" {
+		return "", fmt.Errorf("could not tell which account is live, so there is no name to suggest.\n" +
+			"  Name it yourself:\n      cs add <name>")
 	}
 	who := email
 	if orgName != "" {
 		who += " in " + orgName
 	}
-	name := strings.TrimSpace(prompt("  name for "+who, suggestName(pr, takenMap)))
+	name := strings.TrimSpace(prompt("  name for "+who, suggested))
 	if name == "" {
 		return "", fmt.Errorf("no name given; nothing was stored")
 	}
@@ -1108,17 +1226,17 @@ func addError(id string, err error) error {
 	var wrong *vault.WrongOrgError
 	switch {
 	case errors.As(err, &dup):
-		return fmt.Errorf("the credential live right now is already vaulted as %q (%s).\n"+
+		return wrapErr(codeAlreadyVaulted, "", fmt.Errorf("the credential live right now is already vaulted as %q (%s).\n"+
 			"  Nothing was stored. `add` saves whatever Claude Code is signed in to.\n"+
 			"  To add a different account, sign in to it:\n"+
-			"      cs login %s", dup.Other, dup.Who, id)
+			"      cs login %s", dup.Other, dup.Who, id))
 	case errors.As(err, &wrong):
-		return fmt.Errorf("%q is seat %s, but the credential live right now is %s (%s).\n"+
+		return wrapErr(codeWrongAccount, "", fmt.Errorf("%q is seat %s, but the credential live right now is %s (%s).\n"+
 			"  Nothing was stored. To keep both, add the live one under another name:\n"+
 			"      cs add <other-name>\n"+
 			"  To renew %s itself, sign in to it:\n"+
 			"      cs login %s%w", id, usage.ShortSeat(wrong.WantOrg), usage.ShortSeat(wrong.GotOrg),
-			wrong.GotEmail, id, id, quiet{err})
+			wrong.GotEmail, id, id, quiet{err}))
 	}
 	return err
 }
@@ -1318,7 +1436,7 @@ func globEscape(s string) string {
 
 // pollCadenceLines is doctor's report on the polling cadence. A hot cadence
 // faster than the default is kept — it is the person's setting, often written
-// out by `cs config set` or setup before the default changed — but it is
+// out by `cs config` or setup before the default changed — but it is
 // warned about, because it empties an account's burst allowance.
 func pollCadenceLines(cfg *config.Config) []string {
 	used, avail := cfg.CallsPerWindow(), float64(cfg.APIBudget-1)
@@ -1332,11 +1450,42 @@ func pollCadenceLines(cfg *config.Config) []string {
 		fmt.Sprintf("         └ %.1f of %.0f usage calls per 5 min (api_budget %d, one held for swaps)",
 			used, avail, cfg.APIBudget),
 	}
+	// Per account (GROUND_TRUTH §42): each account's own allowance, which the
+	// machine-wide figure above cannot see.
+	// A poll_active or poll_idle under the floor runs at the floor and is a
+	// warning, never a failure (owner decision 2026-10-07).
+	r := cfg.AccountCadence()
+	floored := cfg.FlooredPolls()
+	mark = "ok  "
+	if len(floored) > 0 || r.HotDrains() || r.ActiveStarved() {
+		mark = "warn"
+	}
+	out = append(out,
+		fmt.Sprintf("  [%s] account rate    in use %.0f/h · hot %.0f/h for up to %s · idle %.0f/h",
+			mark, r.ActivePerHour, r.HotPerHour, fmt.Sprintf("%dm", int(config.HotLookahead.Minutes())), r.IdlePerHour),
+		fmt.Sprintf("         └ each account's allowance is ~%d calls and refills ~%.0f/h; a hot spell spends %.1f of the %d held for it (hot_reserve)",
+			usage.AccountBurst, r.RefillPerHour, r.HotSpellNet, r.Spare),
+		fmt.Sprintf("         └ routine reads leave it alone; the account in use dips into it only once its reading is %s old (stale-decision warning at %s)",
+			config.OverdueAfter(r.PollActive), staleDecisionAfter(cfg)),
+		fmt.Sprintf("         └ %g/h set aside on a live account (unseen_calls_per_hour) for Claude Code's own reads",
+			r.Unseen))
+	if r.ActiveStarved() {
+		out = append(out,
+			fmt.Sprintf("         unseen_calls_per_hour %g leaves %.0f calls/h: the account in use is read about every %s, not %s",
+				r.Unseen, r.RefillPerHour-r.Unseen, r.ActiveEvery.Round(time.Second), r.PollActive),
+			fmt.Sprintf("         fix: cs config unseen_calls_per_hour %g, or accept it with cs config poll_active %s",
+				usage.DefaultLiveUnseenPerHour, r.ActiveEvery.Round(time.Minute)))
+	}
+	for _, f := range floored {
+		out = append(out,
+			fmt.Sprintf("         %s %s runs at %s: faster would drain an account's allowance", f.Key, f.Was, f.Now),
+			"         fix: "+f.Fix)
+	}
 	if mins, fast := config.HotDrainMinutes(cfg.PollHot.Duration); fast {
 		out = append(out,
 			fmt.Sprintf("  [warn] poll cadence  hot %s drains an account's ~%d-call allowance in ~%d min",
 				cfg.PollHot.Duration, config.UsageBurstCalls, mins),
-			fmt.Sprintf("         fix: cs config set poll_hot %s", config.DefaultPollHotSetting))
+			fmt.Sprintf("         fix: cs config poll_hot %s", config.DefaultPollHotSetting))
 	}
 	return out
 }
@@ -1353,15 +1502,16 @@ func cmdUse(args []string) error {
 	cfgPath := fs.String("config", "", "path to config.toml")
 	dry := fs.Bool("dry-run", false, "say what would happen, change nothing")
 	profName := fs.String("profile", "", profileFlagHelp)
+	asJSON := fs.Bool("json", false, "machine-readable output")
 	positional := parseInterleaved(fs, args)
 	if len(positional) != 1 {
-		return fmt.Errorf("usage: claudeswitch use <account-id> [--profile NAME]")
+		return appErr(codeUsage, "", "usage: claudeswitch use <account-id> [--profile NAME] [--json]")
 	}
 	id := positional[0]
 
 	cfg, st, err := load(*cfgPath)
 	if err != nil {
-		return err
+		return wrapErr(codeConfigInvalid, "", err)
 	}
 	// D5 before anything is read: the refusal must not depend on the vault.
 	target, err := profileForAccount(cfg, *profName, id, false)
@@ -1372,7 +1522,8 @@ func cmdUse(args []string) error {
 	v := vault.New(log)
 
 	if !v.Has(id) {
-		return fmt.Errorf("account %q is not in the vault. Log in to it, then run `claudeswitch add %s`", id, id)
+		return &appError{Code: codeNotVaulted, Message: fmt.Sprintf(
+			"account %q is not in the vault. Log in to it, then run `claudeswitch add %s`", id, id)}
 	}
 	live, err := cliLiveFor(target)
 	if err != nil {
@@ -1385,9 +1536,9 @@ func cmdUse(args []string) error {
 		on = " in profile " + target.Name
 	}
 	if other, why := liveConflict(cfg, st, v, target.Name, id); other != "" {
-		return fmt.Errorf("account %q may be live in %s (%s); one credential live in two "+
+		return &appError{Code: codeLive, Message: fmt.Sprintf("account %q may be live in %s (%s); one credential live in two "+
 			"profiles is logged out by whichever refreshes first, so nothing was changed",
-			id, whereLiveQ(other), why)
+			id, whereLiveQ(other), why)}
 	}
 	expectOrg := ""
 	for _, a := range cfg.Accounts {
@@ -1402,6 +1553,10 @@ func cmdUse(args []string) error {
 	}
 
 	if *dry {
+		if *asJSON {
+			return emitJSON(map[string]any{"account": id, "profile": target.Name, "dry_run": true,
+				"from": orNull(st.Profile(target.Name).Active), "expect_org": orNull(expectOrg)})
+		}
 		fmt.Printf("\n  would swap%s to %q (expecting org %s)\n", on, id, nonEmpty(expectOrg, "any"))
 		fmt.Printf("  mcpOAuth would be carried over from the live item, unchanged\n\n")
 		return nil
@@ -1445,6 +1600,14 @@ func cmdUse(args []string) error {
 	if err := st.Save(); err != nil {
 		fmt.Fprintf(os.Stderr, "note: %v\n", err)
 	}
+	if *asJSON {
+		m := map[string]any{"account": id, "profile": target.Name, "from": orNull(from), "dry_run": false,
+			"org_id": orNull(res.OrgID), "verified": res.Usage != nil, "five_hour": nil, "seven_day": nil}
+		if res.Usage != nil {
+			m["five_hour"], m["seven_day"] = res.Usage.FiveHour.Pct(), res.Usage.SevenDay.Pct()
+		}
+		return emitJSON(m)
+	}
 
 	fmt.Printf("\n  ✓ now using %s%s\n", id, on)
 	if res.Usage != nil {
@@ -1452,6 +1615,9 @@ func cmdUse(args []string) error {
 			res.Usage.FiveHour.Pct(), res.Usage.SevenDay.Pct(), shortID(res.OrgID))
 	} else {
 		fmt.Printf("    installed, but usage could not be read to confirm it (rate limited)\n")
+	}
+	if from != id {
+		useChromeNote(os.Stdout, st, from, id)
 	}
 	fmt.Printf("    your MCP logins were left untouched\n")
 	fmt.Printf("    no restart needed — running sessions pick this up going forward\n\n")
@@ -1473,7 +1639,7 @@ func cmdAccounts(args []string) error {
 		out := make([]map[string]any, 0, len(cfg.Accounts))
 		for _, a := range cfg.Ordered() {
 			m := map[string]any{
-				"id": a.ID, "scope": a.Scope, "vaulted": v.Has(a.ID),
+				"id": a.ID, "vaulted": v.Has(a.ID),
 				"active": activeIn(cfg, st, a.ID) != "",
 			}
 			addProfileJSON(m, cfg, st, a.ID)
@@ -1491,7 +1657,7 @@ func cmdAccounts(args []string) error {
 		return emitJSON(out)
 	}
 	fmt.Println()
-	t := render.NewTable([]string{"", "ACCOUNT", "SCOPE", "SIGNED IN AS", "PLAN", "ORGANIZATION"})
+	t := render.NewTable([]string{"", "ACCOUNT", "SIGNED IN AS", "PLAN", "ORGANIZATION"})
 	for _, a := range cfg.Ordered() {
 		org := a.OrgID
 		if org == "" {
@@ -1516,7 +1682,7 @@ func cmdAccounts(args []string) error {
 			name = render.Dim(a.Name())
 			who, plan, orgName = render.Dim("not vaulted"), "-", "-"
 		}
-		t.Add(mark, name, nonEmpty(a.Scope, "-"), who, plan, nonEmpty(orgName, "-"))
+		t.Add(mark, name, who, plan, nonEmpty(orgName, "-"))
 	}
 	fmt.Print(t.Render("  "))
 	fmt.Println()
@@ -1566,40 +1732,29 @@ func cmdPlan(args []string) error {
 		_ = st.Save()
 	}
 
-	dir := currentDir()
 	now := time.Now()
 	views := profileViews(cfg, st, *only)
 	if *planJSON {
 		if !multiProfile(cfg) {
-			d := policy.Decide(views[0].input(st, now, dir))
-			return emitJSON(map[string]any{"decision": decisionJSON(d), "dir": dir})
+			d := policy.Decide(views[0].input(st, now))
+			return emitJSON(map[string]any{"decision": decisionJSON(d)})
 		}
 		var list []map[string]any
 		for _, v := range views {
-			d := policy.Decide(v.input(st, now, dir))
+			d := policy.Decide(v.input(st, now))
 			m := map[string]any{"profile": v.in.Name, "decision": decisionJSON(d)}
 			markCurrent(m, cfg, v.in.Name)
 			list = append(list, m)
 		}
-		return emitJSON(map[string]any{"profiles": list, "dir": dir})
+		return emitJSON(map[string]any{"profiles": list})
 	}
 	fmt.Println()
-	if dir != "" {
-		if pr, ok := cfg.ProjectFor(dir); ok {
-			fmt.Printf("  here      %s\n", dir)
-			if len(pr.Eligible) > 0 {
-				fmt.Printf("  allowed   %s only\n", strings.Join(pr.Eligible, ", "))
-			}
-			if len(pr.Prefer) > 0 {
-				fmt.Printf("  prefer    %s\n", strings.Join(pr.Prefer, ", "))
-			}
-		}
-	}
 	for _, v := range views {
 		if multiProfile(cfg) {
 			v.heading(os.Stdout)
 		}
-		printPlan(os.Stdout, v.cfg, policy.Decide(v.input(st, now, dir)))
+		printPlan(os.Stdout, v.cfg, policy.Decide(v.input(st, now)))
+		printPlanModels(os.Stdout, v.cfg, st, v.ist.Active)
 	}
 
 	fmt.Println()
@@ -1625,6 +1780,8 @@ func printPlan(w io.Writer, cfg *config.Config, d policy.Decision) {
 		fmt.Fprintf(w, "  target    %s\n", d.Target)
 		if d.Forced {
 			fmt.Fprintf(w, "  timing    immediately, mid-turn (past the %.0f%% hard floor)\n", cfg.HardFloor)
+		} else if d.Failover {
+			fmt.Fprintf(w, "  timing    at the next idle gap only; a blind failover never splits a turn\n")
 		} else {
 			fmt.Fprintf(w, "  timing    at the next idle gap between turns\n")
 		}
@@ -1633,6 +1790,31 @@ func printPlan(w io.Writer, cfg *config.Config, d policy.Decision) {
 		fmt.Fprintf(w, "  recovers  %s in %s (at %s)\n", d.RecoversAccount,
 			time.Until(d.RecoversAt).Round(time.Minute), d.RecoversAt.Local().Format("15:04"))
 	}
+}
+
+// printPlanModels adds the active account's per-model weekly limits to `plan`
+// (IMPROVEMENTS I6), only when it has any: which of them the config counts
+// is what decides whether one of them can trigger the plan above.
+func printPlanModels(w io.Writer, cfg *config.Config, st *state.State, active string) {
+	acct := st.Accounts[active]
+	if !acct.HasReading() {
+		return
+	}
+	var parts []string
+	for _, l := range acct.Last.ModelWeekly() {
+		s := l.ModelName() + " unknown"
+		if l.Known() {
+			s = fmt.Sprintf("%s %.0f%%", l.ModelName(), l.Pct())
+		}
+		if cfg.CountsModel(l.ModelName()) {
+			s += " (counted)"
+		}
+		parts = append(parts, s)
+	}
+	if len(parts) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "  models    %s weekly on %s\n", strings.Join(parts, ", "), active)
 }
 
 // cmdForget removes an account's observations. Useful when an account is
@@ -1818,6 +2000,39 @@ func slWindow(label string, w usage.Window, binding bool, trend string, now time
 		slPaint(ansiDim, slUntil(w.ResetsAt, now), colour))
 }
 
+// slModels picks the per-model weekly limits worth a place on the status
+// line: the one the API marks active, and any at or past the weekly trigger.
+// binds says one of them is active and above every window shown, so it is the
+// binding limit and carries the ▸. A limit with no figure is left to
+// `status`, which says "unknown"; the line has no room to explain it.
+func slModels(u *usage.Usage, worst float64, cfg *config.Config) (shown []usage.Limit, binds bool) {
+	for _, l := range u.ModelWeekly() {
+		if !l.Known() {
+			continue
+		}
+		if l.IsActive || l.Pct() >= cfg.TriggerFor(usage.SevenDayKey) {
+			shown = append(shown, l)
+			if l.IsActive && l.Pct() > worst {
+				binds = true
+			}
+		}
+	}
+	return shown, binds
+}
+
+// slModel renders one model limit: "Modelname 96% 2d". No bar: the line is
+// already two bars long.
+func slModel(l usage.Limit, binding bool, now time.Time, cfg *config.Config, colour bool) string {
+	mark := ""
+	if binding {
+		mark = "▸"
+	}
+	band := slBand(l.Pct(), cfg)
+	return fmt.Sprintf("%s%s %s %s", mark, l.ModelName(),
+		slPaint(band, fmt.Sprintf("%.0f%%", l.Pct()), colour),
+		slPaint(ansiDim, slUntil(l.ResetsAt, now), colour))
+}
+
 // cmdStatusline prints one compact line for Claude Code's status line. It is
 // strictly read-only: no polling, no state writes, no API calls, because it
 // runs on every render.
@@ -1911,6 +2126,14 @@ func statuslineBody(cfg *config.Config, st *state.State) error {
 			trend = "↓"
 		}
 	}
+	// Per-model weekly limits (IMPROVEMENTS I6) earn a place on the line only
+	// when one is the binding limit or at the weekly trigger: the line is
+	// glanced at, and a quiet model limit is noise there.
+	models, modelBinds := slModels(a.Last, worst, cfg)
+	if modelBinds {
+		bindKey = "" // the model's segment carries the ▸
+	}
+
 	var t5, t7 string
 	switch bindKey {
 	case usage.FiveHourKey:
@@ -1924,6 +2147,17 @@ func statuslineBody(cfg *config.Config, st *state.State) error {
 		slWindow("session", a.Last.FiveHour, bindKey == usage.FiveHourKey, t5, now, cfg, colour),
 		slWindow("week", a.Last.SevenDay, bindKey == usage.SevenDayKey, t7, now, cfg, colour),
 	}
+	for _, l := range models {
+		parts = append(parts, slModel(l, modelBinds && l.IsActive, now, cfg, colour))
+	}
+
+	// A model the config counts (I6) triggers like the weekly window, so it
+	// decides whether the policy is asked, as the weekly figure does.
+	if eff, _, _ := a.Last.WithModels(cfg.Models); eff != a.Last {
+		if _, w := eff.Worst(); w > worst {
+			worst = w
+		}
+	}
 
 	// What claudeswitch is about to do, in words — decided by the policy engine
 	// rather than by the threshold alone.
@@ -1932,7 +2166,7 @@ func statuslineBody(cfg *config.Config, st *state.State) error {
 	// that may not be coming: when every account is exhausted there is nowhere
 	// to go, and the useful fact is when quota returns instead.
 	if worst >= cfg.SwitchAt {
-		dec := policy.Decide(view.input(st, now, currentDir()))
+		dec := policy.Decide(view.input(st, now))
 		switch dec.Kind {
 		case policy.Switch:
 			if dec.Forced {
@@ -2098,6 +2332,9 @@ func whoamiVerdict(cfg *config.Config, seat, orgID string) string {
 // It asks `claude auth status` rather than reading the file, so Claude Code
 // itself resolves which .claude.json (ccdir.GlobalConfig) from the
 // CLAUDE_CONFIG_DIR the profile runs with (envForProfile).
+// addIdentity is cachedIdentity for `add`'s suggested name and summary. A seam.
+var addIdentity = cachedIdentity
+
 func cachedIdentity(in config.Profile) (email, orgName, orgID string) {
 	c := exec.Command("claude", "auth", "status")
 	c.Env = envForProfile(in)
@@ -2270,8 +2507,8 @@ func renameAccount(cfgPath, oldID, newID string) error {
 	lock, lerr := state.TryDaemonLock()
 	switch {
 	case errors.Is(lerr, state.ErrDaemonRunning):
-		return fmt.Errorf("stop the daemon before renaming (it owns the state file):\n" +
-			"  launchctl unload ~/Library/LaunchAgents/xyz.claudeswitch.daemon.plist")
+		return appErr(codeDaemonRunning, "stop it first: claudeswitch daemon stop",
+			"stop the daemon before renaming (it owns the state file)")
 	case lerr != nil:
 		return fmt.Errorf("could not take the daemon lock, so nothing was renamed: %w", lerr)
 	}
@@ -2382,6 +2619,7 @@ func renameAccount(cfgPath, oldID, newID string) error {
 		}
 	}
 	st.RenameGhostAccount(oldID, newID)
+	st.RenameChromeAccount(oldID, newID)
 	if err := saveRenameState(st); err != nil {
 		return fmt.Errorf("renamed %s → %s in the vault and the config, but the state file could not be "+
 			"saved (%v). Both vault entries are kept, so nothing is lost; do not start the daemon "+
@@ -2587,11 +2825,11 @@ func cmdLogin(args []string) error {
 	profName := fs.String("profile", "", "the Claude Code profile to sign in through, without --direct "+
 		"(default: the one this shell's CLAUDE_CONFIG_DIR belongs to); with --direct, the profile whose "+
 		"pool a new account joins")
-	scope := fs.String("scope", "work",
-		`for an account the config does not have yet: which projects may use it, "work" or "personal"`)
+	asJSON := fs.Bool("json", false, "machine-readable output (with --direct or --code); never prompts")
+	noOpen := fs.Bool("no-open", false, "with --direct: do not open a browser, only print the URL")
 	positional := parseInterleaved(fs, args)
 	if len(positional) != 1 {
-		return fmt.Errorf("usage: claudeswitch login <account-id> [--direct] [--browser <app>] [--sso] [--scope work|personal] [--keep] [--profile NAME]")
+		return fmt.Errorf("usage: claudeswitch login <account-id> [--direct] [--browser <app>] [--sso] [--keep] [--profile NAME]")
 	}
 	id := positional[0]
 	if err := checkNewAccountID(id); err != nil {
@@ -2620,13 +2858,16 @@ func cmdLogin(args []string) error {
 	// write a block by hand that could not be pinned anyway.
 
 	if *code != "" {
-		scopeOverride := ""
-		fs.Visit(func(f *flag.Flag) {
-			if f.Name == "scope" {
-				scopeOverride = *scope
-			}
+		var out map[string]any
+		err := humanToStderr(*asJSON, func() error {
+			var err error
+			out, err = loginComplete(cfg, st, v, *code)
+			return err
 		})
-		return loginComplete(cfg, st, v, *code, scopeOverride)
+		if err != nil || !*asJSON {
+			return err
+		}
+		return emitJSON(out)
 	}
 	if *direct {
 		// --direct never touches a live credential. --profile only says whose
@@ -2636,7 +2877,21 @@ func cmdLogin(args []string) error {
 		if err != nil {
 			return err
 		}
-		return loginDirect(cfg, st, v, id, wantOrg, *scope, *pinOrg, oauth.Extra{Prompt: *prompt, LoginHint: *email}, *browser, pool)
+		br := *browser
+		if *noOpen {
+			br = ""
+		}
+		err = humanToStderr(*asJSON, func() error {
+			return loginDirect(cfg, st, v, id, wantOrg, *pinOrg, oauth.Extra{Prompt: *prompt, LoginHint: *email}, br, pool)
+		})
+		if err != nil || !*asJSON {
+			return err
+		}
+		return emitJSON(directLoginJSON(cfg, id))
+	}
+	if *asJSON {
+		return appErr(codeUsage, "sign in from an app with: claudeswitch login <id> --direct --json --no-open",
+			"login without --direct signs in through Claude Code interactively, which has no JSON form")
 	}
 
 	// Without --direct the sign-in goes through a profile's live credential:
@@ -2662,7 +2917,7 @@ func cmdLogin(args []string) error {
 
 	fmt.Println()
 	if !known {
-		fmt.Print(newAccountNotice(cfg, target, id, *scope))
+		fmt.Print(newAccountNotice(cfg, target, id))
 	}
 	if wantOrg != "" {
 		fmt.Printf("  About to sign in and vault it as %q.\n\n", id)
@@ -2718,6 +2973,8 @@ func cmdLogin(args []string) error {
 	}
 
 	st.AddVaulted(id)
+	st.SetEmail(id, e.Email)
+	st.SetPlan(id, e.Plan)
 	acct := st.Get(id)
 	acct.OrgID, acct.RefreshExpiry = e.OrgID, e.RefreshExpiry
 	st.Profile(target.Name).SetActive(id)
@@ -2726,7 +2983,7 @@ func cmdLogin(args []string) error {
 		fmt.Printf("    ⚠ no refresh token issued — this account cannot be renewed and will\n")
 		fmt.Printf("      need signing in again when its access token expires %s\n", humanUntil(e.Expiry))
 	}
-	reportSeatRecorded(cfg, id, *scope, e, poolToJoin(cfg, target))
+	reportSeatRecorded(cfg, id, e, poolToJoin(cfg, target))
 
 	if !*keep && restoreTo != "" {
 		restoreActive(v, cfg, st, target.Name, live, restoreTo)
@@ -2785,7 +3042,7 @@ func restoreActive(v swapperWith, cfg *config.Config, st *state.State, profName 
 // the live credential as a side effect, and it gives you whichever organization
 // the browser happens to be in — which on this machine was the same one three
 // times running, no matter what the browser was showing.
-func loginDirect(cfg *config.Config, st *state.State, v *vault.Vault, id, wantOrg, scope string, pinOrg bool, extra oauth.Extra, browser, pool string) error {
+func loginDirect(cfg *config.Config, st *state.State, v *vault.Vault, id, wantOrg string, pinOrg bool, extra oauth.Extra, browser, pool string) error {
 	// An unpinned account is fine here. --direct was originally about pinning the
 	// organization, which turned out not to work at all; what it actually buys is
 	// that the credential is obtained and vaulted WITHOUT the live one ever being
@@ -2798,7 +3055,7 @@ func loginDirect(cfg *config.Config, st *state.State, v *vault.Vault, id, wantOr
 	if err != nil {
 		return err
 	}
-	if err := flow.Save(oauth.Pending{AccountID: id, OrgID: wantOrg, Scope: scope, Pinned: pinOrg,
+	if err := flow.Save(oauth.Pending{AccountID: id, OrgID: wantOrg, Pinned: pinOrg,
 		Profile: pool}); err != nil {
 		return fmt.Errorf("could not remember this login attempt: %w", err)
 	}
@@ -2842,7 +3099,7 @@ func loginDirect(cfg *config.Config, st *state.State, v *vault.Vault, id, wantOr
 	}
 	if !hasAccount(cfg, id) {
 		fmt.Printf("  %q is not in %s yet; finishing the login adds it, pinned to the seat\n", id, cfg.Path)
-		fmt.Printf("  that comes back (scope %s).\n", scope)
+		fmt.Printf("  that comes back.\n")
 		if pool != "" {
 			fmt.Printf("  It joins profile %q's pool.\n", pool)
 		}
@@ -2858,19 +3115,18 @@ func loginDirect(cfg *config.Config, st *state.State, v *vault.Vault, id, wantOr
 // loginComplete finishes a --direct login with the pasted code. It is a
 // separate invocation because the paste cannot happen in a non-interactive
 // shell, which is where this tool is usually driven from.
-func loginComplete(cfg *config.Config, st *state.State, v *vault.Vault, code, scopeOverride string) error {
+func loginComplete(cfg *config.Config, st *state.State, v *vault.Vault, code string) (map[string]any, error) {
 	flow, pend, err := oauth.LoadPending()
 	if err != nil {
-		return err
+		return nil, wrapErr(codeNoPendingLogin, "start one: claudeswitch login <id> --direct", err)
 	}
 	id, wantOrg, pinned := pend.AccountID, pend.OrgID, pend.Pinned
-	scope := nonEmpty(scopeOverride, pend.Scope)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	tok, err := oauth.NewClient().Exchange(ctx, flow, code)
 	if err != nil {
-		return fmt.Errorf("%w\n  (nothing was stored; your session is untouched)\n"+
+		return nil, fmt.Errorf("%w\n  (nothing was stored; your session is untouched)\n"+
 			"  Note: the code must come from the most recent URL — an older one will not match.", err)
 	}
 	// The code is single-use, so the attempt is spent either way.
@@ -2885,25 +3141,28 @@ func loginComplete(cfg *config.Config, st *state.State, v *vault.Vault, code, sc
 	e, err := v.StoreTokens(ctx, id, wantOrg, tok, st.KnownAccounts(others))
 	if err != nil {
 		var wrong *vault.WrongOrgError
-		if errors.As(err, &wrong) {
-			fmt.Printf("\n  ✗ that login came back as organization %s, not %s.\n",
-				wrong.GotOrg, wrong.WantOrg)
-			fmt.Printf("    Nothing was stored, and your session is untouched.\n\n")
+		var dup *vault.DuplicateSeatError
+		switch {
+		case errors.As(err, &wrong):
+			why := "The browser session decided, as it does when the organization is not pinned. " +
+				"(--pin-org does not help: the parameter is accepted but has no effect.)"
 			if pinned {
-				fmt.Printf("    organization_uuid was sent and the request succeeded, so the\n")
-				fmt.Printf("    parameter is accepted — and ignored. The browser session decides\n")
-				fmt.Printf("    which organization a login returns, and nothing overrides it.\n\n")
-			} else {
-				fmt.Printf("    The browser session decided, as it does when the organization is\n")
-				fmt.Printf("    not pinned. (--pin-org does not help: the parameter is accepted\n")
-				fmt.Printf("    but has no effect.)\n\n")
+				why = "organization_uuid was sent and the request succeeded, so the parameter is accepted — " +
+					"and ignored. The browser session decides which organization a login returns."
 			}
-			return nil
+			return nil, &appError{Code: codeWrongAccount, Err: err, Hint: why + " Sign in to the right account " +
+				"in the browser (or use --browser with another one) and start again.",
+				Message: fmt.Sprintf("that login came back as organization %s, not %s; nothing was stored, "+
+					"and your session is untouched", wrong.GotOrg, wrong.WantOrg)}
+		case errors.As(err, &dup):
+			return nil, wrapErr(codeAlreadyVaulted, "", err)
 		}
-		return err
+		return nil, err
 	}
 
 	st.AddVaulted(id)
+	st.SetEmail(id, e.Email)
+	st.SetPlan(id, e.Plan)
 	acct := st.Get(id)
 	acct.OrgID, acct.RefreshExpiry = e.OrgID, e.RefreshExpiry
 	if err := st.Save(); err != nil {
@@ -2916,9 +3175,10 @@ func loginComplete(cfg *config.Config, st *state.State, v *vault.Vault, code, sc
 	} else {
 		fmt.Printf("    refresh token expires %s\n", humanUntil(e.RefreshExpiry))
 	}
-	reportSeatRecorded(cfg, id, scope, e, completionPool(cfg, pend))
+	isNew := !hasAccount(cfg, id)
+	reportSeatRecorded(cfg, id, e, completionPool(cfg, pend))
 	fmt.Printf("    your live session was never touched\n\n")
-	return nil
+	return vaultedAccountJSON(cfg.Path, id, e, isNew), nil
 }
 
 // hasAccount reports whether the config has a block for id at all.
@@ -2934,8 +3194,8 @@ func hasAccount(cfg *config.Config, id string) bool {
 // reportSeatRecorded writes the verified seat into the config and says what it
 // did. The credential is already vaulted by now, so a failure here is reported
 // rather than returned: the account works, it just still needs its block.
-func reportSeatRecorded(cfg *config.Config, id, scope string, e *vault.Entry, pool string) {
-	msg, err := recordSeat(cfg, id, scope, e, pool)
+func reportSeatRecorded(cfg *config.Config, id string, e *vault.Entry, pool string) {
+	msg, err := recordSeat(cfg, id, e, pool)
 	switch {
 	case err != nil:
 		fmt.Printf("    ⚠ the credential is vaulted, but the config was not updated:\n")
@@ -2961,7 +3221,7 @@ func cmdIdentify(args []string) error {
 	force := fs.Bool("force", false, "re-read every account even if already identified")
 	positional := parseInterleaved(fs, args)
 
-	cfg, _, err := load(*cfgPath)
+	cfg, st, err := load(*cfgPath)
 	if err != nil {
 		return err
 	}
@@ -2985,7 +3245,10 @@ func cmdIdentify(args []string) error {
 		// entries written before a field existed would otherwise never gain it.
 		seat, _ := v.IdentityOf(id)
 		if seat != "" && v.PlanOf(id) != "" && !*force {
-			fmt.Printf("  %-16s %s  %s\n", id, v.DescribeOf(id), v.PlanOf(id))
+			email := v.DescribeOf(id)
+			st.SetEmail(id, email) // backfills entries vaulted before emails were recorded
+			st.SetPlan(id, v.PlanOf(id))
+			fmt.Printf("  %-16s %s  %s\n", id, email, v.PlanOf(id))
 			continue
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -3003,6 +3266,12 @@ func cmdIdentify(args []string) error {
 		// distinction and was labelling the account uuid alone as the seat.
 		fmt.Printf("  %-16s %s  %s  (seat %s)\n", id, pr.Account.Email, pr.Plan(),
 			usage.ShortSeat(pr.Seat()))
+		// Recorded so `cs chrome add` can name it without the keychain.
+		st.SetEmail(id, pr.Account.Email)
+		st.SetPlan(id, pr.Plan())
+	}
+	if err := st.Save(); err != nil {
+		fmt.Fprintf(os.Stderr, "note: %v\n", err)
 	}
 	if len(deferred) > 0 {
 		fmt.Printf("\n  %v not done yet: the usage API call budget is spent.\n", deferred)
@@ -3017,79 +3286,6 @@ func cmdIdentify(args []string) error {
 // Separate from `forget`, which only drops observations. This throws the
 // credential away, which cannot be undone — the account has to be signed in to
 // again — so it names what is being destroyed before doing it.
-func cmdRemove(args []string) error {
-	fs := flag.NewFlagSet("remove", flag.ExitOnError)
-	cfgPath := fs.String("config", "", "path to config.toml")
-	positional := parseInterleaved(fs, args)
-	if len(positional) != 1 {
-		return fmt.Errorf("usage: claudeswitch remove <account-id>")
-	}
-	id := positional[0]
-
-	cfg, st, err := load(*cfgPath)
-	if err != nil {
-		return err
-	}
-	if state.DaemonRunning() {
-		return fmt.Errorf("stop the daemon before removing an account (it owns the state file):\n" +
-			"  launchctl unload ~/Library/LaunchAgents/xyz.claudeswitch.daemon.plist")
-	}
-	v := vault.New(logger(false))
-	if !v.Has(id) {
-		return fmt.Errorf("no vault entry for %q", id)
-	}
-
-	who := v.DescribeOf(id)
-	_, org := v.IdentityOf(id)
-	twin := otherHoldingSameCredential(cfg, st, id)
-	// Any profile's live item, not only this shell's.
-	holderName, _, live := liveHolder(cliGhostTargets(cfg, st), v, id)
-	if live && twin == "" {
-		if multiProfile(cfg) {
-			return fmt.Errorf("%q holds the credential profile %q is using right now.\n"+
-				"  Switch it to another account first (`claudeswitch use <other> --profile %s`), "+
-				"then remove it", id, holderName, holderName)
-		}
-		return fmt.Errorf("%q holds the credential Claude Code is using right now.\n"+
-			"  Switch to another account first (`claudeswitch use <other>`), then remove it", id)
-	}
-	if live && twin != "" {
-		// The one case where removing a live entry is safe, and the only way
-		// out of the state `doctor` calls corrupted. Liveness is decided by
-		// comparing access tokens, so two entries sharing one token are both
-		// "live" at once: switching to the other cannot release this one,
-		// because the other holds the identical token. Refusing here left the
-		// duplicate impossible to delete by the command that deletes things.
-		fmt.Printf("\n  note: %s holds this same credential, so deleting this copy leaves it\n", twin)
-		fmt.Printf("        vaulted under that name. The live session is unaffected.\n")
-	}
-
-	if err := keychain.Delete(keychain.VaultService(id)); err != nil {
-		return err
-	}
-	st.Drop(id)
-	st.DropVaulted(id)
-	if err := st.Save(); err != nil {
-		fmt.Fprintf(os.Stderr, "note: %v\n", err)
-	}
-
-	fmt.Printf("\n  ✓ removed %s", id)
-	if who != "" {
-		fmt.Printf(" — %s", who)
-		if org != "" {
-			fmt.Printf(" in organization %s", shortID(org))
-		}
-	}
-	fmt.Printf("\n    the credential is gone; signing in to that account again is the only way back\n")
-	for _, a := range cfg.Accounts {
-		if a.ID == id {
-			fmt.Printf("\n    %s still lists it — remove its [[account]] block and any priority entry\n", cfg.Path)
-		}
-	}
-	fmt.Println()
-	return nil
-}
-
 // otherHoldingSameCredential returns another vaulted id whose stored access
 // token is byte-identical to this one's, or "" when this entry is the only copy.
 //
@@ -3407,6 +3603,8 @@ func cmdSetup(args []string) error {
 						fmt.Printf("    ✗ %v\n\n", serr)
 					} else {
 						seats[pr.Seat()] = id
+						st.SetEmail(id, e.Email)
+						st.SetPlan(id, e.Plan)
 						added = append(added, vaultedAccount{id, pr.Account.Email, pr.Plan(),
 							pr.Seat(), e.OrgID, pr.Organization.Name})
 						fmt.Printf("    ✓ vaulted %s\n\n", id)
@@ -3480,7 +3678,8 @@ func cmdSetup(args []string) error {
 		seats[seat] = id
 		added = append(added, vaultedAccount{id, v.DescribeOf(id), v.PlanOf(id), seat, org, ""})
 		fmt.Printf("    ✓ vaulted %s — %s  %s\n\n", id, v.DescribeOf(id), nonEmpty(v.PlanOf(id), ""))
-		_ = e
+		st.SetEmail(id, e.Email)
+		st.SetPlan(id, e.Plan)
 	}
 
 	if len(added) == 0 {
@@ -3526,7 +3725,6 @@ func cmdSetup(args []string) error {
 	if last := &cfg.Accounts[len(cfg.Accounts)-1]; askYes(
 		fmt.Sprintf("\n  Hold %q back as a reserve, never auto-spent past 70%%", last.ID), true) {
 		last.Reserve = 70
-		last.Scope = "personal"
 	}
 
 	if err := cfg.Write(*cfgPath); err != nil {
@@ -3655,6 +3853,9 @@ func truncateID(s string, n int) string {
 // merely a character device — /dev/null is one, which let `cs top` draw escape
 // codes into a pipe.
 func isTerminal() bool {
+	if promptsOff {
+		return false
+	}
 	fi, err := os.Stdin.Stat()
 	if err != nil || fi.Mode()&os.ModeCharDevice == 0 {
 		return false
@@ -3673,18 +3874,6 @@ func isTTY(f *os.File) bool {
 	return err == nil && ws != nil
 }
 
-// currentDir is where the CLI is being run, which is the directory a project
-// rule should be judged against for `cs plan`. The daemon uses the session's
-// working directory from the transcripts instead, since it is not run from
-// anywhere in particular.
-func currentDir() string {
-	wd, err := os.Getwd()
-	if err != nil {
-		return ""
-	}
-	return wd
-}
-
 // staleDecisionAfter is when a reading is too old to decide on: three poll
 // intervals, so a single missed poll is unremarkable but a pattern is not.
 func staleDecisionAfter(cfg *config.Config) time.Duration {
@@ -3692,7 +3881,13 @@ func staleDecisionAfter(cfg *config.Config) time.Duration {
 	if iv <= 0 {
 		iv = 4 * time.Minute
 	}
-	return 3 * iv
+	// min(3 × poll_active, 4m). Capped so a slower poll_active cannot make a
+	// stuck poller take longer to be called out (while the account in use is
+	// moving it is read every poll_hot anyway); 4m, not 3m, so that routine
+	// operation at the 3m default never warns — a read at 3m plus its tick,
+	// or an overdue read at 3m15s after a hot spell (config.OverdueAfter),
+	// stays under it (owner decision 2026-10-07).
+	return min(3*iv, 4*time.Minute)
 }
 
 // recentSwitches returns the last n rotations, oldest first, for the status
@@ -3723,15 +3918,19 @@ func knownAccounts(cfg *config.Config) map[string]bool {
 }
 
 // blindLimit is how long the daemon may go without a successful reading before
-// treating itself as wedged. Ten poll intervals: long enough that ordinary
-// timeouts and rate-limit backoffs pass without a restart, short enough that a
-// genuinely stuck daemon is replaced within minutes rather than hours.
+// treating itself as wedged: ten poll_active intervals, but never more than
+// ten minutes nor less than two. Long enough that ordinary timeouts pass
+// without a restart (a 429 backoff never counts: see Poller.Blind), short
+// enough that a genuinely stuck daemon is replaced within minutes. The cap
+// keeps the ceiling where it was at the old 60s default: a slower poll_active
+// (2m since lane 11) must not leave a wedged daemon running for twenty.
 func blindLimit(cfg *config.Config) time.Duration {
 	iv := cfg.PollActive.Duration
 	if iv <= 0 {
 		iv = time.Minute
 	}
-	if d := 10 * iv; d > 2*time.Minute {
+	d := min(10*iv, 10*time.Minute)
+	if d > 2*time.Minute {
 		return d
 	}
 	return 2 * time.Minute
@@ -3795,11 +3994,10 @@ func cmdWhy(args []string) error {
 	if err := checkProfileFlag(cfg, *only); err != nil {
 		return err
 	}
-	dir := currentDir()
 	if *asJSON {
-		return emitJSON(whyJSON(cfg, st, time.Now(), dir, *only))
+		return emitJSON(whyJSON(cfg, st, time.Now(), *only))
 	}
-	renderWhy(os.Stdout, cfg, st, time.Now(), dir, *only)
+	renderWhy(os.Stdout, cfg, st, time.Now(), *only)
 	return nil
 }
 
@@ -3811,6 +4009,9 @@ func decisionJSON(d policy.Decision) map[string]any {
 	if d.Forced {
 		m["forced"] = true
 	}
+	if d.Failover {
+		m["failover"] = true
+	}
 	if !d.RecoversAt.IsZero() {
 		m["recovers_account"] = d.RecoversAccount
 		m["recovers_at"] = d.RecoversAt
@@ -3818,7 +4019,7 @@ func decisionJSON(d policy.Decision) map[string]any {
 	return m
 }
 
-func verdictsJSON(vs []policy.Verdict) []map[string]any {
+func verdictsJSON(vs []policy.Verdict, cfg *config.Config, st *state.State, now time.Time) []map[string]any {
 	out := make([]map[string]any, 0, len(vs))
 	for _, v := range vs {
 		m := map[string]any{
@@ -3831,9 +4032,63 @@ func verdictsJSON(vs []policy.Verdict) []map[string]any {
 		if !v.ClearsAt.IsZero() {
 			m["clears_at"] = v.ClearsAt
 		}
+		addWeeklyJSON(m, cfg, st.Accounts[v.ID], now)
 		out = append(out, m)
 	}
 	return out
+}
+
+// addWeeklyJSON adds an account's per-model weekly limits (IMPROVEMENTS I6)
+// and weekly pace (I8). Additive: each key appears only when there is data
+// for it, so output for an account without any is unchanged.
+//
+//	"model_limits":   [{"model", "percent" (null: unknown), "severity",
+//	                    "resets_at", "is_active", "counted"}]
+//	"unknown_limits": [{"kind", "group", "describe", "percent", "severity"}]
+//	"weekly_pace":    {"expected", "actual", "resets_at",
+//	                   "at_reset", "unused_at_reset" (only once estimable)}
+func addWeeklyJSON(m map[string]any, cfg *config.Config, acct *state.Account, now time.Time) {
+	if !acct.HasReading() {
+		return
+	}
+	pct := func(l usage.Limit) any {
+		if !l.Known() {
+			return nil
+		}
+		return l.Pct()
+	}
+	var models []map[string]any
+	for _, l := range acct.Last.ModelWeekly() {
+		e := map[string]any{
+			"model": l.ModelName(), "percent": pct(l), "severity": l.Severity,
+			"is_active": l.IsActive, "counted": cfg.CountsModel(l.ModelName()),
+		}
+		if l.ResetsAt != nil {
+			e["resets_at"] = *l.ResetsAt
+		}
+		models = append(models, e)
+	}
+	if len(models) > 0 {
+		m["model_limits"] = models
+	}
+	var unknown []map[string]any
+	for _, l := range acct.Last.UnknownLimits() {
+		unknown = append(unknown, map[string]any{
+			"kind": l.Kind, "group": l.Group, "describe": l.Describe(),
+			"percent": pct(l), "severity": l.Severity,
+		})
+	}
+	if len(unknown) > 0 {
+		m["unknown_limits"] = unknown
+	}
+	if p, ok := acct.WeeklyPace(now); ok {
+		pace := map[string]any{"expected": p.Expected, "actual": p.Actual, "resets_at": p.ResetsAt}
+		if p.Estimated {
+			pace["at_reset"] = p.AtReset
+			pace["unused_at_reset"] = p.Unused
+		}
+		m["weekly_pace"] = pace
+	}
 }
 
 // emitJSON writes a value as indented JSON. Every read command offers it, so a
@@ -3851,7 +4106,7 @@ func statusJSON(cfg *config.Config, st *state.State, p *poller.Poller) map[strin
 	v := vault.New(logger(false))
 	for _, a := range cfg.Ordered() {
 		m := map[string]any{
-			"id": a.ID, "scope": a.Scope, "vaulted": v.Has(a.ID),
+			"id": a.ID, "vaulted": v.Has(a.ID),
 			"active": activeIn(cfg, st, a.ID) != "",
 		}
 		addProfileJSON(m, cfg, st, a.ID)
@@ -3891,6 +4146,13 @@ func statusJSON(cfg *config.Config, st *state.State, p *poller.Poller) map[strin
 					m["clears_at"] = *b.ResetsAt
 				}
 			}
+			// "counted" follows the models list of the profile whose pool
+			// holds the account.
+			pcfg := cfg
+			if owner, ok := cfg.ProfileOf(a.ID); ok && len(cfg.Profiles) > 0 {
+				pcfg = cfg.ForProfile(owner)
+			}
+			addWeeklyJSON(m, pcfg, acct, time.Now())
 		} else {
 			m["state"] = "unknown"
 			m["usable"] = false
@@ -3936,183 +4198,6 @@ func statusJSON(cfg *config.Config, st *state.State, p *poller.Poller) map[strin
 		out["profiles"] = list
 	}
 	return out
-}
-
-// settings are the tunable values, described once so `cs config` can list them,
-// set them and explain them without a second copy drifting out of step.
-type setting struct {
-	name string
-	get  func(*config.Config) string
-	set  func(*config.Config, string) error
-	help string
-}
-
-func durSetter(f func(*config.Config) *config.Duration) func(*config.Config, string) error {
-	return func(c *config.Config, v string) error {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			return fmt.Errorf("%q is not a duration (try 90s, 5m, 2h)", v)
-		}
-		*f(c) = config.Duration{Duration: d}
-		return nil
-	}
-}
-
-func pctSetter(f func(*config.Config) *float64) func(*config.Config, string) error {
-	return func(c *config.Config, v string) error {
-		n, err := strconv.ParseFloat(strings.TrimSuffix(v, "%"), 64)
-		if err != nil {
-			return fmt.Errorf("%q is not a percentage", v)
-		}
-		*f(c) = n
-		return nil
-	}
-}
-
-func settings() []setting {
-	return []setting{
-		{"switch_at", func(c *config.Config) string { return fmt.Sprintf("%g", c.SwitchAt) },
-			pctSetter(func(c *config.Config) *float64 { return &c.SwitchAt }),
-			"rotate away at this much of the 5-hour window"},
-		{"switch_at_weekly", func(c *config.Config) string { return fmt.Sprintf("%g", c.SwitchAtWeekly) },
-			pctSetter(func(c *config.Config) *float64 { return &c.SwitchAtWeekly }),
-			"...and at this much of the weekly one"},
-		{"hard_floor", func(c *config.Config) string { return fmt.Sprintf("%g", c.HardFloor) },
-			pctSetter(func(c *config.Config) *float64 { return &c.HardFloor }),
-			"above this, swap mid-turn rather than wait for an idle gap"},
-		{"hot_threshold", func(c *config.Config) string { return fmt.Sprintf("%g", c.HotThreshold) },
-			pctSetter(func(c *config.Config) *float64 { return &c.HotThreshold }),
-			"poll the account in use every poll_hot above this, rather than poll_active"},
-		{"switch_when", func(c *config.Config) string { return c.SwitchWhen },
-			func(c *config.Config, v string) error { c.SwitchWhen = v; return nil },
-			`"idle" to prefer swapping between turns, or "immediate"`},
-		{"max_switch_wait", func(c *config.Config) string { return c.MaxSwitchWait.String() },
-			durSetter(func(c *config.Config) *config.Duration { return &c.MaxSwitchWait }),
-			"stop waiting for an idle gap after this"},
-		{"cooldown", func(c *config.Config) string { return c.Cooldown.String() },
-			durSetter(func(c *config.Config) *config.Duration { return &c.Cooldown }),
-			"minimum gap between rotations, to stop flapping"},
-		{"poll_active", func(c *config.Config) string { return c.PollActive.String() },
-			durSetter(func(c *config.Config) *config.Duration { return &c.PollActive }),
-			"how often to read the account in use"},
-		{"poll_hot", func(c *config.Config) string { return c.PollHot.String() },
-			durSetter(func(c *config.Config) *config.Duration { return &c.PollHot }),
-			"...and when it is near the trigger or burning fast"},
-		{"poll_idle", func(c *config.Config) string { return c.PollIdle.String() },
-			durSetter(func(c *config.Config) *config.Duration { return &c.PollIdle }),
-			"how often to read the others"},
-		{"api_budget", func(c *config.Config) string { return strconv.Itoa(c.APIBudget) },
-			func(c *config.Config, v string) error {
-				n, err := strconv.Atoi(v)
-				if err != nil {
-					return fmt.Errorf("%q is not a number", v)
-				}
-				c.APIBudget = n
-				return nil
-			}, "usage calls per 5 minutes, across every process"},
-		{"landing_margin", func(c *config.Config) string { return fmt.Sprintf("%g", c.Margin()) },
-			func(c *config.Config, v string) error {
-				n, err := strconv.ParseFloat(strings.TrimSuffix(v, "%"), 64)
-				if err != nil {
-					return fmt.Errorf("%q is not a number of points", v)
-				}
-				c.LandingMargin = &n
-				return nil
-			}, "a switch target needs this many points below its own trigger (0 = off)"},
-		{"blind_failover_polls", func(c *config.Config) string { return strconv.Itoa(c.BlindPolls()) },
-			func(c *config.Config, v string) error {
-				n, err := strconv.Atoi(v)
-				if err != nil {
-					return fmt.Errorf("%q is not a number", v)
-				}
-				c.BlindFailoverPolls = &n
-				return nil
-			}, "fail over after this many unreadable polls of the account in use (0 = hold)"},
-		{"refresh_window", func(c *config.Config) string { return c.RefreshWindow.String() },
-			durSetter(func(c *config.Config) *config.Duration { return &c.RefreshWindow }),
-			"renew a credential this long before it expires"},
-		{"refresh_probe", func(c *config.Config) string { return c.RefreshProbe.String() },
-			durSetter(func(c *config.Config) *config.Duration { return &c.RefreshProbe }),
-			"also renew idle accounts this often, to catch a dead refresh token"},
-	}
-}
-
-// cmdConfig shows the settings in force, or changes one.
-//
-// There are a dozen knobs now, and editing TOML by hand to change one means
-// finding the file, knowing the key, and getting no validation until the daemon
-// next starts. This reads them back, writes one, and refuses anything the
-// validator would reject.
-func cmdConfig(args []string) error {
-	fs := flag.NewFlagSet("config", flag.ExitOnError)
-	cfgPath := fs.String("config", "", "path to config.toml")
-	asJSON := fs.Bool("json", false, "machine-readable output")
-	positional := parseInterleaved(fs, args)
-
-	cfg, err := config.Load(*cfgPath)
-	if err != nil && cfg == nil {
-		return err
-	}
-	all := settings()
-
-	if len(positional) == 0 {
-		if *asJSON {
-			m := map[string]any{"path": cfg.Path}
-			for _, s := range all {
-				m[s.name] = s.get(cfg)
-			}
-			return emitJSON(m)
-		}
-		fmt.Printf("\n  %s\n\n", cfg.Path)
-		t := make([][3]string, 0, len(all))
-		w := 0
-		for _, s := range all {
-			if len(s.name) > w {
-				w = len(s.name)
-			}
-			t = append(t, [3]string{s.name, s.get(cfg), s.help})
-		}
-		for _, r := range t {
-			fmt.Printf("  %-*s  %-8s  %s\n", w, r[0], r[1], r[2])
-		}
-		fmt.Printf("\n  change one with:  cs config <name> <value>\n\n")
-		return nil
-	}
-
-	name := positional[0]
-	var target *setting
-	for i := range all {
-		if all[i].name == name {
-			target = &all[i]
-		}
-	}
-	if target == nil {
-		return fmt.Errorf("no setting called %q. `cs config` lists them", name)
-	}
-	if len(positional) == 1 {
-		fmt.Println(target.get(cfg))
-		return nil
-	}
-
-	was := target.get(cfg)
-	if err := target.set(cfg, positional[1]); err != nil {
-		return err
-	}
-	// Validate before writing, so a bad value is refused rather than stored and
-	// discovered when the daemon next fails to start.
-	if err := cfg.Validate(); err != nil {
-		return fmt.Errorf("%s would make the config invalid:\n  %w", name, err)
-	}
-	if err := cfg.Write(cfg.Path); err != nil {
-		return err
-	}
-	fmt.Printf("\n  %s  %s → %s\n", name, was, target.get(cfg))
-	fmt.Printf("  written to %s\n", cfg.Path)
-	if state.DaemonRunning() {
-		fmt.Printf("  restart the daemon to apply it:  ./install.sh --live\n")
-	}
-	fmt.Println()
-	return nil
 }
 
 func countVaulted(cfg *config.Config) int {
@@ -4181,7 +4266,7 @@ func cmdTop(args []string) error {
 			Budget: p.Budget(), Degraded: degraded, DegradedWhy: why,
 			DaemonOwns: state.DaemonRunning(), Vaulted: vaulted, Plans: plans,
 			Known: knownAccounts(cfg),
-		}, recentSwitches(5), time.Now(), currentDir(), *only)
+		}, recentSwitches(5), time.Now(), *only)
 		// Home the cursor and clear as we go, rather than clearing first: a
 		// clear-then-draw flickers.
 		fmt.Print("\033[H\033[J")
@@ -4244,13 +4329,13 @@ func cmdUninstall(args []string) error {
 	}
 
 	// Service first, so nothing is running while the rest goes.
-	if runtime.GOOS == "darwin" {
-		_ = exec.Command("launchctl", "unload", plist).Run()
+	if serviceSeams.goos == "darwin" {
+		_, _ = serviceSeams.run(launchctlPath, "unload", plist)
 		if err := os.Remove(plist); err == nil {
 			fmt.Printf("  removed %s\n", plist)
 		}
 	} else {
-		_ = exec.Command("systemctl", "--user", "disable", "--now", "claudeswitch.service").Run()
+		_, _ = serviceSeams.run(systemctlPath(), "--user", "disable", "--now", serviceUnit)
 		if err := os.Remove(unit); err == nil {
 			fmt.Printf("  removed %s\n", unit)
 		}

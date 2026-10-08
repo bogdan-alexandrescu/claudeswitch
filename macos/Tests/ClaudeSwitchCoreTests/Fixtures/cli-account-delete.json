@@ -1,0 +1,15 @@
+{
+  "account": "work-2",
+  "daemon_running": true,
+  "email": "person2@example.com",
+  "org_id": "22222222-2222-2222-2222-222222222222",
+  "removed": {
+    "config": true,
+    "credential": true,
+    "pool": "default",
+    "priority": false,
+    "state": true
+  },
+  "seat": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb@22222222-2222-2222-2222-222222222222",
+  "twin": null
+}

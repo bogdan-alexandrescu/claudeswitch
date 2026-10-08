@@ -1,5 +1,5 @@
 {
-  "description": "claudeswitch: tell Claude how much quota the active account has left",
+  "description": "claudeswitch: tell Claude how much quota the active account has left, and which Chrome profile Claude in Chrome needs after a rotation",
   "hooks": {
     "SessionStart": [
       {
@@ -7,6 +7,18 @@
           {
             "type": "command",
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "^mcp__claude-in-chrome__.*$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/chrome-hint.sh\"",
             "timeout": 10
           }
         ]

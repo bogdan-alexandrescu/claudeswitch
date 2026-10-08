@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "no_pending_login",
+    "hint": "start again with: claudeswitch login work-3 --direct",
+    "message": "no sign-in is waiting for a code, or it expired"
+  }
+}

@@ -2,26 +2,57 @@
   "accounts": [
     {
       "active": true,
-      "clears_at": "2026-10-11T01:57:15Z",
+      "clears_at": "2026-10-11T02:46:41Z",
       "eligible": true,
       "id": "work-1",
-      "utilization": 41.627656691666665,
+      "model_limits": [
+        {
+          "counted": false,
+          "is_active": false,
+          "model": "Modelname",
+          "percent": 12,
+          "resets_at": "2026-10-11T02:46:41Z",
+          "severity": "normal"
+        }
+      ],
+      "utilization": 41.63093337916666,
+      "weekly_pace": {
+        "actual": 41.25593337916666,
+        "at_reset": 72.19758593044983,
+        "expected": 57.14309259441137,
+        "resets_at": "2026-10-11T02:46:41Z",
+        "unused_at_reset": 27.802414069550167
+      },
       "why": "at 42%, 53 points of room",
       "window": "seven_day"
     },
     {
-      "clears_at": "2026-10-08T03:57:15Z",
+      "clears_at": "2026-10-08T04:46:41Z",
       "eligible": true,
       "id": "personal",
       "utilization": 12,
+      "weekly_pace": {
+        "actual": 8,
+        "at_reset": 27.999769259378336,
+        "expected": 28.571664022982805,
+        "resets_at": "2026-10-13T02:46:41Z",
+        "unused_at_reset": 72.00023074062166
+      },
       "why": "at 12%, ready",
       "window": "five_hour"
     },
     {
-      "clears_at": "2026-10-08T02:37:15Z",
+      "clears_at": "2026-10-08T03:26:41Z",
       "eligible": false,
       "id": "work-2",
       "utilization": 100,
+      "weekly_pace": {
+        "actual": 77,
+        "at_reset": 100,
+        "expected": 28.571664022982805,
+        "resets_at": "2026-10-13T02:46:41Z",
+        "unused_at_reset": 0
+      },
       "why": "refused on its five_hour window",
       "window": "five_hour"
     }

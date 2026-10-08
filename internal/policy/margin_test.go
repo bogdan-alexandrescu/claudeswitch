@@ -49,23 +49,45 @@ func TestMarginKeepsANormalRotationOffANearlyFullAccount(t *testing.T) {
 	}
 }
 
-// The margin is room below the window's own trigger, so a weekly reading is
-// held to switch_at_weekly, not to the session trigger.
-func TestMarginIsJudgedAgainstEachWindowsOwnTrigger(t *testing.T) {
+// Owner decision 2026-10-07: the margin applies to the 5-hour window only.
+// A weekly window close to its trigger is still a valid landing place as long
+// as it is under it — the weekly trigger is near 100 on purpose, and a margin
+// there would rule out accounts with days of work left.
+func TestTheMarginDoesNotApplyToTheWeeklyWindow(t *testing.T) {
+	c := cfg()
+	c.SwitchAtWeekly = 98
+	c.HardFloor = 99
+	in := Input{Cfg: c, Now: now, St: st("work-a", map[string]*state.Account{
+		"work-a": reading(30, 98.4, now.Add(time.Hour)),
+		"work-b": reading(10, 92, now.Add(time.Hour)), // 6 points under its weekly trigger
+	})}
+	if d := Decide(in); d.Kind != Switch || d.Target != "work-b" {
+		t.Fatalf("got %v, want switch to work-b now: the margin is a session-window rule", d)
+	}
+	_, verdicts := Explain(in)
+	for _, v := range verdicts {
+		if v.ID == "work-b" && (!v.Eligible || strings.Contains(v.Why, "margin")) {
+			t.Errorf("work-b verdict %q (eligible %v): the weekly window has no margin", v.Why, v.Eligible)
+		}
+	}
+}
+
+// The session window is held to the margin even when the weekly window is the
+// one closest to its own trigger.
+func TestTheSessionMarginAppliesWhicheverWindowBinds(t *testing.T) {
 	c := cfg()
 	c.SwitchAtWeekly = 98
 	c.HardFloor = 99
 	in := Input{Cfg: c, Now: now, St: st("work-a", map[string]*state.Account{
 		"work-a": reading(91, 30, now.Add(time.Hour)),
-		"work-b": reading(10, 92, now.Add(time.Hour)), // 6 points under its weekly trigger
+		"work-b": reading(80, 96, now.Add(time.Hour)), // session 5 under, weekly 2 under
 	})}
-	if d := Decide(in); d.Kind == Switch {
-		t.Fatalf("got %v; work-b's weekly window has 6 points of room, under the 10-point margin", d)
+	d := Decide(in)
+	if d.Kind != Stay || !strings.Contains(d.Reason, "landing margin") {
+		t.Fatalf("got %v, want stay: work-b's session window is inside the margin", d)
 	}
-
-	in.St.Accounts["work-b"] = reading(10, 87, now.Add(time.Hour)) // 11 points of room
-	if d := Decide(in); d.Kind != Switch || d.Target != "work-b" {
-		t.Fatalf("got %v, want switch to work-b (11 points under its weekly trigger)", d)
+	if !strings.Contains(d.Reason, "session") {
+		t.Errorf("reason %q should name the session window", d.Reason)
 	}
 }
 

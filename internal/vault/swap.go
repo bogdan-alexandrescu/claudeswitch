@@ -89,6 +89,7 @@ func (v *Vault) SwapToWith(ctx context.Context, item keychain.Live, accountID, e
 		if err != nil {
 			return nil, err
 		}
+		v.budget.MarkLive(pre.ClaudeAIOAuth.AccessToken)
 		plan := v.planCapture(ctx, pre, accountID, incoming.AccessToken, o)
 
 		held, err := v.lock(ctx, item, o.LockWait)

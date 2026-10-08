@@ -149,7 +149,7 @@ func mustGet(t *testing.T, path, key string) json.RawMessage {
 
 func renderContextString(cfg *config.Config, st *state.State, now time.Time, daemon bool) string {
 	var b strings.Builder
-	renderContext(&b, cfg, st, now, daemon, "")
+	renderContext(&b, cfg, st, now, daemon)
 	return b.String()
 }
 

@@ -18,9 +18,9 @@ func cfg() *config.Config {
 		Cooldown:  config.Duration{Duration: 10 * time.Minute},
 		Priority:  []string{"work-a", "work-b", "personal"},
 		Accounts: []config.Account{
-			{ID: "work-a", Scope: "work"},
-			{ID: "work-b", Scope: "work"},
-			{ID: "personal", Scope: "personal", Reserve: 70},
+			{ID: "work-a"},
+			{ID: "work-b"},
+			{ID: "personal", Reserve: 70},
 		},
 	}
 }
@@ -54,7 +54,7 @@ func TestStaysWhenActiveHasHeadroom(t *testing.T) {
 // At the trigger it rotates to whichever eligible account has the most room —
 // including a personal one. Room is the whole rule now: position in the
 // priority list orders candidates for tie-breaking, it does not hold an account
-// back. `reserve`, or a scope the directory disallows, is what does that.
+// back. `reserve`, or another profile's pool, is what does that.
 func TestSwitchesAtTheTriggerToTheEmptiest(t *testing.T) {
 	in := Input{Cfg: cfg(), Now: now, St: st("work-a", map[string]*state.Account{
 		"work-a":   reading(91, 30, now.Add(time.Hour)),
@@ -255,7 +255,7 @@ func TestAnAlmostSpentAccountLosesToAFreshOne(t *testing.T) {
 		"work-b": reading(84, 30, now.Add(time.Hour)), // one point of room
 		"work-c": reading(2, 2, now.Add(time.Hour)),   // just reset
 	})}
-	in.Cfg.Accounts = append(in.Cfg.Accounts, config.Account{ID: "work-c", Scope: "work"})
+	in.Cfg.Accounts = append(in.Cfg.Accounts, config.Account{ID: "work-c"})
 	in.Cfg.Priority = []string{"work-a", "work-b", "work-c", "personal"}
 
 	if d := Decide(in); d.Kind != Switch || d.Target != "work-c" {
@@ -303,100 +303,6 @@ func TestNoAccountsConfigured(t *testing.T) {
 	in := Input{Cfg: &config.Config{SwitchAt: 85, HardFloor: 96}, Now: now, St: st("", nil)}
 	if d := Decide(in); d.Kind != Wait {
 		t.Fatalf("got %v, want wait", d)
-	}
-}
-
-// Scope was written down and never enforced: work quota could silently fund
-// personal work and vice versa. For anyone whose employer cares where their
-// usage is billed, that is the difference between a usable tool and one that is
-// not.
-func cfgWithProjects() *config.Config {
-	c := cfg()
-	c.Projects = map[string]config.Project{
-		"/work/**":     {Eligible: []string{"work"}},
-		"/personal/**": {Eligible: []string{"personal"}},
-		"/either/**":   {Prefer: []string{"personal", "work"}},
-	}
-	return c
-}
-
-func TestScopeRestrictsWhichAccountsMayServeADirectory(t *testing.T) {
-	in := Input{Cfg: cfgWithProjects(), Now: now, Dir: "/work/repo",
-		St: st("work-a", map[string]*state.Account{
-			"work-a":   reading(92, 30, now.Add(time.Hour)),
-			"personal": reading(2, 2, now.Add(time.Hour)),
-		})}
-	// personal has plenty of room but is not allowed in a work directory.
-	d := Decide(in)
-	if d.Kind != Wait {
-		t.Fatalf("got %v, want wait: personal must not serve a work directory", d)
-	}
-	if !contains(d.Reason, "personal") || !contains(d.Reason, "work") {
-		t.Errorf("the reason should explain the scope block, got %q", d.Reason)
-	}
-}
-
-func TestScopeAllowsAnAccountOfTheRightScope(t *testing.T) {
-	in := Input{Cfg: cfgWithProjects(), Now: now, Dir: "/work/repo",
-		St: st("work-a", map[string]*state.Account{
-			"work-a":   reading(92, 30, now.Add(time.Hour)),
-			"work-b":   reading(5, 5, now.Add(time.Hour)),
-			"personal": reading(1, 1, now.Add(time.Hour)),
-		})}
-	if d := Decide(in); d.Kind != Switch || d.Target != "work-b" {
-		t.Fatalf("got %v, want switch to work-b", d)
-	}
-}
-
-// An unknown directory must not stop rotation. Refusing to switch because we
-// cannot tell where we are is worse than the thing the rule prevents.
-func TestUnknownDirectoryImposesNoRestriction(t *testing.T) {
-	in := Input{Cfg: cfgWithProjects(), Now: now, Dir: "",
-		St: st("work-a", map[string]*state.Account{
-			"work-a":   reading(92, 30, now.Add(time.Hour)),
-			"personal": reading(2, 2, now.Add(time.Hour)),
-		})}
-	if d := Decide(in); d.Kind != Switch {
-		t.Fatalf("got %v, want a switch: an unknown directory restricts nothing", d)
-	}
-}
-
-// A directory with no rule is unrestricted.
-func TestDirectoryWithNoRuleIsUnrestricted(t *testing.T) {
-	in := Input{Cfg: cfgWithProjects(), Now: now, Dir: "/somewhere/else",
-		St: st("work-a", map[string]*state.Account{
-			"work-a":   reading(92, 30, now.Add(time.Hour)),
-			"personal": reading(2, 2, now.Add(time.Hour)),
-		})}
-	if d := Decide(in); d.Kind != Switch || d.Target != "personal" {
-		t.Fatalf("got %v, want switch to personal", d)
-	}
-}
-
-// `prefer` reorders without forbidding: an account outside the preference is
-// still usable, just later.
-func TestPreferReordersWithoutForbidding(t *testing.T) {
-	in := Input{Cfg: cfgWithProjects(), Now: now, Dir: "/either/repo",
-		St: st("work-a", map[string]*state.Account{
-			"work-a":   reading(92, 30, now.Add(time.Hour)),
-			"work-b":   reading(5, 5, now.Add(time.Hour)),
-			"personal": reading(6, 6, now.Add(time.Hour)),
-		})}
-	// Global priority puts work-b first; the project prefers personal.
-	if d := Decide(in); d.Kind != Switch || d.Target != "personal" {
-		t.Fatalf("got %v, want switch to personal (preferred here)", d)
-	}
-}
-
-func TestPreferFallsBackWhenThePreferredScopeIsExhausted(t *testing.T) {
-	in := Input{Cfg: cfgWithProjects(), Now: now, Dir: "/either/repo",
-		St: st("work-a", map[string]*state.Account{
-			"work-a":   reading(92, 30, now.Add(time.Hour)),
-			"work-b":   reading(5, 5, now.Add(time.Hour)),
-			"personal": reading(99, 99, now.Add(time.Hour)),
-		})}
-	if d := Decide(in); d.Kind != Switch || d.Target != "work-b" {
-		t.Fatalf("got %v, want work-b: preference is not a requirement", d)
 	}
 }
 

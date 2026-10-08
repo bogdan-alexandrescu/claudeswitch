@@ -74,6 +74,7 @@ func TestOnlyABusyProfilePollsHot(t *testing.T) {
 		p.Busy = func(prof string) bool { asked = append(asked, prof); return busy }
 		acct := at(10, 70, now) // over hot_threshold
 		acct.ID = "w1"
+		movingAt(p, acct, 2, now) // and moving within reach (DESIGN 4.3c)
 		p.schedule("w1", now, acct)
 		want := 2 * time.Minute
 		if busy {
@@ -100,6 +101,7 @@ func TestWithoutProfilesHotPollingIgnoresActivity(t *testing.T) {
 	now := time.Now()
 	acct := at(10, 70, now)
 	acct.ID = "a"
+	movingAt(p, acct, 2, now) // hot needs movement within reach (DESIGN 4.3c)
 	p.schedule("a", now, acct)
 	if got := p.nextPoll["a"].Sub(now); got != 20*time.Second {
 		t.Fatalf("next poll in %v, want poll_hot", got)

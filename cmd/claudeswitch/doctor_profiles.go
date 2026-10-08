@@ -12,10 +12,14 @@ import (
 )
 
 // doctorWarnings prints the config's warnings: settings that load and run but
-// do not do what they suggest, such as two profiles sharing a directory.
+// do not do what they suggest, such as a profile's hard_floor below its
+// weekly trigger.
 func doctorWarnings(w io.Writer, cfg *config.Config) {
 	for _, warning := range cfg.Warnings() {
 		fmt.Fprintf(w, "  [warn] config          %s\n", warning)
+	}
+	if lg := cfg.LegacyWarning(); lg != "" {
+		fmt.Fprintf(w, "  [warn] config          %s\n", lg)
 	}
 }
 

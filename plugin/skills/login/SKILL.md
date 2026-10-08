@@ -28,8 +28,7 @@ Ask with AskUserQuestion before going on, in one call:
 - **which browser** to sign in with. The login returns **whichever account the
   browser is signed into**, and nothing in the request can override that, so a
   browser the user is not normally signed into (Safari, Firefox, and so on) is
-  how a different account is reached;
-- for a new account only, **work or personal** scope (default work).
+  how a different account is reached.
 
 Include an option to cancel.
 
@@ -38,7 +37,7 @@ Include an option to cancel.
 Always use `--direct`: it leaves the live session untouched.
 
 ```bash
-claudeswitch login <id> --direct --browser "<Browser Name>" [--scope personal]
+claudeswitch login <id> --direct --browser "<Browser Name>"
 ```
 
 Add `--sso` for an SSO-backed organization. Without `--browser` it prints a URL
@@ -46,6 +45,12 @@ for the user to open themselves.
 
 `--direct` touches no live credential, so it works the same whichever Claude
 Code profile this session belongs to; it needs no `--profile`.
+
+To give an account a separate Claude Code profile of its own (its own config
+dir and live credential), that is not a login: tell the user to run
+`claudeswitch profile create <name> --pool <id> --seed <id>` in a terminal,
+then `claudeswitch run <name>`. Seeding refuses an account live in any other
+profile.
 
 ## 3. Get the code
 

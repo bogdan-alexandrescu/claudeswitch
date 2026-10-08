@@ -1,0 +1,27 @@
+{
+ "ghosts": [],
+ "profiles": [
+  {
+   "declared": false,
+   "dir": null,
+   "from_env": true,
+   "listed": [],
+   "live": "personal",
+   "name": "default",
+   "overrides": {},
+   "pinned": null,
+   "pool": [
+    "personal",
+    "x-unpooled",
+    "w01"
+   ],
+   "signed_in": "yes",
+   "thresholds": {
+    "hard_floor": 98,
+    "landing_margin": 10,
+    "switch_at": 90,
+    "switch_at_weekly": 95
+   }
+  }
+ ]
+}

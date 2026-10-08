@@ -3,7 +3,7 @@ import Testing
 @testable import ClaudeSwitchCore
 
 /// When gen-fixtures.sh ran: every time in the fixtures is relative to this.
-let fixtureNow = GoTime.parse("2026-10-08T01:57:15Z")!
+let fixtureNow = GoTime.parse("2026-10-08T02:46:41Z")!
 
 func fixtureSnapshot(why name: String = "why.json", now: Date = fixtureNow) throws -> Snapshot {
     Snapshot.build(state: StateFile(data: try fixture("state.json")),
@@ -61,7 +61,10 @@ func fixtureSnapshot(why name: String = "why.json", now: Date = fixtureNow) thro
         guard case .stale(let since)? = Optional(s.daemon.health) else {
             Issue.record("expected stale, got \(s.daemon.health)"); return
         }
-        #expect(abs(s.now.timeIntervalSince(since) - 630) < 1)
+        // saved_at trails the generation time by however long the binary took
+        // to build and run (1.4s at the last regeneration).
+        #expect(since == s.daemon.savedAt)
+        #expect(abs(s.now.timeIntervalSince(since) - 630) < 3)
         #expect(s.daemon.mode == "not polling for 10m")
         // Five minutes is inside the 6-minute allowance.
         #expect(try fixtureSnapshot(now: fixtureNow.addingTimeInterval(5 * 60)).daemon.health == .polling)
@@ -180,8 +183,19 @@ func fixtureSnapshot(why name: String = "why.json", now: Date = fixtureNow) thro
         #expect(Format.resets(a.sevenDay?.resetsAt, now: s.now) == "resets in 3d")
         #expect(Format.status(s.accounts[2].status, now: s.now) == "refused · 5h · clears in 40m")
         #expect(Format.status(s.accounts[1].status, now: s.now) == "needs login")
-        #expect(Format.limitName(a.scopedWeekly[0]) == "scoped weekly")
+        #expect(Format.limitName(a.scopedWeekly[0]) == "Modelname weekly")
+        #expect(a.pace != nil, "the popover shows the active account's weekly pace")
         #expect(Format.age(s.daemon.lastPoll, now: s.now) == "1m ago")
+    }
+
+    @Test func testPace() {
+        let behind = WeeklyPace(expected: 57.1, actual: 20, atReset: 35, unusedAtReset: 65, resetsAt: nil)
+        #expect(Format.pace(behind) == "20% used · 57% of the week gone")
+        #expect(Format.paceExpiry(behind) == "~65% would expire unused at reset")
+        let full = WeeklyPace(expected: 57.1, actual: 90, atReset: 100, unusedAtReset: 0, resetsAt: nil)
+        #expect(Format.paceExpiry(full) == "on pace to use it all")
+        let early = WeeklyPace(expected: 3, actual: 1, atReset: nil, unusedAtReset: nil, resetsAt: nil)
+        #expect(Format.paceExpiry(early) == nil)
     }
 
     @Test func testNext() throws {

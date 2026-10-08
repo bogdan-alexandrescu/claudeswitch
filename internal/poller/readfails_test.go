@@ -138,6 +138,65 @@ func TestAnUnreadableLiveCredentialCountsTowardsTheActiveAccount(t *testing.T) {
 	}
 }
 
+// The streak's start is when the FIRST counted failure happened; later
+// failures do not move it, and a good read clears it. The policy measures
+// blindness from it, not from the age of the last reading.
+func TestTheFailureStreakRecordsWhenItBegan(t *testing.T) {
+	p, _ := testPoller()
+	withStatus(t, p, map[string]int{"bad": 500}, nil)
+	ctx := context.Background()
+	a := &state.Account{ID: "a"}
+	before := time.Now()
+	p.fetchInto(ctx, a, "bad", usage.Scheduled)
+	first := a.FailSince
+	if first.Before(before) || first.After(time.Now()) {
+		t.Fatalf("FailSince = %v, want the time of the first failure", first)
+	}
+	p.fetchInto(ctx, a, "bad", usage.Scheduled)
+	if !a.FailSince.Equal(first) {
+		t.Errorf("a second failure moved FailSince from %v to %v", first, a.FailSince)
+	}
+	p.fetchInto(ctx, a, "good", usage.Scheduled)
+	if !a.FailSince.IsZero() {
+		t.Errorf("a good read left FailSince = %v", a.FailSince)
+	}
+}
+
+// Claude Code's own refresh revokes the token our vault copy of the active
+// account holds, until the daemon re-captures it. A 401 on that stale copy,
+// while the profile's live credential holds a different token, says nothing
+// about the account and must not count toward blind failover.
+func TestARejectedStaleVaultTokenOfTheActiveAccountIsNotCounted(t *testing.T) {
+	st := twoProfileState()
+	st.Profiles["work"].Active = "" // so a is the one account due first
+	p := New(twoProfileCfg(), st, quiet())
+	withStatus(t, p, map[string]int{"vault-a": 401}, nil)
+	readVault = func(id string) (*keychain.Blob, error) {
+		return &keychain.Blob{ClaudeAIOAuth: &keychain.OAuth{AccessToken: "vault-" + id}}, nil
+	}
+	p.SetLive("default", &fakeItem{token: "live-a"})
+	p.Tick(context.Background())
+	a := p.st.Accounts["a"]
+	if a == nil {
+		t.Fatal("a was not polled")
+	}
+	if a.ReadFails != 0 || !a.FailSince.IsZero() {
+		t.Fatalf("stale vault token counted: ReadFails %d, FailSince %v", a.ReadFails, a.FailSince)
+	}
+
+	// The live item holding that same rejected token is real trouble.
+	p2 := New(twoProfileCfg(), st, quiet())
+	withStatus(t, p2, map[string]int{"vault-a": 401}, nil)
+	readVault = func(id string) (*keychain.Blob, error) {
+		return &keychain.Blob{ClaudeAIOAuth: &keychain.OAuth{AccessToken: "vault-" + id}}, nil
+	}
+	p2.SetLive("default", &fakeItem{token: "vault-a"})
+	p2.Tick(context.Background())
+	if got := p2.st.Accounts["a"].ReadFails; got != 1 {
+		t.Fatalf("live token itself rejected: ReadFails %d, want 1", got)
+	}
+}
+
 type expiringItem struct {
 	token string
 	exp   time.Time

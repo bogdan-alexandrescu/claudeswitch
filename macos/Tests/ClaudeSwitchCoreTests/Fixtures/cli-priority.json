@@ -1,0 +1,11 @@
+{
+  "order": [
+    "personal",
+    "work-1",
+    "work-2"
+  ],
+  "priority": [
+    "personal",
+    "work-1"
+  ]
+}

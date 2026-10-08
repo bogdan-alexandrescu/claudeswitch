@@ -67,6 +67,8 @@ func (v *Vault) fetch(ctx context.Context, token string, p usage.Priority) (*usa
 	}
 	u, err := v.client.Fetch(ctx, token)
 	if rl, ok := usage.IsRateLimited(err); ok {
+		// The budget applies the live cap itself when token was marked live
+		// (MarkLive) by whoever read it from a profile's item.
 		v.budget.Penalize(token, rl.RetryAfter)
 	} else if err == nil {
 		v.budget.Succeeded(token)
@@ -81,7 +83,14 @@ type Entry struct {
 	// was always read during Store and written into the keychain annotation,
 	// but never handed back — so `add`, which had it in memory, told people to
 	// pin their config on the organization alone.
-	AccountUUID   string
+	AccountUUID string
+	// Email is the account's email as the profile endpoint reported it when
+	// the entry was stored, so callers can record it in state.json and name
+	// the account later without reading the keychain. "" when unknown.
+	Email string
+	// Plan is the subscription the profile endpoint named ("Max 20x"), so
+	// callers can record it in state.json; "" when unknown.
+	Plan          string
 	OrgID         string
 	Expiry        time.Time
 	RefreshExpiry time.Time
@@ -264,6 +273,8 @@ func (v *Vault) StoreGuardedFrom(ctx context.Context, item keychain.Live, accoun
 	return &Entry{
 		AccountID:      accountID,
 		AccountUUID:    pr.Account.UUID,
+		Email:          pr.Account.Email,
+		Plan:           pr.Plan(),
 		OrgID:          orgID,
 		Expiry:         o.Expiry(),
 		RefreshExpiry:  o.RefreshExpiry(),
@@ -377,6 +388,8 @@ func (v *Vault) StoreTokens(ctx context.Context, accountID, expectSeat string, t
 	return &Entry{
 		AccountID:      accountID,
 		AccountUUID:    pr.Account.UUID,
+		Email:          pr.Account.Email,
+		Plan:           pr.Plan(),
 		OrgID:          u.OrgID,
 		Expiry:         cred.Expiry(),
 		RefreshExpiry:  cred.RefreshExpiry(),
@@ -573,14 +586,14 @@ func (v *Vault) RefreshIn(ctx context.Context, accountID, wantSeat string, holde
 	if verr != nil {
 		if _, rl := usage.IsRateLimited(verr); rl {
 			v.log.Warn("refreshed but could not verify: usage API rate limited", "account", accountID)
-			return &Entry{AccountID: accountID, OrgID: meta.OrgID, Expiry: next.Expiry(),
+			return &Entry{AccountID: accountID, OrgID: meta.OrgID, Plan: meta.Plan, Expiry: next.Expiry(),
 				RefreshExpiry: next.RefreshExpiry()}, nil
 		}
 		return nil, fmt.Errorf("refreshed %q and stored the new token, but it does not work: %w", accountID, verr)
 	}
 	v.log.Info("refreshed credential", "account", accountID, "org", u.OrgID,
 		"expires", next.Expiry().Format(time.RFC3339))
-	return &Entry{AccountID: accountID, OrgID: u.OrgID, Expiry: next.Expiry(),
+	return &Entry{AccountID: accountID, OrgID: u.OrgID, Plan: meta.Plan, Expiry: next.Expiry(),
 		RefreshExpiry: next.RefreshExpiry(), Tier: next.RateLimitTier,
 		Subscription: next.SubscriptionType}, nil
 }
@@ -904,7 +917,8 @@ func (v *Vault) seatBehind(ctx context.Context, token string) string {
 			seat = pr.Seat()
 			v.budget.Succeeded(token)
 		} else if rl, isRL := usage.IsRateLimited(err); isRL {
-			v.budget.Penalize(token, rl.RetryAfter)
+			// Only ever asked about live tokens: the live cap applies.
+			v.budget.PenalizeLive(token, rl.RetryAfter)
 		}
 	}
 

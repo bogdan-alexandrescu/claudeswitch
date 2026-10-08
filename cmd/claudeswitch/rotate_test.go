@@ -26,8 +26,8 @@ func testCfg() *config.Config {
 		APIBudget:     12,
 		Priority:      []string{"a", "b"},
 		Accounts: []config.Account{
-			{ID: "a", Scope: "work"},
-			{ID: "b", Scope: "work"},
+			{ID: "a"},
+			{ID: "b"},
 		},
 	}
 }

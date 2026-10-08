@@ -32,7 +32,7 @@ func TestDecideWithNoActiveAccountSwitches(t *testing.T) {
 func TestReloadThatDropsTheActiveAccountHoldsInsteadOfSwapping(t *testing.T) {
 	now := time.Now()
 	next := testCfg()
-	next.Accounts = []config.Account{{ID: "b", Scope: "work"}}
+	next.Accounts = []config.Account{{ID: "b"}}
 	next.Priority = []string{"b"}
 	st := &state.State{Profiles: map[string]*state.ProfileState{state.DefaultProfile: {Active: "a"}}, Accounts: map[string]*state.Account{
 		"a": at(40, 10, now), "b": at(5, 5, now)}}
@@ -207,7 +207,6 @@ priority = [
 
 [[account]]
 id           = "work-a"
-scope        = "work"
 account_uuid = "person-1"
 org_id       = "org-1"
 `
@@ -216,7 +215,7 @@ org_id       = "org-1"
 // id, saying "last in priority" would be a claim about the file that is false.
 func TestRecordSeatSaysWhenItCouldNotNameTheAccountInPriority(t *testing.T) {
 	path := writeConfig(t, multiLinePriority)
-	msg, err := recordSeat(loadOrFail(t, path), "work-b", "work", gotSeat("p3", "o3"), "")
+	msg, err := recordSeat(loadOrFail(t, path), "work-b", gotSeat("p3", "o3"), "")
 	if err != nil {
 		t.Fatal(err)
 	}

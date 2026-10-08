@@ -54,13 +54,149 @@ func (w Window) Pct() float64 {
 // Limit is an entry of the limits[] array. severity is worth logging from day
 // one: if a non-"normal" value reliably precedes a rejection it beats a fixed
 // percentage as a trigger, but nothing but "normal" has been observed yet.
+//
+// The entry is kept in the API's own shape, scope included, because state.json
+// stores the Usage as encoded here and the macOS app reads the scope from it.
+// Percent is a pointer: a percent the API sent as null, or did not send, is
+// unknown, and decoding it into a float64 made it 0 — the most reassuring
+// figure there is (DESIGN 4.4).
 type Limit struct {
-	Kind     string     `json:"kind"`
-	Group    string     `json:"group"`
-	Percent  float64    `json:"percent"`
-	Severity string     `json:"severity"`
-	IsActive bool       `json:"is_active"`
-	ResetsAt *time.Time `json:"resets_at"`
+	Kind     string      `json:"kind"`
+	Group    string      `json:"group"`
+	Percent  *float64    `json:"percent"`
+	Severity string      `json:"severity"`
+	IsActive bool        `json:"is_active"`
+	ResetsAt *time.Time  `json:"resets_at"`
+	Scope    *LimitScope `json:"scope"`
+}
+
+// LimitScope narrows a limit to part of the account. Only a model has been
+// observed (GROUND_TRUTH §42); surface is kept as sent, so that a scope this
+// code does not understand stays visible as such.
+type LimitScope struct {
+	Model   *LimitModel     `json:"model"`
+	Surface json.RawMessage `json:"surface,omitempty"`
+}
+
+// LimitModel names the model a scoped limit applies to.
+type LimitModel struct {
+	ID          *string `json:"id"`
+	DisplayName *string `json:"display_name"`
+}
+
+// Kinds of limits[] entry this code understands.
+const (
+	KindSession      = "session"
+	KindWeeklyAll    = "weekly_all"
+	KindWeeklyScoped = "weekly_scoped"
+)
+
+// LimitClass is what a limits[] entry is, as far as this code understands it.
+type LimitClass int
+
+const (
+	// LimitUnknown is a kind or a scope this code does not recognise. It is
+	// shown as unknown and never counted as room.
+	LimitUnknown LimitClass = iota
+	// LimitSession is the five-hour window (five_hour).
+	LimitSession
+	// LimitWeekly is the account's whole weekly window (seven_day).
+	LimitWeekly
+	// LimitModelWeekly is a weekly limit on one model (IMPROVEMENTS I6).
+	LimitModelWeekly
+)
+
+func (c LimitClass) String() string {
+	switch c {
+	case LimitSession:
+		return "session"
+	case LimitWeekly:
+		return "weekly"
+	case LimitModelWeekly:
+		return "model weekly"
+	}
+	return "unknown"
+}
+
+// Known reports whether the API gave this limit a figure.
+func (l Limit) Known() bool { return l.Percent != nil }
+
+// Pct is the figure, or 0 when unknown: check Known first.
+func (l Limit) Pct() float64 {
+	if l.Percent == nil {
+		return 0
+	}
+	return *l.Percent
+}
+
+// ModelName is the model a scoped limit applies to: its display name, else
+// its id, else "".
+func (l Limit) ModelName() string {
+	if l.Scope == nil || l.Scope.Model == nil {
+		return ""
+	}
+	if n := l.Scope.Model.DisplayName; n != nil && strings.TrimSpace(*n) != "" {
+		return strings.TrimSpace(*n)
+	}
+	if id := l.Scope.Model.ID; id != nil {
+		return strings.TrimSpace(*id)
+	}
+	return ""
+}
+
+// scoped reports whether the entry carries any scope at all.
+func (l Limit) scoped() bool {
+	return l.Scope != nil && (l.Scope.Model != nil || !rawEmpty(l.Scope.Surface))
+}
+
+func rawEmpty(r json.RawMessage) bool {
+	s := strings.TrimSpace(string(r))
+	return s == "" || s == "null"
+}
+
+// Class says what the entry is. A known kind with a scope it should not have,
+// or a scope with more in it than a model, is unknown: counting it as the
+// account's window would be guessing.
+func (l Limit) Class() LimitClass {
+	switch l.Kind {
+	case KindSession:
+		if !l.scoped() {
+			return LimitSession
+		}
+	case KindWeeklyAll:
+		if !l.scoped() {
+			return LimitWeekly
+		}
+	case KindWeeklyScoped:
+		if l.Scope != nil && l.ModelName() != "" && rawEmpty(l.Scope.Surface) {
+			return LimitModelWeekly
+		}
+	}
+	return LimitUnknown
+}
+
+// Describe names an entry for a person, for one this code does not
+// understand: its kind, and what its scope says.
+func (l Limit) Describe() string {
+	s := l.Kind
+	if s == "" {
+		s = "(no kind)"
+	}
+	var scope []string
+	if l.Scope != nil {
+		if m := l.ModelName(); m != "" {
+			scope = append(scope, "model "+m)
+		} else if l.Scope.Model != nil {
+			scope = append(scope, "an unnamed model")
+		}
+		if !rawEmpty(l.Scope.Surface) {
+			scope = append(scope, "surface "+strings.TrimSpace(string(l.Scope.Surface)))
+		}
+	}
+	if len(scope) > 0 {
+		s += " (" + strings.Join(scope, ", ") + ")"
+	}
+	return s
 }
 
 // Money is an amount as the API reports it: minor units plus an exponent, so
@@ -194,6 +330,80 @@ func (u *Usage) Binding() *Limit {
 	return nil
 }
 
+// ModelWeekly is every per-model weekly limit, in the API's order.
+func (u *Usage) ModelWeekly() []Limit {
+	var out []Limit
+	for _, l := range u.Limits {
+		if l.Class() == LimitModelWeekly {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// UnknownLimits is every entry this code does not understand.
+func (u *Usage) UnknownLimits() []Limit {
+	var out []Limit
+	for _, l := range u.Limits {
+		if l.Class() == LimitUnknown {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// ModelLimit finds the weekly limit for a model, matched case-insensitively.
+func (u *Usage) ModelLimit(name string) (Limit, bool) {
+	for _, l := range u.ModelWeekly() {
+		if strings.EqualFold(l.ModelName(), strings.TrimSpace(name)) {
+			return l, true
+		}
+	}
+	return Limit{}, false
+}
+
+// WithModels is the reading as the policy judges it when the config counts
+// these models' weekly limits like the weekly window (IMPROVEMENTS I6).
+//
+// The weekly window becomes the highest of seven_day and each counted model's
+// limit, with that limit's reset; from names the model when one of them is
+// the higher. A model the account has no limit for adds nothing: the weekly
+// window governs it. A counted model whose limit has no figure makes the
+// account's weekly standing unknown, and unreadable names it; the caller must
+// treat the account as unknown (DESIGN 4.4).
+//
+// With no models, or none raising the weekly figure, it returns u itself.
+// Otherwise a copy; u is never modified.
+func (u *Usage) WithModels(models []string) (eff *Usage, from, unreadable string) {
+	if u == nil || len(models) == 0 {
+		return u, "", ""
+	}
+	best := u.SevenDay
+	for _, m := range models {
+		l, ok := u.ModelLimit(m)
+		if !ok {
+			continue
+		}
+		if !l.Known() {
+			if unreadable == "" {
+				unreadable = l.ModelName()
+			}
+			continue
+		}
+		if !best.Known() || l.Pct() > best.Pct() {
+			p := l.Pct()
+			best = Window{Utilization: &p, ResetsAt: l.ResetsAt}
+			from = l.ModelName()
+		}
+	}
+	if from == "" {
+		return u, "", unreadable
+	}
+	cp := *u
+	cp.SevenDay = best
+	return &cp, from, unreadable
+}
+
 // RateLimitedError is returned on a 429. RetryAfter is authoritative: the API
 // does send retry-after on the 429 even though it sends nothing on a 200.
 type RateLimitedError struct {
@@ -237,8 +447,25 @@ func IsShapeError(err error) bool {
 	return errors.As(err, &s)
 }
 
+// TokenRejectedError is a 401 or 403: the token sent was not accepted. That
+// may be the account needing a login, or only a stale copy of a token that
+// has since been refreshed elsewhere — the caller can tell, this cannot.
+type TokenRejectedError struct{ Status int }
+
+func (e *TokenRejectedError) Error() string {
+	return fmt.Sprintf("usage API rejected the token (%d): the account may need a re-login", e.Status)
+}
+
+func IsTokenRejected(err error) bool {
+	var t *TokenRejectedError
+	return errors.As(err, &t)
+}
+
 type Client struct {
 	HTTP *http.Client
+	// Now stamps each reading's FetchedAt; nil is the wall clock. A seam for
+	// simulations on a fake clock.
+	Now func() time.Time
 }
 
 // newTransport configures connection handling for a process that lives for days.
@@ -337,7 +564,7 @@ func (c *Client) Fetch(ctx context.Context, accessToken string) (*Usage, error) 
 		}
 		return nil, &RateLimitedError{RetryAfter: d}
 	case resp.StatusCode == http.StatusUnauthorized, resp.StatusCode == http.StatusForbidden:
-		return nil, fmt.Errorf("usage API rejected the token (%d): the account may need a re-login", resp.StatusCode)
+		return nil, &TokenRejectedError{Status: resp.StatusCode}
 	case resp.StatusCode != http.StatusOK:
 		return nil, fmt.Errorf("usage API returned %d", resp.StatusCode)
 	}
@@ -351,6 +578,9 @@ func (c *Client) Fetch(ctx context.Context, accessToken string) (*Usage, error) 
 	}
 	u.OrgID = resp.Header.Get("anthropic-organization-id")
 	u.FetchedAt = time.Now()
+	if c.Now != nil {
+		u.FetchedAt = c.Now()
+	}
 	return &u, nil
 }
 

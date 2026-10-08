@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "in_other_pool",
+    "hint": "move it with: claudeswitch profile pool default remove work-2 --to review",
+    "message": "account \"work-2\" is in profile \"default\"'s pool"
+  }
+}

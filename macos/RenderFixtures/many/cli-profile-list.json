@@ -1,0 +1,150 @@
+{
+ "ghosts": [
+  {
+   "account": "w05",
+   "profile": "old",
+   "since": "2026-10-01T09:00:00Z",
+   "why": "removed"
+  },
+  {
+   "account": "research-team-extremely-long-account-name",
+   "profile": "legacy-client-example-enterprise-integration",
+   "since": null,
+   "why": "repointed"
+  }
+ ],
+ "profiles": [
+  {
+   "declared": true,
+   "dir": null,
+   "from_env": false,
+   "listed": [
+    "personal"
+   ],
+   "live": "personal",
+   "name": "default",
+   "overrides": {},
+   "pinned": null,
+   "pool": [
+    "personal",
+    "x-unpooled"
+   ],
+   "signed_in": "yes",
+   "thresholds": {
+    "hard_floor": 98,
+    "landing_margin": 10,
+    "switch_at": 90,
+    "switch_at_weekly": 95
+   }
+  },
+  {
+   "declared": true,
+   "dir": "~/.claude-work",
+   "from_env": false,
+   "listed": [
+    "w01",
+    "w02",
+    "w03",
+    "w04",
+    "w05",
+    "w06",
+    "w07",
+    "w08",
+    "w09",
+    "w10",
+    "w11",
+    "w12"
+   ],
+   "live": "w01",
+   "name": "work",
+   "overrides": {
+    "switch_at": "75",
+    "switch_at_weekly": "98"
+   },
+   "pinned": null,
+   "pool": [
+    "w01",
+    "w02",
+    "w03",
+    "w04",
+    "w05",
+    "w06",
+    "w07",
+    "w08",
+    "w09",
+    "w10",
+    "w11",
+    "w12"
+   ],
+   "signed_in": "yes",
+   "thresholds": {
+    "hard_floor": 98,
+    "landing_margin": 10,
+    "switch_at": 75,
+    "switch_at_weekly": 98
+   }
+  },
+  {
+   "declared": true,
+   "dir": "~/.claude-review",
+   "from_env": false,
+   "listed": [
+    "old-sso"
+   ],
+   "live": "old-sso",
+   "name": "review",
+   "overrides": {},
+   "pinned": "old-sso",
+   "pool": [
+    "old-sso"
+   ],
+   "signed_in": "no",
+   "thresholds": {
+    "hard_floor": 98,
+    "landing_margin": 10,
+    "switch_at": 90,
+    "switch_at_weekly": 95
+   }
+  },
+  {
+   "declared": true,
+   "dir": "/Users/example/Projects/clients/example/very/deep/path/.claude-enterprise",
+   "from_env": false,
+   "listed": [
+    "research-team-extremely-long-account-name"
+   ],
+   "live": "research-team-extremely-long-account-name",
+   "name": "client-example-enterprise-integration",
+   "overrides": {},
+   "pinned": null,
+   "pool": [
+    "research-team-extremely-long-account-name"
+   ],
+   "signed_in": "unknown",
+   "thresholds": {
+    "hard_floor": 98,
+    "landing_margin": 10,
+    "switch_at": 90,
+    "switch_at_weekly": 95
+   }
+  },
+  {
+   "declared": true,
+   "dir": "~/.claude-scratch",
+   "from_env": false,
+   "listed": [],
+   "live": null,
+   "name": "scratch",
+   "overrides": {},
+   "pinned": null,
+   "pool": [],
+   "signed_in": "no",
+   "thresholds": {
+    "hard_floor": 98,
+    "landing_margin": 10,
+    "switch_at": 90,
+    "switch_at_weekly": 95
+   }
+  }
+ ]
+}

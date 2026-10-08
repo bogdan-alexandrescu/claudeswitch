@@ -50,6 +50,8 @@ public struct AccountView: Equatable, Identifiable {
     public var bindingPct: Double?
     public var level: Level
     public var scopedWeekly: [LimitReading]
+    /// The weekly pace, from `why --json` (IMPROVEMENTS I8).
+    public var pace: WeeklyPace?
     public var eligible: Bool?
     public var why: String?
     public var lastAt: Date?
@@ -114,6 +116,90 @@ public struct ProfileView: Equatable, Identifiable {
     public var decision: Decision?
 }
 
+/// One profile's card in the popover (IMPROVEMENTS M7): its live account,
+/// its pool for the account picker, measured against its own thresholds.
+public struct ProfileCard: Equatable, Identifiable {
+    public var id: String { name }
+    public var name: String
+    /// As written in the config; nil is Claude Code's default directory.
+    public var dir: String?
+    /// yes, no or unknown, from `profile list`; nil when it was not asked.
+    public var signedIn: String?
+    public var active: AccountView?
+    public var pinned: String?
+    public var decision: Decision?
+    public var switchAt: Double
+    public var switchAtWeekly: Double
+    public var pool: [String]
+    /// The pool's accounts, in the order rotation considers them.
+    public var accounts: [AccountView]
+    /// Where "Switch to best" goes (why's `best`), and why nowhere.
+    public var best: AccountView?
+    public var bestWhy: String?
+    /// The account `why` judged live; when it is not `active` (state moved
+    /// on since), why's decision is about another account.
+    public var whyActive: String?
+
+    public init(name: String, dir: String?, signedIn: String?, active: AccountView?, pinned: String?,
+                decision: Decision?, switchAt: Double, switchAtWeekly: Double, pool: [String],
+                accounts: [AccountView]) {
+        self.name = name
+        self.dir = dir
+        self.signedIn = signedIn
+        self.active = active
+        self.pinned = pinned
+        self.decision = decision
+        self.switchAt = switchAt
+        self.switchAtWeekly = switchAtWeekly
+        self.pool = pool
+        self.accounts = accounts
+    }
+
+    public var isPinned: Bool { pinned != nil }
+    public var dirLabel: String { dir ?? "~/.claude" }
+
+    public func trigger(for window: String) -> Double {
+        window == "seven_day" ? switchAtWeekly : switchAt
+    }
+
+    /// "Switch to best: w02 12%", or the bare verb when there is none.
+    public var bestLabel: String {
+        guard let b = best else { return "Switch to best" }
+        return "Switch to best: \(b.id) \(Format.pct(b.bindingPct))"
+    }
+
+    /// Why the button is off; nil when there is a best account.
+    public var bestUnavailable: String? {
+        guard best == nil else { return nil }
+        return bestWhy ?? "No account to switch to"
+    }
+
+    /// Owner decision: with nothing clear of the landing margin, why still
+    /// names the best account and says how little room it has; the card
+    /// shows that beside the button.
+    public var bestWarning: String? { best == nil ? nil : bestWhy }
+
+    /// Whether "Next:" is about the account shown: hidden when why judged
+    /// another account live than the one state records.
+    public var nextVisible: Bool {
+        guard let w = whyActive, let a = active?.id else { return true }
+        return w == a
+    }
+
+    /// Claude Code opens signed in only where the profile has a login.
+    public var canOpen: Bool { signedIn != "no" }
+
+    public var openBlocked: String? {
+        canOpen ? nil : "\(name) is not signed in. Sign it in from Settings → Profiles."
+    }
+
+    /// How close a per-model weekly limit is to the weekly trigger; nil
+    /// when its figure is unknown.
+    public func level(of l: LimitReading) -> Level? {
+        l.percent.map { Level.of($0, trigger: switchAtWeekly) }
+    }
+}
+
 /// Everything the menu shows, built from state.json, `why --json` and
 /// `config --json`. Pure: the clock is passed in.
 public struct Snapshot: Equatable {
@@ -126,11 +212,23 @@ public struct Snapshot: Equatable {
     public var profiles: [ProfileView]
     public var settings: ConfigSettings
     public var now: Date
+    /// A card per profile, in `profile list`'s order when it was read.
+    public var cards: [ProfileCard] = []
 
     public var active: AccountView? { accounts.first { $0.id == activeID } }
 
+    public func card(_ name: String) -> ProfileCard? { cards.first { $0.name == name } }
+
+    /// The profile the menu-bar title follows: the one chosen while it
+    /// exists, else default, else the first.
+    public func followed(_ chosen: String?) -> String {
+        if let c = chosen, card(c) != nil { return c }
+        if card(StateFile.defaultProfile) != nil || cards.isEmpty { return StateFile.defaultProfile }
+        return cards[0].name
+    }
+
     public static func build(state: StateFile?, why: WhyReport?, settings: ConfigSettings?,
-                             now: Date) -> Snapshot {
+                             profiles list: ProfileList? = nil, now: Date) -> Snapshot {
         let cfg = settings ?? ConfigSettings()
         let primary = why?.primary
         var switchCfg = cfg
@@ -164,8 +262,54 @@ public struct Snapshot: Equatable {
             ProfileView(name: rec.name, active: rec.active, pinned: rec.pinned,
                          decision: why?.profiles.first { $0.profile == rec.name }?.decision)
         }
+        let cards = Self.cards(state: state, why: why, cfg: cfg, list: list, order: order, now: now)
         return Snapshot(accounts: views, activeID: activeID, decision: primary?.decision,
-                        daemon: daemon, profiles: profiles, settings: switchCfg, now: now)
+                        daemon: daemon, profiles: profiles, settings: switchCfg, now: now, cards: cards)
+    }
+
+    static func cards(state: StateFile?, why: WhyReport?, cfg: ConfigSettings, list: ProfileList?,
+                      order: [String], now: Date) -> [ProfileCard] {
+        var names: [String] = []
+        if let l = list {
+            names = l.profiles.map(\.name)
+        } else {
+            for n in (state?.profiles.map(\.name) ?? []) + (why?.profiles.map(\.profile) ?? []) where !names.contains(n) {
+                names.append(n)
+            }
+        }
+        return names.map { name in
+            let info = list?.profile(name)
+            let pw = why?.profiles.first { $0.profile == name }
+            let rec = state?.profiles.first { $0.name == name }
+            var c = cfg
+            c.switchAt = info?.thresholds.switchAt ?? pw?.switchAt ?? cfg.switchAt
+            c.switchAtWeekly = info?.thresholds.switchAtWeekly ?? pw?.switchAtWeekly ?? cfg.switchAtWeekly
+            let pool: [String]
+            if let i = info {
+                pool = i.pool
+            } else if let p = pw?.pool, !p.isEmpty {
+                pool = p
+            } else {
+                pool = name == StateFile.defaultProfile ? order : []
+            }
+            let verdictOrder = (pw?.accounts ?? []).map(\.id)
+            let ordered = verdictOrder.filter(pool.contains) + pool.filter { !verdictOrder.contains($0) }
+            let activeID = rec?.active ?? info?.live ?? pw?.accounts.first { $0.active }?.id
+            let pinned = rec?.pinned ?? info?.pinned
+            func view(_ id: String) -> AccountView {
+                account(id: id, record: state?.accounts[id], verdict: pw?.accounts.first { $0.id == id },
+                        activeID: activeID, pinned: pinned, cfg: c, now: now)
+            }
+            let accounts = ordered.map(view)
+            let active = activeID.map { id in accounts.first { $0.id == id } ?? view(id) }
+            var card = ProfileCard(name: name, dir: info?.dir, signedIn: info?.signedIn, active: active, pinned: pinned,
+                                   decision: pw?.decision, switchAt: c.trigger(for: "five_hour"),
+                                   switchAtWeekly: c.trigger(for: "seven_day"), pool: pool, accounts: accounts)
+            card.best = pw?.best.flatMap { id in id == activeID ? nil : (accounts.first { $0.id == id } ?? view(id)) }
+            card.bestWhy = pw?.bestWhy
+            card.whyActive = pw?.accounts.first { $0.active }?.id
+            return card
+        }
     }
 
     static func account(id: String, record: AccountRecord?, verdict: Verdict?, activeID: String?,
@@ -182,7 +326,7 @@ public struct Snapshot: Equatable {
             id: id, isActive: id == activeID, isPinned: id == pinned, status: status,
             fiveHour: last?.fiveHour, sevenDay: last?.sevenDay,
             bindingWindow: window, bindingPct: pct, level: level,
-            scopedWeekly: last?.scopedWeekly ?? [],
+            scopedWeekly: last?.scopedWeekly ?? [], pace: verdict?.pace,
             eligible: verdict?.eligible, why: verdict?.why,
             lastAt: record?.lastAt, lastError: record?.lastError, refreshExpiry: record?.refreshExpiry)
     }

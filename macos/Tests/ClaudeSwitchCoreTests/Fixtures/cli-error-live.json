@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "live",
+    "hint": "switch profile default to another account first: claudeswitch use personal --profile default",
+    "message": "account \"work-1\" is or may be live in profile \"default\""
+  }
+}

@@ -61,7 +61,7 @@ macOS and Linux on amd64 and arm64, and a `checksums.txt`. The archives are
 reproducible: the same tag always produces the same bytes.
 
 ```sh
-VERSION=v0.5.0
+VERSION=v0.5.1
 TARGET=darwin_arm64            # darwin_amd64, linux_amd64, linux_arm64
 curl -LO "https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION/claudeswitch_${VERSION}_${TARGET}.tar.gz"
 curl -LO "https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION/checksums.txt"
@@ -174,11 +174,18 @@ claudeswitch refresh <id>        # renew a vaulted credential (never the live on
 ```sh
 claudeswitch setup               # guided first run
 claudeswitch config              # every setting in force; `config <name> <value>` changes one
+claudeswitch config clean        # delete the scope lines and [project] tables older configs carry
 claudeswitch doctor              # config, vault, keychain, usage API, daemon, Claude Code
 claudeswitch identify            # record which seat each vaulted credential belongs to
 claudeswitch rename <old> <new>  # re-file a vaulted account under another id
 claudeswitch forget <id>         # drop an account's recorded observations
-claudeswitch remove <id>         # delete an account's vault entry and observations
+claudeswitch remove <id>         # delete an account everywhere: credential, config block,
+                                 # pool and priority entries, observations
+claudeswitch priority <id>...    # set the rotation order
+claudeswitch account pin <id>    # stop automatic rotation in its profile (`unpin` resumes)
+claudeswitch profile pool <p> add|remove <id> [--to <other>]
+claudeswitch profile set <p> <key> <value|inherit>   # per-profile thresholds and models
+claudeswitch daemon status|start|stop|restart|live|dry-run|install|uninstall
 claudeswitch watch [--live]      # run the daemon in the foreground
 claudeswitch uninstall           # stop the daemon and remove what was installed
 ```
@@ -191,7 +198,9 @@ claudeswitch statusline install  # add it to ~/.claude/settings.json
 claudeswitch context             # the quota summary the plugin gives each session
 ```
 
-Most read commands take `--json`.
+Most read commands take `--json`. So does every command the menu-bar app
+runs, which then never prompts and fails with a stable error object;
+[docs/APP_CLI.md](docs/APP_CLI.md) is that contract.
 
 `status` on a machine with one account configured:
 
@@ -215,8 +224,9 @@ cs add work-b       # or name it yourself
 ```
 
 That is all: the credential is verified and vaulted, and the account is added
-to your config — pinned to its seat, scope `work` (`--scope personal` for the
-other kind), last in `priority`. A running daemon notices the config change and
+to your config — pinned to its seat, last in `priority`. With several profiles,
+`--from <profile>` saves the login that profile's Claude Code is signed into,
+and `--profile` names the pool the account joins. A running daemon notices the config change and
 starts polling the new account without a restart. Running `add` again for the
 same account refreshes its stored credential in place.
 
@@ -395,12 +405,63 @@ claudeswitch's. By hand, it is:
 "statusLine": { "type": "command", "command": "claudeswitch statusline" }
 ```
 
+## Claude in Chrome
+
+The Claude in Chrome extension keeps its own claude.ai login, pinned to one
+account, and Claude Code finds it on a channel keyed by Claude Code's own
+account. After a rotation Claude Code is on another account, so the browser
+tools stop answering ("not connected", or "both must use the same claude.ai
+account"). claudeswitch cannot move the extension's login, and does not try:
+it gives each account a Chrome profile of its own and tells you which one to
+use.
+
+```sh
+cs chrome add work-a     # a new Chrome profile for work-a, opened at the
+                         # claude.ai login and the extension's Web Store page
+cs chrome work-a         # open that profile again
+cs chrome                # open the profile of the account live in this shell's profile
+cs chrome list [--json]  # which account has which profile
+cs chrome forget work-a  # drop the mapping (the Chrome profile itself stays)
+```
+
+In the window `add` opens: sign in to claude.ai as that account, add (or
+enable) Claude in Chrome, and sign the extension in as the same account.
+Then:
+
+- after a rotation to an account with a profile, the daemon and `cs use` say
+  `Claude in Chrome: use the work-b Chrome profile (cs chrome work-b)`; to one
+  without, once you have set up a profile for any account, they say
+  `Claude in Chrome: work-b has no Chrome profile — cs chrome add work-b`;
+- when a browser tool fails with the same-account or not-connected error, the
+  plugin tells Claude which account Claude Code is on and the command, once
+  per rotation (it looks only at failures, never at page content).
+
+The steps `add` prints name the account's email when claudeswitch recorded
+one (at `add`, `login`, `setup` or `identify`); it never reads the keychain
+for it. Accounts vaulted before this release show their id until
+`cs identify` records the email. `cs rename` carries the mapping
+over.
+
+The profiles live inside Chrome's normal user-data directory (chosen with
+`--profile-directory`), because Claude in Chrome's native-messaging host is
+registered there; a separate `--user-data-dir` would not find it.
+claudeswitch records only which account has which profile directory, in its
+own state. It never reads or writes Chrome's files (preferences, cookies,
+extension storage) and never decrypts anything.
+
+**Untested:** that Claude Code connects to whichever profile's extension is on
+its account, by itself, once that profile is open. It follows from how the
+extension and Claude Code meet, but has not yet been confirmed on a real
+machine. macOS and Linux (`google-chrome` or `chromium` on PATH) only.
+
 ## Notifications
 
 The daemon sends a desktop notification when it switches accounts, when every
 account is burnt (naming which recovers first), and before an idle account's
 refresh token expires — a dead refresh token means that account can no longer
-be swapped to *or* polled. Nothing else notifies; `--quiet` disables them.
+be swapped to *or* polled. Once you use [Chrome profiles](#claude-in-chrome),
+a switch also says which profile Claude in Chrome needs, or that the new
+account has none yet. Nothing else notifies; `--quiet` disables them.
 
 ## Running as a daemon
 
@@ -415,6 +476,11 @@ Dry-run is the default and exercises the entire decision path, logging the swap 
 *would* make. Run that way for a day first; `claudeswitch audit --kind decision` shows
 whether its judgement matches yours. **Re-running `./install.sh` without `--live`
 puts a live daemon back into dry-run.**
+
+Once installed, `claudeswitch daemon live` / `daemon dry-run` switch the mode,
+and `daemon status|start|stop|restart` manage it, without a rebuild;
+`daemon install` registers the binary you run (it builds nothing). The
+plist and unit are the ones `install.sh` writes.
 
 On macOS a rebuilt binary is a new program to the Keychain, so `install.sh`
 triggers the access prompt while you are at the keyboard — click **Always
@@ -434,18 +500,18 @@ switch_at        = 85     # rotate away at this session (5-hour) utilization
 switch_at_weekly = 98     # ...and at this weekly utilization
 hard_floor       = 99     # above this, swap mid-turn rather than wait for an idle gap
 switch_when      = "idle"
-hot_threshold    = 60     # above this, the account in use is polled every poll_hot
+hot_threshold    = 60     # poll_hot only above this (or burning fast), and only while moving toward the trigger
 poll_hot         = "1m"   # the default; faster drains the usage API's burst allowance
+poll_active      = "3m"   # the default: the account in use when not moving; under 2m runs at 2m and warns
 cooldown         = "10m"
 max_switch_wait  = "30s"  # how long a due switch waits for an idle gap
-landing_margin   = 10     # a switch target needs this many points below its own trigger
+landing_margin   = 10     # a switch target's session window needs this many points below its trigger
 blind_failover_polls = 3  # unreadable polls of the account in use before failing over; 0 holds
 
 priority = ["work-a", "work-b", "personal"]
 
 [[account]]
 id           = "personal"
-scope        = "personal"
 reserve      = 70         # never auto-used above this utilization
 account_uuid = "…"        # the seat: this person...
 org_id       = "…"        # ...in this organization
@@ -456,8 +522,20 @@ refills the same afternoon, while 85% of a weekly one still holds days of work.
 
 | setting | default | what it does |
 |---|---|---|
-| `landing_margin` | `10` (0–50) | A switch only lands on an account with at least this many points of room below **its own** trigger, so it never lands on one it must leave again at once. When every account with room is inside the margin, an ordinary rotation holds; past `hard_floor`, or after a refusal, it takes the best of them anyway. Settable per profile. `0` turns it off. |
-| `blind_failover_polls` | `3` | When the usage of the account in use cannot be read for this many polls in a row (and its last good reading is at least that many `poll_active` intervals old), switch to an account that can be read and clears the landing margin. A 429 from the usage endpoint does not count — it clears by itself within 15 minutes — and neither does an access token that merely expired on an idle session, which Claude Code refreshes on the next message. `0` always holds. |
+| `landing_margin` | `10` (0–50) | A switch only lands on an account whose **session (5-hour)** window has at least this many points of room below `switch_at`, so it never lands on one it must leave again at once. The weekly window has no margin: any account under `switch_at_weekly` qualifies. When every account with room is inside the margin, an ordinary rotation holds until `hard_floor`; past it, or after a refusal, it takes the best of them anyway. Settable per profile. `0` turns it off. Written to the file only once set. |
+| `models` | `[]` | Model names (as `cs status --detail` shows them) whose **per-model weekly limit** counts like the weekly window: when one is higher than the account's weekly figure it is what `switch_at_weekly` triggers on and what eligibility judges, and a counted limit the API reports without a figure makes the account unknown (never a target). Empty: per-model limits are shown, never acted on. Settable per profile; `models = []` in a profile turns the global list off there. |
+| `blind_failover_polls` | `3` | When the usage of the account in use has failed to read for this many polls in a row, over at least that many `poll_active` intervals counted from the first failure, switch to an account that can be read and clears the landing margin — only in an idle gap, never mid-turn. A 429 from the usage endpoint does not count (it clears by itself within 15 minutes), nor a 401 on a stale stored copy of a token Claude Code has since refreshed, nor an access token that merely expired on an idle session. A daemon restart starts the count afresh. `0` always holds. Written to the file only once set. |
+
+### Advanced
+
+The per-account usage model (DESIGN 4.3c). The defaults are the measured
+model; change them only if you have measured better. `doctor`'s "account
+rate" row shows the values in force.
+
+| setting | default | what it does |
+|---|---|---|
+| `hot_reserve` | `10` (0–15) | Usage calls per account that routine polling leaves untouched, so the account in use can be read every `poll_hot` while it moves toward its trigger. A 15-minute hot spell at 60 s needs 7.5. |
+| `unseen_calls_per_hour` | `2` (0–20) | Usage calls an hour a live account is assumed to lose to Claude Code's own reads of the same endpoint, which claudeswitch cannot see. Its allowance is modelled as refilling this much slower. |
 
 `cs config` lists every setting with its value, and `cs config <name> <value>`
 changes one with validation. A live credential that matches no pinned seat is
@@ -494,8 +572,8 @@ switch_at = 75          # overrides the global 85 for this profile only
   Only one profile may leave it out.
 - **Pools must not overlap.** Accounts in no pool join the profile named
   `default`; with no `default` declared, an unlisted account is a config error.
-- `switch_at`, `switch_at_weekly`, `hard_floor` and `landing_margin` may be set per profile;
-  anything unset falls back to the global value.
+- `switch_at`, `switch_at_weekly`, `hard_floor`, `landing_margin` and `models` may be set
+  per profile; anything unset falls back to the global value.
 - No `[[profile]]` blocks at all means one profile holding every account,
   which behaves exactly as before.
 - Profile names and account ids are plain names: letters, digits, `.`, `_`
@@ -522,6 +600,48 @@ own token, and a refresh revokes the previous one, so an account live in two
 profiles is logged out of whichever refreshes second. claudeswitch therefore
 never swaps an account into a profile while it is, or might be, live in
 another; when it cannot tell, it refuses and tries again later.
+
+### Making a profile, and starting Claude Code in one
+
+```sh
+cs profile create work --pool work-1,work-2 --seed work-1
+cs run work                    # claude, with CLAUDE_CONFIG_DIR set for work
+cs run work -- --resume        # arguments after -- go to claude
+cs profile list                # each profile's dir, pool and live account
+```
+
+`profile create` does, in one step:
+
+- makes the dir (`~/.claude-<name>`, or `--dir PATH`), written to the config
+  as an absolute path. It may not be, hold or sit inside `~/.claude` or
+  another profile's dir, through links or (on macOS) a different case; no
+  two profiles may share a folder, which the config also refuses at load.
+  It warns about an existing dir that is not 0700, or one in a git work
+  tree;
+- links your `settings.json`, `CLAUDE.md`, `skills/`, `commands/` and
+  `agents/` from `~/.claude` into it, so one edit serves both profiles.
+  Anything already in the dir is kept, never replaced. Transcripts, history,
+  plugins and credentials are not shared;
+- copies your user-scope MCP servers (`mcpServers` from `~/.claude.json`, and
+  nothing else from it) into the new dir's `.claude.json`. It is a copy, and
+  servers that sign in with OAuth need signing in again there (`/mcp`);
+- writes the `[[profile]]` block, refusing an account another profile's pool
+  lists. With no `[[profile]]` blocks yet, it declares `default` too — on
+  your shell's `CLAUDE_CONFIG_DIR` if it is set, with no `dir` if not —
+  which keeps every other account where it was;
+- with `--seed <account>`, signs the new profile in with that account's
+  vaulted credential, so Claude Code starts signed in. The account must be in
+  the new pool and live in no other profile, nor possibly live in one (the
+  same check as `use`); the profile must have no credential yet. With a
+  daemon running it first waits up to 10 seconds for the daemon to load the
+  new profile, then checks again; if the daemon does not, the profile is
+  made but not signed in, and `cs profile seed <name> <account>` finishes
+  it. It is written holding Claude Code's credential locks and never
+  overwrites an existing item.
+
+`cs run` on a profile that is not signed in yet starts Claude Code anyway,
+with a note to use /login. A running daemon picks up the new profile without
+a restart.
 
 ### Which profile a command acts on
 
@@ -569,9 +689,11 @@ compared at all.
   treated as available. A percentage is shown only if the API reported it.
 - **Estimate quota from token counts.** That was tested against 24 real limit
   hits and produced 40–79% spread. See ground truth, Round 2.
-- **Hammer the usage API.** The endpoint locks a caller out for 299 seconds after
-  a burst. Every claudeswitch process shares one budget of 12 calls per 5
-  minutes, with one always held back to verify a swap.
+- **Hammer the usage API.** The endpoint refuses an account for 10–15 minutes
+  after a burst of about 24 calls. Every claudeswitch process shares one budget
+  of 12 calls per 5 minutes, plus an allowance per account (20 calls, refilling
+  one every 2 minutes, 3 held back to verify a swap); the account in use is
+  read every `poll_hot` only while its usage is moving toward its trigger.
 - **Touch your MCP tokens.** The Keychain item holds Notion and Slack OAuth
   alongside the Claude credential; only the `claudeAiOauth` subtree is ever
   swapped.
@@ -609,7 +731,7 @@ internal/session      work that spans several accounts
 internal/config       declarative accounts
 internal/render       the status view
 internal/notify       desktop notifications
-plugin/               the Claude Code plugin: SessionStart hook and skills
+plugin/               the Claude Code plugin: hooks (session start, Chrome hint) and skills
 macos/                the menu-bar app (SwiftUI); install-app.sh builds it
 .claude-plugin/       the marketplace entry that lists the plugin
 ```

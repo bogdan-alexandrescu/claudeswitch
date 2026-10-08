@@ -43,11 +43,16 @@ type fakePoller struct {
 	attribute map[string]string
 	blind     bool
 	cfgSet    *config.Config
+	// onPoll, when set, runs at every PollActiveIn: a network call.
+	onPoll func()
 }
 
 func (f *fakePoller) Tick(context.Context) { f.calls = append(f.calls, pollerCall{op: "tick"}) }
 func (f *fakePoller) PollActiveIn(_ context.Context, prof string) (*state.Account, error) {
 	f.calls = append(f.calls, pollerCall{op: "pollactive", profile: prof})
+	if f.onPoll != nil {
+		f.onPoll()
+	}
 	if id, ok := f.attribute[prof]; ok {
 		f.st.Profile(prof).SetActive(id)
 		return f.st.Get(id), nil
@@ -179,7 +184,6 @@ func (f *fakeDet) Run(stop <-chan struct{}) error {
 	return nil
 }
 func (f *fakeDet) Rejections() <-chan detector.Rejection { return f.out }
-func (f *fakeDet) CurrentDir() string                    { return "" }
 func (f *fakeDet) IdleFor(time.Duration) bool            { return f.idle }
 func (f *fakeDet) LastActivity() time.Time               { return f.last }
 func (f *fakeDet) WorstLatency() time.Duration           { return 0 }

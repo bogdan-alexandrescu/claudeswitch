@@ -215,7 +215,7 @@ func (v *Vault) RestoreRecovery(ctx context.Context, slot, accountID, wantSeat s
 	}
 	v.log.Info("restored a recovery copy into the vault", "slot", slot, "account", accountID,
 		"token", keychain.Redact(cred.AccessToken))
-	e := &Entry{AccountID: accountID, AccountUUID: meta.AccountUUID, OrgID: meta.OrgID,
+	e := &Entry{AccountID: accountID, AccountUUID: meta.AccountUUID, Email: meta.Email, Plan: meta.Plan, OrgID: meta.OrgID,
 		Expiry: cred.Expiry(), RefreshExpiry: cred.RefreshExpiry(), Tier: cred.RateLimitTier,
 		Subscription: cred.SubscriptionType, NoRefreshToken: cred.RefreshToken == ""}
 	if err := deleteRecovery(name); err != nil {

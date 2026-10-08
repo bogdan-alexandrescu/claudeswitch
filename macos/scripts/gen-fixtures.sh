@@ -89,7 +89,8 @@ cat > "$H/.local/state/claudeswitch/state.json" <<EOF
         "limits": [
           {"kind": "session", "group": "session", "percent": 3, "severity": "normal", "is_active": false, "resets_at": "$IN2H"},
           {"kind": "weekly_all", "group": "weekly", "percent": 41, "severity": "normal", "is_active": true, "resets_at": "$IN3D"},
-          {"kind": "weekly_scoped", "group": "weekly", "percent": 12, "severity": "normal", "is_active": false, "resets_at": "$IN3D"}
+          {"kind": "weekly_scoped", "group": "weekly", "percent": 12, "severity": "normal", "is_active": false, "resets_at": "$IN3D",
+           "scope": {"model": {"id": null, "display_name": "Modelname"}, "surface": null}}
         ],
         "spend": {"used": {"amount_minor": 0, "currency": "USD", "exponent": 2}, "limit": null, "percent": 0, "severity": "normal", "enabled": false},
         "extra_usage": {"is_enabled": false}
@@ -155,6 +156,50 @@ run why --json > "$OUT/why.json"
 run config --json > "$OUT/config.json"
 run version > "$OUT/version.txt"
 cp "$H/.local/state/claudeswitch/state.json" "$OUT/state.json"
+
+# The app's JSON CLI (docs/APP_CLI.md): the commands that read and edit
+# config.toml alone, run after the reads above because they change it. A
+# refusal exits 1 with the error object on stdout, which is the fixture.
+# Commands that reach the keychain, launchd or Chrome (profile list, login,
+# add, account delete, recovery, daemon, chrome add and open) are never run
+# here: their fixtures are written by hand from APP_CLI.md and named
+# cli-*.json as well.
+gen() { # gen <fixture> <args...>
+  f="$1"; shift
+  run "$@" > "$OUT/$f" || true
+}
+gen cli-config-schema.json config schema --json
+gen cli-config-get.json config get switch_at --json
+gen cli-config-set.json config set switch_at 85 --json
+gen cli-error-invalid-value.json config set switch_at 200 --json
+gen cli-error-not-found.json config set no_such_setting 1 --json
+gen cli-priority.json priority personal work-1 --json
+gen cli-error-usage.json priority --json
+gen cli-chrome-list.json chrome list --json
+
+# Lane 15, both keychain-free: `account list` with an email and a plan
+# recorded in state (added here, after state.json was copied, so that
+# fixture keeps none), and `profile remove` on a config with two profiles.
+STATE="$H/.local/state/claudeswitch/state.json"
+sed -i '' '1a\
+  "emails": {"work-1": "person1@example.com"}, "plans": {"work-1": "Max 20x"},
+' "$STATE"
+cat >> "$H/.config/claudeswitch/config.toml" <<EOF
+
+[[profile]]
+name = "default"
+pool = ["work-1", "work-2"]
+
+[[profile]]
+name = "review"
+dir = "$H/.claude-review"
+pool = ["personal"]
+EOF
+mkdir -p "$H/.claude-review"
+gen cli-account-list.json account list --json
+gen cli-error-profile-remove-confirm.json profile remove review --json
+gen cli-profile-remove.json profile remove review --yes --json
+gen cli-error-last-profile.json profile remove default --yes --json
 
 # The generated files must hold nothing but placeholders.
 if grep -l "stale-old" "$OUT/state.json" >/dev/null; then
