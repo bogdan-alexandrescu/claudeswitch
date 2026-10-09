@@ -584,3 +584,91 @@ selection strategy, `oauthAccount` splicing, `service install` from the binary,
   ago if that is earlier (`session.DefaultFrom`). The old rule ("8 hours
   before the latest switch, if later") could never apply, so every span was
   the last 8 hours.
+
+## Next features (decided 2026-10-08)
+
+Chosen by the owner from a list of proposals. Every app feature reads the CLI
+(contract 2, additive) and never the keychain or the usage API. The JSON
+shapes below are the contract the CLI and the app are built against; the
+exact key names may grow, but these keys must exist.
+
+### Rotation
+
+- **F1. Spend expiring quota first (opt-in).** A setting
+  `prefer = "room" | "expiring"` (default `room`, today's behaviour), global
+  and per profile. With `expiring`, among eligible candidates (the same
+  eligibility: under trigger, landing margin, not refused or needing login),
+  prefer the account whose weekly window resets soonest *while it still has
+  unused weekly quota*. Ties fall back to room. `why` says so: `work-team
+  resets in 9h with 40% unused, so it goes first`. `why --json`: per
+  candidate `weekly_resets_at`, `weekly_unused`. Settings → Rotation gets the
+  choice.
+- **F2. Pool runway forecast.** From each account's recent burn rate (the
+  readings already in state), predict when each account reaches its trigger
+  and when the profile's whole pool has no eligible account left. Unknown
+  stays unknown (never a guess from too few readings). `cs status` gains one
+  line per profile (`work pool: runs dry Thu 14:00 at this pace`), `--detail`
+  adds per-account ETAs, and `status --json`/`why --json` add per profile
+  `pool_dry_at` (RFC 3339 or null) and per account `trigger_at` (or null).
+  The daemon notifies once when `pool_dry_at` falls within 2 hours. The app
+  shows the pool line on each card and per-account ETAs in the account
+  picker.
+- **F3. Pin safety valve.** If a pinned account is refused (429, or out of
+  quota at 100%) or needs a login, the daemon lifts the pin, rotates as
+  usual and says why (`pin on work-1 lifted: it was refused`), in the log,
+  a notification and audit (`kind: unpin`). `cs account pin --hard` keeps
+  today's behaviour (stay even then). `account list --json`: `pin_hard`.
+
+### Convenience
+
+- **F4. Profile picked by folder.** `[[profile]] paths = ["~/work/**", …]`
+  (globs; overlapping matches are refused at load, like overlapping pools).
+  `cs run` with no name picks the profile for the current directory, else
+  `default`. `cs profile which [--json]` says which profile a directory maps
+  to. `cs profile hook zsh|bash|fish` prints an optional shell hook that sets
+  `CLAUDE_CONFIG_DIR` on `cd` (it never runs anything else). Settings →
+  Profiles gets a "Folders" field per profile.
+- **F5. Re-login reminders.** When a vaulted account's refresh token expires
+  within 5 days (the figure doctor already warns about), the app posts one
+  notification per account per day, "personal needs signing in within 5
+  days", whose action opens Add account → sign in for that account. Data:
+  `account list --json` gains `refresh_expires_at` (from state.json, never
+  the keychain; null when unknown).
+- **F6. Shortcuts and a hotkey.** App Intents for Switch to best, Pin/Unpin,
+  Status (the followed profile, or a chosen one), usable from Spotlight,
+  Shortcuts and Raycast. A configurable global hotkey for Switch to best on
+  the followed profile (Advanced → This app). If App Intents cannot be built
+  with the Command Line Tools alone, ship the hotkey and a URL scheme
+  (`claudeswitch://switch-best?profile=work`) instead and record why.
+- **F7. Usage history.** Settings → History charts each account's session
+  and weekly utilization over the last 30 days, with switches marked. Data:
+  `cs history --usage [--days 30] --json`, a series per account
+  `[{at, five_hour, seven_day}]` plus switches, built from what the daemon
+  already records (extend the recorded readings if they are not kept; keep
+  the file bounded).
+- **F8. Homebrew.** A formula for the CLI and a cask for the app in a tap
+  repository, updated by the release workflow on each tag. The tap
+  repository itself is created by the owner (an outward-facing action);
+  everything else is prepared in this repo (`packaging/homebrew/`) and the
+  release workflow (public mirror).
+
+### macOS app
+
+- **F9. First-run setup window.** On first launch (no config), a welcome flow
+  that does what `cs setup` does, through the CLI's JSON forms: detect the
+  current login and save it, add more accounts (the Add account sheet),
+  optionally create a work profile, and install the daemon in dry run.
+- **F10. Update checker.** Once a day the app reads the latest GitHub release
+  (one unauthenticated API call; none when the check is off in Advanced).
+  When newer, the popover footer shows "0.5.x available" with Update, which
+  downloads the app zip and the binary for this Mac, verifies both against
+  the release's sha256 files, installs them where the current ones are, and
+  restarts the daemon and the app. A failure leaves everything as it was.
+- **F11. Notification actions.** Rotation notifications carry **Undo**
+  (switch back) and **Pin here**; a refusal or needs-login notification
+  carries **Sign in**.
+- **F12. Health pane.** Settings → Health runs `cs doctor --json` (new: one
+  object per check, `{name, status: ok|warn|fail, message, fix}` where `fix`
+  names a known action: `signin <account>`, `daemon restart`,
+  `statusline install`, `keychain allow`, or null) and lists every check,
+  each failure with a Fix button for a known action.
