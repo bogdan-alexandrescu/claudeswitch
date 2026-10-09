@@ -151,9 +151,11 @@ are several. `--profile NAME` reports one profile only.
 | `--json` | off | machine-readable output |
 | `--config PATH` | `~/.config/claudeswitch/config.toml` | the config file |
 
-Without `--since` the span is the last 8 hours; when a profile reported
-switched in the last 24 hours, it starts 8 hours before the latest such
-switch if that is later.
+Without `--since` the span starts at today's first switch in any profile
+reported, or 8 hours ago if that is earlier. So a day of work across
+rotations reads as one session, and a quiet day is the last 8 hours.
+"Today" is your local calendar day; `--profile` limits the switches it
+looks at to that profile.
 
 `--json`:
 

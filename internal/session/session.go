@@ -306,3 +306,26 @@ func (s *Session) add(src Source, timeline []span, byAccount map[string]*Share, 
 	}
 	return err
 }
+
+// DefaultFrom is where `cs session` starts when no --since is given: today's
+// first switch in any of sources' profiles, or 8 hours before to when that is
+// earlier, so a day of work across rotations reads as one session. "Today"
+// is to's local calendar day; a switch with no profile counts as the legacy
+// (default) source's.
+func DefaultFrom(events []audit.Event, sources []Source, to time.Time) time.Time {
+	from := to.Add(-8 * time.Hour)
+	y, m, d := to.Date()
+	midnight := time.Date(y, m, d, 0, 0, 0, 0, to.Location())
+	for _, e := range events {
+		if e.Kind != "switch" || e.At.Before(midnight) || e.At.After(to) || !e.At.Before(from) {
+			continue
+		}
+		for _, src := range sources {
+			if e.Profile == src.Profile || (e.Profile == "" && src.Legacy) {
+				from = e.At
+				break
+			}
+		}
+	}
+	return from
+}

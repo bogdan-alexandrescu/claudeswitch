@@ -3395,7 +3395,7 @@ func humanTokens(n int64) string {
 func cmdSession(args []string) error {
 	fs := flag.NewFlagSet("session", flag.ExitOnError)
 	cfgPath := fs.String("config", "", "path to config.toml")
-	since := fs.Duration("since", 0, "how far back to look (default: since the first switch today, else 8h)")
+	since := fs.Duration("since", 0, "how far back to look (default: since today's first switch in any profile, or the last 8h if that is longer)")
 	full := fs.Bool("detail", false, "per-account token breakdown and models")
 	asJSON := fs.Bool("json", false, "machine-readable output")
 	only := fs.String("profile", "", "report only this Claude Code profile (default: every one)")
@@ -3413,7 +3413,6 @@ func cmdSession(args []string) error {
 	views := profileViews(cfg, st, *only)
 	var sources []session.Source
 	var names []string
-	var last time.Time
 	for _, v := range views {
 		root := "" // the environment's, for the implicit profile
 		if !v.in.FromEnv {
@@ -3426,26 +3425,19 @@ func cmdSession(args []string) error {
 		sources = append(sources, session.Source{Profile: v.in.Name, Root: root,
 			Active: v.ist.Active, Legacy: v.in.Name == state.DefaultProfile})
 		names = append(names, v.in.Name)
-		if v.ist.LastSwitch.After(last) {
-			last = v.ist.LastSwitch
-		}
 	}
 
+	events, evErr := audit.Tail("", 100000)
+	if evErr != nil {
+		events = nil // an unreadable audit log costs attribution, not the whole report
+	}
 	to := time.Now()
-	from := to.Add(-8 * time.Hour)
-	switch {
-	case *since > 0:
+	from := session.DefaultFrom(events, sources, to)
+	if *since > 0 {
 		from = to.Add(-*since)
-	case !last.IsZero() && last.After(to.Add(-24*time.Hour)):
-		// Default to something meaningful: the span the current rotation covers,
-		// widened to catch the work that led up to it. The latest switch of
-		// any profile reported.
-		if c := last.Add(-8 * time.Hour); c.After(from) {
-			from = c
-		}
 	}
 
-	s, err := session.BuildAll(sources, from, to)
+	s, err := session.BuildFrom(events, sources, from, to)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "note: %v\n", err)
 	}

@@ -578,3 +578,9 @@ selection strategy, `oauthAccount` splicing, `service install` from the binary,
   profile; each message still counts against the account live in its own
   profile when it was written; `--profile P` narrows to one. `--json` adds
   `profiles` and `switch_events` (`switches` stays the count).
+
+- **`cs session`'s default span (owner, 2026-10-08).** Without `--since`, the
+  span starts at today's first switch in any reported profile, or 8 hours
+  ago if that is earlier (`session.DefaultFrom`). The old rule ("8 hours
+  before the latest switch, if later") could never apply, so every span was
+  the last 8 hours.
