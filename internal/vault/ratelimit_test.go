@@ -120,3 +120,30 @@ func TestHoldsAccountWhyMayUseTheHotReserve(t *testing.T) {
 		t.Errorf("%d identity lookups, want 1", ep.profiles)
 	}
 }
+
+// A seat is person@organization, so a live token known to belong to another
+// organization cannot hold the account, and nothing needs asking. The daemon
+// records the organization behind each profile's live token; with it, a
+// rate-limit lock on work's token no longer blocks every swap in default
+// (observed 2026-10-09: "the check is rate limited until 00:37:31").
+func TestHoldsAccountWhySettlesByAKnownOrganization(t *testing.T) {
+	v, ep := testVaultWith(t, map[string]*keychain.Blob{"x": vaulted("x-vaulted", "ux@org-x")},
+		nil, map[string]string{"w-live": "uw@org-w"})
+	v.budget.PenalizeLive("w-live", 20*time.Minute) // locked, as after a 429
+	v.KnowOrg(usage.CredKey("w-live"), "org-w")
+	holds, known, retryAt := v.HoldsAccountWhy(context.Background(), item("b", "w-live"), "x", "ux@org-x")
+	if holds || !known || !retryAt.IsZero() {
+		t.Fatalf("(holds %v, known %v, retry %v); another organization cannot hold x", holds, known, retryAt)
+	}
+	if ep.profiles != 0 {
+		t.Errorf("%d identity lookups, want 0", ep.profiles)
+	}
+	// The same organization settles nothing: two people can share one.
+	if _, known, _ := v.HoldsAccountWhy(context.Background(), item("b", "w-live"), "y", "uy@org-w"); known {
+		t.Error("a same-organization account must still be asked about, and the lock leaves it unknown")
+	}
+	// A different token is a different question.
+	if _, known, _ := v.HoldsAccountWhy(context.Background(), item("b", "w-other"), "x", "ux@org-x"); known {
+		t.Error("an organization known for one token must not answer for another")
+	}
+}

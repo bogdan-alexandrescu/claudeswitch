@@ -275,3 +275,22 @@ func (o orgAPI) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	return resp, err
 }
+
+// Attributing a profile's live token records its key and organization, so
+// the §3 check can rule out other-organization accounts without a call.
+func TestAttributionRecordsTheLiveTokensOrganization(t *testing.T) {
+	cfg := cadenceCfg()
+	cfg.Accounts[0].OrgID = "org-a"
+	p, api, _ := clockedPoller(t, cfg, activeA())
+	p.client.HTTP.Transport = orgAPI{api, map[string]string{"tok-a": "org-a"}}
+	readVault = func(string) (*keychain.Blob, error) { return nil, errors.New("live only") }
+	p.SetLive(state.DefaultProfile, &fakeItem{token: "tok-a"})
+	api.five["tok-a"] = 10
+	if _, err := p.PollActiveIn(context.Background(), state.DefaultProfile); err != nil {
+		t.Fatal(err)
+	}
+	ps := p.st.Profile(state.DefaultProfile)
+	if ps.LiveKey != usage.CredKey("tok-a") || ps.LiveOrg != "org-a" {
+		t.Errorf("live key %q org %q, want tok-a's key and org-a", ps.LiveKey, ps.LiveOrg)
+	}
+}

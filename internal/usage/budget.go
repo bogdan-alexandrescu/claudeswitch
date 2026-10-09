@@ -369,6 +369,10 @@ type accountLock struct {
 // however it was reached — polled as its vault entry, or as the live item
 // before attribution. A refreshed token starts a fresh entry, which at worst
 // costs one extra call.
+// CredKey is the short, one-way key the budget files a credential under:
+// enough to recognise the same token again, useless for using it.
+func CredKey(cred string) string { return lockKey(cred) }
+
 func lockKey(cred string) string {
 	if cred == "" {
 		return ""

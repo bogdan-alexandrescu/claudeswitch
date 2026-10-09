@@ -162,6 +162,13 @@ type holdsChecker interface {
 	HoldsAccountWhy(ctx context.Context, item keychain.Live, accountID, wantSeat string) (holds, known bool, retryAt time.Time)
 }
 
+// orgKnower is a holdsChecker that can be told the organization behind a
+// live token (vault.Vault.KnowOrg), so it settles other-organization
+// accounts without a call.
+type orgKnower interface {
+	KnowOrg(key, org string)
+}
+
 // liveElsewhereOf is the check before a live write (§3): may accountID be live
 // in a profile other than self? It names that profile and the evidence, or
 // returns "". The daemon and `use` share it.
@@ -192,6 +199,16 @@ func liveElsewhereOf(ctx context.Context, v holdsChecker, cfg *config.Config, st
 		}
 		if in := st.Profiles[o.name]; in != nil && in.Active == accountID {
 			return o.name, "it is the recorded live account", time.Time{}
+		}
+	}
+	// What the daemon read behind each profile's live token: a token of
+	// another organization cannot hold the account, so a rate-limit lock on
+	// one profile's token does not block every swap in the others.
+	if k, ok := v.(orgKnower); ok {
+		for _, ps := range st.Profiles {
+			if ps != nil {
+				k.KnowOrg(ps.LiveKey, ps.LiveOrg)
+			}
 		}
 	}
 	seat := cfg.SeatOf(accountID)

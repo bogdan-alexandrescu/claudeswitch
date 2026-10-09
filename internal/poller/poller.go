@@ -427,7 +427,11 @@ func (p *Poller) PollActiveIn(ctx context.Context, profile string) (*state.Accou
 		}
 	}
 	p.noteCrossPool(profile, id)
-	p.st.Profile(profile).SetActive(id)
+	ps := p.st.Profile(profile)
+	ps.SetActive(id)
+	if scratch.OrgID != "" {
+		ps.LiveKey, ps.LiveOrg = usage.CredKey(blob.ClaudeAIOAuth.AccessToken), scratch.OrgID
+	}
 	// This was the account's poll: its next scheduled one counts from here,
 	// rather than spending a second call of its allowance on the same figure.
 	if scratch.Last != nil && id != Unattributed {

@@ -435,6 +435,13 @@ type ProfileState struct {
 	// so a profile removed or re-pointed while no daemon ran can still be
 	// guarded as a ghost (see ghost.go).
 	Item *ItemRef `json:"item_ref,omitempty"`
+	// LiveKey and LiveOrg are the live token the daemon last read for this
+	// profile (its usage.CredKey, never the token) and the organization behind
+	// it. A token's organization never changes, so while the live item still
+	// holds that token, the §3 check knows it cannot hold an account of
+	// another organization without asking. The daemon owns both, like Item.
+	LiveKey string `json:"live_key,omitempty"`
+	LiveOrg string `json:"live_org,omitempty"`
 }
 
 // ItemRef is a resolved live item: its keychain service and Linux credential
@@ -911,6 +918,7 @@ func (s *State) SaveAs(as owner) error {
 				}
 				// The daemon owns the resolved item; a CLI copy may be stale.
 				mine.Item = disk.Item
+				mine.LiveKey, mine.LiveOrg = disk.LiveKey, disk.LiveOrg
 			})
 			s.DaemonLive = disk.DaemonLive
 			s.DaemonSince = disk.DaemonSince

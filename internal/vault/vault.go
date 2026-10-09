@@ -44,6 +44,31 @@ type Vault struct {
 	// probes remembers the seat behind live tokens; see seatBehind.
 	probeMu sync.Mutex
 	probes  map[string]seatProbe
+	// orgs maps a live token's key (usage.CredKey) to the organization the
+	// daemon read behind it; see KnowOrg.
+	orgs map[string]string
+}
+
+// KnowOrg records the organization behind the live token with this key
+// (usage.CredKey), as the daemon read it. A token's organization never
+// changes, so it settles HoldsAccount for any account of another
+// organization without a call.
+func (v *Vault) KnowOrg(key, org string) {
+	if key == "" || org == "" {
+		return
+	}
+	v.probeMu.Lock()
+	defer v.probeMu.Unlock()
+	if v.orgs == nil {
+		v.orgs = map[string]string{}
+	}
+	v.orgs[key] = org
+}
+
+func (v *Vault) knownOrg(token string) string {
+	v.probeMu.Lock()
+	defer v.probeMu.Unlock()
+	return v.orgs[usage.CredKey(token)]
 }
 
 func New(log *slog.Logger) *Vault {
@@ -872,6 +897,15 @@ func (v *Vault) HoldsAccountWhy(ctx context.Context, item keychain.Live, account
 	}
 	if wantSeat == "" {
 		return false, false, time.Time{}
+	}
+	// A seat is person@organization: a token known to belong to another
+	// organization cannot hold this account, and nothing needs asking. This
+	// keeps a rate-limit lock on one profile's token from blocking every
+	// swap in the others.
+	if org := v.knownOrg(live.ClaudeAIOAuth.AccessToken); org != "" {
+		if i := strings.LastIndex(wantSeat, "@"); i >= 0 && wantSeat[i+1:] != org {
+			return false, true, time.Time{}
+		}
 	}
 	p := v.probeSeat(ctx, live.ClaudeAIOAuth.AccessToken)
 	if p.seat == "" {

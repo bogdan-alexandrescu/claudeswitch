@@ -180,7 +180,7 @@ cs -v
 cs --version
 ```
 
-Prints the build: `claudeswitch v0.6.1` for a release binary,
+Prints the build: `claudeswitch v0.6.2` for a release binary,
 `claudeswitch dev` for a build from source (fixture `version.txt`). With no
 command at all, `cs` prints the version line and every command with a
 one-line description, and exits 2:
