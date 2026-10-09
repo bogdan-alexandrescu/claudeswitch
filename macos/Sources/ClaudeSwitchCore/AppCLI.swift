@@ -173,7 +173,26 @@ public extension CLI {
         }
     }
 
+    // MARK: app
+
+    /// `app heartbeat --json` (0.6.1): tells the daemon this app is posting
+    /// rotation notices, so it skips its own until the answer's time.
+    func appHeartbeat() -> Result<Date, CallError> {
+        decode(timeout: 20, { ["app", "heartbeat", "--json"] }) { $0["app_notifies_until"].date }
+    }
+
     // MARK: config
+
+    /// `init --empty --json`: a comments-only config at `configPath` (the
+    /// CLI's default when nil). Answers the path written; `exists` when
+    /// one is already there.
+    func initEmpty(configPath: String?) -> Result<String, CallError> {
+        decode({
+            var a = ["init", "--empty", "--json"]
+            if let p = configPath { a.append(try Argv.flag("config", p, "config path")) }
+            return a
+        }) { $0["path"].string }
+    }
 
     func configSchema() -> Result<ConfigSchema, CallError> {
         decode({ ["config", "schema", "--json"] }, ConfigSchema.init)

@@ -64,16 +64,22 @@ time later with [`cs login <id> --direct`](accounts.md#cs-login) or
 ## cs init
 
 ```
-cs init [--config PATH]
+cs init [--empty] [--json] [--config PATH]
 ```
 
 Writes a commented starter config to edit by hand, instead of `setup`. It
 never overwrites: if the file exists it fails with
-`<path> already exists; not overwriting`.
+`<path> already exists; not overwriting` (with `--json`, the error object
+with code `exists`).
 
 | flag | default | meaning |
 |---|---|---|
 | `--config PATH` | `~/.config/claudeswitch/config.toml` | where to write |
+| `--empty` | off | write an empty config instead: comment lines only, no accounts and no settings, so every setting keeps its default. `cs add` and `cs login` then append the accounts |
+| `--json` | off | answer `{"path": "<path written>"}` instead of the line below |
+
+The file is written with mode 0600, its folder 0700. The macOS app's
+first-run window runs `cs init --empty --json` before its first `add`.
 
 The starter sets `switch_at = 85`, `switch_at_weekly = 98`,
 `hard_floor = 99`, `switch_when = "idle"` and `cooldown = "10m"`, two example
@@ -174,7 +180,7 @@ cs -v
 cs --version
 ```
 
-Prints the build: `claudeswitch v0.6.0` for a release binary,
+Prints the build: `claudeswitch v0.6.1` for a release binary,
 `claudeswitch dev` for a build from source (fixture `version.txt`). With no
 command at all, `cs` prints the version line and every command with a
 one-line description, and exits 2:

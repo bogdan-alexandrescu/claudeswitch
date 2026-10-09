@@ -377,10 +377,26 @@ private func at(_ s: String) -> Date { GoTime.parse(s)! }
         #expect(fix("config") == nil)
     }
 
-    @Test func testOnlyAFailureWithAKnownFixGetsAButton() throws {
+    /// 0.6.1 (decided 2026-10-08): a warning with a known fix gets its button
+    /// too, not only a failure; an unknown fix, or an ok row, never does.
+    @Test func testAWarningOrFailureWithAKnownFixGetsAButton() throws {
         let d = try #require(DoctorReport(data: try fixture("cli-doctor.json")))
         let buttons = d.checks.filter(\.offersFix).map(\.name)
-        #expect(buttons == ["keychain", "login personal", "daemon", "status line"])
+        #expect(buttons == ["keychain", "login personal", "refresh work-2", "daemon", "status line"])
+    }
+
+    /// The "status line not set" row is an info note: `status` warn, `level`
+    /// info. It carries `statusline install`, and gets its button.
+    @Test func testTheStatusLineInfoRowGetsItsButton() throws {
+        let d = try #require(DoctorReport(data: Data("""
+            {"checks": [
+              {"name": "status line", "status": "warn", "level": "info", "message": "not set",
+               "details": [], "fix": "statusline install", "account": null, "profile": null},
+              {"name": "config", "status": "ok", "level": "ok", "message": "fine", "fix": "statusline install"}],
+             "failed": 0}
+            """.utf8)))
+        #expect(d.checks.filter(\.offersFix).map(\.name) == ["status line"])
+        #expect(d.checks.first?.fix == .statuslineInstall)
     }
 
     @Test func testFixArgv() {

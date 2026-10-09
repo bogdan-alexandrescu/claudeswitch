@@ -52,6 +52,7 @@ struct WelcomeView: View {
     @State private var sheet: Sheet?
     @State private var error: String?
     @State private var installing = false
+    @State private var dontShowAgain = FirstRun.dontShowAgain()
 
     var facts: SetupFacts {
         if let f = renderFacts { return f }
@@ -81,8 +82,16 @@ struct WelcomeView: View {
                 InlineErrorView(title: "That step did not finish", message: e, hint: "", retryLine: nil) { error = nil }
             }
             HStack {
-                Text("Each step can be skipped. ⋯ → Set up… opens this again.")
-                    .font(.caption).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Each step can be skipped. ⋯ → Set up… opens this again.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Toggle("Don't show this again", isOn: $dontShowAgain)
+                        .toggleStyle(.checkbox).font(.caption)
+                        .help("Stop opening this window by itself at launch. ⋯ → Set up… still opens it.")
+                        .onChange(of: dontShowAgain) { on in
+                            if renderFacts == nil { FirstRun.setDontShowAgain(on) }
+                        }
+                }
                 Spacer()
                 if shown.finished {
                     Button("Done") { close() }.buttonStyle(PrimaryButtonStyle()).keyboardShortcut(.defaultAction)
@@ -205,8 +214,10 @@ struct WelcomeView: View {
         error = nil
         switch s {
         case .saveLogin, .addAccounts, .workProfile:
-            guard ensureConfig() else { return }
-            sheet = s == .saveLogin ? .saveLogin : s == .addAccounts ? .addAccount : .newProfile
+            Task {
+                guard await ensureConfig() else { return }
+                sheet = s == .saveLogin ? .saveLogin : s == .addAccounts ? .addAccount : .newProfile
+            }
         case .daemon:
             installing = true
             Task {
@@ -219,16 +230,17 @@ struct WelcomeView: View {
         }
     }
 
-    /// `add --json` appends to the config but does not create it: write an
-    /// empty one first, where the CLI looks for it.
-    func ensureConfig() -> Bool {
+    /// `add --json` appends to the config but does not create it: have the
+    /// CLI start an empty one first (`init --empty --json`), where the CLI
+    /// looks for it. The app never writes claudeswitch's files itself.
+    func ensureConfig() async -> Bool {
         let path = store.data.settings?.path ?? FirstRun.defaultConfigPath()
-        switch FirstRun.seedConfig(at: path) {
+        switch await store.call("init", { FirstRun.ensureConfig(path: path, cli: $0) }) {
         case .success(let wrote):
             if wrote { store.refresh(full: true, profiles: true) }
             return true
         case .failure(let e):
-            error = e.message
+            error = e.hint.isEmpty ? e.message : e.message + " " + e.hint
             return false
         }
     }

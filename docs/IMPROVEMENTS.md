@@ -779,6 +779,14 @@ exact key names may grow, but these keys must exist.
   that does what `cs setup` does, through the CLI's JSON forms: detect the
   current login and save it, add more accounts (the Add account sheet),
   optionally create a work profile, and install the daemon in dry run.
+
+  *0.6.1 (decided 2026-10-08):* the window no longer writes the empty
+  config itself: it runs `cs init --empty --json` (new, `{"path"}`, code
+  `exists` when one is there; APP_CLI "init"), keeping the rule that the
+  app never writes claudeswitch's files. A binary without `--empty` gets
+  a message to update or run `cs setup`. A **Don't show this again**
+  checkbox (UserDefaults `firstRunDontShowAgain`) stops the window opening
+  by itself at launch; ⋯ → Set up… still opens it.
 - **F10. Update checker.** Once a day the app reads the latest GitHub release
   (one unauthenticated API call; none when the check is off in Advanced).
   When newer, the popover footer shows "0.5.x available" with Update, which
@@ -788,6 +796,14 @@ exact key names may grow, but these keys must exist.
 - **F11. Notification actions.** Rotation notifications carry **Undo**
   (switch back) and **Pin here**; a refusal or needs-login notification
   carries **Sign in**.
+
+  *0.6.1 (decided 2026-10-08):* one notification per rotation. While the
+  app posts its actionable ones (on, bundled, allowed) it runs `cs app
+  heartbeat --json` every minute (new; `app_notifies_until` = now + 2m in
+  state.json, CLI-owned, written under the lock), and the daemon skips its
+  `osascript` switch notice while that is in the future. Every other daemon
+  notice stays; no app, Linux or a quit app notify as before. Go tests for
+  both paths; Swift tests for the command and the timer (`AppHeartbeat`).
 - **F12. Health pane.** Settings → Health runs `cs doctor --json` (new: one
   object per check, `{name, status: ok|warn|fail, message, fix}` where `fix`
   names a known action: `signin <account>`, `daemon restart`,
@@ -806,3 +822,20 @@ exact key names may grow, but these keys must exist.
   5 days) and, with `--verify`, `credential`. `failed` counts the `[FAIL]`
   rows; the JSON form exits 0 whenever it made the report (an exit 1 is an
   error object to the app).
+
+  *0.6.1 (decided 2026-10-08):* a check with a known `fix` gets its button
+  whether its status is `warn` or `fail`, so the "status line not set" info
+  row (`warn`, level `info`) gets **Install the status line**. An unknown
+  fix or an ok row still gets none.
+
+### Fixes (0.6.1, decided 2026-10-08)
+
+- **`last_rate` was always 0.** The poller took the burn rate while
+  `LastAt` still equalled the `PrevAt` it had just set, so the pair spanned
+  no time. It now moves `LastAt` first. *Idle accounts don't project:* now
+  that `last_rate` is real, a flat pair would carry it forward for an
+  account nobody is using. Only some profile's live account, or an account
+  read within `poll_active`, shows a projected "~" figure, a burn rate or
+  `burn_per_min`/a raised `projected` in `status --json`
+  (`state.Projects`/`ProjectedFor`); the policy already projects only the
+  active account. No golden changed.

@@ -348,7 +348,7 @@ struct HealthPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PaneHeader(title: "Health", subtitle: "What claudeswitch doctor checks, with a fix for what fails.") {
+            PaneHeader(title: "Health", subtitle: "What claudeswitch doctor checks, with a fix for what fails or warns.") {
                 Button { store.runDoctor() } label: {
                     if store.isBusy("doctor") {
                         ProgressView().controlSize(.small)
@@ -398,7 +398,7 @@ struct HealthPane: View {
 }
 
 /// One check: its mark, name and message, and a Fix button for a failure
-/// whose fix this app knows.
+/// or a warning whose fix this app knows.
 struct CheckRow: View {
     @EnvironmentObject var store: Store
     let check: DoctorCheck

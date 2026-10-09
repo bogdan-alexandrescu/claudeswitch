@@ -46,6 +46,7 @@ const (
 	codeNotDurable      = "binary_not_durable"    // daemon install from a temporary or translocated path
 	codeConfigChanged   = "config_changed"        // the config changed under a command; its edit was not undone
 	codeLastProfile     = "last_profile"          // profile remove: the only profile cannot be removed
+	codeExists          = "exists"                // init: a config is already there; nothing written
 )
 
 // appError is an error the app can branch on. Its human form is the

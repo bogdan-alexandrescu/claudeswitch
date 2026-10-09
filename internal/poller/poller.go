@@ -944,6 +944,10 @@ func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token strin
 	}
 	p.noteMovement(acct.ID, acct.Last, u)
 	acct.Last = u
+	// LastAt moves before the rate is taken: until it does it still equals
+	// the PrevAt just set, the pair spans no time, and the rate came out 0 on
+	// every poll, so last_rate was never recorded (fixed in 0.6.1).
+	acct.LastAt = u.FetchedAt
 	// Remember the rate while we can still see it. Once polling stalls the pair
 	// of readings goes flat and no rate can be derived from it, so the value
 	// captured here is what keeps the projection honest through the gap.
@@ -953,7 +957,6 @@ func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token strin
 		acct.LastRate = 0 // window reset; the old rate describes a dead window
 	}
 	noteRise(acct, u)
-	acct.LastAt = u.FetchedAt
 	acct.LastErr = ""
 	p.lastOK = u.FetchedAt
 	// The server answered, so whatever was refusing us has stopped.

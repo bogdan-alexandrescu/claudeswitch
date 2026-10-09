@@ -153,6 +153,39 @@ func (a *Account) Projected(now time.Time) float64 {
 	return p
 }
 
+// Projects reports whether account id's figure may be shown carried forward
+// by its burn rate: only when it is some profile's live account, or was read
+// within pollActive. An idle account is not being spent; its readings come
+// in flat pairs, and carrying a remembered rate over them would show a figure
+// climbing while nobody uses it (decided 2026-10-08, 0.6.1). The policy has
+// its own rule to the same effect: it projects only the active account.
+func (s *State) Projects(id string, now time.Time, pollActive time.Duration) bool {
+	a := s.Accounts[id]
+	if a == nil || a.Last == nil {
+		return false
+	}
+	for _, in := range s.Profiles {
+		if in != nil && in.Active == id {
+			return true
+		}
+	}
+	return !a.LastAt.IsZero() && now.Sub(a.LastAt) <= pollActive
+}
+
+// ProjectedFor is account id's figure as a view shows it: Projected when
+// Projects allows it, the reading as it is otherwise, and 0 with no reading.
+func (s *State) ProjectedFor(id string, now time.Time, pollActive time.Duration) float64 {
+	a := s.Accounts[id]
+	if a == nil || a.Last == nil {
+		return 0
+	}
+	if s.Projects(id, now, pollActive) {
+		return a.Projected(now)
+	}
+	_, worst := a.Last.Worst()
+	return worst
+}
+
 // WithModels is this account as the policy judges it when the config counts
 // these models' weekly limits like the weekly window (IMPROVEMENTS I6; see
 // usage.Usage.WithModels). from names the model whose limit set the weekly
@@ -453,6 +486,13 @@ type State struct {
 	// appear here before seeding (lane 10 security review). Daemon-owned.
 	DaemonProfiles map[string]string `json:"daemon_profiles,omitempty"`
 	SavedAt        time.Time         `json:"saved_at"`
+	// AppNotifiesUntil is the macOS app's heartbeat (0.6.1): while it is in
+	// the future the app is running and posts its own actionable rotation
+	// notifications, so the daemon skips its plain one. `cs app heartbeat`
+	// sets it two minutes ahead and the app runs that every minute, so it
+	// lapses by itself when the app quits. CLI-owned: a daemon save keeps
+	// the disk's value; the daemon reads it from disk (AppNotifyingAt).
+	AppNotifiesUntil time.Time `json:"app_notifies_until,omitzero"`
 	// Vaulted is every account id this program has stored a credential for,
 	// including ones the config does not mention — `add` will vault an account
 	// that is not configured, and says so while it does it.
@@ -861,6 +901,7 @@ func (s *State) SaveAs(as owner) error {
 			})
 			// The CLI's list, as it is on disk.
 			s.Vaulted = disk.Vaulted
+			s.AppNotifiesUntil = disk.AppNotifiesUntil
 		case OwnerCLI:
 			s.mergeProfiles(disk, func(mine, disk *ProfileState) {
 				// Same rule from the other side: keep the daemon's Active unless we
@@ -877,6 +918,10 @@ func (s *State) SaveAs(as owner) error {
 			s.DaemonProfiles = disk.DaemonProfiles
 			s.DaemonConfigHash = disk.DaemonConfigHash
 			s.mergeVaulted(disk)
+			// The later heartbeat: a command loaded before one must not undo it.
+			if disk.AppNotifiesUntil.After(s.AppNotifiesUntil) {
+				s.AppNotifiesUntil = disk.AppNotifiesUntil
+			}
 			// Keep the daemon's observations; they are fresher than ours — but
 			// never resurrect a record this process deliberately dropped.
 			for id, a := range disk.Accounts {
@@ -890,20 +935,7 @@ func (s *State) SaveAs(as owner) error {
 		}
 	}
 
-	s.Version = version
-	s.SavedAt = time.Now()
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
-		return err
-	}
-	b, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err
-	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, s.path); err != nil {
+	if err := s.write(); err != nil {
 		return err
 	}
 	// The disk now has this process's ghost changes; from here on its copy
@@ -917,6 +949,55 @@ func (s *State) SaveAs(as owner) error {
 		}
 	}
 	return nil
+}
+
+// write replaces the file with s, atomically, 0600 inside a 0700 directory.
+// The caller holds the state lock.
+func (s *State) write() error {
+	s.Version = version
+	s.SavedAt = time.Now()
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
+		return err
+	}
+	b, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := s.path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, s.path)
+}
+
+// SetAppNotifiesUntil records the app's heartbeat in the state file at path
+// ("" the default) and changes nothing else: it reads the file under the
+// state lock, so no copy loaded earlier is written back over the daemon's.
+func SetAppNotifiesUntil(path string, until time.Time) error {
+	lk, err := blockingLock(lockPath(stateLockName))
+	if err != nil {
+		return err
+	}
+	defer lk.Release()
+	s, err := Load(path)
+	if err != nil {
+		return err
+	}
+	s.AppNotifiesUntil = until
+	return s.write()
+}
+
+// AppNotifyingAt reports whether the app's heartbeat (AppNotifiesUntil) is
+// still current at now. It reads the file, since this process's copy is only
+// as fresh as its last load or save; with no readable file, its own copy.
+func (s *State) AppNotifyingAt(now time.Time) bool {
+	until := s.AppNotifiesUntil
+	if s.path != "" {
+		if disk, err := readFile(s.path); err == nil && disk != nil {
+			until = disk.AppNotifiesUntil
+		}
+	}
+	return now.Before(until)
 }
 
 // mergeVaulted is the disk's Vaulted with this process's adds and drops

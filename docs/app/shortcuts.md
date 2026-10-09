@@ -90,7 +90,14 @@ A switch you made in the app (the popover, a shortcut, Undo) is not
 announced back. An idle account that is refused is not announced; one that
 can no longer sign in is. Each appears once per change.
 
-Both the daemon's notification and the app's appear for a rotation. Turn
-the app's off with Settings → Advanced → **Notifications with actions**.
+A rotation is announced once. While the app posts these notifications
+(Notifications with actions on, and allowed in System Settings), it runs
+`cs app heartbeat --json` every minute, which records in `state.json` that
+the app is notifying for the next two minutes, and the daemon skips its own
+rotation notice meanwhile. Quit the app, or turn its notifications off with
+Settings → Advanced → **Notifications with actions**, and the daemon's
+notice comes back within two minutes. Only the rotation notice moves to the
+app: every other daemon notice (all accounts burnt, a pool running dry, a
+lifted pin, Claude in Chrome) still comes from the daemon.
 
 [← Documentation index](../README.md)

@@ -114,34 +114,43 @@ public enum FirstRun {
         !exists(configPath ?? defaultConfigPath(home: home))
     }
 
-    /// An empty config: comments only, so every setting keeps its default.
-    /// `add --json` appends each account's block to the config but does not
-    /// create one, and the CLI has no JSON form of `setup` or `init` (whose
-    /// template names example accounts), so the window writes this first.
-    public static let seed = """
-        # claudeswitch, started by the ClaudeSwitch app's setup window.
-        # Accounts are added below as you save or sign in to them.
-        # `cs config` lists every setting and its default; `cs doctor` checks it all.
+    /// The window's "Don't show this again" (0.6.1), in UserDefaults.
+    public static let dontShowAgainKey = "firstRunDontShowAgain"
 
-        """
+    public static func dontShowAgain(_ defaults: UserDefaults = .standard) -> Bool {
+        defaults.bool(forKey: dontShowAgainKey)
+    }
 
-    /// Writes `seed` at `path` (mode 0600, its directory 0700) when nothing
-    /// is there. True when it wrote; false when a config already exists.
-    public static func seedConfig(at path: String) -> Result<Bool, AppError> {
-        let fm = FileManager.default
-        if fm.fileExists(atPath: path) { return .success(false) }
-        let dir = (path as NSString).deletingLastPathComponent
-        do {
-            if !fm.fileExists(atPath: dir) {
-                try fm.createDirectory(atPath: dir, withIntermediateDirectories: true,
-                                       attributes: [.posixPermissions: 0o700])
-            }
-            guard fm.createFile(atPath: path, contents: Data(seed.utf8), attributes: [.posixPermissions: 0o600]) else {
-                return .failure(AppError(code: "failed", message: "Could not write \(path)."))
-            }
-            return .success(true)
-        } catch {
-            return .failure(AppError(code: "failed", message: "Could not create \(dir): \(error.localizedDescription)"))
+    public static func setDontShowAgain(_ on: Bool, _ defaults: UserDefaults = .standard) {
+        defaults.set(on, forKey: dontShowAgainKey)
+    }
+
+    /// Whether the window opens by itself at launch: there is no config and
+    /// the person has not asked it not to. ⋯ → Set up… opens it regardless.
+    public static func offerAtLaunch(configPath: String?, defaults: UserDefaults = .standard,
+                                     home: String = NSHomeDirectory(),
+                                     exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) -> Bool {
+        !dontShowAgain(defaults) && shouldOffer(configPath: configPath, home: home, exists: exists)
+    }
+
+    /// What the window says when the binary predates `init --empty` (0.6.1).
+    public static let initTooOld = "This claudeswitch cannot start an empty config (`cs init --empty`). "
+        + "Update it, or run `cs setup` in Terminal, then open this window again."
+
+    /// Makes sure there is a config at `path` before `add --json`, which
+    /// appends to one but does not create it. The CLI writes it
+    /// (`init --empty --json`): the app never writes claudeswitch's files.
+    /// True when it was written now; false when one was already there.
+    /// Blocks: call it off the main thread.
+    public static func ensureConfig(path: String, cli: CLI,
+                                    exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) })
+        -> Result<Bool, CallError> {
+        if exists(path) { return .success(false) }
+        switch cli.initEmpty(configPath: path) {
+        case .success: return .success(true)
+        case .failure(let e) where e.code == "exists": return .success(false)
+        case .failure(.cli(.tooOld)): return .failure(.refused("too_old", initTooOld, hint: CLI.installSteps))
+        case .failure(let e): return .failure(e)
         }
     }
 }

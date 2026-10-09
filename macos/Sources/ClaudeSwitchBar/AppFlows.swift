@@ -14,17 +14,28 @@ enum AppHub {
     static let updates = UpdateController()
     static let notifier = Notifier()
     static let hotKey = HotKeyCenter()
+    /// 0.6.1: tells the daemon, through the CLI, that this app posts the
+    /// rotation notices, so it skips its own plain one.
+    static let heartbeat = AppHeartbeat(shouldBeat: { MainActor.assumeIsolated { notifier.notifying } },
+                                        beat: {
+                                            Task { @MainActor in
+                                                if case .failure(let e) = await store.call("heartbeat", { $0.appHeartbeat() }) {
+                                                    flowsLog.debug("heartbeat: \(e.message, privacy: .public)")
+                                                }
+                                            }
+                                        })
 
     /// Wires the flows to the store; once, at launch (not in --render).
     static func start() {
         let store = self.store
         notifier.start()
+        heartbeat.start()
         store.didRebuild = { s in
             notifier.observe(s, store: store)
             ShortcutRunner.flush()
         }
         store.didFirstRead = { path in
-            if FirstRun.shouldOffer(configPath: path) {
+            if FirstRun.offerAtLaunch(configPath: path) {
                 flowsLog.notice("no config: showing the setup window")
                 WelcomeWindow.show(store: store)
             }
@@ -126,8 +137,19 @@ final class Notifier: NSObject, ObservableObject, UNUserNotificationCenterDelega
         center.requestAuthorization(options: [.alert, .sound]) { granted, error in
             if let error { flowsLog.error("notifications: \(error.localizedDescription, privacy: .public)") }
             flowsLog.notice("notifications allowed: \(granted, privacy: .public)")
+            Task { @MainActor in
+                self.granted = granted
+                // Beat at once now that it is known, rather than a minute on.
+                if granted { AppHub.heartbeat.start() }
+            }
         }
     }
+
+    /// Whether this app posts the actionable rotation notices right now: on,
+    /// in a bundle, and allowed. The heartbeat runs only while it does, so
+    /// the daemon's own notice comes back when it does not.
+    private var granted = false
+    var notifying: Bool { enabled && available && granted }
 
     /// Compares a new snapshot with the last and posts what changed.
     func observe(_ s: Snapshot, store: Store) {

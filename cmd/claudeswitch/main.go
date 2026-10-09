@@ -129,6 +129,8 @@ func main() {
 		err = cmdWhoami(args)
 	case "refresh":
 		err = cmdRefresh(args)
+	case "app":
+		err = cmdApp(args)
 	case "chrome":
 		err = cmdChrome(args)
 	case "version", "-v", "--version":
@@ -460,12 +462,14 @@ func cmdWatch(args []string) error {
 	d := &daemon{
 		cfg: cfg, st: st, p: p, v: v, aud: aud, nt: nt, log: log,
 		live: *live, idleGap: *idleGap,
-		save:     func() error { return st.SaveAs(state.OwnerDaemon) },
-		saveCLI:  st.Save,
-		resolve:  liveFor,
-		projects: projectsFor,
-		newDet:   newDetector,
-		profs:    buildProfiles(cfg, log, liveFor, projectsFor, newDetector),
+		save:    func() error { return st.SaveAs(state.OwnerDaemon) },
+		saveCLI: st.Save,
+		resolve: liveFor,
+		// The app's heartbeat (`cs app heartbeat`): it notifies rotations itself.
+		appNotifies: st.AppNotifyingAt,
+		projects:    projectsFor,
+		newDet:      newDetector,
+		profs:       buildProfiles(cfg, log, liveFor, projectsFor, newDetector),
 	}
 	// Past readings, for `cs history --usage` (IMPROVEMENTS F7). Without
 	// the log the daemon runs as before.
@@ -989,16 +993,42 @@ func shortID(s string) string {
 	return s
 }
 
+// emptyConfig is what `init --empty` writes: comments only, so every setting
+// keeps its default and `add`/`login` append the accounts. The app's
+// first-run window asks for it, since `add --json` appends to a config but
+// does not create one (0.6.1; the app never writes claudeswitch's files).
+const emptyConfig = `# claudeswitch. Accounts are added below as you save or sign in to them.
+# ` + "`cs config`" + ` lists every setting and its default; ` + "`cs doctor`" + ` checks it all.
+`
+
 func cmdInit(args []string) error {
+	asJSON := flagPresent(args, "json")
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
+	if asJSON {
+		fs = appFlags("init")
+	}
 	path := fs.String("config", config.DefaultPath(), "where to write")
-	parseInterleaved(fs, args)
+	empty := fs.Bool("empty", false, "write a comments-only config with no accounts and no settings")
+	fs.Bool("json", false, "machine-readable output: {\"path\": …}")
+	if _, err := parseApp(fs, args, "usage: claudeswitch init [--empty] [--json] [--config PATH]"); err != nil {
+		return err
+	}
 
 	if _, err := os.Stat(*path); err == nil {
-		return fmt.Errorf("%s already exists; not overwriting", *path)
+		return appErr(codeExists, "", "%s already exists; not overwriting", *path)
 	}
 	if err := os.MkdirAll(filepath.Dir(*path), 0o700); err != nil {
 		return err
+	}
+	if *empty {
+		if err := writeNew(*path, emptyConfig); err != nil {
+			return err
+		}
+		if asJSON {
+			return emitJSON(map[string]any{"path": *path})
+		}
+		fmt.Printf("wrote %s — add accounts with `claudeswitch login <name>` or `claudeswitch add`\n", *path)
+		return nil
 	}
 	tmpl := `# claudeswitch. Thresholds are the tuning surface; status shows them.
 switch_at        = 85    # rotate away at this much of the 5-hour window
@@ -1041,11 +1071,31 @@ reserve = 70        # never auto-used above this utilization
 # pool      = ["work-a"]
 # switch_at = 75              # overrides the global value for this profile
 `
-	if err := os.WriteFile(*path, []byte(tmpl), 0o600); err != nil {
+	if err := writeNew(*path, tmpl); err != nil {
 		return err
+	}
+	if asJSON {
+		return emitJSON(map[string]any{"path": *path})
 	}
 	fmt.Printf("wrote %s — edit the account ids, then run `claudeswitch doctor`\n", *path)
 	return nil
+}
+
+// writeNew creates path with mode 0600, refusing (code exists) when
+// something is already there, even if it appeared after the check above.
+func writeNew(path, body string) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if errors.Is(err, os.ErrExist) {
+		return appErr(codeExists, "", "%s already exists; not overwriting", path)
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := f.WriteString(body); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 func cmdAdd(args []string) error {
@@ -4289,13 +4339,17 @@ func statusJSON(cfg *config.Config, st *state.State, p *poller.Poller) map[strin
 			m["seven_day"] = acct.Last.SevenDay.Pct()
 			m["binding_window"] = which
 			m["utilization"] = worst
-			m["projected"] = acct.Projected(time.Now())
+			// Idle accounts do not project (0.6.1): only a live account or one
+			// read within poll_active has its figure carried forward.
+			projects := st.Projects(a.ID, time.Now(), cfg.PollActive.Duration)
+			proj := st.ProjectedFor(a.ID, time.Now(), cfg.PollActive.Duration)
+			m["projected"] = proj
 			m["read_at"] = acct.LastAt
 			// Apply the trigger here too. "available" beside 100% is true of the
 			// raw availability check and useless to a reader or a script: what
 			// is being asked is whether this account could actually serve.
 			st := string(acct.Availability(a.Reserve))
-			if st == "available" && acct.Projected(time.Now()) >= cfg.SwitchAt {
+			if st == "available" && proj >= cfg.SwitchAt {
 				st = "no_headroom"
 			}
 			if acct.ExpiredAt(time.Now()) {
@@ -4303,7 +4357,7 @@ func statusJSON(cfg *config.Config, st *state.State, p *poller.Poller) map[strin
 			}
 			m["state"] = st
 			m["usable"] = st == "available"
-			if rate := acct.BurnRate(); rate > 0 {
+			if rate := acct.BurnRate(); rate > 0 && projects {
 				m["burn_per_min"] = rate
 			}
 			if b := acct.Last.Binding(); b != nil {

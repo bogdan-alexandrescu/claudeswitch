@@ -12,11 +12,16 @@ See also: [Add account](add-account.md) · [Settings → Profiles](settings-prof
 
 - **At launch**, when the config file is missing: the path
   `cs config --json` reports, or `~/.config/claudeswitch/config.toml` when
-  the CLI cannot be read.
-- **From the popover's ⋯ menu → Set up…**, at any time.
+  the CLI cannot be read. Not when **Don't show this again** is ticked.
+- **From the popover's ⋯ menu → Set up…**, at any time, ticked or not.
 
 **Finish later** closes it. Nothing is lost: each step's state is read again
 from the CLI when the window opens.
+
+**Don't show this again**, a checkbox at the foot of the window, stops it
+opening by itself at launch. It is kept in the app's preferences
+(UserDefaults, `firstRunDontShowAgain`) and unticked the same way, from
+⋯ → Set up….
 
 ## The steps
 
@@ -36,10 +41,15 @@ has **Again** or **Do it now** to open it again.
 ## The config it starts
 
 `add --json` writes each account into the config, but does not create the
-file, and the CLI has no JSON form of `setup` or `init`. So before steps 1
-to 3 the window writes an empty config where the CLI looks for it (mode
-0600, its folder 0700), holding three comment lines and no settings. Every
-setting keeps its default; an existing config is never touched.
+file. So before steps 1 to 3 the window asks the CLI for an empty one,
+[`cs init --empty --json`](../cli/setup.md#cs-init), at the path the CLI
+reads (mode 0600, its folder 0700): comment lines and no settings. Every
+setting keeps its default; an existing config is never touched. The app
+itself never writes claudeswitch's files.
+
+A claudeswitch older than 0.6.1 has no `init --empty`. The window then says
+so, with the update steps, and suggests running `cs setup` in Terminal
+instead.
 
 ## Without the binary
 

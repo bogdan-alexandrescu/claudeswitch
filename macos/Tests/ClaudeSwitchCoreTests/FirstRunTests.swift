@@ -57,25 +57,62 @@ import Testing
         #expect(f.current == .addAccounts)
     }
 
-    @Test func testTheSeedConfigIsWrittenOnlyWhenMissing() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cs-firstrun-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let path = dir.path + "/claudeswitch/config.toml"
-        #expect(try FirstRun.seedConfig(at: path).get() == true)
-        let attrs = try FileManager.default.attributesOfItem(atPath: path)
-        #expect((attrs[.posixPermissions] as? NSNumber)?.intValue == 0o600)
-        let dirAttrs = try FileManager.default.attributesOfItem(atPath: dir.path + "/claudeswitch")
-        #expect((dirAttrs[.posixPermissions] as? NSNumber)?.intValue == 0o700)
-        let text = try String(contentsOfFile: path, encoding: .utf8)
-        #expect(text == FirstRun.seed)
-        try "keep = 1\n".write(toFile: path, atomically: true, encoding: .utf8)
-        #expect(try FirstRun.seedConfig(at: path).get() == false, "an existing config is never overwritten")
-        #expect(try String(contentsOfFile: path, encoding: .utf8) == "keep = 1\n")
+    // 0.6.1: "Don't show this again". Set, the window no longer opens by
+    // itself at launch (⋯ → Set up… still opens it); kept in UserDefaults.
+
+    @Test func testDontShowAgainStopsTheLaunchOfferOnly() throws {
+        let suite = "cs-firstrun-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let noConfig: (String) -> Bool = { _ in false }
+        #expect(!FirstRun.dontShowAgain(defaults), "off until the person ticks it")
+        #expect(FirstRun.offerAtLaunch(configPath: "/h/c.toml", defaults: defaults, exists: noConfig))
+        FirstRun.setDontShowAgain(true, defaults)
+        #expect(FirstRun.dontShowAgain(defaults))
+        #expect(defaults.bool(forKey: FirstRun.dontShowAgainKey), "persisted in UserDefaults")
+        #expect(!FirstRun.offerAtLaunch(configPath: "/h/c.toml", defaults: defaults, exists: noConfig))
+        #expect(FirstRun.shouldOffer(configPath: "/h/c.toml", exists: noConfig),
+                "the config is still missing: only the launch offer is suppressed")
+        FirstRun.setDontShowAgain(false, defaults)
+        #expect(FirstRun.offerAtLaunch(configPath: "/h/c.toml", defaults: defaults, exists: noConfig))
+        #expect(!FirstRun.offerAtLaunch(configPath: "/h/c.toml", defaults: defaults, exists: { _ in true }),
+                "never with a config, ticked or not")
     }
 
-    @Test func testTheSeedHoldsNoAccountsAndNoSettings() {
-        let lines = FirstRun.seed.split(separator: "\n")
-        #expect(!lines.isEmpty)
-        #expect(lines.allSatisfy { $0.hasPrefix("#") }, "comments only: every setting stays at its default")
+    // 0.6.1: the window asks the CLI for the empty config (`cs init --empty
+    // --json`) instead of writing it: the app never writes claudeswitch's files.
+
+    @Test func testTheEmptyConfigIsTheCLIsToWrite() throws {
+        let dir = try FakeBinary.directory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let cli = CLI(path: try FakeAppCLI.make(in: dir))
+        try FakeAppCLI.reply(dir, text: #"{"path": "/h/cfg/config.toml"}"#, exit: 0)
+        let r = FirstRun.ensureConfig(path: "/h/cfg/config.toml", cli: cli, exists: { _ in false })
+        #expect(r == .success(true))
+        #expect(FakeAppCLI.calls(dir).last == ["init", "--empty", "--json", "--config=/h/cfg/config.toml"])
+        #expect(!FileManager.default.fileExists(atPath: "/h/cfg/config.toml"), "the app wrote nothing")
+    }
+
+    @Test func testAnExistingConfigIsLeftAlone() throws {
+        let dir = try FakeBinary.directory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let cli = CLI(path: try FakeAppCLI.make(in: dir))
+        #expect(FirstRun.ensureConfig(path: "/h/c.toml", cli: cli, exists: { _ in true }) == .success(false))
+        #expect(FakeAppCLI.calls(dir).isEmpty, "no call when the config is there")
+        // Written between the check and the call: the CLI's `exists` is not a failure.
+        try FakeAppCLI.reply(dir, text: #"{"error": {"code": "exists", "message": "there", "hint": ""}}"#, exit: 1)
+        #expect(FirstRun.ensureConfig(path: "/h/c.toml", cli: cli, exists: { _ in false }) == .success(false))
+    }
+
+    @Test func testABinaryTooOldForInitEmptySaysWhatToDo() throws {
+        let dir = try FakeBinary.directory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let cli = CLI(path: try FakeAppCLI.make(in: dir, version: "0.6.0"))
+        try FakeAppCLI.reply(dir, text: "", stderr: "flag provided but not defined: -empty\nUsage of init:\n", exit: 2)
+        let r = FirstRun.ensureConfig(path: "/h/c.toml", cli: cli, exists: { _ in false })
+        guard case .failure(let e) = r else { Issue.record("expected a refusal"); return }
+        #expect(e.message == FirstRun.initTooOld)
+        #expect(e.message.contains("cs init --empty") && e.message.contains("cs setup"))
+        #expect(!e.hint.isEmpty, "how to update")
     }
 }

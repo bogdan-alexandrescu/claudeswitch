@@ -466,8 +466,10 @@ public struct DoctorCheck: Equatable, Identifiable {
     public var fixText: String?
     public var fix: FixAction?
 
-    /// A Fix button: a failure whose fix this app can run.
-    public var offersFix: Bool { status == .fail && fix != nil }
+    /// A Fix button: a failure or a warning (an info note is a warning,
+    /// "status line not set" among them) whose fix this app can run
+    /// (0.6.1; it was failures only).
+    public var offersFix: Bool { (status == .fail || status == .warn) && fix != nil }
 }
 
 /// `doctor --json`: one object per check.

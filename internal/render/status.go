@@ -349,7 +349,10 @@ func statusCompact(out io.Writer, o Options) {
 		}
 
 		which, worst := acct.Last.Worst()
-		proj := acct.Projected(time.Now())
+		// Only a live account, or one read within poll_active, projects: an
+		// idle account's figure must not climb while nobody spends it.
+		projects := st.Projects(a.ID, time.Now(), cfg.PollActive.Duration)
+		proj := st.ProjectedFor(a.ID, time.Now(), cfg.PollActive.Duration)
 		projected := proj-worst >= 1
 
 		five := pct(acct.Last.FiveHour.Pct(), severityOf(acct.Last, "five_hour"),
@@ -371,7 +374,7 @@ func statusCompact(out io.Writer, o Options) {
 		}
 
 		// The marker says which account is active, so STATE no longer has to.
-		state := stateOf(acct, a, cfg, proj, which, lay.burn)
+		state := stateOf(acct, a, cfg, proj, which, lay.burn && projects)
 		if bill := acct.Last.Billing(); bill != "" {
 			state += " · " + paint(amber, bill)
 		}
@@ -858,7 +861,10 @@ func statusDetailed(out io.Writer, o Options) {
 		// say so — and under heavy use minutes matter (2026-09-10: 8 points in
 		// 3 minutes).
 		age := time.Since(acct.LastAt)
-		rate := acct.BurnRate()
+		rate := 0.0
+		if st.Projects(a.ID, time.Now(), cfg.PollActive.Duration) {
+			rate = acct.BurnRate()
+		}
 		switch {
 		case rate > 0:
 			proj := acct.Projected(time.Now())

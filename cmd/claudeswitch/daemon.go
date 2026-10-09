@@ -194,6 +194,11 @@ type daemon struct {
 
 	// readings keeps each reading for `cs history --usage`; nil keeps none.
 	readings readingsLog
+
+	// appNotifies reports whether the macOS app's heartbeat is current
+	// (state.AppNotifyingAt): it then posts rotation notices itself and the
+	// daemon skips its own. Nil, as in tests and before 0.6.1: never.
+	appNotifies func(now time.Time) bool
 }
 
 // recordReadings hands each configured account's current reading to the
@@ -621,7 +626,14 @@ func (d *daemon) evaluate(ctx context.Context, il *profileLoop, trigger string) 
 		_, worst := res.Usage.Worst()
 		headroom = fmt.Sprintf("%.0f%% used", worst)
 	}
-	d.nt.Switched(d.tag(il, from), dec.Target, dec.Reason, headroom)
+	// 0.6.1: while the app's heartbeat is current it posts the rotation
+	// notice itself, with Undo and Pin here; a second, plain one from here
+	// would be noise. Only this notice is left to it.
+	if d.appNotifies != nil && d.appNotifies(time.Now()) {
+		il.log.Info("rotation notice left to the app", "from", from, "to", dec.Target)
+	} else {
+		d.nt.Switched(d.tag(il, from), dec.Target, dec.Reason, headroom)
+	}
 	// IMPROVEMENTS C1: the save above merged in the CLI's Chrome mappings.
 	// C2: when only the profile's chrome applies, it asks for a sign-in.
 	if msg := chromeSwitchNotice(il.cfg, d.st, readChromeLocal(), il.name, from, dec.Target); msg != "" {

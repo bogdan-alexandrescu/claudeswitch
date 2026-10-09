@@ -83,6 +83,7 @@ this document's contract. Plain `claudeswitch version` still prints
 | `config_changed` | a command could not undo its own config edit because something else changed the config meanwhile; that change is kept (and so is the credential) |
 | `last_profile` | `profile remove`: the only profile (or the implicit one, with no `[[profile]]` blocks) cannot be removed |
 | `binary_not_durable` | `daemon install` from a temporary, translocated or `go run` path |
+| `exists` | `init`: a config is already at that path; nothing was written |
 | `failed` | anything else; `message` says what |
 
 All config edits are textual: only the lines concerned change (comments and
@@ -902,3 +903,44 @@ doctor prints, for Settings → Health:
   `[FAIL]`. `doctor` reads the live credential and, for the refresh rows,
   each vaulted credential, so on macOS it may raise keychain prompts: run it
   when the person asks (the Health pane), not on every refresh.
+
+## init
+
+`claudeswitch init --empty --json [--config PATH]` (0.6.1, additive) — an
+empty config for the first-run window, which needs one before `add --json`
+can append to it. The app never writes claudeswitch's files itself.
+
+```json
+{"path": "/…/.config/claudeswitch/config.toml"}
+```
+
+- Writes comment lines only (no accounts, no settings: every setting keeps
+  its default) at `--config`, or the default path, with mode 0600 and its
+  folder 0700.
+- Errors: `exists` (a file is already there; nothing written), `usage`.
+- A binary before 0.6.1 answers `flag provided but not defined: -empty`
+  (exit 2); the app reads that as too old and says to update or run
+  `cs setup`.
+- Without `--empty`, `init --json` writes the commented starter template
+  and answers the same object.
+
+## app
+
+`claudeswitch app heartbeat --json` (0.6.1, additive) — the app is running
+and posts its own actionable rotation notifications. The app runs it every
+minute while it does; the daemon skips its own rotation notice while the
+time it records is in the future.
+
+```json
+{"app_notifies_until": "2026-10-08T12:02:00Z"}
+```
+
+- Records `app_notifies_until` = now + 2 minutes in state.json (under the
+  state lock, changing nothing else). The app never writes state.json.
+- The daemon reads it from the file at each rotation. Only its rotation
+  notice is skipped; every other notice is sent as before. With no app (or
+  on Linux), or two minutes after the last heartbeat, it notifies as
+  before.
+- Errors: `usage` (anything but `heartbeat`), `failed`. A binary before
+  0.6.1 has no `app` command (usage text, exit 2): the app reads that as
+  too old, stops nothing, and the daemon keeps notifying.

@@ -446,7 +446,10 @@ hours at the pace it is being spent (`cs status` shows the same forecast:
 `work pool: runs dry Thu 14:00 at this pace`), and when it lifts a pin
 because the pinned account was refused, ran out or needs a sign-in
 (`pin on work-1 lifted: it was refused`; `cs account pin --hard` keeps a pin
-even then). Nothing else notifies; `--quiet` disables them.
+even then). Nothing else notifies; `--quiet` disables them. While the
+macOS app is running and posting its own rotation notifications (with
+Undo and Pin here), the daemon leaves the switch notice to the app, so a
+rotation is announced once; every other notice stays the daemon's.
 
 ## Running as a daemon
 
