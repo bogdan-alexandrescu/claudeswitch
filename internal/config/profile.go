@@ -45,6 +45,8 @@ type Profile struct {
 	// LandingMargin overrides the global landing_margin. A pointer, because
 	// zero is a real override (no margin) rather than "unset".
 	LandingMargin *float64 `toml:"landing_margin"`
+	// Prefer overrides the global prefer (IMPROVEMENTS F1). "" inherits it.
+	Prefer string `toml:"prefer"`
 	// Models overrides the global models list (IMPROVEMENTS I6). Nil
 	// inherits it; an empty list counts no model's limit in this profile.
 	Models []string `toml:"models"`
@@ -52,6 +54,10 @@ type Profile struct {
 	// Chrome is used from in this profile (IMPROVEMENTS C2), for accounts
 	// with no Chrome profile of their own. Empty: Chrome's last-used one.
 	Chrome string `toml:"chrome"`
+	// Paths are the folders this profile is picked for (IMPROVEMENTS F4):
+	// globs, see paths.go. `cs run` with no name and `cs profile which`
+	// read them; two profiles' paths may not overlap.
+	Paths []string `toml:"paths"`
 
 	// FromEnv marks the implicit profile of a config with no [[profile]]
 	// blocks. Its dir is whatever this process's CLAUDE_CONFIG_DIR says, which
@@ -163,6 +169,14 @@ func (c *Config) LandingMarginFor(profile string) float64 {
 	return c.Margin()
 }
 
+// PreferFor is a profile's effective prefer (IMPROVEMENTS F1).
+func (c *Config) PreferFor(profile string) string {
+	if p := c.declared(profile).Prefer; p != "" {
+		return p
+	}
+	return c.Preference()
+}
+
 // TriggerForProfile is TriggerFor with a profile's overrides applied.
 func (c *Config) TriggerForProfile(profile, window string) float64 {
 	return c.ForProfile(profile).TriggerFor(window)
@@ -183,6 +197,7 @@ func (c *Config) ForProfile(profile string) *Config {
 	m := c.LandingMarginFor(profile)
 	cp.LandingMargin = &m
 	cp.Models = c.ModelsFor(profile)
+	cp.Prefer = c.PreferFor(profile)
 	return &cp
 }
 
@@ -265,6 +280,9 @@ func (c *Config) validateProfiles() error {
 		if err := validModels(fmt.Sprintf("profile %q: models", in.Name), in.Models); err != nil {
 			return err
 		}
+		if err := validPrefer(fmt.Sprintf("profile %q: prefer", in.Name), in.Prefer); err != nil {
+			return err
+		}
 		if in.Chrome != "" {
 			if err := ValidChromeFolder(in.Chrome); err != nil {
 				return fmt.Errorf("profile %q: chrome: %v", in.Name, err)
@@ -281,6 +299,9 @@ func (c *Config) validateProfiles() error {
 	}
 
 	if err := c.validateFolders(); err != nil {
+		return err
+	}
+	if err := c.validatePaths(); err != nil {
 		return err
 	}
 
@@ -367,8 +388,14 @@ func (c *Config) writeProfiles(b *strings.Builder) {
 		if in.Models != nil {
 			fmt.Fprintf(b, "models           = %s\n", tomlStrings(in.Models))
 		}
+		if in.Prefer != "" {
+			fmt.Fprintf(b, "prefer           = %q\n", in.Prefer)
+		}
 		if in.Chrome != "" {
 			fmt.Fprintf(b, "chrome           = %q\n", in.Chrome)
+		}
+		if len(in.Paths) > 0 {
+			fmt.Fprintf(b, "paths            = %s\n", tomlStrings(in.Paths))
 		}
 	}
 }

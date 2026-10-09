@@ -56,6 +56,7 @@ struct PopoverView: View {
             }
             if let n = store.note(on: .popover) { NoteBanner(text: n) { store.clearNote(on: .popover) } }
             Divider()
+            UpdateLine(updates: AppHub.updates)
             footer
         }
         .padding(16)
@@ -114,6 +115,9 @@ struct PopoverView: View {
                 }
                 Divider()
                 Button("Settings…") { showSettings() }
+                Button("Set up…") { WelcomeWindow.show(store: store) }
+                Button("Check for updates") { AppHub.updates.check() }
+                    .disabled(!AppHub.updates.enabled)
                 Button("About ClaudeSwitch") {
                     NSApp.activate(ignoringOtherApps: true)
                     NSApp.orderFrontStandardAboutPanel(nil)
@@ -207,6 +211,7 @@ struct ProfileCardView: View {
             if let n = store.chromeNotice(for: card) {
                 ChromeSignInBanner(notice: n, card: card.name)
             }
+            if let l = store.pinLiftNotice(card) { PinLiftBanner(lift: l) }
             if let a = card.active {
                 VStack(alignment: .leading, spacing: 8) {
                     UsageView(account: a, card: card, now: now)
@@ -221,6 +226,7 @@ struct ProfileCardView: View {
                 }
                 .padding(.top, 4)
             }
+            PoolLine(card: card, now: now)
             HStack(spacing: 8) {
                 Button {
                     store.openClaudeCode(card.name)
@@ -252,6 +258,7 @@ struct ProfileCardView: View {
                 }
                 Spacer(minLength: 0)
                 PinToggle(card: card)
+                HardPinMenu(card: card)
             }
         }
         .padding(16)
@@ -408,10 +415,19 @@ struct AccountMenuItems: View {
             Button {
                 if !a.isActive { store.use(a.id, profile: card.name) }
             } label: {
-                Text((a.isActive ? "✓ " : "") + a.id + "  " + Format.pct(a.bindingPct) + " · " + a.status.label)
+                Text(line(a))
             }
             .disabled(a.isActive)
         }
+    }
+
+    /// "work-1  41% · available · trigger Thu 09:30" (F2: the ETA only when
+    /// the CLI knows it).
+    func line(_ a: AccountView) -> String {
+        var s: String = (a.isActive ? "✓ " : "") + a.id
+        s += "  " + Format.pct(a.bindingPct) + " · " + a.status.label
+        if let eta = Runway.accountETA(a.triggerAt, now: store.snapshot?.now ?? Date()) { s += " · " + eta }
+        return s
     }
 }
 
@@ -424,14 +440,16 @@ struct PinToggle: View {
     var body: some View {
         Toggle(isOn: Binding(get: { card.isPinned },
                              set: { store.setPinned($0, profile: card.name, account: card.active?.id) })) {
-            Label(card.isPinned ? "Pinned" : "Pin", systemImage: card.isPinned ? "pin.fill" : "pin")
+            Label(card.isPinned ? (store.pinIsHard(card) == true ? "Pinned (hard)" : "Pinned") : "Pin",
+                  systemImage: card.isPinned ? "pin.fill" : "pin")
                 .font(.caption)
         }
         .toggleStyle(.button)
         .controlSize(.small)
         .disabled(card.active == nil || store.isBusy("pin:\(card.name)"))
         .help(card.isPinned ? "Rotation is off in \(card.name): let it rotate again"
-              : "Keep \(card.name) on \(card.active?.id ?? "its account"): turn rotation off")
+              : "Keep \(card.name) on \(card.active?.id ?? "its account"): turn rotation off"
+                + (store.accountList?.knowsHardPin == true ? " until it is refused or needs a login" : ""))
         .accessibilityLabel(card.isPinned ? "Unpin \(card.name)" : "Pin \(card.name) to its account")
     }
 }
@@ -447,6 +465,7 @@ struct CompactCardView: View {
         VStack(alignment: .leading, spacing: 8) {
             row
             CardErrorView(card: card.name)
+            PoolLine(card: card, now: store.snapshot?.now ?? Date())
         }
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))

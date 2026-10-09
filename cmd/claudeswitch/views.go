@@ -53,13 +53,63 @@ func profileViews(cfg *config.Config, st *state.State, only string) []profileVie
 // input is the policy question for this profile, asked as the daemon asks it.
 func (v profileView) input(st *state.State, now time.Time) policy.Input {
 	in := policy.Input{
-		Cfg: v.cfg, St: st, Now: now, LastSwitch: v.ist.LastSwitch, Pinned: v.ist.Pinned,
+		Cfg: v.cfg, St: st, Now: now, LastSwitch: v.ist.LastSwitch, Pinned: v.ist.Pinned, PinHard: v.ist.PinHard,
 		Lookahead: lookahead(v.cfg),
 	}
 	if v.declared {
 		in.Pool, in.Live = v.pool, v.ist
 	}
 	return in
+}
+
+// runway is the profile's pool runway forecast (IMPROVEMENTS F2), over the
+// accounts "Switch to best" may offer: one live in another profile, or
+// needing a sign-in, is out of the pool's reach.
+func (v profileView) runway(cfg *config.Config, st *state.State, now time.Time) policy.Runway {
+	in := v.input(st, now)
+	in.Unavailable = bestExclusions(cfg, st, v.in.Name, now)
+	return policy.Forecast(in)
+}
+
+// addRunwayJSON adds a profile's runway (IMPROVEMENTS F2): pool_dry_at,
+// when its pool has no eligible account left at this pace (null when not
+// forecast); pool_forecast, which of dry, refills, idle or unknown the
+// forecast is; and pool_refills_at, the reset that gives the pool room back
+// before it would run dry (null unless refills).
+func addRunwayJSON(m map[string]any, r policy.Runway) {
+	m["pool_dry_at"] = timeOrNull(r.DryAt)
+	m["pool_forecast"] = string(r.Kind)
+	m["pool_refills_at"] = timeOrNull(r.RefillsAt)
+}
+
+// triggerAtJSON is an account's trigger_at in a runway: when it reaches its
+// trigger at this pace, null when that is not forecast.
+func triggerAtJSON(r policy.Runway, id string) any {
+	if at, ok := r.TriggerAt[id]; ok {
+		return at.UTC()
+	}
+	return nil
+}
+
+// runways is every profile's runway, keyed by profile, and every account's
+// trigger_at from the runway of the profile whose pool holds it.
+type runways struct {
+	profiles map[string]map[string]any
+	accounts map[string]any
+}
+
+func runwayJSON(cfg *config.Config, st *state.State, now time.Time) runways {
+	out := runways{profiles: map[string]map[string]any{}, accounts: map[string]any{}}
+	for _, v := range profileViews(cfg, st, "") {
+		r := v.runway(cfg, st, now)
+		m := map[string]any{}
+		addRunwayJSON(m, r)
+		out.profiles[v.in.Name] = m
+		for _, id := range v.in.Pool {
+			out.accounts[id] = triggerAtJSON(r, id)
+		}
+	}
+	return out
 }
 
 // options narrows a status view to this profile.
@@ -144,6 +194,8 @@ func renderStatus(w io.Writer, cfg *config.Config, st *state.State, base render.
 		o := v.options(base, st)
 		dec := policy.Decide(v.input(st, now))
 		o.Decision = &dec
+		r := v.runway(cfg, st, now)
+		o.Runway = &r
 		o.Switches = switches
 		if multi {
 			v.heading(w)
@@ -184,19 +236,23 @@ func whyJSON(cfg *config.Config, st *state.State, now time.Time, only string) ma
 	if !multiProfile(cfg) {
 		in := views[0].input(st, now)
 		dec, verdicts := policy.Explain(in)
-		m := map[string]any{"decision": decisionJSON(dec), "accounts": verdictsJSON(verdicts, views[0].cfg, st, now)}
+		r := views[0].runway(cfg, st, now)
+		m := map[string]any{"decision": decisionJSON(dec), "accounts": verdictsJSON(verdicts, views[0].cfg, st, now, r)}
 		addBest(m, in, "", cfg, st, now)
+		addRunwayJSON(m, r)
 		return m
 	}
 	var list []map[string]any
 	for _, v := range views {
 		in := v.input(st, now)
 		dec, verdicts := policy.Explain(in)
+		r := v.runway(cfg, st, now)
 		m := map[string]any{
 			"profile": v.in.Name, "pool": v.pool, "thresholds": thresholdsJSON(v.cfg),
-			"decision": decisionJSON(dec), "accounts": verdictsJSON(verdicts, v.cfg, st, now),
+			"decision": decisionJSON(dec), "accounts": verdictsJSON(verdicts, v.cfg, st, now, r),
 		}
 		addBest(m, in, v.in.Name, cfg, st, now)
+		addRunwayJSON(m, r)
 		markCurrent(m, cfg, v.in.Name)
 		list = append(list, m)
 	}
@@ -231,8 +287,7 @@ func bestExclusions(cfg *config.Config, st *state.State, name string, now time.T
 	}
 	out := map[string]string{}
 	for _, a := range cfg.Accounts {
-		if acct := st.Accounts[a.ID]; acct != nil &&
-			(render.NeedsLogin(acct.LastErr) || (!acct.RefreshExpiry.IsZero() && now.After(acct.RefreshExpiry))) {
+		if st.Accounts[a.ID].NeedsSignIn(now) {
 			out[a.ID] = "needs a sign-in"
 		}
 	}

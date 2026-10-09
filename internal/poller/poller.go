@@ -190,7 +190,7 @@ func (p *Poller) activeOf(profile string) string {
 // tokenFor is TokenFor with the live fallback taken from the profile that
 // has the account live, never from this process's environment.
 func (p *Poller) tokenFor(accountID string) (string, error) {
-	tok, _, err := p.tokenInfo(accountID)
+	tok, _, _, err := p.tokenInfo(accountID)
 	return tok, err
 }
 
@@ -219,8 +219,9 @@ func (p *Poller) staleCopy(accountID, token string) bool {
 	return live.ClaudeAIOAuth.AccessToken != token
 }
 
-// tokenInfo is tokenFor with the access token's expiry, zero when unknown.
-func (p *Poller) tokenInfo(accountID string) (string, time.Time, error) {
+// tokenInfo is tokenFor with the access token's and the refresh token's
+// expiries, each zero when unknown.
+func (p *Poller) tokenInfo(accountID string) (string, time.Time, time.Time, error) {
 	b, err := readVault(accountID)
 	if err == nil {
 		// The entry names the plan it was vaulted with; recorded so `cs
@@ -228,17 +229,17 @@ func (p *Poller) tokenInfo(accountID string) (string, time.Time, error) {
 		if b.Meta != nil {
 			p.st.SetPlan(accountID, b.Meta.Plan)
 		}
-		return b.ClaudeAIOAuth.AccessToken, b.ClaudeAIOAuth.Expiry(), nil
+		return b.ClaudeAIOAuth.AccessToken, b.ClaudeAIOAuth.Expiry(), b.ClaudeAIOAuth.RefreshExpiry(), nil
 	}
 	prof, ok := p.activeIn(accountID)
 	if !ok {
-		return "", time.Time{}, err
+		return "", time.Time{}, time.Time{}, err
 	}
 	live, lerr := p.liveOf(prof).Read()
 	if lerr != nil {
-		return "", time.Time{}, err
+		return "", time.Time{}, time.Time{}, err
 	}
-	return live.ClaudeAIOAuth.AccessToken, live.ClaudeAIOAuth.Expiry(), nil
+	return live.ClaudeAIOAuth.AccessToken, live.ClaudeAIOAuth.Expiry(), live.ClaudeAIOAuth.RefreshExpiry(), nil
 }
 
 // sharedBudgetFor returns the process-wide budget with the configured
@@ -386,7 +387,7 @@ func (p *Poller) PollActiveIn(ctx context.Context, profile string) (*state.Accou
 	}
 	// Read into a scratch record first: until the org id comes back we do not
 	// know which configured account this credential belongs to.
-	scratch := &state.Account{ID: "active"}
+	scratch := scratchFor(profile)
 	// Whoever is refused on this token next — the vault included — backs off
 	// no further than the live cap.
 	p.budget.MarkLive(blob.ClaudeAIOAuth.AccessToken)
@@ -629,7 +630,7 @@ func (p *Poller) Tick(ctx context.Context) {
 		// account with no vault entry cannot be polled at all, and charging the
 		// budget for it burned real capacity on accounts that were only ever
 		// placeholders.
-		tok, exp, err := p.tokenInfo(a.ID)
+		tok, exp, rexp, err := p.tokenInfo(a.ID)
 		if err != nil {
 			acct := p.st.Get(a.ID)
 			acct.LastErr = "no stored credential"
@@ -638,6 +639,10 @@ func (p *Poller) Tick(ctx context.Context) {
 		}
 		acct := p.st.Get(a.ID)
 		acct.TokenExpiry = exp
+		// What the credential says of its refresh token, as the live poll
+		// records it: `account list` reports it without the keychain
+		// (IMPROVEMENTS F5). Zero (not reported) is unknown.
+		acct.RefreshExpiry = rexp
 		// A hot poll may spend the allowance routine polls hold back for it.
 		// Routine reads keep the full floor, so the reserve rebuilds (at the
 		// 3m default, 20 an hour against a live refill of ~28). Only an
@@ -947,6 +952,7 @@ func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token strin
 	} else if _, w := u.Worst(); w < acct.PrevWorst {
 		acct.LastRate = 0 // window reset; the old rate describes a dead window
 	}
+	noteRise(acct, u)
 	acct.LastAt = u.FetchedAt
 	acct.LastErr = ""
 	p.lastOK = u.FetchedAt
@@ -965,8 +971,39 @@ func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token strin
 		acct.BurntTil = time.Time{}
 		acct.BurntWin = ""
 	}
-	p.noteSeverity(acct.ID, u)
+	key := acct.ID
+	if acct.SeverityKey != "" {
+		key = acct.SeverityKey
+	}
+	p.noteSeverity(key, u)
 	return usage.ReasonOK
+}
+
+// scratchFor is the record a profile's live credential is read into before
+// it is attributed. Its ID is "active" (state.Unattributed) for every
+// profile; its severity is tracked per profile, so two profiles' live
+// accounts at different severities do not read as one account flapping.
+func scratchFor(profile string) *state.Account {
+	return &state.Account{ID: state.Unattributed, SeverityKey: state.Unattributed + "@" + profile}
+}
+
+// noteRise records the rate a rising pair of readings shows, and when, for
+// the runway forecast (IMPROVEMENTS F2): it carries that rate over a flat
+// pair only while the rise is recent. A fall is a window reset, after which
+// the old rate describes a window that no longer exists. Called with the
+// new reading in acct.Last and the previous one in PrevWorst/PrevAt.
+func noteRise(acct *state.Account, u *usage.Usage) {
+	if acct.PrevAt.IsZero() {
+		return
+	}
+	_, w := u.Worst()
+	mins := u.FetchedAt.Sub(acct.PrevAt).Minutes()
+	switch {
+	case w > acct.PrevWorst && mins > 0:
+		acct.RiseRate, acct.RiseAt = (w-acct.PrevWorst)/mins, u.FetchedAt
+	case w < acct.PrevWorst:
+		acct.RiseRate, acct.RiseAt = 0, time.Time{}
+	}
 }
 
 // noteSeverity records transitions in the API's own severity field. Every

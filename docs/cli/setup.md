@@ -87,7 +87,7 @@ Accounts written this way have no seat until
 ## cs doctor
 
 ```
-cs doctor [--verify] [--config PATH]
+cs doctor [--verify] [--json] [--config PATH]
 ```
 
 Checks everything that has to be true for claudeswitch to work, and says how
@@ -96,6 +96,7 @@ to fix what is not. Run it first when anything looks wrong.
 | flag | default | meaning |
 |---|---|---|
 | `--verify` | off | also confirm every vaulted credential still authenticates (one API call each) |
+| `--json` | off | every check as one object, with the fix the app can run (below) |
 | `--config PATH` | the default config | the config to check |
 
 <p align="center"><img src="../images/cli-doctor.svg" width="720" alt="Output of cs doctor: every check ok, including config, vault, daemon, credentials, usage API, both profiles, auto-refresh, poll cadence, status line and plugin"></p>
@@ -124,6 +125,47 @@ The checks, in the order shown:
 Exit status: 1 when any line printed `[FAIL]` ("N doctor check(s) failed");
 warnings and notes never fail it. Inside Claude Code, `/cs doctor` runs it.
 
+### doctor --json
+
+The same checks, for the app's Health pane (IMPROVEMENTS F12). The text is
+unchanged; `--json` reads it back as one object per row:
+
+```json
+{"checks": [
+  {"name": "daemon", "status": "fail", "level": "fail", "message": "older than this binary (0.5.6)",
+   "details": ["the running daemon (0.5.5, started 2026-10-08 09:12) is older than this cs (0.5.6); restart it: …"],
+   "fix": "daemon restart", "account": null, "profile": null},
+  {"name": "refresh token", "status": "warn", "level": "warn",
+   "message": "personal           access in 5h0m0s · refresh token expires in 3d",
+   "details": [], "fix": "signin personal", "account": "personal", "profile": null},
+  {"name": "status line", "status": "warn", "level": "info",
+   "message": "not set; `cs statusline install` adds it", "details": [],
+   "fix": "statusline install", "account": null, "profile": null}],
+ "failed": 1}
+```
+
+- `name` is the row's name (`config`, `vault entries`, `daemon`,
+  `credentials`, `usage api`, `profile`, `transcripts`, `auto-refresh`,
+  `poll cadence`, `account rate`, `switching`, `status line`, `claude
+  plugin`, …), `message` the rest of the row, `details` its `└` lines.
+- `status` is `ok`, `warn` or `fail`. `level` is the row's own mark: `ok`,
+  `warn`, `fail` or `info` (a note: its `status` is `warn`).
+- `fix` is an action the app knows, or `null`: `signin <account>`,
+  `daemon restart` (a daemon older than this binary), `statusline install`
+  (the status line is not set), `keychain allow` (macOS: the live
+  credential could not be read).
+- Two kinds of check name an account (`account`), and are detail lines in
+  the text: `refresh token`, one per vaulted account (`warn`, fix
+  `signin <id>`, when its refresh token is missing, expired or expires
+  within 5 days), and, with `--verify`, `credential`, one per account
+  (`ok`; `fail` when it does not sign in or holds another seat; `warn` when
+  it is not vaulted; fix `signin <id>` unless `ok`). A `profile` check names
+  its `profile`.
+- `failed` counts the `[FAIL]` rows, as the text's exit status does. With
+  `--json` the exit status is 0 whenever the report was made: failures are in
+  it, not in the exit (an exit of 1 is an error object, as for every `--json`
+  command).
+
 ## cs version
 
 ```
@@ -132,7 +174,7 @@ cs -v
 cs --version
 ```
 
-Prints the build: `claudeswitch v0.5.5` for a release binary,
+Prints the build: `claudeswitch v0.6.0` for a release binary,
 `claudeswitch dev` for a build from source (fixture `version.txt`). With no
 command at all, `cs` prints the version line and every command with a
 one-line description, and exits 2:

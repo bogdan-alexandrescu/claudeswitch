@@ -16,6 +16,9 @@ These are stored by the app, not in claudeswitch's config.
 | **Usage in the popover** | Dials or Bars for the session and week. The switch in the popover and **Show usage as** in the ⋯ menu change it too | Dials |
 | **Open Claude Code in** | the terminal **Open Claude Code** and **▶** use: Terminal, iTerm, Ghostty or Warp. It runs `cs run <profile>` there | Terminal |
 | **Icon only in the menu bar** | hides the profile, account and percentage next to the rings | off |
+| **Check for updates** | once a day, one call to GitHub's latest release; **Check now** checks at once. Off makes no call. See [Updates](updates.md) | on |
+| **Notifications with actions** | the app's own notifications: Undo and Pin here on a rotation, Sign in when an account needs it. See [Shortcuts → Notifications](shortcuts.md#notifications) | on |
+| **Switch to best hotkey** | a global key for Switch to best on the followed profile; click the key to record another. See [Shortcuts](shortcuts.md#the-hotkey) | off, ⌥⌘S |
 | **claudeswitch** | the binary the app runs, and its version. **Choose...** picks another one. Without a choice the app looks in `~/.local/bin`, then `PATH` and the usual Homebrew and Go locations | found automatically |
 
 The app needs claudeswitch 0.5.1 or later. The version shown in the

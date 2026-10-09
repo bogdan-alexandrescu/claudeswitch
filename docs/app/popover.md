@@ -37,15 +37,17 @@ An open card shows, top to bottom:
 | element | what it shows or does | CLI |
 |---|---|---|
 | name and directory | the profile, and its config directory (`~/.claude` for `default`) | `cs profile list` |
-| account picker | the live account and its plan. Pick another account of the profile's pool to switch to it now. Accounts that cannot be used say why | `cs use <id> --profile <p>` |
+| account picker | the live account and its plan. Pick another account of the profile's pool to switch to it now. Accounts that cannot be used say why, and each says when it reaches its trigger at its pace (`trigger Thu 09:30`) when the CLI can tell | `cs use <id> --profile <p>`; ETAs from `cs why --json` (`trigger_at`) |
 | globe | opens the live account's Chrome profile. Hidden where Chrome is not supported | `cs chrome open <id>` |
 | banners | Claude in Chrome sign-in, card errors and problems (below) | |
 | **Session** and **Week** | the live account's two windows, as dials or bars (below) | `cs status` |
 | per-model limits | an account's per-model weekly limits, each with its own bar and reset | `cs status` |
+| pool line | when the profile's pool has no eligible account left at this pace: `work pool: runs dry Thu 14:00 at this pace`, amber within 2 hours. Hidden when the CLI does not know (too few readings). Compact cards show it too | `cs why --json` (`pool_dry_at`) |
 | **Open Claude Code** | opens your terminal running Claude Code in this profile. The terminal is set in [Settings → Advanced](settings-advanced.md) | `cs run <p>` |
 | **Switch to best** | moves the profile to the account rotation would choose now, named under the button with its utilization. Greyed out, with the reason below it, when there is none. When the best has no more room than the live account it reads **Already on the best**, greyed out, with the next best underneath; room is points below each window's own trigger, as `cs why --json` reports it (`on_best`) | `cs use <best> --profile <p>` |
 | **Next:** | what rotation will do next and why: stay, switch to an account, or wait | `cs why --profile <p>` |
-| **Pin** / **Pinned** | Pin holds the profile on its live account and turns rotation off for it. Pinned (filled) lets it rotate again | `cs account pin <id>` / `cs account unpin --profile <p>` |
+| **Pin** / **Pinned** | Pin holds the profile on its live account and turns rotation off for it, until that account is refused or needs a login: then the daemon lifts the pin and rotates. Pinned (filled) lets it rotate again | `cs account pin <id>` / `cs account unpin --profile <p>` |
+| **⋯** beside Pin | **Pin, even if it runs out**: a pin the daemon never lifts, shown as **Pinned (hard)**. Only with a CLI that reports `pin_hard` | `cs account pin <id> --hard` |
 
 ### Dials and bars
 
@@ -71,6 +73,7 @@ Banners appear on the card they concern.
 | banner | when | what to do |
 |---|---|---|
 | **Claude in Chrome in "Work" is still signed in as work-1** (amber) | the profile's accounts share one Chrome profile, and rotation moved it to another account | **Sign in as work-team** opens that Chrome profile at the sign-in pages (`cs chrome signin work-team`). × hides it until the next rotation. See [Claude in Chrome in the app](chrome.md) |
+| **Pin on work-2 lifted: it was refused, so rotation runs again** (amber) | the daemon lifted the profile's pin because its account was refused or needed a login. Shown for a day, from the audit log's `unpin` event | × dismisses it; pin again, or **Pin, even if it runs out** |
 | **Could not switch …** (red) | an action on the card failed, for example `use` refused. It gives the CLI's message, and when the refusal ends, **Try again at …** | wait, or follow the message. × dismisses it |
 | a problem line (red, with a triangle) | the live account's last reading failed: a 401, a timeout, no stored credential | sign in again (`cs login <id> --direct`), or see [cs setup → doctor](../cli/setup.md) |
 
@@ -109,6 +112,8 @@ menu, since a live menu cannot be captured off screen.
 | **Appearance** | System, Light or Dark. System follows your Mac; Light or Dark keeps the popover and Settings in that appearance | System |
 | **Show usage as** | Dials or Bars | Dials |
 | **Settings...** | opens Settings | |
+| **Set up…** | opens the [first-run setup](first-run.md) window again | |
+| **Check for updates** | checks for a newer release now (off while the check is off in Advanced). A newer one shows as **0.5.6 available · Update** at the foot; see [Updates](updates.md) | |
 | **About ClaudeSwitch** | the app's version | |
 | **Quit ClaudeSwitch** (⌘Q) | quits the app. The daemon keeps running | |
 

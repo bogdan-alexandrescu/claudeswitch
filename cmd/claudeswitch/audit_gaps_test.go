@@ -112,7 +112,7 @@ dir = "~/.claude-work"
 pool = ["work-1"]
 `)
 	var buf bytes.Buffer
-	err := accountPin(&buf, path, "research", true)
+	err := accountPin(&buf, path, "research", false, true)
 	if got := errCode(t, err); got != codeNotActive {
 		t.Errorf("pin of an account in no pool: %q, want not_active", got)
 	}

@@ -1,0 +1,73 @@
+{
+  "accounts": [
+    {
+      "access_expires_at": null,
+      "active_in": "review",
+      "email": null,
+      "enabled": true,
+      "id": "personal",
+      "pin_hard": true,
+      "pinned": true,
+      "plan": null,
+      "profile": "review",
+      "reading": {
+        "at": "2026-10-08T06:07:07Z",
+        "binding": "five_hour",
+        "error": "usage API: 401 Unauthorized",
+        "five_hour": 12,
+        "refused_until": null,
+        "refused_window": null,
+        "seven_day": 8
+      },
+      "refresh_expires_at": "2026-10-10T02:00:00Z",
+      "seat": "cccccccc-cccc-cccc-cccc-cccccccccccc@33333333-3333-3333-3333-333333333333",
+      "state": "needs_login"
+    },
+    {
+      "access_expires_at": null,
+      "active_in": "default",
+      "email": "person1@example.com",
+      "enabled": true,
+      "id": "work-1",
+      "pin_hard": false,
+      "pinned": false,
+      "plan": "Max 20x",
+      "profile": "default",
+      "reading": {
+        "at": "2026-10-08T06:09:07Z",
+        "binding": "seven_day",
+        "error": null,
+        "five_hour": 3,
+        "refused_until": null,
+        "refused_window": null,
+        "seven_day": 41
+      },
+      "refresh_expires_at": "2026-11-20T00:00:00Z",
+      "seat": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa@11111111-1111-1111-1111-111111111111",
+      "state": "available"
+    },
+    {
+      "access_expires_at": null,
+      "active_in": null,
+      "email": null,
+      "enabled": true,
+      "id": "work-2",
+      "pin_hard": false,
+      "pinned": false,
+      "plan": null,
+      "profile": "default",
+      "reading": {
+        "at": "2026-10-08T06:09:07Z",
+        "binding": "five_hour",
+        "error": null,
+        "five_hour": 100,
+        "refused_until": "2026-10-08T06:50:07Z",
+        "refused_window": "five_hour",
+        "seven_day": 77
+      },
+      "refresh_expires_at": null,
+      "seat": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb@22222222-2222-2222-2222-222222222222",
+      "state": "refused"
+    }
+  ]
+}

@@ -20,6 +20,7 @@ ones marked "per profile" in [Settings → Profiles](settings-profiles.md).
 | **Switch at week** | `switch_at_weekly` | ...and at this much of the weekly one. Per profile | 98% | above 0 to 100 |
 | **Hard floor** | `hard_floor` | above this, swap mid-turn rather than wait for an idle gap (at or above `switch_at`). Per profile | 99% | above 0 to 100 |
 | **Switch when** | `switch_when` | `idle` prefers swapping between turns; `immediate` does not wait | idle | idle, immediate |
+| **Spend first** | `prefer` | which eligible account rotation moves to: **Most room**, or **Expiring quota**, the account whose weekly window resets soonest while it still has unused quota (ties go to room). Per profile. Hidden with a CLI that predates it | Most room (`room`) | room, expiring |
 | **Max switch wait** | `max_switch_wait` | stop waiting for an idle gap after this | 30s | at least 0s |
 | **Cooldown** | `cooldown` | minimum gap between rotations, to stop flapping | 10m | at least 0s |
 | **Landing margin** | `landing_margin` | a switch target needs this many points below its own trigger (0 = off). Per profile | 10 | 0 to 50 |

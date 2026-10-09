@@ -17,7 +17,9 @@ claudeswitch profile remove <name> [--to <profile>] [--yes]
 claudeswitch profile forget <name>
 claudeswitch profile pool <name> add|remove <account> [--to <profile>]
 claudeswitch profile set <name> <key> <value|inherit>
-claudeswitch run <profile> [-- claude arguments]
+claudeswitch profile which [--dir PATH]
+claudeswitch profile hook zsh|bash|fish
+claudeswitch run [<profile>] [-- claude arguments]
 ```
 
 Every `profile` subcommand takes `--json` and `--config PATH`.
@@ -31,6 +33,7 @@ Every `profile` subcommand takes `--json` and `--config PATH`.
 | `--seed <account>` | `create` | a vaulted account from the pool to sign it in with | none |
 | `--to <profile>` | `remove`, `pool … remove` | the profile whose pool the accounts join instead | none |
 | `--yes` | `remove` | do not ask for confirmation | off |
+| `--dir PATH` | `which` | the folder to ask about | the current folder |
 
 ## profile create
 
@@ -78,7 +81,8 @@ cs profile list
 
 Each profile's directory, pool and the account recorded live in it. `live`
 reads `none recorded` before the daemon has recorded one, and adds
-`; not signed in` when the profile has no credential.
+`; not signed in` when the profile has no credential. A profile with
+`paths` (below) has a `paths` line too.
 
 `--json` lists every profile with its dir, pool, live and pinned account,
 whether it is signed in, its overrides, its effective thresholds and its
@@ -150,11 +154,13 @@ cs profile set work switch_at inherit
 
 A per-profile override. The keys are the settings marked *profile* in
 [cs config](config.md#settings): `switch_at`, `switch_at_weekly`,
-`hard_floor`, `landing_margin`, `models`, plus `chrome`.
+`hard_floor`, `landing_margin`, `prefer`, `models`, plus `chrome`.
 
 - `inherit` (or an empty value) removes the override, so the global value
   applies.
 - Percentages must be in (0, 100].
+- For `prefer`, the value is `room` or `expiring`
+  ([concepts → How rotation decides](../concepts.md#how-rotation-decides)).
 - For `models`, `none` is an empty list: this profile counts no model's
   weekly limit, whatever the global setting says.
 - For `chrome`, the value is a Chrome profile's name ("Work") or folder
@@ -169,15 +175,107 @@ declared in the config (no `[[profile]]` blocks) has only the global settings
 `--json`: `{"profile", "key", "override", "effective", "path"}`; for `chrome`,
 `override` is the folder or `null`.
 
+### Folders: `paths`
+
+```sh
+cs profile set work paths "~/src/work/**,~/clients/acme"
+cs profile set work paths inherit
+```
+
+`paths` are the folders a profile is picked for (IMPROVEMENTS F4): `cs run`
+with no name, `cs profile which` and the shell hook use them. In the config:
+
+```toml
+[[profile]]
+name  = "work"
+dir   = "~/.claude-work"
+pool  = ["work-1", "work-2"]
+paths = ["~/src/work/**", "~/clients/acme"]
+```
+
+- A pattern is absolute or from your home (`~/…`). Within one folder name
+  `*` is any run of characters and `?` one character; a whole `**` is any
+  number of folders, none included. `[…]` and `\` are refused, and so are
+  `.` and `..` folders.
+- A folder belongs to a pattern when the pattern matches it **or one of its
+  parents**: `~/src/work` and `~/src/work/**` pick the same folders, and
+  `~/clients/*` covers everything inside each client folder.
+- Two profiles whose paths could both match one folder are refused when the
+  config loads (`profiles "default" and "work" have paths that overlap`),
+  like overlapping pools. One profile's own patterns may overlap.
+- A folder is matched as given, then with its links resolved.
+- `a,b` sets several (no comma inside a pattern); `inherit` (or `""`)
+  removes them. A pattern that would overlap another profile's is
+  `invalid_value` and nothing is written.
+
+`--json` for `paths`: `override` and `effective` are lists (`override` is
+`null` after `inherit`, `effective` then `[]`).
+
+## profile which
+
+```sh
+cs profile which
+cs profile which --dir ~/src/work/api --json
+```
+
+The profile a folder picks: the one whose `paths` it belongs to, else
+`default`. It reads the config alone (no state, no keychain).
+
+```
+  work  (~/src/work/** matches /Users/person1/src/work/api)
+```
+
+`--json`:
+
+```json
+{"dir": "/Users/person1/src/work/api", "profile": "work", "pattern": "~/src/work/**",
+ "rule": "paths", "config_dir": "~/.claude-work", "from_env": false}
+```
+
+`rule` is `paths` (a pattern matched; `pattern` names it), `default` (none
+did: `pattern` is `null`) or `none` (none did and there is no `default`
+profile: `profile` and `config_dir` are `null`). `config_dir` is the
+profile's `dir` as written, `null` for the profile without one (Claude Code
+with `CLAUDE_CONFIG_DIR` unset). With no `[[profile]]` blocks the answer is
+the implicit `default`, `from_env` `true`.
+
+## profile hook
+
+```sh
+# ~/.zshrc
+eval "$(claudeswitch profile hook zsh)"
+# ~/.bashrc
+eval "$(claudeswitch profile hook bash)"
+# ~/.config/fish/config.fish
+claudeswitch profile hook fish | source
+```
+
+Prints an optional shell hook. When the folder changes (zsh `chpwd`, bash
+`PROMPT_COMMAND`, fish `--on-variable PWD`) it runs
+`claudeswitch profile which --hook` and sets `CLAUDE_CONFIG_DIR` to the
+folder's profile's `dir`, or unsets it for the profile without one, exactly
+as `cs run` would start Claude Code there. It never runs anything else and
+never evaluates what the binary prints. Where no profile is picked (no
+`default`, no `[[profile]]` blocks, or a config that does not load) it
+leaves `CLAUDE_CONFIG_DIR` as it is. A value you export by hand lasts until
+the next change of folder.
+
+`profile which --hook` prints the one line the hook reads: `set <dir>`,
+`unset` or `keep`.
+
 ## run
 
 ```sh
 cs run work
 cs run work -- --resume
+cs run            # this folder's profile
 ```
 
 Starts `claude` with `CLAUDE_CONFIG_DIR` set to the profile's directory (unset
-for the profile with no `dir`). Arguments after `--` go to `claude`. It replaces
+for the profile with no `dir`). With no name it starts the profile this
+folder picks (`profile which`): the one whose `paths` the folder is under,
+noting `profile "work" (~/src/work/** matches this folder)`, else
+`default`; with neither it refuses, naming the profiles. Arguments after `--` go to `claude`. It replaces
 itself with `claude`, so the exit status is Claude Code's. A profile that is
 not signed in yet starts anyway, after the note
 `profile "work" is not signed in yet — use /login, then claudeswitch takes over`.

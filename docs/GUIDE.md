@@ -12,6 +12,7 @@ facts behind it in [GROUND_TRUTH.md](GROUND_TRUTH.md).
 - [Keeping credentials alive](#keeping-credentials-alive)
   - [Recovery copies](#recovery-copies)
 - [Sessions that span accounts](#sessions-that-span-accounts)
+- [Usage history](#usage-history)
 - [Inside Claude Code](#inside-claude-code)
   - [Every session starts knowing where quota stands](#every-session-starts-knowing-where-quota-stands)
   - [Skills](#skills)
@@ -24,6 +25,7 @@ facts behind it in [GROUND_TRUTH.md](GROUND_TRUTH.md).
 - [Multiple Claude Code profiles](#multiple-claude-code-profiles)
   - [Making a profile, and starting Claude Code in one](#making-a-profile-and-starting-claude-code-in-one)
   - [Which profile a command acts on](#which-profile-a-command-acts-on)
+  - [Picking a profile by folder](#picking-a-profile-by-folder)
   - [Upgrading to the multi-profile release](#upgrading-to-the-multi-profile-release)
 - [What it will not do](#what-it-will-not-do)
 - [Platforms](#platforms)
@@ -37,12 +39,13 @@ Every command also works as `cs <command>`.
 
 ```sh
 claudeswitch status              # every account's utilization, both windows
-claudeswitch status --detail     # ...with reading age, burn rate, binding limit
+claudeswitch status --detail     # ...with reading age, burn rate, binding limit, trigger ETAs
 claudeswitch top                 # the same, redrawn in place (ctrl-c to leave)
 claudeswitch whoami              # which Claude account is live right now
 claudeswitch accounts            # what is in the vault
 claudeswitch session             # token usage across every account used in a span
 claudeswitch history -days 21    # deduped rejection history from your transcripts
+claudeswitch history --usage     # each account's utilization over 30 days, and the switches
 ```
 
 **Deciding**
@@ -70,15 +73,20 @@ claudeswitch setup               # guided first run
 claudeswitch config              # every setting in force; `config <name> <value>` changes one
 claudeswitch config clean        # delete the scope lines and [project] tables older configs carry
 claudeswitch doctor              # config, vault, keychain, usage API, daemon, Claude Code
+                                 # (--json: every check, with the fix the app can run)
 claudeswitch identify            # record which seat each vaulted credential belongs to
 claudeswitch rename <old> <new>  # re-file a vaulted account under another id
 claudeswitch forget <id>         # drop an account's recorded observations
 claudeswitch remove <id>         # delete an account everywhere: credential, config block,
                                  # pool and priority entries, observations
 claudeswitch priority <id>...    # set the rotation order
-claudeswitch account pin <id>    # stop automatic rotation in its profile (`unpin` resumes)
+claudeswitch account pin <id>    # stop automatic rotation in its profile (`unpin` resumes);
+                                 # lifted if the account is refused, runs out or needs a
+                                 # sign-in, unless pinned with --hard
 claudeswitch profile pool <p> add|remove <id> [--to <other>]
 claudeswitch profile set <p> <key> <value|inherit>   # per-profile thresholds and models
+claudeswitch profile set <p> paths "~/src/work/**"   # the folders that pick the profile
+claudeswitch profile which       # the profile this folder picks
 claudeswitch daemon status|start|stop|restart|live|dry-run|install|uninstall
 claudeswitch watch [--live]      # run the daemon in the foreground
 claudeswitch uninstall           # stop the daemon and remove what was installed
@@ -227,6 +235,33 @@ With several profiles it covers them all: each profile's messages go to the
 account live in that profile, and the switch list labels each switch with its
 profile. `--profile work` reports one.
 `--since 2h` narrows the window, `--detail` breaks out input/output/cache and models.
+
+## Usage history
+
+The daemon keeps every reading it takes, so you can see how each account's
+session and weekly windows moved, and when it switched:
+
+```sh
+cs history --usage               # per account: readings, peaks, the last one
+cs history --usage --days 7 --json
+```
+
+The readings go to `~/.local/state/claudeswitch/readings.jsonl` (0600), one
+JSON line per new reading of an account:
+
+```json
+{"at":"2026-10-09T11:58:02Z","account":"work-1","five_hour":42,"seven_day":61.5}
+```
+
+`at` is when the usage API reported the figures (UTC); a window it did not
+report is `null`. Only the daemon writes the file, and it keeps it bounded:
+readings older than 30 days go, those older than a day are thinned to the
+last one per account per 15 minutes, and the file stays under 4 MiB (the
+oldest go first). It compacts when it starts, every 6 hours and whenever it
+grows past the limit, writing a new file and renaming it into place.
+`cs uninstall` removes it with the rest of the state. The switches come from
+the audit log. The menu-bar app's History charts read `history --usage
+--json` ([cs history](cli/claude-code.md#cs-history---usage)).
 
 ## Inside Claude Code
 
@@ -405,7 +440,13 @@ account is burnt (naming which recovers first), and before an idle account's
 refresh token expires — a dead refresh token means that account can no longer
 be swapped to *or* polled. Once you use [Chrome profiles](#claude-in-chrome),
 a switch also says which profile Claude in Chrome needs, that the shared one
-needs signing in as the new account, or that the new account has none yet. Nothing else notifies; `--quiet` disables them.
+needs signing in as the new account, or that the new account has none yet.
+It also notifies once when a profile's pool is forecast to run dry within two
+hours at the pace it is being spent (`cs status` shows the same forecast:
+`work pool: runs dry Thu 14:00 at this pace`), and when it lifts a pin
+because the pinned account was refused, ran out or needs a sign-in
+(`pin on work-1 lifted: it was refused`; `cs account pin --hard` keeps a pin
+even then). Nothing else notifies; `--quiet` disables them.
 
 ## Running as a daemon
 
@@ -450,6 +491,7 @@ poll_active      = "3m"   # the default: the account in use when not moving; und
 cooldown         = "10m"
 max_switch_wait  = "30s"  # how long a due switch waits for an idle gap
 landing_margin   = 10     # a switch target's session window needs this many points below its trigger
+prefer           = "room" # the default; "expiring" spends the soonest-resetting weekly quota first
 blind_failover_polls = 3  # unreadable polls of the account in use before failing over; 0 holds
 
 priority = ["work-a", "work-b", "personal"]
@@ -467,6 +509,7 @@ refills the same afternoon, while 85% of a weekly one still holds days of work.
 | setting | default | what it does |
 |---|---|---|
 | `landing_margin` | `10` (0–50) | A switch only lands on an account whose **session (5-hour)** window has at least this many points of room below `switch_at`, so it never lands on one it must leave again at once. The weekly window has no margin: any account under `switch_at_weekly` qualifies. When every account with room is inside the margin, an ordinary rotation holds until `hard_floor`; past it, or after a refusal, it takes the best of them anyway. Settable per profile. `0` turns it off. Written to the file only once set. |
+| `prefer` | `"room"` | Which eligible account a rotation (and **Switch to best**) takes. `"room"`: the one with the most room, priority breaking ties. `"expiring"`: the one whose **weekly** window resets soonest while it still has quota unused, so quota that would expire unused is spent first; room breaks ties (resets in the same minute), and an account whose weekly reset is unknown comes after every one whose is known. Eligibility is unchanged: under its triggers, clear of the landing margin, not refused, reserved or needing a sign-in. `cs why` says when it decided (`work-team resets in 9h with 40% unused, so it goes first`). Settable per profile. Written to the file only once set. |
 | `models` | `[]` | Model names (as `cs status --detail` shows them) whose **per-model weekly limit** counts like the weekly window: when one is higher than the account's weekly figure it is what `switch_at_weekly` triggers on and what eligibility judges, and a counted limit the API reports without a figure makes the account unknown (never a target). Empty: per-model limits are shown, never acted on. Settable per profile; `models = []` in a profile turns the global list off there. |
 | `blind_failover_polls` | `3` | When the usage of the account in use has failed to read for this many polls in a row, over at least that many `poll_active` intervals counted from the first failure, switch to an account that can be read and clears the landing margin — only in an idle gap, never mid-turn. A 429 from the usage endpoint does not count (it clears by itself within 15 minutes), nor a 401 on a stale stored copy of a token Claude Code has since refreshed, nor an access token that merely expired on an idle session. A daemon restart starts the count afresh. `0` always holds. Written to the file only once set. |
 
@@ -516,8 +559,8 @@ switch_at = 75          # overrides the global 85 for this profile only
   Only one profile may leave it out.
 - **Pools must not overlap.** Accounts in no pool join the profile named
   `default`; with no `default` declared, an unlisted account is a config error.
-- `switch_at`, `switch_at_weekly`, `hard_floor`, `landing_margin` and `models` may be set
-  per profile; anything unset falls back to the global value.
+- `switch_at`, `switch_at_weekly`, `hard_floor`, `landing_margin`, `prefer` and `models`
+  may be set per profile; anything unset falls back to the global value.
 - No `[[profile]]` blocks at all means one profile holding every account,
   which behaves exactly as before.
 - Profile names and account ids are plain names: letters, digits, `.`, `_`
@@ -611,6 +654,38 @@ context show the profile of the session they run in. `refresh` and `remove`
 check every profile's live credential before touching an account. `doctor`
 checks each profile: its directory, its live credential, and its pool.
 
+### Picking a profile by folder
+
+A profile may name the folders it is for:
+
+```toml
+[[profile]]
+name  = "work"
+dir   = "~/.claude-work"
+pool  = ["work-1", "work-2"]
+paths = ["~/src/work/**", "~/clients/*"]
+```
+
+or `cs profile set work paths "~/src/work/**,~/clients/*"`. Then, in any
+folder under those, `cs run` with no name starts `work`; anywhere else it
+starts `default`. `cs profile which` says which profile a folder picks and
+why. Patterns are absolute or from `~/`, with `*`, `?` and `**` (any number
+of folders); a folder counts when a pattern matches it or one of its parents.
+Two profiles whose paths could match the same folder are refused when the
+config loads, like overlapping pools.
+
+To have plain `claude` follow the folder too, add the optional shell hook:
+
+```sh
+eval "$(claudeswitch profile hook zsh)"     # ~/.zshrc (bash: profile hook bash)
+claudeswitch profile hook fish | source     # ~/.config/fish/config.fish
+```
+
+On each change of folder it sets `CLAUDE_CONFIG_DIR` to the picked profile's
+`dir`, or unsets it for the profile without one, and does nothing else. With
+no profile picked it leaves the variable alone.
+[cs profile](cli/profiles.md#profile-hook) has the details.
+
 ### Upgrading to the multi-profile release
 
 `state.json` now records the active account per profile and no longer writes
@@ -670,6 +745,7 @@ internal/keychain     credential read, mcpOAuth-aware
 internal/oauth        login and token refresh
 internal/detector     transcript rejection watcher (safety net)
 internal/state        durable observations (the 7-day window outlives restarts)
+internal/readings     the daemon's past readings, for history --usage
 internal/audit        what was observed, decided and done
 internal/session      work that spans several accounts
 internal/config       declarative accounts
@@ -678,4 +754,5 @@ internal/notify       desktop notifications
 plugin/               the Claude Code plugin: hooks (session start, Chrome hint) and skills
 macos/                the menu-bar app (SwiftUI); install-app.sh builds it
 .claude-plugin/       the marketplace entry that lists the plugin
+packaging/homebrew/   the Homebrew formula and cask, filled in per release by update.sh
 ```

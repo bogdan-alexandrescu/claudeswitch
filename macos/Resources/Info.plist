@@ -29,6 +29,20 @@
 	<true/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
+	<!-- claudeswitch://switch-best?profile=…, pin, unpin, status (F6): for
+	     Shortcuts' "Open URL", Raycast and `open`. App Intents need Xcode's
+	     metadata processor, which the Command Line Tools lack. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>xyz.claudeswitch.menubar</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>claudeswitch</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSHumanReadableCopyright</key>
 	<string>Built from the claudeswitch source.</string>
 </dict>

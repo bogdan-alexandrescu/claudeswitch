@@ -137,7 +137,7 @@ func renderContextIn(w io.Writer, cfg *config.Config, st *state.State, view *pro
 
 	in := policy.Input{
 		Cfg: cfg, St: st, Now: now, LastSwitch: ist.LastSwitch,
-		Pinned: ist.Pinned, Lookahead: lookahead(cfg),
+		Pinned: ist.Pinned, PinHard: ist.PinHard, Lookahead: lookahead(cfg),
 	}
 	if view != nil {
 		in = view.input(st, now)

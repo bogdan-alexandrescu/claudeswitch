@@ -428,9 +428,11 @@ const profileUsage = "usage: claudeswitch profile create <name> [--dir PATH] [--
 	"       claudeswitch profile forget <name>\n" +
 	"       claudeswitch profile pool <name> add|remove <account> [--to <profile>]\n" +
 	"       claudeswitch profile set <name> <key> <value|inherit>\n" +
+	"       claudeswitch profile which [--dir PATH]\n" +
+	"       claudeswitch profile hook zsh|bash|fish\n" +
 	"  each takes --json; forget releases the guard on a removed or re-pointed profile's old credential"
 
-// cmdProfile is `cs profile create|seed|list|remove|forget|pool|set`.
+// cmdProfile is `cs profile create|seed|list|remove|forget|pool|set|which|hook`.
 func cmdProfile(args []string) error {
 	if len(args) == 0 {
 		return appErr(codeUsage, profileUsage, "name a profile command")
@@ -443,9 +445,14 @@ func cmdProfile(args []string) error {
 	asJSON := fs.Bool("json", false, "machine-readable output")
 	to := fs.String("to", "", "pool remove, remove: the profile whose pool the accounts join instead")
 	yes := fs.Bool("yes", false, "remove: do not ask for confirmation")
+	dir := fs.String("dir", "", "which: the folder to ask about (default: this one)")
+	hook := fs.Bool("hook", false, "which: the one line the shell hook reads")
 	p, err := parseApp(fs, args[1:], profileUsage)
 	if err != nil {
 		return err
+	}
+	if args[0] != "which" && (*dir != "" || *hook) {
+		return appErr(codeUsage, profileUsage, "--dir and --hook are flags of profile which")
 	}
 	w := io.Writer(os.Stdout)
 	switch args[0] {
@@ -483,6 +490,16 @@ func cmdProfile(args []string) error {
 			return appErr(codeUsage, profileRemoveUsage, "remove takes one profile name")
 		}
 		return profileRemove(w, *cfgPath, p[0], *to, *yes, *asJSON)
+	case "which":
+		if len(p) != 0 {
+			return appErr(codeUsage, profileUsage, "which takes no arguments (--dir names a folder)")
+		}
+		return profileWhich(w, *cfgPath, *dir, *asJSON, *hook)
+	case "hook":
+		if len(p) != 1 {
+			return appErr(codeUsage, profileUsage, "hook takes a shell: zsh, bash or fish")
+		}
+		return profileHook(w, p[0])
 	case "forget":
 		if len(p) != 1 {
 			return appErr(codeUsage, profileUsage, "forget takes one profile name")

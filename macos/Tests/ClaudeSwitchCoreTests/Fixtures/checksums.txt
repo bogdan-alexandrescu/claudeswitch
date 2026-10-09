@@ -1,0 +1,3 @@
+80743e59c5ee588ca787a9ac878dfcbae0e3d8f1772ebca7f64e6054e92978fc  claudeswitch_v0.5.6_darwin_amd64.tar.gz
+eaed22066005843938e7ab1e4ecdb7fc109d45f620470d3997e44ad6b8421343  claudeswitch_v0.5.6_darwin_arm64.tar.gz
+1ed5cf73605bb67c9752724242848e240a70d6ef536402e5856977840fdb46f4  claudeswitch_v0.5.6_linux_amd64.tar.gz

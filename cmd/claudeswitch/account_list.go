@@ -34,7 +34,7 @@ func accountState(acct *state.Account, reserve float64, now time.Time) string {
 	if acct == nil {
 		return acctUnknown
 	}
-	if render.NeedsLogin(acct.LastErr) || (!acct.RefreshExpiry.IsZero() && now.After(acct.RefreshExpiry)) {
+	if acct.NeedsSignIn(now) {
 		return acctNeedsLogin
 	}
 	switch acct.AvailabilityAt(reserve, now) {
@@ -92,7 +92,7 @@ func listedAccounts(cfg *config.Config) []config.Account {
 func accountJSON(cfg *config.Config, st *state.State, a config.Account, now time.Time) map[string]any {
 	acct := st.Accounts[a.ID]
 	owner, _ := cfg.ProfileOf(a.ID)
-	activeIn, pinned := "", false
+	activeIn, pinned, pinHard := "", false, false
 	for _, name := range cfg.ProfileNames() {
 		ps := st.Profiles[name]
 		if ps == nil {
@@ -103,12 +103,13 @@ func accountJSON(cfg *config.Config, st *state.State, a config.Account, now time
 		}
 		if ps.Pinned == a.ID {
 			pinned = true
+			pinHard = pinHard || ps.PinHard
 		}
 	}
 	m := map[string]any{
 		"id": a.ID, "email": orNull(st.EmailOf(a.ID)), "plan": orNull(st.PlanOf(a.ID)),
 		"seat": orNull(a.Seat()), "enabled": a.IsEnabled(),
-		"profile": orNull(owner), "active_in": orNull(activeIn), "pinned": pinned,
+		"profile": orNull(owner), "active_in": orNull(activeIn), "pinned": pinned, "pin_hard": pinHard,
 		"refresh_expires_at": nil, "access_expires_at": nil,
 		"state": accountState(acct, a.Reserve, now), "reading": readingJSON(acct, now),
 	}

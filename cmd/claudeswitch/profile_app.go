@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
@@ -61,8 +62,12 @@ func profileOverrideOK(cfg *config.Config, name, key string) (string, bool) {
 			return "", false
 		}
 		return strings.Join(in.Models, ","), true
+	case "prefer":
+		return in.Prefer, in.Prefer != ""
 	case "chrome":
 		return in.Chrome, in.Chrome != ""
+	case "paths":
+		return strings.Join(in.Paths, ","), in.Paths != nil
 	}
 	return "", false
 }
@@ -86,6 +91,16 @@ func profileSet(w io.Writer, cfgPath, name, key, value string, asJSON bool) erro
 		return err
 	}
 	i := declaredIndex(cfg, name)
+	if key == "paths" {
+		if i < 0 {
+			if _, ok := cfg.ProfileNamed(name); ok {
+				return appErr(codeNotFound, "declare profiles first: claudeswitch profile create <name>",
+					"profile %q is not declared in the config", name)
+			}
+			return noSuchProfile(cfg, name)
+		}
+		return profileSetPaths(w, cfg, i, name, value, asJSON)
+	}
 	if i < 0 && key == "chrome" {
 		if _, ok := cfg.ProfileNamed(name); ok {
 			return appErr(codeNotFound, "with no [[profile]] blocks, give accounts a Chrome profile of their own: "+
@@ -141,6 +156,11 @@ func profileSet(w io.Writer, cfgPath, name, key, value string, asJSON bool) erro
 		var n float64
 		if n, err = parsePct(value); err == nil {
 			in.LandingMargin, rendered = &n, fmtPct(n)
+		}
+	case "prefer":
+		in.Prefer = ""
+		if !unset {
+			in.Prefer, rendered = strings.TrimSpace(value), strconv.Quote(strings.TrimSpace(value))
 		}
 	case "models":
 		switch {
@@ -400,6 +420,8 @@ func profileJSON(cfg *config.Config, st *state.State, in config.Profile) map[str
 		listed = append(listed, cfg.Profiles[i].Pool...)
 	}
 	m["listed"] = listed
+	// IMPROVEMENTS F4: the folders this profile is picked for, as written.
+	m["paths"] = append([]string{}, in.Paths...)
 	live, pinned := "", ""
 	if ps := st.Profiles[in.Name]; ps != nil {
 		live, pinned = ps.Active, ps.Pinned

@@ -143,6 +143,7 @@ table in `cmd/claudeswitch/config_cli.go` and `config.Defaults()` in
 | `poll_idle` | duration | `10m0s` | at least 2m (120s) | | how often to read the others |
 | `api_budget` | int | `12` | at least 2 | | usage calls per 5 minutes, across every process |
 | `landing_margin` | number | `10` | [0, 50] | yes | a switch target needs this many points below its own trigger (`0` = off) |
+| `prefer` | enum | `room` | `room`, `expiring` | yes | which eligible account a rotation takes: `room`, the one with the most room; `expiring`, the one whose weekly window resets soonest with quota unused (room breaks ties) |
 | `blind_failover_polls` | int | `3` | at least 0 | | fail over after this many unreadable polls of the account in use (`0` = hold) |
 | `hot_reserve` | int | `10` | [0, 15] | | advanced: usage calls per account held back for hot polling |
 | `unseen_calls_per_hour` | number | `2` | [0, 20] | | advanced: usage calls an hour set aside on a live account for Claude Code's own reads |

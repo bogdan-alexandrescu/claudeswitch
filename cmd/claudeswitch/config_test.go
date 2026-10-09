@@ -17,7 +17,7 @@ func TestEveryConfigSettingIsWritten(t *testing.T) {
 		"poll_active": "2m0s", "poll_hot": "1m0s", "poll_idle": "15m0s",
 		"api_budget": "10", "refresh_window": "2h0m0s", "refresh_probe": "12h0m0s",
 		"landing_margin": "5", "blind_failover_polls": "4", "models": "Modelname,Othermodel",
-		"hot_reserve": "6", "unseen_calls_per_hour": "4.5",
+		"hot_reserve": "6", "unseen_calls_per_hour": "4.5", "prefer": "expiring",
 	}
 	for _, s := range settings() {
 		v, ok := values[s.name]

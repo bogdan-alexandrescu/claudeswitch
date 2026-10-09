@@ -36,6 +36,7 @@ import (
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/policy"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/poller"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/profile"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/readings"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/render"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/session"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/state"
@@ -151,7 +152,9 @@ func usageText() {
 
   status     what every configured account's quota looks like right now
   watch      run the daemon (dry-run by default; --live to act)
-  history    deduped rejection history from the transcripts
+  history    deduped rejection history from the transcripts;
+             --usage [--days 30]: each account's utilization over time,
+             and the switches
   session    token usage across every account used in a span of work
   doctor     check the things that have to be true for this to work
   setup      guided first run: vault your accounts, write the config, install
@@ -208,10 +211,18 @@ func usageText() {
              change a profile's pool (pools never overlap)
   profile set <name> <key> <value|inherit>
              a per-profile switch_at, switch_at_weekly, hard_floor,
-             landing_margin or models; or chrome, the Chrome profile
-             (name or folder) Claude in Chrome is used from
-  run <profile> [-- claude args]
-             start Claude Code in a profile (CLAUDE_CONFIG_DIR set for it)
+             landing_margin, prefer or models; or chrome, the Chrome profile
+             (name or folder) Claude in Chrome is used from; or paths,
+             the folders (globs, a,b) the profile is picked for
+  profile which [--dir PATH]
+             the profile a folder picks: the one whose paths it is under,
+             else default
+  profile hook zsh|bash|fish
+             a shell hook that sets CLAUDE_CONFIG_DIR to the folder's
+             profile on cd
+  run [<profile>] [-- claude args]
+             start Claude Code in a profile (CLAUDE_CONFIG_DIR set for it);
+             with no name, this folder's profile
   chrome add <account> [--existing <name|folder>]
              open a new Chrome profile for that account, for Claude in Chrome;
              --existing uses one of your Chrome profiles instead
@@ -456,6 +467,13 @@ func cmdWatch(args []string) error {
 		newDet:   newDetector,
 		profs:    buildProfiles(cfg, log, liveFor, projectsFor, newDetector),
 	}
+	// Past readings, for `cs history --usage` (IMPROVEMENTS F7). Without
+	// the log the daemon runs as before.
+	if rl, err := readings.Open(""); err != nil {
+		log.Warn("readings log unavailable; usage history will not be kept", "err", err)
+	} else {
+		d.readings = rl
+	}
 	p.Busy = d.busy
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -493,7 +511,7 @@ func cmdWatch(args []string) error {
 func cmdAudit(args []string) error {
 	fs := flag.NewFlagSet("audit", flag.ExitOnError)
 	n := fs.Int("n", 30, "how many events")
-	kind := fs.String("kind", "", "only this kind: decision|switch|rejection|severity|error")
+	kind := fs.String("kind", "", "only this kind: decision|switch|rejection|unpin|severity|error")
 	since := fs.Duration("since", 0, "only events newer than this (e.g. 24h)")
 	fs.String("config", "", "accepted as by every command; audit reads no config")
 	parseInterleaved(fs, args)
@@ -537,6 +555,13 @@ func cmdAudit(args []string) error {
 			if e.Reason != "" {
 				detail += render.Grey("  " + truncateStr(e.Reason, 40))
 			}
+		case "unpin":
+			// The pin safety valve lifted a pin (IMPROVEMENTS F3).
+			kind = render.Warn("unpin")
+			detail = e.Reason
+			if e.Profile != "" && e.Profile != config.DefaultProfile {
+				detail = e.Profile + ": " + detail
+			}
 		case "severity":
 			kind = render.Warn("severity")
 			pct := ""
@@ -564,9 +589,27 @@ func cmdAudit(args []string) error {
 
 func cmdHistory(args []string) error {
 	fs := flag.NewFlagSet("history", flag.ExitOnError)
-	days := fs.Int("days", 21, "how far back to read")
-	fs.String("config", "", "accepted as by every command; history reads no config")
+	days := fs.Int("days", 21, "how far back to read (30 with --usage)")
+	cfgPath := fs.String("config", "", "path to config.toml (--usage names accounts from it)")
+	usageMode := fs.Bool("usage", false, "each account's utilization over time, and the switches "+
+		"(from the daemon's readings log)")
+	asJSON := fs.Bool("json", false, "with --usage: machine-readable output")
 	parseInterleaved(fs, args)
+	daysSet := false
+	fs.Visit(func(f *flag.Flag) { daysSet = daysSet || f.Name == "days" })
+	if *asJSON && !*usageMode {
+		return appErr(codeUsage, "claudeswitch history --usage [--days N] --json",
+			"history --json needs --usage")
+	}
+	if *usageMode {
+		if !daysSet {
+			*days = 30
+		}
+		if *days <= 0 {
+			return appErr(codeUsage, "", "--days must be at least 1, got %d", *days)
+		}
+		return historyUsage(os.Stdout, *cfgPath, *days, *asJSON, time.Now())
+	}
 
 	log := logger(false)
 	hits, raw, err := detector.Backfill("", time.Duration(*days)*24*time.Hour, log)
@@ -613,6 +656,10 @@ type doctorDeps struct {
 	recovery func(*config.Config) []vault.RecoveryItem
 	// ghosts lists the ghosts still guarding; nil skips the check.
 	ghosts func() []*state.Ghost
+	// vaultEntry reads a vaulted account's credential for the auto-refresh
+	// rows; ok is false when it is not vaulted or unreadable. Nil reads the
+	// vault.
+	vaultEntry func(id string) (o *keychain.OAuth, ok bool)
 }
 
 var doctorSeams = doctorDeps{
@@ -654,12 +701,14 @@ var doctorSeams = doctorDeps{
 // and still let doctor succeed. Each mark is written by one Fprintf, so it is
 // never split across two writes.
 type failTally struct {
-	w io.Writer
-	n int
+	w    io.Writer
+	n    int
+	size int // bytes written, where doctor --json places an account's check
 }
 
 func (f *failTally) Write(p []byte) (int, error) {
 	f.n += bytes.Count(p, []byte("[FAIL]"))
+	f.size += len(p)
 	return f.w.Write(p)
 }
 
@@ -668,7 +717,11 @@ func cmdDoctor(args []string) error {
 	cfgPath := fs.String("config", "", "path to config.toml")
 	deep := fs.Bool("verify", false,
 		"also confirm every vaulted credential still authenticates (one API call each)")
+	asJSON := fs.Bool("json", false, "every check as {name, status, message, fix} (IMPROVEMENTS F12)")
 	parseInterleaved(fs, args)
+	if *asJSON {
+		return doctorJSON(os.Stdout, *cfgPath, *deep)
+	}
 	if headerOn() {
 		st, _ := state.Load("")
 		printHeader(os.Stdout, st)
@@ -679,7 +732,16 @@ func cmdDoctor(args []string) error {
 // runDoctor prints every check and fails when any printed FAIL. Warnings and
 // info lines never fail it.
 func runDoctor(stdout io.Writer, cfgPath string, deep bool) error {
+	return runDoctorTo(stdout, cfgPath, deep, nil)
+}
+
+// runDoctorTo is runDoctor, also handing rep (nil: none) the checks that
+// name an account, for doctor --json.
+func runDoctorTo(stdout io.Writer, cfgPath string, deep bool, rep *doctorReport) error {
 	tally := &failTally{w: stdout}
+	if rep != nil {
+		defer func() { rep.failed = tally.n }()
+	}
 	w := io.Writer(tally)
 	deps := doctorSeams
 
@@ -797,15 +859,22 @@ func runDoctor(stdout io.Writer, cfgPath string, deep bool) error {
 		if !cfg.RefreshEnabled() {
 			fmt.Fprintf(w, "  [warn] auto-refresh    OFF (auto_refresh = false) — vaulted tokens will expire\n")
 		} else {
-			v := vault.New(logger(false))
+			load := deps.vaultEntry
+			if load == nil {
+				v := vault.New(logger(false))
+				load = func(id string) (*keychain.OAuth, bool) {
+					if !v.Has(id) {
+						return nil, false
+					}
+					o, err := v.Load(id)
+					return o, err == nil
+				}
+			}
 			fmt.Fprintf(w, "  [ok  ] auto-refresh    renews at %s before expiry; probes idle accounts every %s\n",
 				cfg.RefreshWindow.Duration, nonEmpty(durOrNever(cfg.RefreshProbe.Duration), "never"))
 			for _, a := range cfg.Ordered() {
-				if !v.Has(a.ID) {
-					continue
-				}
-				o, err := v.Load(a.ID)
-				if err != nil {
+				o, ok := load(a.ID)
+				if !ok {
 					continue
 				}
 				exp := "unknown"
@@ -820,7 +889,9 @@ func runDoctor(stdout io.Writer, cfgPath string, deep bool) error {
 				} else {
 					rt = "present, expiry not reported"
 				}
-				fmt.Fprintf(w, "         └ %-18s access %s · refresh token %s\n", a.ID, exp, rt)
+				line := fmt.Sprintf("         └ %-18s access %s · refresh token %s\n", a.ID, exp, rt)
+				fmt.Fprint(w, line)
+				rep.add(tally.size, refreshCheck(a.ID, o, line, time.Now()))
 			}
 		}
 	}
@@ -838,22 +909,29 @@ func runDoctor(stdout io.Writer, cfgPath string, deep bool) error {
 		for _, a := range cfg.Ordered() {
 			vaulted, pr, lerr := deps.verifyOne(a.ID)
 			if !vaulted {
-				fmt.Fprintf(w, "         └ %-18s not vaulted\n", a.ID)
+				line := fmt.Sprintf("         └ %-18s not vaulted\n", a.ID)
+				fmt.Fprint(w, line)
+				rep.add(tally.size, verifyCheck(a.ID, "warn", line))
 				continue
 			}
 			tried++
+			var line, verdict string
 			switch {
 			case lerr != nil:
 				bad++
-				fmt.Fprintf(w, "         └ %-18s FAILS — %v\n", a.ID, truncateStr(lerr.Error(), 44))
+				line, verdict = fmt.Sprintf("         └ %-18s FAILS — %v\n", a.ID, truncateStr(lerr.Error(), 44)), "fail"
+				fmt.Fprint(w, line)
 				fmt.Fprintf(w, "           %s\n", "fix: cs login "+a.ID+" --direct")
 			case a.Seat() != "" && pr.Seat() != a.Seat():
 				bad++
-				fmt.Fprintf(w, "         └ %-18s WRONG ACCOUNT — holds %s\n", a.ID, pr.Describe())
+				line, verdict = fmt.Sprintf("         └ %-18s WRONG ACCOUNT — holds %s\n", a.ID, pr.Describe()), "fail"
+				fmt.Fprint(w, line)
 				fmt.Fprintf(w, "           %s\n", "fix: cs login "+a.ID+" --direct")
 			default:
-				fmt.Fprintf(w, "         └ %-18s ok — %s · %s\n", a.ID, pr.Account.Email, pr.Plan())
+				line, verdict = fmt.Sprintf("         └ %-18s ok — %s · %s\n", a.ID, pr.Account.Email, pr.Plan()), "ok"
+				fmt.Fprint(w, line)
 			}
+			rep.add(tally.size, verifyCheck(a.ID, verdict, line))
 		}
 		if bad > 0 {
 			fmt.Fprintf(w, "  [FAIL] credentials     %d of %d vaulted account(s) do not sign in as configured\n",
@@ -4088,15 +4166,27 @@ func decisionJSON(d policy.Decision) map[string]any {
 		m["recovers_account"] = d.RecoversAccount
 		m["recovers_at"] = d.RecoversAt
 	}
+	if d.Unpin != "" {
+		m["unpin"] = d.Unpin // IMPROVEMENTS F3: the pin this decision lifts
+	}
 	return m
 }
 
-func verdictsJSON(vs []policy.Verdict, cfg *config.Config, st *state.State, now time.Time) []map[string]any {
+// verdictsJSON is why --json's accounts. Each carries, besides the verdict,
+// trigger_at (IMPROVEMENTS F2: when it reaches its trigger at this pace, or
+// null) and weekly_resets_at and weekly_unused (F1: its weekly window as
+// prefer = "expiring" weighs it, or null when unknown, never 0).
+func verdictsJSON(vs []policy.Verdict, cfg *config.Config, st *state.State, now time.Time, r policy.Runway) []map[string]any {
 	out := make([]map[string]any, 0, len(vs))
 	for _, v := range vs {
 		m := map[string]any{
 			"id": v.ID, "eligible": v.Eligible, "why": v.Why,
 			"utilization": v.Worst, "window": v.Window,
+			"trigger_at": triggerAtJSON(r, v.ID), "weekly_resets_at": timeOrNull(v.WeeklyResetsAt),
+			"weekly_unused": nil,
+		}
+		if v.WeeklyUnused != nil {
+			m["weekly_unused"] = *v.WeeklyUnused
 		}
 		if v.Active {
 			m["active"] = true
@@ -4176,10 +4266,14 @@ func emitJSON(v any) error {
 func statusJSON(cfg *config.Config, st *state.State, p *poller.Poller) map[string]any {
 	accounts := make([]map[string]any, 0, len(cfg.Accounts))
 	v := vault.New(logger(false))
+	// IMPROVEMENTS F2: each account's trigger_at and each profile's pool
+	// runway (pool_dry_at, pool_forecast, pool_refills_at).
+	runway := runwayJSON(cfg, st, time.Now())
 	for _, a := range cfg.Ordered() {
 		m := map[string]any{
 			"id": a.ID, "vaulted": v.Has(a.ID),
-			"active": activeIn(cfg, st, a.ID) != "",
+			"active":     activeIn(cfg, st, a.ID) != "",
+			"trigger_at": runway.accounts[a.ID],
 		}
 		addProfileJSON(m, cfg, st, a.ID)
 		if plan := v.PlanOf(a.ID); plan != "" {
@@ -4248,6 +4342,11 @@ func statusJSON(cfg *config.Config, st *state.State, p *poller.Poller) map[strin
 	if !st.Default().LastSwitch.IsZero() {
 		out["last_switch"] = st.Default().LastSwitch
 	}
+	if !multiProfile(cfg) {
+		for k, val := range runway.profiles[config.DefaultProfile] {
+			out[k] = val
+		}
+	}
 	// With more than one profile, each one's active account, pool and
 	// effective thresholds (D4). The fields above stay as they were, the
 	// default profile's, so a script written for one profile keeps working.
@@ -4259,6 +4358,9 @@ func statusJSON(cfg *config.Config, st *state.State, p *poller.Poller) map[strin
 				"thresholds": thresholdsJSON(v.cfg),
 			}
 			markCurrent(m, cfg, v.in.Name)
+			for k, val := range runway.profiles[v.in.Name] {
+				m[k] = val
+			}
 			if v.ist.Pinned != "" {
 				m["pinned"] = v.ist.Pinned
 			}

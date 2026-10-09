@@ -93,6 +93,7 @@ func TestWriteKeepsEverySetting(t *testing.T) {
 		LandingMargin:      &margin,
 		BlindFailoverPolls: &polls,
 		Models:             []string{"Modelname"},
+		Prefer:             PreferExpiring,
 		Cooldown:           Duration{7 * time.Minute},
 		MaxSwitchWait:      Duration{45 * time.Second},
 		AutoRefresh:        &off,
@@ -114,7 +115,7 @@ func TestWriteKeepsEverySetting(t *testing.T) {
 		Profiles: []Profile{
 			{Name: "work", Dir: "~/.claude-work", Pool: []string{"work"},
 				SwitchAt: 75, SwitchAtWeekly: 90, HardFloor: 97, LandingMargin: &workMargin,
-				Models: []string{"Othermodel"}, Chrome: "Profile 1"},
+				Models: []string{"Othermodel"}, Chrome: "Profile 1", Prefer: PreferRoom, Paths: []string{"~/src/work/**"}},
 			{Name: "default", Pool: []string{"personal"}}, // no dir: CLAUDE_CONFIG_DIR unset
 		},
 	}

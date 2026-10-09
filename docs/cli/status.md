@@ -37,7 +37,7 @@ switches, and the call budget.
 | flag | default | meaning |
 |---|---|---|
 | `--profile NAME` | every profile | show only this profile |
-| `--detail` | off | per-account detail: bars, reading age, burn rate, binding limit |
+| `--detail` | off | per-account detail: bars, reading age, burn rate, binding limit, when each account reaches its trigger at this pace |
 | `--json` | off | machine-readable output |
 | `--refresh` | `true` | take a fresh reading of any account whose reading is too old. Pass `--refresh=false` to read saved state only |
 | `--max-age DURATION` | three poll intervals (`3 × poll_active`, so 9m by default) | how old a reading may be before `--refresh` re-reads it |
@@ -63,6 +63,20 @@ Each profile block shows:
   windows, with a dot bar and a larger dot at the threshold. **CLEARS** is
   when the binding window resets. **STATE** is the account's state
   (`available`, `refused · five_hour`, `no headroom · 5h`, and so on);
+- the pool's runway, when there is a forecast (IMPROVEMENTS F2):
+  `work pool: runs dry Thu 14:00 at this pace`, or, when a window resets
+  first and gives the pool room back (an account rotation cannot use, or
+  one already being spent),
+  `work pool: does not run dry before work-team resets today 15:30 at this pace`.
+  The pool is spent as rotation would spend it — the live account to its
+  trigger, then each account rotation would land on, in its order — at the
+  pace the live account is burning now (its last two readings, which must
+  be recent: within 15 minutes, or three `poll_active`, of each other and
+  of now). Without such readings, or with an account in the pool not yet
+  read, there is no forecast and no line: unknown is never guessed.
+  `--detail` says so (`work pool: runway unknown (too few recent readings)`,
+  `not being spent`, `no eligible account left`) and adds, under each
+  account, `↳ reaches its trigger Thu 13:10 at this pace`;
 - **RECENT SWITCHES**, the last five, with the reason for each.
 
 The footer says where the readings came from, the idle-swap setting, how many
@@ -76,8 +90,12 @@ daemon, last poll); piped, it does not. `NO_COLOR` turns colour off and
 With `--json` the output is one object: the default profile's `active`
 account, `accounts` (each with `id`, `vaulted`, `active`, `state`,
 `five_hour`, `seven_day`, `binding_window`, `clears_at`, `read_at`,
-`burn_per_min` and more), the `thresholds`, `daemon_running`,
-`api_calls_spare` and `degraded`. The app reads `account list --json` and `why --json` instead
+`burn_per_min`, `trigger_at` and more), the `thresholds`, `daemon_running`,
+`api_calls_spare`, `degraded` and the runway: `pool_dry_at` (RFC 3339, or
+`null` when not forecast), `pool_forecast` (`dry`, `refills`, `idle` or
+`unknown`) and `pool_refills_at`, at the top level with one profile and in
+each `profiles` entry with several. An account's `trigger_at` is when it
+reaches its trigger at this pace, `null` when not forecast. The app reads `account list --json` and `why --json` instead
 ([accounts](accounts.md#cs-account-list), [why](#cs-why)).
 
 Exit status: as above. A config that fails to load is a failure; a missing
@@ -133,8 +151,11 @@ Each profile block gives:
   would expire unused.
 
 `--json` gives one object per profile, with `decision` (`kind`, `reason`,
-and `target` for a switch), `accounts` (each with `eligible`, `utilization`,
-`window`, `why`, `clears_at`, `weekly_pace` and `model_limits`), `best`,
+`target` for a switch, and `unpin` when it lifts a pin), `accounts` (each
+with `eligible`, `utilization`, `window`, `why`, `clears_at`, `weekly_pace`,
+`model_limits`, `trigger_at`, `weekly_resets_at` and `weekly_unused`), the
+runway (`pool_dry_at`, `pool_forecast`, `pool_refills_at`, as in `status
+--json`), `best`,
 `thresholds`, and `on_best` with `active_room` and `best_room`: the points
 the live account and `best` sit below their binding window's trigger, which
 is what "already on the best" compares (`null` when unknown). The full shape is in
@@ -170,8 +191,8 @@ lines (verbatim from the source):
 `--json` gives `{"decision": {...}}` with no `[[profile]]` blocks, or
 `{"profiles": [{"profile": "default", "decision": {...}}, ...]}` with them.
 A decision has `kind` and `reason`, and may have `target`, `forced` (a
-mid-turn swap past the hard floor), `failover`, `recovers_account` and
-`recovers_at`.
+mid-turn swap past the hard floor), `failover`, `recovers_account`,
+`recovers_at` and `unpin` (the pin it lifts, IMPROVEMENTS F3).
 
 Exit status: as above.
 

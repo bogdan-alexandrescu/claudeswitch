@@ -29,8 +29,12 @@ const (
 
 // Account is the durable per-account record.
 type Account struct {
-	ID    string `json:"id"`
-	OrgID string `json:"org_id,omitempty"`
+	ID string `json:"id"`
+	// SeverityKey, when set, is what the poller tracks this record's
+	// severity under instead of ID. Never saved: it exists for the per-profile
+	// scratch records that all share the ID Unattributed.
+	SeverityKey string `json:"-"`
+	OrgID       string `json:"org_id,omitempty"`
 	// Seat is the quota pool this record describes: person@organization. The
 	// organization alone cannot tell two colleagues apart, and a record filed
 	// under the wrong name is acted on as though it were right.
@@ -48,6 +52,15 @@ type Account struct {
 	// projection matters most.
 	LastRate float64   `json:"last_rate,omitempty"`
 	PrevAt   time.Time `json:"prev_at,omitzero"`
+	// RiseRate is the burn rate, in points a minute, the last rising pair
+	// of readings showed, and RiseAt when the later of them was taken. A
+	// flat pair keeps both; a fall (a window reset) clears them. The runway
+	// forecast (IMPROVEMENTS F2) carries RiseRate over a flat pair only
+	// while RiseAt is recent: whole-point readings of a slow burn come in
+	// flat pairs, but a rate seen hours ago says nothing about now. Kept
+	// apart from LastRate, which feeds Projected.
+	RiseRate float64   `json:"rise_rate,omitempty"`
+	RiseAt   time.Time `json:"rise_at,omitzero"`
 	BurntTil time.Time `json:"burnt_until,omitzero"`
 	BurntWin string    `json:"burnt_window,omitempty"`
 
@@ -290,6 +303,25 @@ func (a *Account) RepollAt() time.Time {
 	return w.ResetsAt.Add(10 * time.Second)
 }
 
+// NeedsLoginErr recognises a last error only an interactive sign-in cures:
+// no stored credential, or one the API or the token endpoint rejected. The
+// one definition render, `account list` and the pin valve share.
+func NeedsLoginErr(lastErr string) bool {
+	for _, s := range []string{"no stored credential", "not in the vault", "401", "re-login",
+		"invalid_grant", "needs an interactive login"} {
+		if strings.Contains(lastErr, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// NeedsSignIn reports whether only a sign-in brings the account back: its
+// last error says so, or its refresh token has expired.
+func (a *Account) NeedsSignIn(now time.Time) bool {
+	return a != nil && (NeedsLoginErr(a.LastErr) || (!a.RefreshExpiry.IsZero() && now.After(a.RefreshExpiry)))
+}
+
 // Stale reports whether the reading is older than the poll interval allows.
 func (a *Account) Stale(maxAge time.Duration) bool {
 	return a.Last == nil || time.Since(a.LastAt) > maxAge
@@ -344,6 +376,15 @@ type ProfileState struct {
 	Active string `json:"active_account,omitempty"`
 	// Pinned suspends automatic rotation until `claudeswitch account unpin` clears it.
 	Pinned string `json:"pinned,omitempty"`
+	// PinHard keeps the pin even when the pinned account is refused, out of
+	// quota or needs a sign-in (`cs account pin --hard`). Without it the
+	// daemon lifts such a pin (IMPROVEMENTS F3, policy.PinLifted). Written
+	// with Pinned, and owned the same way.
+	PinHard bool `json:"pin_hard,omitempty"`
+	// lifted is the pin this process lifted since its last save (LiftPin):
+	// a daemon save clears it on disk, where the CLI owns Pinned, as long as
+	// the disk still holds that same pin.
+	lifted string
 	// LastSwitch feeds the anti-flap cooldown across restarts.
 	LastSwitch time.Time `json:"last_switch,omitzero"`
 	// LastFrom is the account that switch moved away from (IMPROVEMENTS C2:
@@ -370,6 +411,17 @@ type ItemRef struct {
 	File    string `json:"credential_file,omitempty"`
 	Dir     string `json:"dir,omitempty"`
 	FromEnv bool   `json:"from_env,omitempty"`
+}
+
+// LiftPin clears the pin as the daemon's safety valve does (IMPROVEMENTS
+// F3). Pinned is the CLI's, so a daemon save would otherwise take it back
+// from disk; the lift is carried to the disk instead, unless the CLI has
+// pinned something else since, which wins.
+func (in *ProfileState) LiftPin() {
+	if in.Pinned != "" {
+		in.lifted = in.Pinned
+	}
+	in.Pinned, in.PinHard = "", false
 }
 
 func (in *ProfileState) isZero() bool {
@@ -799,7 +851,10 @@ func (s *State) SaveAs(as owner) error {
 				if disk.ActiveAt.After(mine.ActiveAt) {
 					mine.Active, mine.ActiveAt = disk.Active, disk.ActiveAt
 				}
-				mine.Pinned = disk.Pinned
+				if mine.lifted == "" || disk.Pinned != mine.lifted {
+					mine.Pinned, mine.PinHard = disk.Pinned, disk.PinHard
+				}
+				mine.lifted = ""
 				if disk.LastSwitch.After(mine.LastSwitch) {
 					mine.LastSwitch, mine.LastFrom = disk.LastSwitch, disk.LastFrom
 				}
@@ -856,6 +911,11 @@ func (s *State) SaveAs(as owner) error {
 	s.ghostAdds, s.ghostDrops = nil, nil
 	s.vaultAdds, s.vaultDrops = nil, nil
 	s.chromeTouched, s.hintTouched, s.emailTouched, s.planTouched = nil, nil, nil, nil
+	for _, in := range s.Profiles {
+		if in != nil {
+			in.lifted = ""
+		}
+	}
 	return nil
 }
 

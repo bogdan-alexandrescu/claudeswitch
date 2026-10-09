@@ -65,9 +65,21 @@ Each time the daemon reads the live account, it decides for each profile:
 An account is **eligible** when it can be read, is not refused, is under its
 own `reserve` if it has one, and has at least **`landing_margin`** points (10)
 of room below the session threshold, so the profile does not leave it again
-at once. Candidates are tried in **`priority`** order (Settings → Accounts,
-drag to reorder). A **pinned** profile never rotates. After a rotation,
-**`cooldown`** (10 minutes) must pass before the next.
+at once. Of the eligible accounts, the switch takes the one with the most
+room; **`priority`** order (Settings → Accounts, drag to reorder) breaks
+ties. With **`prefer = "expiring"`** (Settings → Rotation; per profile with
+`cs profile set`) it takes instead the one whose weekly window resets
+soonest while it still has quota unused, so quota that would expire is
+spent first, and room breaks ties; `why` says so (`work-team resets in 9h
+with 40% unused, so it goes first`). The default, `prefer = "room"`, is the
+most-room rule.
+
+A **pinned** profile does not rotate, with one exception, the pin safety
+valve: if the pinned account is refused, out of quota (100%) or needs a
+sign-in, the daemon lifts the pin, rotates as usual and says why
+(`pin on work-1 lifted: it was refused`) in its log, a notification and the
+audit log (`kind: unpin`). `cs account pin --hard` keeps the pin even then.
+After a rotation, **`cooldown`** (10 minutes) must pass before the next.
 
 With **`switch_when = idle`** a due switch waits for a gap between Claude
 Code's turns, for up to **`max_switch_wait`** (30 seconds), then goes ahead.
@@ -75,6 +87,18 @@ Code's turns, for up to **`max_switch_wait`** (30 seconds), then goes ahead.
 `cs why` prints the decision and the reasoning for each account. The app's
 **Next:** line and `cs plan` show the same. `cs audit --kind decision` lists
 past decisions.
+
+## Runway
+
+`cs status` forecasts each profile's **runway**: when its pool has no
+eligible account left at the pace the live account is burning now
+(`work pool: runs dry Thu 14:00 at this pace`), spending each account to its
+trigger in the order rotation would. A forecast needs the live account's
+last two readings, both recent; with fewer, or with an account in the pool
+not yet read, there is none: unknown stays unknown. When a window resets
+before the pool would run dry, the pool gets room back, and `status` says
+that instead. The daemon notifies once when the forecast falls within two
+hours. `cs status --detail` adds when each account reaches its trigger.
 
 ## Hot swaps
 

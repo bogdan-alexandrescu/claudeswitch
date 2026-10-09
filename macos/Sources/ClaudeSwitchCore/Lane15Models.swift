@@ -45,6 +45,9 @@ public struct AccountInfo: Equatable, Identifiable {
     /// The profile it is live in.
     public var activeIn: String?
     public var pinned: Bool
+    /// F3: pinned with --hard (stays even when refused); nil from a CLI
+    /// that predates the pin safety valve.
+    public var pinHard: Bool?
     public var refreshExpiresAt: Date?
     public var accessExpiresAt: Date?
     /// available, reserved, refused, needs_login or unknown (or a word a
@@ -62,6 +65,7 @@ public struct AccountInfo: Equatable, Identifiable {
         profile = text(j["profile"])
         activeIn = text(j["active_in"])
         pinned = j["pinned"].bool ?? false
+        pinHard = j["pin_hard"].bool
         refreshExpiresAt = j["refresh_expires_at"].date
         accessExpiresAt = j["access_expires_at"].date
         state = j["state"].string ?? "unknown"

@@ -1,0 +1,106 @@
+{
+  "dir": "/Users/example",
+  "profiles": [
+    {
+      "accounts": [
+        {
+          "active": true,
+          "clears_at": "2026-10-11T02:46:43Z",
+          "eligible": true,
+          "id": "work-1",
+          "model_limits": [
+            {
+              "counted": false,
+              "is_active": false,
+              "model": "Modelname",
+              "percent": 12,
+              "resets_at": "2026-10-11T02:46:43Z",
+              "severity": "normal"
+            }
+          ],
+          "trigger_at": "2026-10-08T09:30:00Z",
+          "utilization": 41.62733573333333,
+          "weekly_pace": {
+            "actual": 41.25233573333333,
+            "at_reset": 72.19147043609453,
+            "expected": 57.142949830687826,
+            "resets_at": "2026-10-11T02:46:43Z",
+            "unused_at_reset": 27.808529563905466
+          },
+          "why": "at 42%, 53 points of room",
+          "window": "seven_day"
+        },
+        {
+          "clears_at": "2026-10-08T04:46:43Z",
+          "eligible": true,
+          "id": "personal",
+          "trigger_at": null,
+          "utilization": 12,
+          "weekly_pace": {
+            "actual": 8,
+            "at_reset": 27.999909166220597,
+            "expected": 28.571521259259256,
+            "resets_at": "2026-10-13T02:46:43Z",
+            "unused_at_reset": 72.00009083377941
+          },
+          "why": "at 12%, ready",
+          "window": "five_hour"
+        },
+        {
+          "clears_at": "2026-10-08T03:26:43Z",
+          "eligible": false,
+          "id": "work-2",
+          "trigger_at": "2026-10-10T18:15:00Z",
+          "utilization": 100,
+          "weekly_pace": {
+            "actual": 77,
+            "at_reset": 100,
+            "expected": 28.571521259259256,
+            "resets_at": "2026-10-13T02:46:43Z",
+            "unused_at_reset": 0
+          },
+          "why": "refused on its five_hour window",
+          "window": "five_hour"
+        }
+      ],
+      "best": "personal",
+      "best_why": null,
+      "current": true,
+      "decision": {
+        "kind": "stay",
+        "reason": "active account at 42%, under the 95% trigger"
+      },
+      "pool": [
+        "work-1",
+        "work-2",
+        "personal"
+      ],
+      "pool_dry_at": "2026-10-08T14:00:00Z",
+      "profile": "default",
+      "thresholds": {
+        "hard_floor": 98,
+        "landing_margin": 10,
+        "switch_at": 90,
+        "switch_at_weekly": 95
+      }
+    },
+    {
+      "accounts": [],
+      "best": null,
+      "best_why": "review has no other account",
+      "decision": {
+        "kind": "stay",
+        "reason": "pinned to personal; automatic rotation is off"
+      },
+      "pool": [],
+      "pool_dry_at": null,
+      "profile": "review",
+      "thresholds": {
+        "hard_floor": 98,
+        "landing_margin": 10,
+        "switch_at": 90,
+        "switch_at_weekly": 95
+      }
+    }
+  ]
+}

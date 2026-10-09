@@ -49,4 +49,14 @@ not attribute to an account, it kept the old one aside as a recovery copy.
 
 A copy that cannot be read says so in red and cannot be restored.
 
+## Re-login reminders
+
+When an account's sign-in expires within 5 days (its `refresh_expires_at` in
+`cs account list --json`), the app posts a notification once a day for that
+account: "personal needs signing in within 2 days", or "its login has expired"
+once it has. **Sign in…** on the notification, or clicking it, opens Settings
+with [Add account](add-account.md) signing that account in again. An account
+whose expiry is unknown, or that is disabled, is never reminded. macOS asks
+once whether ClaudeSwitch may post notifications.
+
 [← Documentation index](../README.md)

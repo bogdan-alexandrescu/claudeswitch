@@ -59,6 +59,10 @@ type Options struct {
 	Profile string
 	// Pool, when non-nil, limits the accounts shown to that profile's pool.
 	Pool []string
+	// Runway is the profile's pool runway forecast (IMPROVEMENTS F2): one
+	// line under the table when it forecasts something, and each account's
+	// ETA under --detail. Nil says nothing.
+	Runway *policy.Runway
 	// Block marks this view as one of several, one per profile: it ends
 	// without the footer and legend, which SharedFooter prints once after the
 	// last block.
@@ -442,6 +446,9 @@ func statusCompact(out io.Writer, o Options) {
 
 	fmt.Fprint(out, t.render("  "))
 	modelBlock(out, o, accounts)
+	if line := poolLine(o, false, time.Now()); line != "" {
+		fmt.Fprintf(out, "\n  %s\n", line)
+	}
 
 	if len(o.Switches) > 0 {
 		fmt.Fprintf(out, "\n  %s\n", paint(dim, "RECENT SWITCHES"))
@@ -525,6 +532,45 @@ func SharedFooter(out io.Writer, o Options) {
 	}
 	fmt.Fprintln(out)
 	legend(out)
+}
+
+// poolLine is the profile's runway (IMPROVEMENTS F2) in one line: "work
+// pool: runs dry Thu 14:00 at this pace". The compact view says it only when
+// there is a forecast; detail also says why there is none. "" for nothing.
+func poolLine(o Options, detail bool, now time.Time) string {
+	r := o.Runway
+	if r == nil {
+		return ""
+	}
+	name := "pool"
+	if o.Profile != "" {
+		name = o.Profile + " pool"
+	}
+	say := ""
+	switch {
+	case r.Kind == policy.RunwayDry && r.DryAt.After(now):
+		say = "runs dry " + clockAt(r.DryAt, now) + " at this pace"
+	case r.Kind == policy.RunwayRefills:
+		say = fmt.Sprintf("does not run dry before %s resets %s at this pace", r.RefillsAccount, clockAt(r.RefillsAt, now))
+	case !detail:
+		return ""
+	case r.Kind == policy.RunwayDry:
+		say = "no eligible account left"
+	case r.Kind == policy.RunwayIdle:
+		say = "not being spent"
+	default:
+		say = "runway unknown (too few recent readings)"
+	}
+	return name + ": " + say
+}
+
+// clockAt is a time a person reads off a clock: "today 14:00", "Thu 14:00".
+func clockAt(t, now time.Time) string {
+	t, now = t.Local(), now.Local()
+	if t.Format("2006-01-02") == now.Format("2006-01-02") {
+		return "today " + t.Format("15:04")
+	}
+	return t.Format("Mon 15:04")
 }
 
 // headline is the single line worth reading first: where you stand, and what
@@ -836,6 +882,11 @@ func statusDetailed(out io.Writer, o Options) {
 			fmt.Fprintf(out, "  %s   ↳ binding: %s (%s) %s, resets %s%s\n",
 				pad(""), kind, b.Severity, limitPct(*b), until(b.ResetsAt), flag)
 		}
+		if o.Runway != nil {
+			if at, ok := o.Runway.TriggerAt[a.ID]; ok {
+				fmt.Fprintf(out, "  %s   ↳ reaches its trigger %s at this pace\n", pad(""), clockAt(at, time.Now()))
+			}
+		}
 		detailLimits(out, pad, cfg, acct)
 		if !acct.RefreshExpiry.IsZero() && time.Until(acct.RefreshExpiry) < 7*24*time.Hour {
 			fmt.Fprintf(out, "  %s   ⚠ refresh token expires in %s — this account needs a login before then\n",
@@ -843,6 +894,9 @@ func statusDetailed(out io.Writer, o Options) {
 		}
 	}
 
+	if line := poolLine(o, true, time.Now()); line != "" {
+		fmt.Fprintf(out, "\n  %s\n", line)
+	}
 	fmt.Fprintln(out)
 	fmt.Fprintf(out, "  thresholds  switch ≥%.0f%% session / ≥%.0f%% weekly   hard floor ≥%.0f%%   swap %s, forced after %s\n",
 		cfg.TriggerFor(usage.FiveHourKey), cfg.TriggerFor(usage.SevenDayKey),
@@ -909,7 +963,7 @@ func firstLine(s string) string {
 // usage API answers 401 for a revoked or expired credential, and no amount of
 // retrying fixes it — so a row in that state must say so rather than claim it
 // is being re-read.
-func needsLogin(lastErr string) bool { return loginFix(lastErr) != "" }
+func needsLogin(lastErr string) bool { return state.NeedsLoginErr(lastErr) }
 
 // NeedsLogin is needsLogin for other packages: an error only an
 // interactive sign-in cures.
@@ -924,18 +978,13 @@ func NeedsLogin(lastErr string) bool { return needsLogin(lastErr) }
 // something they can paste rather than a description of their situation.
 func loginFix(lastErr string) string {
 	switch {
-	case lastErr == "":
+	case !state.NeedsLoginErr(lastErr):
 		return ""
 	case strings.Contains(lastErr, "no stored credential"),
 		strings.Contains(lastErr, "not in the vault"):
 		// Configured but never captured, or the entry has been removed.
 		return "sign in with `claude` and run `claudeswitch add %s`"
-	case strings.Contains(lastErr, "401"),
-		strings.Contains(lastErr, "re-login"),
-		strings.Contains(lastErr, "invalid_grant"),
-		strings.Contains(lastErr, "needs an interactive login"):
-		// The stored credential was revoked or expired beyond refreshing.
-		return "its credential was rejected — sign in with `claude`, then `claudeswitch add %s`"
 	}
-	return ""
+	// The stored credential was revoked or expired beyond refreshing.
+	return "its credential was rejected — sign in with `claude`, then `claudeswitch add %s`"
 }

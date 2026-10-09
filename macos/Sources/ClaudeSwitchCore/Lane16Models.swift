@@ -245,6 +245,13 @@ public enum SettingNames {
         "hard_floor": "Hard floor",
         "landing_margin": "Landing margin",
         "models": "Count model limits",
+        "prefer": "Spend first",
+    ]
+
+    /// An enum setting's choices as a person reads them (F1); a choice not
+    /// listed reads as itself.
+    static let choices = [
+        "prefer": ["room": "Most room", "expiring": "Expiring quota"],
     ]
 
     /// A setting's name for a person.
@@ -280,6 +287,7 @@ public enum SettingNames {
         case "duration": return GoDuration.parse(v).map(Format.duration) ?? v
         case "percent": return v.isEmpty ? v : v + "%"
         case "list": return v.isEmpty ? "none" : v
+        case "enum": return choices[s.key]?[v] ?? v
         default: return v
         }
     }

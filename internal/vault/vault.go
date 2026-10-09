@@ -923,8 +923,12 @@ func (v *Vault) seatBehind(ctx context.Context, token string) string {
 }
 
 // probeSeat asks the seat behind a live token, seat "" when unknown. It is
-// a probe, not a swap: it asks at Scheduled priority, so it never spends the
-// call reserved for a swap, and a refused or failed probe is remembered for
+// the safety check a swap waits on, so it asks at Hot priority: it may spend
+// the hot reserve, but never the calls reserved for the swap itself. At
+// Scheduled priority it needed the whole hot reserve left as well, so while
+// the daemon polled an account closely the check was refused, the answer
+// stayed unknown, and every swap into another profile's account was refused
+// with it (observed 2026-10-08). A refused or failed probe is remembered for
 // a shorter period (holdsUnknownTTL) rather than retried every tick — or
 // until the rate-limit lock that refused it clears, if that is sooner.
 func (v *Vault) probeSeat(ctx context.Context, token string) seatProbe {
@@ -939,7 +943,7 @@ func (v *Vault) probeSeat(ctx context.Context, token string) seatProbe {
 	// Pacing blocks the caller for at most the burst spacing, and the cache
 	// above bounds how often that can happen.
 	v.budget.Pace(ctx)
-	if ok, reason := v.budget.Allow(token, usage.Scheduled); ok {
+	if ok, reason := v.budget.Allow(token, usage.Hot); ok {
 		if pr, err := v.client.FetchProfile(ctx, token); err == nil {
 			p.seat = pr.Seat()
 			v.budget.Succeeded(token)

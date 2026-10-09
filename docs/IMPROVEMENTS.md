@@ -603,6 +603,22 @@ exact key names may grow, but these keys must exist.
   resets in 9h with 40% unused, so it goes first`. `why --json`: per
   candidate `weekly_resets_at`, `weekly_unused`. Settings → Rotation gets the
   choice.
+
+  *As built (2026-10-09, Go side).* `prefer` is a config key (global, and per
+  `[[profile]]`), `cs config prefer room|expiring`, `cs profile set <p> prefer
+  room|expiring|inherit`, and `config schema --json` lists it as an `enum`
+  with scopes global and profile, right after `landing_margin` (the app's
+  Rotation group). Written to the file only once chosen, so an untouched
+  config writes back unchanged. One rule in `internal/policy`: `better`
+  (which bestEligible, `Best`/`Choose` and `why`'s order share) ranks, with
+  `expiring`, an account with a known future weekly reset and unused weekly
+  quota ahead of one without, the earlier reset (to the minute) first, room
+  breaking ties; `room` and unset are today's ranking exactly. `weekly_unused`
+  is 100 less the weekly utilization the policy judges (a counted model
+  standing in). The switch reason and the first ready account's `why` line
+  end `work-team resets in 9h with 40% unused, so it goes first`; `why
+  --json` gives every account `weekly_resets_at` and `weekly_unused` (`null`
+  when unknown, never 0) whatever `prefer` is. Eligibility is untouched.
 - **F2. Pool runway forecast.** From each account's recent burn rate (the
   readings already in state), predict when each account reaches its trigger
   and when the profile's whole pool has no eligible account left. Unknown
@@ -613,11 +629,52 @@ exact key names may grow, but these keys must exist.
   The daemon notifies once when `pool_dry_at` falls within 2 hours. The app
   shows the pool line on each card and per-account ETAs in the account
   picker.
+
+  *As built (2026-10-09, Go side).* `policy.Forecast` (beside `Best` and
+  `Choose`). The pace is the live account's burn, points a minute, from its
+  last two readings, both within 15 minutes (or 3 × `poll_active`) of each
+  other and of now; a level pair carries the last rise's rate only while
+  that rise is that recent (readings are whole points). State records that
+  rise (`rise_rate`, `rise_at`, written by the poller), kept apart from
+  `last_rate`, which feeds the projection. The pool is spent as rotation
+  would: the live account to its trigger, then each account `best` could
+  offer that clears the landing margin, in `better`'s order, at the same
+  pace in points (the plans may differ; it is "at this pace"). Unknown is
+  `null`: fewer readings, stale ones, a reset between them, or any account in
+  the pool with no usable reading. A binding-window reset (or a refusal
+  clearing) before the dry time, on an account rotation cannot use now or
+  one already being spent, gives room back, so the forecast is then
+  `refills` with `pool_refills_at`, not a time past it; a reset of an account
+  before rotation reaches it is not counted (it frees only what that account
+  used before, so the forecast is early by at most that). Keys, beyond the
+  contract's `pool_dry_at` and `trigger_at`: `pool_forecast` (`dry`,
+  `refills`, `idle`, `unknown`) and `pool_refills_at`. `cs status` prints
+  the pool line only when there is a forecast (no existing golden changed);
+  `--detail` says why there is none and adds `↳ reaches its trigger … at this
+  pace`. The daemon's notice re-arms only once the forecast moves past 2
+  hours or to `refills`.
 - **F3. Pin safety valve.** If a pinned account is refused (429, or out of
   quota at 100%) or needs a login, the daemon lifts the pin, rotates as
   usual and says why (`pin on work-1 lifted: it was refused`), in the log,
   a notification and audit (`kind: unpin`). `cs account pin --hard` keeps
   today's behaviour (stay even then). `account list --json`: `pin_hard`.
+
+  *As built (2026-10-09, Go side).* `policy.PinLifted` is the one test:
+  refused (a refusal still in force), out of quota (a reading still current
+  at 100% on either window) or needs a sign-in (an expired refresh token, or
+  a last error only a sign-in cures that was counted as a failed read — a
+  401 on a stale vault copy is not counted and lifts nothing). `Decide` with
+  a pin that is not hard and a lifted account decides unpinned and sets
+  `Decision.Unpin` (`pin on work-1 lifted: it was refused`, also prefixed to
+  the reason and in `why --json`'s `decision.unpin`). With the pin lifted,
+  rotation is the usual one: an account that needs a sign-in but is under
+  its trigger stays until it is refused or runs out. The live daemon clears
+  the pin (`ProfileState.LiftPin`, which a daemon save carries to disk unless
+  the CLI has pinned something since), logs it, notifies and writes
+  `{"kind": "unpin", "profile", "from", "reason"}`; dry run lifts nothing and
+  writes the row once with `dry_run`. `pin --hard` stores `pin_hard` in the
+  profile's state; `account pin --json` answers `pin_hard`, `unpin` clears
+  it. `cs audit` shows the kind and `--kind unpin` filters it.
 
 ### Convenience
 
@@ -628,12 +685,42 @@ exact key names may grow, but these keys must exist.
   to. `cs profile hook zsh|bash|fish` prints an optional shell hook that sets
   `CLAUDE_CONFIG_DIR` on `cd` (it never runs anything else). Settings →
   Profiles gets a "Folders" field per profile.
+
+  *As built (CLI, 2026-10-09):* `Profile.Paths` (`config/paths.go`). A
+  pattern is absolute or `~/…`, split on `/`; `*` and `?` within a name, a
+  whole `**` for any number of folders; `[ ]`, `\`, `.`/`..` and a `**`
+  inside a name are refused so that overlap is decided exactly. A folder
+  belongs to a pattern when the pattern matches it or a parent (so `~/w`
+  and `~/w/**` are the same). Overlap between two profiles' patterns is a
+  search over pairs of positions (folder by folder, then character by
+  character) and refuses the config at load, naming both profiles and
+  patterns; one profile's own patterns may overlap. The folder is tried as
+  given, then with links resolved. `profile which [--dir] [--json]` →
+  `{dir, profile, pattern, rule: paths|default|none, config_dir, from_env}`;
+  `run` with no name starts the folder's profile (a note names the pattern),
+  else `default`, else refuses. `profile hook zsh|bash|fish` runs
+  `claudeswitch profile which --hook` (one line: `set <dir>`, `unset`,
+  `keep`) on each change of folder and only sets or unsets
+  `CLAUDE_CONFIG_DIR` from it, never evaluating the answer; `keep` where
+  nothing is picked, with no `[[profile]]` blocks, or when the config does
+  not load. The bash hook is run under bash in a test; zsh and fish are
+  checked as text. `profile list --json` gains `paths` (`[]` when none);
+  `profile set <p> paths <a,b|inherit>` answers with lists. Docs:
+  cli/profiles.md, GUIDE "Picking a profile by folder", APP_CLI.
 - **F5. Re-login reminders.** When a vaulted account's refresh token expires
   within 5 days (the figure doctor already warns about), the app posts one
   notification per account per day, "personal needs signing in within 5
   days", whose action opens Add account → sign in for that account. Data:
   `account list --json` gains `refresh_expires_at` (from state.json, never
   the keychain; null when unknown).
+
+  *As built (CLI, 2026-10-09):* the key was already there (lane 15), but
+  the daemon recorded the expiry only for an account live in a profile; a
+  vaulted account kept whatever `add`/`login` wrote, or nothing. The
+  scheduled poll reads the vault entry anyway and now records its refresh
+  expiry with its access expiry (zero, a credential that reports none, is
+  unknown: `null`). Tests: the poller records it, and `account list --json`
+  reports it (UTC) or `null` with no keychain read.
 - **F6. Shortcuts and a hotkey.** App Intents for Switch to best, Pin/Unpin,
   Status (the followed profile, or a chosen one), usable from Spotlight,
   Shortcuts and Raycast. A configurable global hotkey for Switch to best on
@@ -646,11 +733,45 @@ exact key names may grow, but these keys must exist.
   `[{at, five_hour, seven_day}]` plus switches, built from what the daemon
   already records (extend the recorded readings if they are not kept; keep
   the file bounded).
-- **F8. Homebrew.** A formula for the CLI and a cask for the app in a tap
+
+  *As built (CLI, 2026-10-09):* state keeps only the last two readings and
+  the audit log only the active account's at a decision, so the daemon now
+  keeps `~/.local/state/claudeswitch/readings.jsonl` (`internal/readings`):
+  one line `{"at","account","five_hour","seven_day"}` per new reading of a
+  configured account (handed over after every poll tick and save tick; a
+  reading already written is not written again, across restarts too).
+  Bounded: 30 days; older than a day thinned to the last reading per
+  account per 15 minutes; under 4 MiB, oldest first; compacted at start,
+  every 6 hours and when an append crosses the limit, by writing a
+  temporary file and renaming it. Only the daemon writes it.
+  `cs history --usage [--days 30] [--json]` →
+  `{days, from, to, accounts: [{id, profile, configured, series: [{at,
+  five_hour, seven_day}]}], switches: [{at, profile, from, to, reason,
+  forced}]}`; switches are the audit log's `switch` events. Docs:
+  cli/claude-code.md, GUIDE "Usage history", APP_CLI.
+- **F8. Homebrew.** *Skipped for now (owner, 2026-10-08): the formula and
+  cask stay in packaging/homebrew/; the release workflow step is not applied.*
+  Original decision: A formula for the CLI and a cask for the app in a tap
   repository, updated by the release workflow on each tag. The tap
   repository itself is created by the owner (an outward-facing action);
   everything else is prepared in this repo (`packaging/homebrew/`) and the
   release workflow (public mirror).
+
+  *As built (2026-10-09):* `packaging/homebrew/claudeswitch.rb` (a formula:
+  the release tarball for each of darwin/linux × arm64/amd64, each sha256
+  line marked with its target, `bin/claudeswitch` and the `cs` link, a
+  caveat to re-run `daemon install` after an upgrade) and
+  `claudeswitch-app.rb` (a cask for `ClaudeSwitch-<ver>-macos.zip`, macOS
+  13+, depending on the formula, with the unsigned app's first-launch
+  caveat). Both carry `0.0.0` and zero sha256 placeholders.
+  `update.sh <version> <checksums.txt> [<formula> [<cask>]]` fills them in
+  place (POSIX sh and awk): all four archive sums are required, the app
+  zip's line is optional (without it the cask is left alone), and every
+  value is checked before anything is written. A Go test in the same
+  folder runs it. The release-workflow job (a `homebrew` job after
+  `build` and `macos-app`, pushing to the repo the `HOMEBREW_TAP` secret
+  names with `HOMEBREW_TAP_TOKEN`, skipped when `HOMEBREW_TAP` is unset) is
+  kept out of this repo's change, for the public mirror.
 
 ### macOS app
 
@@ -672,3 +793,16 @@ exact key names may grow, but these keys must exist.
   names a known action: `signin <account>`, `daemon restart`,
   `statusline install`, `keychain allow`, or null) and lists every check,
   each failure with a Fix button for a known action.
+
+  *As built (CLI, 2026-10-09):* the text is byte-identical (goldens in
+  `cmd/claudeswitch/testdata/doctor/`, written before the change) and its
+  exit status unchanged. `--json` reads that text back: one check per
+  `[mark] name  message` row, its `└` lines as `details`; `level` keeps the
+  mark (`info` → `status: warn`, so "status line not set" can carry
+  `statusline install`). Fixes: `daemon restart` for an older daemon,
+  `keychain allow` for an unreadable live credential on macOS,
+  `statusline install`, and `signin <id>` on per-account checks the text
+  shows as detail lines: `refresh token` (missing, expired, or within F5's
+  5 days) and, with `--verify`, `credential`. `failed` counts the `[FAIL]`
+  rows; the JSON form exits 0 whenever it made the report (an exit 1 is an
+  error object to the app).

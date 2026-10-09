@@ -18,11 +18,13 @@ profile is signed in, and as which account.
 |---|---|---|---|
 | **ACCOUNTS** chips | one chip per account in the pool, with its small rings and binding figure, or its state (`refused`, `needs login`). A chip's menu: **Remove from default...** and **Move to work...** | `cs profile pool <p> remove <id> [--to <other>]` | |
 | **+ Add** | adds an account to this pool: one in no pool, or one moved from another profile's pool after a confirmation that names the move | `cs profile pool <p> add <id>`, or `cs profile pool <other> remove <id> --to <p>` | |
+| **FOLDERS** | the folders that pick this profile: `cs run` with no name in one of them runs this profile, and `cs profile which` says so. Globs, comma-separated (`~/work/**, ~/clients/**`); empty clears them. Hidden with a CLI that does not report `paths` | `cs profile set <p> paths <glob,glob>` | none |
 | **Switch at session** | this profile's `switch_at`. Empty inherits the global value, shown as "90% (global)"; ↺ goes back to inheriting | `cs profile set <p> switch_at <n>` | inherit (85) |
 | **Switch at week** | this profile's `switch_at_weekly` | `cs profile set <p> switch_at_weekly <n>` | inherit (98) |
 | **Hard floor** | this profile's `hard_floor` | `cs profile set <p> hard_floor <n>` | inherit (99) |
 | **Landing margin** | this profile's `landing_margin` | `cs profile set <p> landing_margin <n>` | inherit (10) |
 | **Count model limits** | this profile's `models` | `cs profile set <p> models <list>` | inherit (none) |
+| **Spend first** | this profile's `prefer`: **Inherit**, **Most room** or **Expiring quota** (a menu) | `cs profile set <p> prefer room\|expiring` | inherit (Most room) |
 | **Chrome profile** | the Chrome profile Claude in Chrome is used from for this profile's accounts that have none of their own. Lists your Chrome profiles by name | `cs profile set <p> chrome <name>`; `inherit` for the default | Chrome's last used |
 | **Open Claude Code** | your terminal running Claude Code in this profile | `cs run <p>` | |
 | **Open Chrome** | opens the live account's Chrome profile | `cs chrome open <id>` | |

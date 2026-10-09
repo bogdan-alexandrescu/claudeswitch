@@ -63,6 +63,8 @@ final class Store: ObservableObject {
     @Published private(set) var values: ConfigValues?
     @Published private(set) var daemon: DaemonStatus?
     @Published private(set) var recovery: [RecoveryItem]?
+    /// F3, F5, F7, F12 (Store+Next.swift).
+    @Published var next = NextState()
 
     /// Keys of the actions running now, for progress indicators.
     @Published private(set) var busy: Set<String> = []
@@ -222,6 +224,9 @@ final class Store: ObservableObject {
         recovery = fixtures.recovery
         timer = Timer() // never scheduled; marks the store as started
         chromeProfiles = fixtures.chromeProfiles
+        next.history = fixtures.history
+        next.doctor = fixtures.doctor
+        next.pinLifts = fixtures.pinLifts
     }
 
     func start() {
@@ -237,6 +242,7 @@ final class Store: ObservableObject {
                 || root.identifier?.rawValue.hasPrefix(SettingsView.windowID) == true
             MainActor.assumeIsolated { self?.surface = settings ? .settings : .popover }
         }
+        ReloginNotifier.shared.install(self)
         refresh(full: true, profiles: true)
         watcher = DirectoryWatcher(path: paths.stateDir) { [weak self] in
             Task { @MainActor in self?.stateChanged() }
@@ -293,8 +299,14 @@ final class Store: ObservableObject {
                 if applied.contains(.settings) { self.settingsAt = Date() }
                 if applied.contains(.profiles) && reading.profilesError == nil { self.profilesAt = Date() }
                 self.rebuild()
+                if full { self.refreshedNext() }
                 self.inFlight -= 1
                 self.refreshing = self.inFlight > 0
+                if full && self.firstReadPath == nil {
+                    let path = self.data.settings?.path
+                    self.firstReadPath = .some(path)
+                    self.didFirstRead?(path)
+                }
             }
         }
     }
@@ -302,6 +314,37 @@ final class Store: ObservableObject {
     /// The snapshot from the data as it is now.
     private func rebuild() {
         snapshot = data.snapshot(now: fixedNow ?? Date())
+        if let s = snapshot { didRebuild?(s) }
+    }
+
+    // MARK: app flows (F6, F9, F11)
+
+    /// Called with every new snapshot: the notifications compare it with
+    /// the last one, and queued shortcuts run once there is one.
+    var didRebuild: ((Snapshot) -> Void)?
+    /// Called once, after the first full read: whether there is a config
+    /// (`config --json`'s path, or the default one) decides the welcome.
+    /// Set late (after the read) it is called at once.
+    var didFirstRead: ((String?) -> Void)? {
+        didSet { if let p = firstReadPath { didFirstRead?(p) } }
+    }
+    /// nil until the first full read; then its config path (itself nil
+    /// when the CLI could not be read).
+    private var firstReadPath: String??
+    /// Switches made from the app, so the notification for them is not
+    /// posted back (F11).
+    private(set) var appSwitches = AppSwitches()
+
+    /// `daemon status --json`, for the setup window.
+    func loadDaemon() {
+        guard !preview else { return }
+        Task {
+            switch await call("load:daemon", { $0.daemon(.status) }) {
+            case .success(let x): daemon = x
+            case .failure(.app(let e)) where e.code == "not_installed" || e.code == "unsupported_platform": daemon = nil
+            case .failure: break
+            }
+        }
     }
 
     // MARK: running actions
@@ -384,6 +427,7 @@ final class Store: ObservableObject {
     // MARK: actions
 
     func use(_ account: String, profile: String) {
+        appSwitches.record(profile: profile, to: account, at: Date())
         act("use:\(profile)", title: "Could not switch \(profile) to \(account)", profiles: true, card: profile,
             { $0.use(account, profile: profile) }) { [weak self] r in
             var text = "\(r.profile) now uses \(r.account)"
@@ -594,6 +638,9 @@ struct PreviewData {
     var values: ConfigValues?
     var daemon: DaemonStatus?
     var recovery: [RecoveryItem]?
+    var history: UsageHistory?
+    var doctor: DoctorReport?
+    var pinLifts: [String: PinLift] = [:]
 }
 
 /// Watches a directory for entries being written, created or renamed — which

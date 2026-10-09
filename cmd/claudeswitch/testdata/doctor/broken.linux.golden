@@ -1,0 +1,34 @@
+
+  [ok  ] config          $CFGDIR/config.toml
+  [warn] config          hard_floor (90) is below switch_at_weekly (95), so every weekly rotation counts as forced: it skips the 10m0s cooldown and swaps mid-turn rather than at an idle gap. Raise hard_floor above 95 to keep both.
+  [FAIL] vault entries   corrupted
+         └ a1 and a2 hold the same credential
+         └ fix: re-add the affected accounts while each is signed in
+  [FAIL] daemon          older than this binary (0.5.2)
+         └ the running daemon (0.5.1, started at an unknown time) is older than this cs (0.5.2); restart it: systemctl --user restart claudeswitch.service
+  [ok  ] service qos     not throttled
+  [FAIL] credentials     $BACKEND
+         └ keychain says no
+         └ fix: approve access when macOS asks, or click Always Allow
+  [ok  ] profile        default (CLAUDE_CONFIG_DIR unset)
+         └ dir         $HOME/.claude
+         └ live item  $HOME/.claude/.credentials.json
+         └ pool        a1, a2
+  [ok  ] profile        work (CLAUDE_CONFIG_DIR=~/.claude-work)
+         └ dir         $HOME/.claude
+         └ live item  $HOME/.claude/.credentials.json
+         └ pool        a3
+  [FAIL] transcripts     $HOME/.claude/projects (0 project dirs)
+  [ok  ] auto-refresh    renews at 1h0m0s before expiry; probes idle accounts every 24h0m0s
+  [ok  ] poll cadence    active 3m0s · hot 1m0s · idle 10m0s
+         └ 3.8 of 11 usage calls per 5 min (api_budget 12, one held for swaps)
+  [ok  ] account rate    in use 20/h · hot 60/h for up to 15m · idle 6/h
+         └ each account's allowance is ~20 calls and refills ~30/h; a hot spell spends 7.5 of the 10 held for it (hot_reserve)
+         └ routine reads leave it alone; the account in use dips into it only once its reading is 3m15s old (stale-decision warning at 4m0s)
+         └ 2/h set aside on a live account (unseen_calls_per_hour) for Claude Code's own reads
+  [ok  ] credentials     2 vaulted; `cs doctor --verify` checks each one works
+  [ok  ] switching       live rotation is wired; `cs plan` says what it would do
+  [info] status line     not set; `cs statusline install` adds it
+  [info] claude plugin   not installed; see README, "Inside Claude Code"
+
+exit: 1 (4 doctor check(s) failed)

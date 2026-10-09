@@ -6,7 +6,7 @@ import SwiftUI
 @main
 struct ClaudeSwitchBarApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @StateObject private var store = Store()
+    @StateObject private var store = AppHub.store
     @StateObject private var login = LoginItem()
 
     init() {
@@ -29,6 +29,7 @@ struct ClaudeSwitchBarApp: App {
                                              problem: store.problem),
                          glyph: GlyphReading.of(store.problem == .missing ? nil : store.snapshot,
                                                 profile: store.menuProfile))
+                .background(SettingsOpener(store: store))
         }
         .menuBarExtraStyle(.window)
 
@@ -47,6 +48,37 @@ struct ClaudeSwitchBarApp: App {
 let menuBarLog = Logger(subsystem: "xyz.claudeswitch.menubar", category: "menubar")
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        listenForURLs()
+    }
+
+    /// claudeswitch://switch-best?profile=…, pin, unpin, status (F6): the
+    /// URL scheme Shortcuts' "Open URL" and Raycast use.
+    func listenForURLs() {
+        NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(handleGetURL(_:withReplyEvent:)),
+                                                     forEventClass: AEEventClass(kInternetEventClass),
+                                                     andEventID: AEEventID(kAEGetURL))
+    }
+
+    @objc func handleGetURL(_ event: NSAppleEventDescriptor, withReplyEvent reply: NSAppleEventDescriptor) {
+        guard let s = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
+              let url = URL(string: s) else { return }
+        open(url)
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        urls.forEach(open)
+    }
+
+    func open(_ url: URL) {
+        guard let c = ShortcutURL.parse(url) else {
+            flowsLog.error("not a claudeswitch command: \(url.absoluteString, privacy: .public)")
+            return
+        }
+        flowsLog.notice("shortcut \(c.verb, privacy: .public)")
+        Task { @MainActor in ShortcutRunner.run(c) }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // LSUIElement does this for the bundle; this covers `swift run`.
         NSApp.setActivationPolicy(.accessory)
@@ -77,6 +109,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return
         }
+        // SwiftUI may have set its own URL handler since; this one wins.
+        listenForURLs()
+        Task { @MainActor in AppHub.start() }
         let compact = UserDefaults.standard.bool(forKey: "compactMenuBar")
         menuBarLog.notice("launched \(Bundle.main.bundlePath, privacy: .public); icon only: \(compact, privacy: .public)")
         // SwiftUI makes the status item itself and says nothing when the
@@ -126,6 +161,10 @@ enum Render {
         fx.values = data("config.json").flatMap(ConfigValues.init(data:))
         fx.daemon = data("cli-daemon-status.json").flatMap(DaemonStatus.init(data:))
         fx.recovery = data("cli-recovery.json").flatMap(RecoveryItem.list(data:))
+        fx.history = data("cli-history-usage.json").flatMap(UsageHistory.init(data:))
+        fx.doctor = data("cli-doctor.json").flatMap(DoctorReport.init(data:))
+        // F3: a set may bring audit log lines, for a lifted pin's notice.
+        fx.pinLifts = data("render-audit.jsonl").map(PinLift.latest(jsonl:)) ?? [:]
         let store = Store(preview: snap, binaryPath: "~/.local/bin/claudeswitch", fixtures: fx)
         let missing = Store(preview: nil, problem: .missing)
         let login = LoginItem()
@@ -168,6 +207,25 @@ enum Render {
                  size: nil, dark: dark, to: out + "/popover-bars\(dark ? "-dark" : "").png")
         }
         store.usageMode = .dials
+        flows(store: store, login: login, out: out)
+    }
+
+    /// F9 and F10: the setup window at its first step and mid-way, and the
+    /// popover offering an update (fixture versions; no call is made).
+    static func flows(store: Store, login: LoginItem, out: String) {
+        for dark in [false, true] {
+            let sfx = dark ? "-dark" : ""
+            save(WelcomeView(renderFacts: SetupFacts()).environmentObject(store),
+                 size: nil, dark: dark, to: out + "/welcome\(sfx).png")
+            var mid = SetupFlow()
+            mid.complete(.addAccounts)
+            save(WelcomeView(flow: mid, renderFacts: SetupFacts(accounts: 3, profiles: 0)).environmentObject(store),
+                 size: nil, dark: dark, to: out + "/welcome-profile\(sfx).png")
+            AppHub.updates.preview(available: "0.5.6")
+            save(PopoverView().environmentObject(store).environmentObject(login),
+                 size: nil, dark: dark, to: out + "/popover-update\(sfx).png")
+            AppHub.updates.preview(available: nil)
+        }
     }
 
     /// The states the base set does not reach: every card expanded, the
@@ -290,7 +348,8 @@ struct MoreMenuFacsimile: View {
 
     var main: [Row] {
         [.item("Refresh now", "⌘R", false), .item("Appearance", nil, true), .item("Show usage as", nil, true),
-         .divider, .item("Settings…", nil, false), .item("About ClaudeSwitch", nil, false),
+         .divider, .item("Settings…", nil, false), .item("Set up…", nil, false), .item("Check for updates", nil, false),
+         .item("About ClaudeSwitch", nil, false),
          .divider, .item("Quit ClaudeSwitch", "⌘Q", false)]
     }
 

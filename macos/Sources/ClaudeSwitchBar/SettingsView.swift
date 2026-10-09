@@ -4,7 +4,7 @@ import SwiftUI
 
 enum Pane: String, CaseIterable, Identifiable {
     case profiles = "Profiles", accounts = "Accounts", rotation = "Rotation", polling = "Polling",
-         daemon = "Daemon", advanced = "Advanced"
+         daemon = "Daemon", history = "History", health = "Health", advanced = "Advanced"
 
     var id: String { rawValue }
 
@@ -15,6 +15,8 @@ enum Pane: String, CaseIterable, Identifiable {
         case .rotation: return "arrow.triangle.2.circlepath"
         case .polling: return "timer"
         case .daemon: return "gearshape.2"
+        case .history: return "chart.xyaxis.line"
+        case .health: return "stethoscope"
         case .advanced: return "slider.horizontal.3"
         }
     }
@@ -80,13 +82,22 @@ struct SettingsView: View {
         .onAppear {
             store.acting(in: .settings)
             store.loadSettings()
+            openRequested(store.next.settingsRequest)
         }
+        .onChange(of: store.next.settingsRequest, perform: openRequested)
         .sheet(item: $store.addAccount) { req in
             AddAccountSheet(request: req).environmentObject(store)
         }
         .alert(item: store.alertBinding(.settings)) { a in
             Alert(title: Text(a.title), message: Text(a.hint.isEmpty ? a.message : a.message + "\n\n" + a.hint))
         }
+    }
+
+    /// A notification's action asked for a pane (F5: sign in again).
+    func openRequested(_ r: SettingsRequest?) {
+        guard let r else { return }
+        pane = r.pane
+        store.next.settingsRequest = nil
     }
 
     var detail: some View {
@@ -99,6 +110,8 @@ struct SettingsView: View {
                 case .polling: SchemaPane(pane: .polling, title: "Polling",
                                           subtitle: "How often the daemon reads each account's usage.")
                 case .daemon: DaemonPane()
+                case .history: HistoryPane()
+                case .health: HealthPane()
                 case .advanced: AdvancedPane()
                 }
             }
@@ -220,7 +233,7 @@ struct SettingRow: View {
     @ViewBuilder var control: some View {
         if setting.type == "enum" {
             Picker("", selection: Binding(get: { current }, set: { save($0) })) {
-                ForEach(setting.enumValues, id: \.self) { Text($0).tag($0) }
+                ForEach(setting.enumValues, id: \.self) { Text(SettingNames.value(setting, $0)).tag($0) }
             }
             .labelsHidden()
             .accessibilityLabel(settingLabel(setting.key))
@@ -427,6 +440,7 @@ struct AdvancedPane: View {
                         Button("Choose…") { chooseBinary() }
                     }
                 }
+                AppFlowsRows(updates: AppHub.updates, notifier: AppHub.notifier, hotKey: AppHub.hotKey)
             }
             if let schema = store.schema {
                 Section("Settings") {

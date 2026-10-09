@@ -89,3 +89,34 @@ func TestHoldsAccountWhyExpiredLockIsAskedAgain(t *testing.T) {
 		t.Errorf("%d identity lookups, want 1", ep.profiles)
 	}
 }
+
+// The seat check before a swap may spend the account's hot reserve. At
+// Scheduled priority it needed that reserve untouched as well, so while the
+// daemon polled an account closely the check was refused and every swap into
+// another profile's account was refused as "could not be confirmed absent"
+// (observed 2026-10-08).
+func TestHoldsAccountWhyMayUseTheHotReserve(t *testing.T) {
+	v, ep := testVaultWith(t, map[string]*keychain.Blob{"x": vaulted("x-vaulted", "ux@org")},
+		nil, map[string]string{"x-fresh-login": "ux@org"})
+	b := usage.NewBudget()
+	b.SetAllowance(100) // the window is not what this is about
+	v.budget = b
+	// Poll the live token until a scheduled read is refused for its account.
+	refused := false
+	for i := 0; i < usage.AccountBurst; i++ {
+		if ok, _ := b.Allow("x-fresh-login", usage.Scheduled); !ok {
+			refused = true
+			break
+		}
+	}
+	if !refused {
+		t.Fatal("setup: scheduled reads never ran into the account's reserve")
+	}
+	holds, known, _ := v.HoldsAccountWhy(context.Background(), item("b", "x-fresh-login"), "x", "ux@org")
+	if !known || !holds {
+		t.Fatalf("(holds %v, known %v) with only the hot reserve left, want a settled answer", holds, known)
+	}
+	if ep.profiles != 1 {
+		t.Errorf("%d identity lookups, want 1", ep.profiles)
+	}
+}

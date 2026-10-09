@@ -156,6 +156,10 @@ func settings() []setting {
 				c.LandingMargin = &n
 				return nil
 			}, help: "a switch target needs this many points below its own trigger (0 = off)"},
+		{name: "prefer", kind: "enum", enum: []string{config.PreferRoom, config.PreferExpiring}, profile: true,
+			get:  func(c *config.Config) string { return c.Preference() },
+			set:  func(c *config.Config, v string) error { c.Prefer = strings.TrimSpace(v); return nil },
+			help: `which eligible account a rotation takes: "room", the most room, or "expiring", the weekly window resetting soonest with quota unused`},
 		{name: "blind_failover_polls", kind: "int", min: num(0),
 			get: func(c *config.Config) string { return strconv.Itoa(c.BlindPolls()) },
 			set: func(c *config.Config, v string) error {

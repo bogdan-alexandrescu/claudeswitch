@@ -273,6 +273,9 @@ struct DotBarView: View {
 
     var pct: Double? { window?.utilization }
 
+    /// Dot diameter, in points.
+    static let dot: CGFloat = 7
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
@@ -284,14 +287,19 @@ struct DotBarView: View {
             let n = Dots.barCount
             let on = Dots.litOnBar(pct, count: n)
             let ti = Dots.barThreshold(trigger, count: n)
-            HStack(spacing: 3) {
+            // Each dot has an explicit diameter. A bare Circle has no size of
+            // its own, so in the popover (which sizes to its content) the dots
+            // collapsed to nothing; only the fixed-size renders showed them.
+            HStack(spacing: 0) {
                 ForEach(0..<n, id: \.self) { i in
                     Circle()
                         .fill(i == ti ? Color.csTick : i < on ? lit : Color.csTrack)
-                        .aspectRatio(1, contentMode: .fit)
+                        .frame(width: Self.dot, height: Self.dot)
                         .scaleEffect(i == ti ? 1.3 : 1)
+                        .frame(maxWidth: .infinity)
                 }
             }
+            .frame(height: Self.dot * 1.3)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title): \(detail), switches at \(Int(trigger))%")

@@ -37,12 +37,23 @@ the CLI command it runs, and its default.
   and the call budget.
 - [Settings → Daemon](app/settings-daemon.md): status, live or dry run, and
   managing the service.
+- [Settings → History](app/settings-history.md): each account's session and
+  week over 30 days, with its switches.
+- [Settings → Health](app/settings-health.md): every `cs doctor` check, with a
+  Fix button for what fails.
 - [Settings → Advanced](app/settings-advanced.md): Appearance, dials or bars,
   the terminal, Icon only, the binary, and the advanced settings.
 - [Add account](app/add-account.md): signing in with a browser, or saving the
   current login.
 - [Claude in Chrome in the app](app/chrome.md): Chrome profiles per profile
   and per account, and the sign-in banner.
+- [First-run setup](app/first-run.md): the welcome window's four steps, and
+  Set up… to open it again.
+- [Updates](app/updates.md): the daily check, and Update, which verifies and
+  installs the app and the binary together.
+- [Shortcuts, Raycast and the hotkey](app/shortcuts.md): the
+  `claudeswitch://` URLs, the Switch to best hotkey, and the notifications'
+  Undo, Pin here and Sign in.
 
 ## The cs CLI
 

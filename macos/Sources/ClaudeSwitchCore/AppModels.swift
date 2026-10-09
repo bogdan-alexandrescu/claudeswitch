@@ -119,7 +119,7 @@ public enum SettingsPane: String, CaseIterable {
     case rotation, polling, advanced
 
     static let rotationKeys = ["switch_at", "switch_at_weekly", "hard_floor", "landing_margin", "switch_when",
-                               "max_switch_wait", "cooldown", "models"]
+                               "max_switch_wait", "cooldown", "models", "prefer"]
     static let pollingKeys = ["hot_threshold", "poll_active", "poll_hot", "poll_idle", "api_budget",
                               "blind_failover_polls"]
 
@@ -243,6 +243,9 @@ public struct ProfileInfo: Equatable, Identifiable {
     /// last-used profile. Its display name when Chrome lists it.
     public var chrome: String?
     public var chromeName: String?
+    /// F4: the folders that pick this profile (globs); nil from a CLI that
+    /// predates them, and the Folders field is hidden.
+    public var paths: [String]?
 
     init?(_ j: JSON) {
         guard let name = j["name"].string else { return nil }
@@ -263,6 +266,9 @@ public struct ProfileInfo: Equatable, Identifiable {
         thresholds = Thresholds(j["thresholds"])
         chrome = nonEmpty(j["chrome"])
         chromeName = nonEmpty(j["chrome_name"])
+        // Go writes an empty list as null, so the key alone says it is known.
+        let keys = (j.raw as? [String: Any])?.keys
+        paths = keys?.contains("paths") == true ? j["paths"].array.compactMap(\.string) : nil
     }
 }
 

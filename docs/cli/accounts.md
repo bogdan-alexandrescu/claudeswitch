@@ -207,7 +207,7 @@ profile keys, and `seat`, `org_id`, `email` and `plan` when known.
 cs account list [--json]
 cs account rename <old> <new> [--json]
 cs account delete <id> [--yes] [--json]        (also: account remove)
-cs account pin <id> [--json]
+cs account pin <id> [--hard] [--json]
 cs account unpin [<id>] [--profile NAME] [--json]
 cs account priority <id>... [--json]
 ```
@@ -217,10 +217,17 @@ The account commands the app runs. Each takes `--json` and `--config`.
 ### cs account list
 
 Every account, with its profile, the profile it is live in, whether it is
-pinned, its state (`available`, `needs_login`, `refused`, ...), plan, email,
+pinned (and whether hard, `pin_hard`), its state (`available`, `needs_login`, `refused`, ...), plan, email,
 seat, login expiry and its last reading (`five_hour`, `seven_day`,
 `binding`, `refused_until`, `error`). This is what Settings → Accounts
 shows. Shape: [APP_CLI.md → account](../APP_CLI.md#account).
+
+`refresh_expires_at` (in `--json`) is when the account's refresh token
+expires, as state.json last recorded it — never read from the keychain, so
+the app's re-login reminders (IMPROVEMENTS F5) can poll it. The daemon
+records it whenever it polls the account, live or vaulted, and the CLI when
+it vaults one; it is `null` when unknown (never recorded, or a credential
+that does not report it, such as one from `login --direct`).
 
 ### cs account rename
 
@@ -237,6 +244,16 @@ The same as [`cs remove`](#cs-remove).
 live account can be pinned (`not_active` otherwise); a pin on another would
 hold the profile on whatever it is using now. The popover's **Pin** runs it.
 
+**The pin safety valve.** If the pinned account is refused (a 429 in the
+transcripts), is out of quota (a current reading at 100% on either window)
+or needs a sign-in (its refresh token has expired, or its last read failed
+with an error only a sign-in cures), the daemon lifts the pin and rotates as
+usual. It says why in its log, in a notification and in the audit log
+(`kind: unpin`): `pin on work-1 lifted: it was refused`. `cs why` shows the
+same before the daemon acts. A dry-run daemon lifts nothing and records
+what it would have done once (`[dry-run]`). `--hard` keeps the pin even
+then, as every pin did before; a plain `pin` replaces a hard one.
+
 `unpin` turns automatic rotation back on: in the profile `--profile` names,
 in every profile pinned to `<id>`, or, with neither, in every profile.
 
@@ -244,6 +261,7 @@ in every profile pinned to `<id>`, or, with neither, in every profile.
 
 ```json
 {
+  "pin_hard": false,
   "pinned": "work-1",
   "profile": "default"
 }

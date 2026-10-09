@@ -1,0 +1,18 @@
+{
+  "url": "https://api.github.com/repos/you/claudeswitch/releases/1",
+  "html_url": "https://github.com/bogdan-alexandrescu/claudeswitch/releases/tag/v0.5.6",
+  "tag_name": "v0.5.6",
+  "name": "v0.5.6",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-10-08T09:00:00Z",
+  "body": "Fixture release for the app's update checker.",
+  "assets": [
+    {"name": "checksums.txt", "size": 411, "browser_download_url": "https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/v0.5.6/checksums.txt"},
+    {"name": "claudeswitch_v0.5.6_darwin_amd64.tar.gz", "size": 29, "browser_download_url": "https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/v0.5.6/claudeswitch_v0.5.6_darwin_amd64.tar.gz"},
+    {"name": "claudeswitch_v0.5.6_darwin_arm64.tar.gz", "size": 29, "browser_download_url": "https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/v0.5.6/claudeswitch_v0.5.6_darwin_arm64.tar.gz"},
+    {"name": "claudeswitch_v0.5.6_linux_amd64.tar.gz", "size": 28, "browser_download_url": "https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/v0.5.6/claudeswitch_v0.5.6_linux_amd64.tar.gz"},
+    {"name": "ClaudeSwitch-0.5.6-macos.zip", "size": 16, "browser_download_url": "https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/v0.5.6/ClaudeSwitch-0.5.6-macos.zip"},
+    {"name": "ClaudeSwitch-0.5.6-macos.zip.sha256", "size": 95, "browser_download_url": "https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/v0.5.6/ClaudeSwitch-0.5.6-macos.zip.sha256"}
+  ]
+}

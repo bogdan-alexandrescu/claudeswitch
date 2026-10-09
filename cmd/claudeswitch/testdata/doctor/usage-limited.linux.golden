@@ -1,0 +1,27 @@
+
+  [ok  ] config          $CFGDIR/config.toml
+  [ok  ] vault entries   each holds its own credential
+  [ok  ] service qos     not throttled
+  [ok  ] credentials     $BACKEND
+         └ access token …, expires unknown (not reported for this credential)
+         └ refresh token expires unknown (not reported for this credential)
+         └ mcpOAuth present: false (must be preserved across a swap)
+  [warn] usage api       rate limited, clears in 1m0s (expected, not a fault)
+  [ok  ] profile        default (no [[profile]] blocks: as this environment's CLAUDE_CONFIG_DIR says)
+         └ dir         $HOME/.claude
+         └ live item  $HOME/.claude/.credentials.json
+         └ pool        empty — this profile has no account to rotate to
+  [ok  ] transcripts     $HOME/.claude/projects (0 project dirs)
+  [warn] auto-refresh    OFF (auto_refresh = false) — vaulted tokens will expire
+  [ok  ] poll cadence    active 3m0s · hot 1m0s · idle 10m0s
+         └ 0.0 of 11 usage calls per 5 min (api_budget 12, one held for swaps)
+  [ok  ] account rate    in use 20/h · hot 60/h for up to 15m · idle 6/h
+         └ each account's allowance is ~20 calls and refills ~30/h; a hot spell spends 7.5 of the 10 held for it (hot_reserve)
+         └ routine reads leave it alone; the account in use dips into it only once its reading is 3m15s old (stale-decision warning at 4m0s)
+         └ 2/h set aside on a live account (unseen_calls_per_hour) for Claude Code's own reads
+  [ok  ] credentials     2 vaulted; `cs doctor --verify` checks each one works
+  [ok  ] switching       live rotation is wired; `cs plan` says what it would do
+  [ok  ] status line     set in $HOME/.claude/settings.json
+  [info] claude plugin   not installed; see README, "Inside Claude Code"
+
+exit: 0

@@ -14,7 +14,7 @@ import (
 
 type Event struct {
 	At   time.Time `json:"at"`
-	Kind string    `json:"kind"` // decision | switch | rejection | error
+	Kind string    `json:"kind"` // decision | switch | rejection | unpin | severity | error
 	// Profile is the Claude Code profile the event concerns, "default" when
 	// none are configured. Empty on events from before profiles, and on
 	// account-wide events (severity) that belong to no one profile.

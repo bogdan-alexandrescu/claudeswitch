@@ -118,7 +118,7 @@ generated from the same table, in its order:
 (comma-separated). `min`/`max` are `null` when unbounded. Cross-setting
 rules (`hard_floor` at or above `switch_at`; the poll cadence fitting
 `api_budget`) are not in the schema: `set` refuses them with
-`invalid_value`. `scopes` contains `profile` for the five keys
+`invalid_value`. `scopes` contains `profile` for the six keys
 `profile set` takes. Numbers must be finite: `NaN` and `Inf` are
 `invalid_value`.
 
@@ -151,6 +151,21 @@ Errors: `not_found` (unknown key), `invalid_value`, `usage`,
 `config_invalid`. (`config <key>` and `config <key> <value>` without the
 verb still work.)
 
+**`prefer`** (contract 2, additive, IMPROVEMENTS F1) is in `config --json`,
+`config get`/`set` and `config schema` (listed right after
+`landing_margin`, with the rotation settings; Settings → Rotation):
+
+```json
+{"key": "prefer", "type": "enum", "default": "room", "min": null, "max": null,
+ "min_exclusive": false, "enum": ["room", "expiring"], "scopes": ["global", "profile"],
+ "description": "which eligible account a rotation takes: \"room\", the most room, or \"expiring\", the weekly window resetting soonest with quota unused"}
+```
+
+`room` (the default) is the most-room rule as before; `expiring` takes the
+eligible account whose weekly window resets soonest while it still has quota
+unused, room breaking ties. Eligibility is the same either way. It also
+decides `why --json`'s `best`.
+
 A config may still carry account `scope` lines and `[project.…]` tables
 from before lane 16. It loads: they are ignored, and commands that load the
 config print one warning naming them (the daemon logs it at start and when
@@ -177,7 +192,8 @@ saying what would go. Errors also: `no_config`, `config_invalid`.
 ```json
 {"profiles": [
   {"name": "work", "dir": "~/.claude-work", "from_env": false, "declared": true,
-   "pool": ["w1", "w2"], "listed": ["w1", "w2"], "live": "w1", "pinned": null, "signed_in": "yes",
+   "pool": ["w1", "w2"], "listed": ["w1", "w2"], "paths": ["~/src/work/**"],
+   "live": "w1", "pinned": null, "signed_in": "yes",
    "overrides": {"switch_at": "75"},
    "thresholds": {"switch_at": 75, "switch_at_weekly": 98, "hard_floor": 99, "landing_margin": 10},
    "chrome": "Profile 1", "chrome_name": "Work",
@@ -187,7 +203,8 @@ saying what would go. Errors also: `no_config`, `config_invalid`.
 ```
 
 `dir` is as written (`null`: Claude Code's default, `CLAUDE_CONFIG_DIR`
-unset). `pool` is the effective pool (D6 included); `listed` is what the
+unset). `paths` (contract 2, additive, IMPROVEMENTS F4) are the folders the
+profile is picked for, as written (globs; `[]` when none; below). `pool` is the effective pool (D6 included); `listed` is what the
 config's `pool` lists (lane 15), so an account in `pool` but not `listed`
 is `default`'s by D6 alone and moves with `pool add`. `signed_in` is `yes`,
 `no` or `unknown` (the lookup failed). `live` is what state records.
@@ -270,7 +287,8 @@ in the profile it leaves, or anywhere but the profile it joins, is `live`
 
 `claudeswitch profile set <profile> <key> <value> --json` — a per-profile
 override (D4) of `switch_at`, `switch_at_weekly`, `hard_floor`,
-`landing_margin` or `models`. `inherit` (or `""`) removes the override;
+`landing_margin`, `prefer` (`room` or `expiring`, F1) or `models`.
+`inherit` (or `""`) removes the override;
 for `models`, `none` is an empty list (count no model here) and
 `a,b` a list:
 
@@ -298,6 +316,40 @@ name Chrome does not list — the `hint` lists Chrome's profiles; an unknown
 or undeclared profile), `invalid_value` (a folder that could be read as a
 flag or a path, or a name two Chrome profiles share).
 
+`claudeswitch profile set <profile> paths <a,b|inherit> --json` (F4,
+additive): the folders the profile is picked for, written as
+`paths = ["a", "b"]` in its `[[profile]]`. A pattern is absolute or from
+`~/`, with `*` and `?` within a folder name and `**` for any number of
+folders; a folder belongs to a pattern when the pattern matches it or one
+of its parents. Two profiles' paths that could match one folder do not load.
+`inherit` (or `""`) removes them:
+
+```json
+{"profile": "work", "key": "paths", "override": ["~/src/work/**", "~/clients/acme"],
+ "effective": ["~/src/work/**", "~/clients/acme"], "path": "/…/config.toml"}
+```
+
+`override` is `null` and `effective` `[]` after `inherit`. Errors:
+`invalid_value` (a relative pattern, `[`, `\`, `.`/`..`, a `**` inside a
+name, or an overlap with another profile's paths — the message names
+both), `not_found` (an unknown or undeclared profile).
+
+`claudeswitch profile which [--dir PATH] --json` (F4) — the profile a
+folder (default: the working directory) picks, from the config alone:
+
+```json
+{"dir": "/Users/person1/src/work/api", "profile": "work", "pattern": "~/src/work/**",
+ "rule": "paths", "config_dir": "~/.claude-work", "from_env": false}
+```
+
+`rule` is `paths` (`pattern` matched), `default` (none did; `pattern`
+`null`) or `none` (none did and there is no `default`: `profile` and
+`config_dir` `null`). `config_dir` is the profile's `dir` as written,
+`null` without one. `cs run` with no name starts this profile, and
+`cs profile hook zsh|bash|fish` prints a shell hook that sets
+`CLAUDE_CONFIG_DIR` to it on each change of folder (not an app action).
+Errors: `config_invalid`.
+
 ## account
 
 `claudeswitch account list --json` (lane 15) — every configured account,
@@ -308,7 +360,7 @@ test fails if it runs `security`), so the app may run it on every refresh:
 {"accounts": [
   {"id": "work-1", "email": "person1@example.com", "plan": "Max 20x",
    "seat": "aaaaaaaa-…@11111111-…", "enabled": true, "profile": "default", "active_in": "default",
-   "pinned": false, "refresh_expires_at": "…", "access_expires_at": "…", "state": "available",
+   "pinned": false, "pin_hard": false, "refresh_expires_at": "…", "access_expires_at": "…", "state": "available",
    "reading": {"five_hour": 3, "seven_day": 41, "binding": "seven_day", "at": "…", "error": null,
                "refused_until": null, "refused_window": null}}]}
 ```
@@ -321,8 +373,15 @@ test fails if it runs `security`), so the app may run it on every refresh:
   names whenever it reads one to poll. `null` until then.
 - `seat` is the config's `account_uuid@org_id` (`null` when unpinned);
   `profile` the pool owner (D6 included); `active_in` the profile state
-  records it live in; `pinned` whether a profile is pinned to it.
+  records it live in; `pinned` whether a profile is pinned to it;
+  `pin_hard` (contract 2, additive, F3) whether such a pin is hard
+  (`account pin --hard`), `false` when it is not pinned.
 - `refresh_expires_at` / `access_expires_at` are what the daemon last saw.
+  `refresh_expires_at` (F5) is read from state.json, never the keychain; the
+  daemon records it on every poll of the account, live or vaulted, and the
+  CLI when it vaults one. `null` when unknown (never recorded, or a
+  credential that does not report it, e.g. one from `login --direct`). The
+  app's re-login reminder fires within 5 days of it.
 - `state`: `needs_login` (the last error is one only a sign-in cures, or
   the refresh token has expired), `refused` (`reading.refused_until`),
   `available`, `reserved` (over its configured `reserve`) or `unknown`
@@ -377,10 +436,27 @@ kept, and the error is `config_changed`.
 `profile create --seed` and `profile seed` wait the same way, for the hash
 of the config they wrote as well as for the profile.
 
-`claudeswitch account pin <id> --json` → `{"profile": "work", "pinned": "w1"}`.
+`claudeswitch account pin <id> [--hard] --json` → `{"profile": "work", "pinned": "w1", "pin_hard": false}`.
 Suspends automatic rotation in the profile the account belongs to. Only the
 account live there can be pinned (`not_active` otherwise, and for a disabled
 account no profile's pool holds).
+
+The pin safety valve (contract 2, additive, IMPROVEMENTS F3): when the
+pinned account is refused (a 429 in the transcripts), out of quota (a
+current reading at 100% on either window) or needs a sign-in (its refresh
+token has expired, or its last read failed, counted, with an error only a
+sign-in cures), a live daemon lifts the pin and rotates as usual, saying so
+in its log, a notification and the audit log:
+
+```json
+{"at": "…", "kind": "unpin", "profile": "work", "from": "w1", "reason": "pin on w1 lifted: it was refused"}
+```
+
+A dry-run daemon lifts nothing; it writes that row once with `"dry_run":
+true`. `--hard` (`pin_hard: true`) keeps the pin even then, as every pin did
+before; a plain `pin` replaces a hard one, and `unpin` clears both. While a
+lift is due, `why --json`'s `decision` carries `"unpin": "pin on w1 lifted:
+it was refused"` and is the decision rotation makes unpinned.
 
 `claudeswitch account unpin [<id>] [--profile P] --json` → `{"unpinned": ["work"]}`.
 With an id, every profile pinned to it; with `--profile`, that one; with
@@ -566,6 +642,63 @@ week is at 85% of 98% (13 points) is `on_best: false`. The app reads
 `on_best` and falls back to comparing the higher of session and week only
 when the key is absent (an older binary).
 
+**Weekly expiry and runway** (contract 2, additive, IMPROVEMENTS F1 and F2).
+Every entry of `accounts` carries:
+
+- `weekly_resets_at` (RFC 3339 UTC) and `weekly_unused` (points: 100 less
+  the weekly utilization, a counted model's limit standing in as for every
+  decision): the weekly window as `prefer = "expiring"` weighs it. Both
+  `null` when unknown (no reading, no weekly figure or reset time, or a
+  reading of a week that has since reset), never `0`, whatever `prefer` is.
+- `trigger_at` (RFC 3339 UTC, or `null`): when the account reaches its
+  trigger at this pace (below).
+
+And each profile (the top level with one profile, each `profiles` entry with
+several) carries:
+
+- `pool_dry_at` (RFC 3339 UTC, or `null`): when the pool has no eligible
+  account left at this pace;
+- `pool_forecast`: `dry` (`pool_dry_at` is set; the time is now when the
+  live account is already past its trigger with nowhere to go), `refills`
+  (before the pool would run dry, a refusal clears or a binding window
+  resets on an account rotation cannot use now or one already being spent,
+  giving room back, so it does not run dry at this pace: `pool_refills_at`
+  is that moment; a reset of an account before rotation reaches it does not
+  count — it gives back only what that account used before), `idle` (the
+  live account's last two readings are level: not being spent) or
+  `unknown`;
+- `pool_refills_at` (RFC 3339 UTC, or `null` unless `refills`).
+
+The forecast: the pace is the live account's burn in points a minute, from
+its last two readings, both within 15 minutes (or three `poll_active`,
+whichever is longer) of each other and of now; a level pair carries the rate
+of the last rise only while that rise is that recent. Without such readings,
+or with an account in the pool that has no usable reading, the forecast is
+`unknown` and every time `null`: never a guess. The pool is spent as
+rotation would spend it: the live account to its trigger, then each account
+`best` could offer that clears the landing margin, in rotation's order
+(`prefer` included), each to its trigger at the same pace. Accounts not
+spent that way (inside the margin, reserved, refused, over their trigger,
+live elsewhere, needing a sign-in) have `trigger_at: null`, and so does any
+whose time falls after `pool_refills_at`. Example, one profile, `work-1`
+live at 40% and rising a point a minute, `work-team` at 5%:
+
+```json
+{"decision": {"kind": "stay", "reason": "active account at 42%, under the 85% trigger"},
+ "accounts": [
+   {"id": "work-1", "active": true, "trigger_at": "2026-10-09T14:45:00Z",
+    "weekly_resets_at": "2026-10-14T09:00:00Z", "weekly_unused": 90, …},
+   {"id": "work-team", "trigger_at": "2026-10-09T16:05:00Z",
+    "weekly_resets_at": "2026-10-09T23:00:00Z", "weekly_unused": 90, …}],
+ "pool_dry_at": "2026-10-09T16:05:00Z", "pool_forecast": "dry", "pool_refills_at": null, …}
+```
+
+`status --json` carries the same: `trigger_at` on each account (from the
+runway of the profile whose pool holds it) and the three pool keys at the
+top level with one profile, in each `profiles` entry with several. The
+daemon notifies once when `pool_dry_at` falls within 2 hours, and again only
+after the forecast has moved beyond that or to `refills`.
+
 ## chrome
 
 **C2: which Chrome profile.** One resolution serves `chrome open`, `chrome
@@ -697,3 +830,75 @@ its output).
 
 `claudeswitch chrome hint` is the plugin's PostToolUseFailure
 hook, not an app action: it reads the hook's JSON on stdin.
+
+## history
+
+`claudeswitch history --usage [--days N] --json` (F7, additive; default 30
+days) — each account's readings over the span and the switches, for
+Settings → History. It reads the daemon's readings log
+(`~/.local/state/claudeswitch/readings.jsonl`), the audit log and the
+config; never the keychain or the API:
+
+```json
+{"days": 30, "from": "2026-09-09T12:00:00Z", "to": "2026-10-09T12:00:00Z",
+ "accounts": [
+  {"id": "w1", "profile": "work", "configured": true,
+   "series": [{"at": "2026-10-09T11:58:02Z", "five_hour": 42, "seven_day": 61.5}]},
+  {"id": "w2", "profile": "work", "configured": true, "series": []}],
+ "switches": [
+  {"at": "2026-10-09T10:01:00Z", "profile": "work", "from": "w1", "to": "w2",
+   "reason": "active account at 86%, over the 85% session trigger", "forced": false}]}
+```
+
+- `accounts`: the configured accounts in `account list`'s order, then any
+  the log names that the config does not (`configured` false, `profile`
+  null). `profile` is the pool owner.
+- `series`: oldest first; `at` UTC; `five_hour` / `seven_day` percentages,
+  `null` when that window was not reported (never 0). The daemon writes one
+  point per new reading; points older than a day are thinned to one per
+  account per 15 minutes, and nothing older than 30 days is kept.
+- `switches`: the audit log's `switch` events in the span, oldest first
+  (the daemon's, `use`'s, a profile seed's); `from` null when unknown.
+
+Errors: `usage` (`--json` without `--usage`; `--days` under 1), `failed`
+(a log that cannot be read). A config that does not load is not an error:
+the accounts are then the log's, `profile` null.
+
+## doctor
+
+`claudeswitch doctor [--verify] --json` (F12, additive) — every check
+doctor prints, for Settings → Health:
+
+```json
+{"checks": [
+  {"name": "daemon", "status": "fail", "level": "fail", "message": "older than this binary (0.5.6)",
+   "details": ["the running daemon (0.5.5, started …) is older than this cs (0.5.6); restart it: …"],
+   "fix": "daemon restart", "account": null, "profile": null},
+  {"name": "refresh token", "status": "warn", "level": "warn",
+   "message": "personal           access in 5h0m0s · refresh token expires in 3d",
+   "details": [], "fix": "signin personal", "account": "personal", "profile": null}],
+ "failed": 1}
+```
+
+- One object per row of the text (`[ok  ]`, `[warn]`, `[FAIL]`, `[info]`),
+  in its order: `name` the row's name, `message` the rest of the row,
+  `details` its `└` lines. `status` is `ok`, `warn` or `fail`; `level` is
+  the row's mark (`info`, a note, has `status` `warn`).
+- `fix` is `signin <account>`, `daemon restart`, `statusline install`,
+  `keychain allow` or `null`:
+  - `daemon restart`: the running daemon is older than this binary;
+  - `statusline install`: the status line is not set;
+  - `keychain allow`: macOS could not read the live credential (approve the
+    prompt, Always Allow);
+  - `signin <account>`: on the per-account checks below.
+- Per-account checks (`account` set; in the text they are detail lines):
+  `refresh token` for each vaulted account (`warn` with `signin <id>` when
+  its refresh token is missing, expired or within 5 days of expiring), and
+  with `--verify`, `credential` for each configured account (`ok`; `fail`
+  when it does not sign in or holds another seat; `warn` when not vaulted;
+  `signin <id>` unless `ok`). A `profile` check carries `profile`.
+- `failed` is the number of `[FAIL]` rows. The exit status is 0 whenever the
+  report was made, failures included; the text form keeps exiting 1 on a
+  `[FAIL]`. `doctor` reads the live credential and, for the refresh rows,
+  each vaulted credential, so on macOS it may raise keychain prompts: run it
+  when the person asks (the Health pane), not on every refresh.

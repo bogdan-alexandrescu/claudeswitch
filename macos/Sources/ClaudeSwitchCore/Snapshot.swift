@@ -57,6 +57,8 @@ public struct AccountView: Equatable, Identifiable {
     public var lastAt: Date?
     public var lastError: String?
     public var refreshExpiry: Date?
+    /// F2: when it reaches its trigger at its pace (why's trigger_at).
+    public var triggerAt: Date? = nil
 }
 
 /// Whether the daemon is doing its job, judged from state.json alone.
@@ -142,6 +144,9 @@ public struct ProfileCard: Equatable, Identifiable {
     /// The account `why` judged live; when it is not `active` (state moved
     /// on since), why's decision is about another account.
     public var whyActive: String?
+    /// F2: when the pool runs dry at this pace (why's pool_dry_at); nil
+    /// when unknown, and the line is hidden.
+    public var poolDryAt: Date?
 
     public init(name: String, dir: String?, signedIn: String?, active: AccountView?, pinned: String?,
                 decision: Decision?, switchAt: Double, switchAtWeekly: Double, pool: [String],
@@ -336,6 +341,7 @@ public struct Snapshot: Equatable {
             card.bestWhy = pw?.bestWhy
             card.onBest = pw?.onBest
             card.whyActive = pw?.accounts.first { $0.active }?.id
+            card.poolDryAt = pw?.poolDryAt
             return card
         }
     }
@@ -356,7 +362,8 @@ public struct Snapshot: Equatable {
             bindingWindow: window, bindingPct: pct, level: level,
             scopedWeekly: last?.scopedWeekly ?? [], pace: verdict?.pace,
             eligible: verdict?.eligible, why: verdict?.why,
-            lastAt: record?.lastAt, lastError: record?.lastError, refreshExpiry: record?.refreshExpiry)
+            lastAt: record?.lastAt, lastError: record?.lastError, refreshExpiry: record?.refreshExpiry,
+            triggerAt: verdict?.triggerAt)
     }
 
     static func statusOf(record: AccountRecord?, trigger: Double, now: Date) -> AccountStatus {

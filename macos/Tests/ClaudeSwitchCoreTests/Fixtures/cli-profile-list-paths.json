@@ -1,0 +1,77 @@
+{
+  "ghosts": [
+    {
+      "account": "work-2",
+      "profile": "old",
+      "since": "2026-10-01T09:00:00Z",
+      "why": "removed"
+    }
+  ],
+  "profiles": [
+    {
+      "chrome": null,
+      "chrome_name": null,
+      "chrome_resolved": {
+        "account": "work-1",
+        "name": "Work 2",
+        "profile": "default",
+        "profile_dir": "Profile 2",
+        "rule": "last_used"
+      },
+      "declared": true,
+      "dir": null,
+      "from_env": false,
+      "live": "work-1",
+      "name": "default",
+      "overrides": {},
+      "paths": [],
+      "pinned": null,
+      "pool": [
+        "work-1",
+        "work-2"
+      ],
+      "signed_in": "yes",
+      "thresholds": {
+        "hard_floor": 98,
+        "landing_margin": 10,
+        "switch_at": 90,
+        "switch_at_weekly": 95
+      }
+    },
+    {
+      "chrome": "Profile 1",
+      "chrome_name": "Work",
+      "chrome_resolved": {
+        "account": "personal",
+        "name": "Work",
+        "profile": "review",
+        "profile_dir": "Profile 1",
+        "rule": "profile"
+      },
+      "declared": true,
+      "dir": "~/.claude-review",
+      "from_env": false,
+      "live": "personal",
+      "name": "review",
+      "overrides": {
+        "models": "Modelname",
+        "switch_at": "75"
+      },
+      "paths": [
+        "~/review/**",
+        "~/clients/acme/**"
+      ],
+      "pinned": "personal",
+      "pool": [
+        "personal"
+      ],
+      "signed_in": "unknown",
+      "thresholds": {
+        "hard_floor": 98,
+        "landing_margin": 10,
+        "switch_at": 75,
+        "switch_at_weekly": 95
+      }
+    }
+  ]
+}

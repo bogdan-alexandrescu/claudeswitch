@@ -682,15 +682,20 @@ func profileList(w io.Writer, cfgPath string) error {
 		fmt.Fprintf(w, "  %s\n", in.Name)
 		fmt.Fprintf(w, "    dir   %s\n", dir)
 		fmt.Fprintf(w, "    pool  %s\n", nonEmpty(strings.Join(in.Pool, ", "), "(empty)"))
+		if len(in.Paths) > 0 {
+			fmt.Fprintf(w, "    paths %s\n", strings.Join(in.Paths, ", "))
+		}
 		fmt.Fprintf(w, "    live  %s\n", live)
 	}
 	fmt.Fprintln(w)
 	return nil
 }
 
-// cmdRun is `cs run <profile> [-- claude args]`: Claude Code in that
+// cmdRun is `cs run [<profile>] [-- claude args]`: Claude Code in that
 // profile, with CLAUDE_CONFIG_DIR set to its dir (unset for the profile with
-// none, D11). The daemon needs telling nothing; it watches the config.
+// none, D11). The daemon needs telling nothing; it watches the config. With
+// no name, the profile is this folder's (IMPROVEMENTS F4): the one whose
+// paths it belongs to, else default.
 func cmdRun(args []string) error {
 	var claudeArgs []string
 	for i, a := range args {
@@ -703,17 +708,32 @@ func cmdRun(args []string) error {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	cfgPath := fs.String("config", "", "path to config.toml")
 	positional := parseInterleaved(fs, args)
-	if len(positional) != 1 {
-		return fmt.Errorf("usage: claudeswitch run <profile> [-- claude arguments]")
+	if len(positional) > 1 {
+		return fmt.Errorf("usage: claudeswitch run [<profile>] [-- claude arguments]")
 	}
 	cfg, _, err := load(*cfgPath)
 	if err != nil {
 		return err
 	}
-	in, ok := cfg.ProfileNamed(positional[0])
-	if !ok {
-		return fmt.Errorf("no profile named %q; the profiles are %s", positional[0],
-			strings.Join(quoteAll(cfg.ProfileNames()), ", "))
+	var in config.Profile
+	if len(positional) == 0 {
+		wd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+		var pattern string
+		if in, pattern, err = runProfile(cfg, wd); err != nil {
+			return err
+		}
+		if pattern != "" {
+			fmt.Fprintf(runNotes, "profile %q (%s matches this folder)\n", in.Name, pattern)
+		}
+	} else {
+		var ok bool
+		if in, ok = cfg.ProfileNamed(positional[0]); !ok {
+			return fmt.Errorf("no profile named %q; the profiles are %s", positional[0],
+				strings.Join(quoteAll(cfg.ProfileNames()), ", "))
+		}
 	}
 	path, err := exec.LookPath("claude")
 	if err != nil {

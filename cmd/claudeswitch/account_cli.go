@@ -41,7 +41,7 @@ func realAcctDeps() acctDeps {
 var acctSeams = realAcctDeps()
 
 const accountUsage = "usage: claudeswitch account list | rename <old> <new> | delete <id> [--yes] | " +
-	"pin <id> | unpin [<id>] [--profile P] | priority <id>...   (each takes --json)"
+	"pin <id> [--hard] | unpin [<id>] [--profile P] | priority <id>...   (each takes --json)"
 
 // cmdAccount dispatches `cs account <verb>`.
 func cmdAccount(args []string) error {
@@ -54,6 +54,7 @@ func cmdAccount(args []string) error {
 	asJSON := fs.Bool("json", false, "machine-readable output")
 	yes := fs.Bool("yes", false, "do not ask for confirmation")
 	profName := fs.String("profile", "", "unpin: the profile to unpin")
+	hard := fs.Bool("hard", false, "pin: stay even when the account is refused, out of quota or needs a sign-in")
 	p, err := parseApp(fs, rest, accountUsage)
 	if err != nil {
 		return err
@@ -79,7 +80,7 @@ func cmdAccount(args []string) error {
 		if len(p) != 1 {
 			return appErr(codeUsage, accountUsage, "pin takes one account id")
 		}
-		return accountPin(w, *cfgPath, p[0], *asJSON)
+		return accountPin(w, *cfgPath, p[0], *hard, *asJSON)
 	case "unpin":
 		if len(p) > 1 {
 			return appErr(codeUsage, accountUsage, "unpin takes at most one account id")
@@ -165,7 +166,11 @@ func dropAccountText(text string, cfg *config.Config, id string) (string, error)
 // accountPin suspends automatic rotation in the profile id is live in
 // (policy: "pinned to X"). Only the live account can be pinned: a pin on
 // another would hold the profile on whatever it is using now.
-func accountPin(w io.Writer, cfgPath, id string, asJSON bool) error {
+//
+// The daemon lifts a pin on an account that is refused, out of quota or
+// needs a sign-in (IMPROVEMENTS F3, policy.PinLifted); hard keeps it even
+// then, as every pin did before.
+func accountPin(w io.Writer, cfgPath, id string, hard, asJSON bool) error {
 	cfg, st, err := load(cfgPath)
 	if err != nil {
 		return wrapErr(codeConfigInvalid, "", err)
@@ -185,15 +190,21 @@ func accountPin(w io.Writer, cfgPath, id string, asJSON bool) error {
 			"%q is not the account live in profile %s, so pinning it would hold that profile on %s", id, prof,
 			nonEmpty(ps.Active, "no recorded account"))
 	}
-	ps.Pinned = id
+	ps.Pinned, ps.PinHard = id, hard
 	if err := st.Save(); err != nil {
 		return err
 	}
 	if asJSON {
-		return emitTo(w, map[string]any{"profile": prof, "pinned": id})
+		return emitTo(w, map[string]any{"profile": prof, "pinned": id, "pin_hard": hard})
 	}
 	fmt.Fprintf(w, "  pinned %s in profile %s: automatic rotation is off there until `cs account unpin %s`\n",
 		id, prof, id)
+	if hard {
+		fmt.Fprintf(w, "  a hard pin: it stays even if %s is refused, runs out or needs a sign-in\n", id)
+	} else {
+		fmt.Fprintf(w, "  if %s is refused, runs out or needs a sign-in, the daemon lifts the pin and rotates "+
+			"(`--hard` keeps it)\n", id)
+	}
 	return nil
 }
 
@@ -215,7 +226,7 @@ func accountUnpin(w io.Writer, cfgPath, id, profName string, asJSON bool) error 
 		if ps.Pinned == "" || (profName != "" && name != profName) || (id != "" && ps.Pinned != id) {
 			continue
 		}
-		ps.Pinned = ""
+		ps.Pinned, ps.PinHard = "", false
 		unpinned = append(unpinned, name)
 	}
 	if len(unpinned) > 0 {

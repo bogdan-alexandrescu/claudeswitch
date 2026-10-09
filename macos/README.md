@@ -33,7 +33,9 @@ settings and the daemon (IMPROVEMENTS M1, M3-M7).
   and Advanced (every `cs config` setting, generated from
   `config schema --json`, with inline validation and the CLI's own errors),
   Daemon (status, live or dry run, restart, start/stop, install/uninstall,
-  launch the app at login).
+  launch the app at login), History (each account's session and week over
+  30 days with its switches, `history --usage --json`) and Health (every
+  `doctor --json` check, with a Fix button for a known fix).
 - **Add account:** sign in with the browser and paste the code back
   (`login --direct --no-open`, the app opens the page in the browser you
   pick; your live session is not touched), or save the login Claude Code is

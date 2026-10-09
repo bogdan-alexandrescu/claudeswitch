@@ -1,0 +1,17 @@
+
+  [FAIL] config          $CFGDIR/config.toml
+         └ $CFGDIR/config.toml: this cadence needs 2.2 calls per 5 minutes but only 1 are available (api_budget 2, one reserved for swaps).
+  Slow poll_active (now 3m0s) or poll_idle (now 10m0s), or raise api_budget — the burst ceiling measured around 15 per 5 minutes, and tripping it locks the daemon out for 5 minutes
+         └ fix: run `claudeswitch init`
+  [ok  ] service qos     not throttled
+  [ok  ] credentials     $BACKEND
+         └ access token …, expires unknown (not reported for this credential)
+         └ refresh token expires unknown (not reported for this credential)
+         └ mcpOAuth present: false (must be preserved across a swap)
+  [FAIL] usage api       500
+  [ok  ] transcripts     $HOME/.claude/projects (0 project dirs)
+  [ok  ] switching       live rotation is wired; `cs plan` says what it would do
+  [info] status line     not set; `cs statusline install` adds it
+  [info] claude plugin   not installed; see README, "Inside Claude Code"
+
+exit: 1 (2 doctor check(s) failed)

@@ -294,6 +294,28 @@ func (c *Config) TriggerFor(window string) float64 {
 	return c.SwitchAt
 }
 
+// The values of prefer (IMPROVEMENTS F1).
+const (
+	PreferRoom     = "room"
+	PreferExpiring = "expiring"
+)
+
+// Preference is the effective prefer: the configured one, or PreferRoom.
+func (c *Config) Preference() string {
+	if c.Prefer == "" {
+		return PreferRoom
+	}
+	return c.Prefer
+}
+
+// validPrefer refuses a prefer that is neither value.
+func validPrefer(key, v string) error {
+	if v != "" && v != PreferRoom && v != PreferExpiring {
+		return fmt.Errorf("%s must be %q or %q, got %q", key, PreferRoom, PreferExpiring, v)
+	}
+	return nil
+}
+
 // Margin is the effective landing margin: the configured one, or the default.
 func (c *Config) Margin() float64 {
 	if c.LandingMargin == nil {
@@ -383,6 +405,12 @@ type Config struct {
 	// target's 5-hour window must have (IMPROVEMENTS A1). Nil means DefaultLandingMargin; zero
 	// is a real value and turns the margin off. Read it through Margin().
 	LandingMargin *float64 `toml:"landing_margin"`
+	// Prefer is which eligible account a rotation goes to (IMPROVEMENTS F1):
+	// PreferRoom, the one with the most room (today's behaviour), or
+	// PreferExpiring, the one whose weekly window resets soonest while it
+	// still has quota unused, room breaking ties. "" means PreferRoom. Per
+	// profile through ForProfile; read it through Preference.
+	Prefer string `toml:"prefer"`
 	// BlindFailoverPolls is how many consecutive unreadable polls of the active
 	// account make the daemon fail over to a healthy one (IMPROVEMENTS A2). Nil
 	// means DefaultBlindFailoverPolls; zero turns failover off and restores
@@ -757,6 +785,9 @@ func (c *Config) validateRest() error {
 	if err := validModels("models", c.Models); err != nil {
 		return err
 	}
+	if err := validPrefer("prefer", c.Prefer); err != nil {
+		return err
+	}
 	if n := c.HotReserveCalls(); n < 0 || n > MaxHotReserve {
 		return fmt.Errorf("hot_reserve must be between 0 and %d, got %d", MaxHotReserve, n)
 	}
@@ -926,6 +957,11 @@ func (c *Config) Write(path string) error {
 	dur("max_switch_wait", c.MaxSwitchWait, def.MaxSwitchWait, "stop waiting for an idle gap after this")
 	line("landing_margin", c.LandingMargin != nil, fmt.Sprintf("%g", c.Margin()),
 		"a switch target's 5-hour window needs this much room below its trigger")
+	// Written only once chosen, so a config without it reads back unchanged.
+	if c.set["prefer"] || c.Preference() != PreferRoom {
+		line("prefer", true, fmt.Sprintf("%q", c.Preference()),
+			`"room": the account with the most room; "expiring": the weekly window resetting soonest`)
+	}
 	line("blind_failover_polls", c.BlindFailoverPolls != nil, fmt.Sprintf("%d", c.BlindPolls()),
 		"fail over after this many unreadable polls of the active account; 0 holds")
 	// Written only when set, so a config without it reads back unchanged.

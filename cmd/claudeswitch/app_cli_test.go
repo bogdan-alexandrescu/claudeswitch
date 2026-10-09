@@ -142,7 +142,7 @@ func TestConfigSchemaDescribesEverySetting(t *testing.T) {
 			profile = append(profile, got.Key)
 		}
 	}
-	want := []string{"switch_at", "switch_at_weekly", "hard_floor", "landing_margin", "models"}
+	want := []string{"switch_at", "switch_at_weekly", "hard_floor", "landing_margin", "prefer", "models"}
 	slices.Sort(want)
 	slices.Sort(profile)
 	if !slices.Equal(profile, want) {
@@ -419,7 +419,7 @@ func TestPriorityScopePinAndUnpin(t *testing.T) {
 	}
 
 	// Pinning needs the account live in its profile.
-	if got := errCode(t, accountPin(&buf, path, "a1", true)); got != codeNotActive {
+	if got := errCode(t, accountPin(&buf, path, "a1", false, true)); got != codeNotActive {
 		t.Errorf("pin of a non-live account: %q", got)
 	}
 	st, err := state.Load("")
@@ -432,7 +432,7 @@ func TestPriorityScopePinAndUnpin(t *testing.T) {
 		t.Fatal(err)
 	}
 	buf.Reset()
-	if err := accountPin(&buf, path, "a1", true); err != nil {
+	if err := accountPin(&buf, path, "a1", false, true); err != nil {
 		t.Fatal(err)
 	}
 	if st, _ := state.Load(""); st.Profile("default").Pinned != "a1" {

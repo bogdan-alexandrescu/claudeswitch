@@ -46,6 +46,13 @@ type Decision struct {
 	// For Wait: which account recovers first, and when.
 	RecoversAccount string
 	RecoversAt      time.Time
+
+	// Unpin is set when the pin was lifted to reach this decision (the pin
+	// safety valve, IMPROVEMENTS F3): "pin on work-1 lifted: it was
+	// refused". The decision is then the one rotation makes unpinned, and
+	// the daemon clears the pin, saying this in its log, a notification
+	// and the audit log (kind unpin).
+	Unpin string
 }
 
 func (d Decision) String() string {
@@ -78,6 +85,9 @@ type Input struct {
 
 	// Pinned suspends automatic rotation (`claudeswitch use` sets it).
 	Pinned string
+	// PinHard keeps the pin even when the pinned account can no longer
+	// serve (`cs account pin --hard`); without it PinLifted lifts the pin.
+	PinHard bool
 
 	// Lookahead is how far forward to project when deciding. Rotating only once
 	// a reading has crossed the trigger is always late: the reading is a lower
@@ -175,7 +185,18 @@ func (c candidate) trigger(cfg *config.Config) float64 { return cfg.TriggerFor(c
 // Decide returns what to do now.
 func Decide(in Input) Decision {
 	if in.Pinned != "" {
-		return Decision{Kind: Stay, Reason: fmt.Sprintf("pinned to %s; automatic rotation is off", in.Pinned)}
+		why := ""
+		if !in.PinHard {
+			why = PinLifted(in.St.Accounts[in.Pinned], in.Now)
+		}
+		if why == "" {
+			return Decision{Kind: Stay, Reason: fmt.Sprintf("pinned to %s; automatic rotation is off", in.Pinned)}
+		}
+		lift := fmt.Sprintf("pin on %s lifted: %s", in.Pinned, why)
+		in.Pinned = ""
+		d := Decide(in)
+		d.Unpin, d.Reason = lift, lift+"; "+d.Reason
+		return d
 	}
 
 	all := gather(in)
@@ -275,7 +296,38 @@ func Decide(in Input) Decision {
 	if activeBurnt {
 		reason = fmt.Sprintf("active account was refused on its %s window", active.obs.BurntWin)
 	}
+	if e := expiringNote(c, in); e != "" {
+		note += "; " + e
+	}
 	return Decision{Kind: Switch, Target: c.acct.ID, Reason: reason + note, Forced: forced}
+}
+
+// PinLifted says why a pin on this account no longer holds (the pin safety
+// valve, IMPROVEMENTS F3), "" while the account can still serve:
+//
+//   - "it was refused": a refusal (a 429 in the transcripts) holds until its
+//     reset;
+//   - "it is out of quota": a reading, still current, at 100% on either
+//     window;
+//   - "it needs a sign-in": its refresh token has expired, or its last
+//     error is one only a sign-in cures and was counted as a failed read.
+//     An uncounted one is a stale vault copy the daemon re-captures
+//     (DESIGN 4.4), and says nothing about the account.
+//
+// No record is no evidence. A hard pin (Input.PinHard) is never lifted.
+func PinLifted(a *state.Account, now time.Time) string {
+	switch {
+	case a == nil:
+		return ""
+	case a.AvailabilityAt(0, now) == state.Burnt:
+		return "it was refused"
+	case a.Last != nil && !a.ExpiredAt(now) && (a.Last.FiveHour.Pct() >= 100 || a.Last.SevenDay.Pct() >= 100):
+		return "it is out of quota"
+	case !a.RefreshExpiry.IsZero() && now.After(a.RefreshExpiry),
+		state.NeedsLoginErr(a.LastErr) && a.ReadFails > 0:
+		return "it needs a sign-in"
+	}
+	return ""
 }
 
 // sessionRoom is how many points a candidate's 5-hour window sits below the
@@ -500,9 +552,75 @@ func bestWithin(all []candidate, in Input, margin float64, readable bool) (candi
 // "in order" while ordering them by something else is worse than not saying so:
 // it showed an account with one point of room at the top, marked ready, when a
 // pool that had just reset would actually have been chosen.
+//
+// With prefer = "expiring" (IMPROVEMENTS F1) the account whose weekly window
+// resets soonest while it still has quota unused ranks first, an account
+// with no known reset after every one with; equal resets (to the minute)
+// fall back to room.
 func better(a, b candidate, in Input) bool {
+	if in.Cfg.Preference() == config.PreferExpiring {
+		ra, oka := expiring(a, in.Now)
+		rb, okb := expiring(b, in.Now)
+		switch {
+		case oka != okb:
+			return oka
+		case oka && !ra.Equal(rb):
+			return ra.Before(rb)
+		}
+	}
 	// exceedance is points PAST the trigger, so it falls as room grows.
 	return a.exceedance < b.exceedance
+}
+
+// WeeklyUnused is an account's weekly window as prefer = "expiring" weighs
+// it (IMPROVEMENTS F1): when it resets and how much of it is unused (100
+// less its utilization, a counted model's limit standing in as for every
+// decision). False when either is unknown: no reading, no weekly figure or
+// reset time, or a reading of a week that has since reset. Never 0 for
+// unknown.
+func WeeklyUnused(a *state.Account, now time.Time) (resetsAt time.Time, unused float64, ok bool) {
+	if a == nil || a.Last == nil || !a.Last.SevenDay.Known() || a.Last.SevenDay.ResetsAt == nil {
+		return time.Time{}, 0, false
+	}
+	r := *a.Last.SevenDay.ResetsAt
+	if !now.Before(r) {
+		return time.Time{}, 0, false
+	}
+	return r, 100 - a.Last.SevenDay.Pct(), true
+}
+
+// expiring is the key prefer = "expiring" ranks by: the weekly reset, to
+// the minute, of a candidate with weekly quota unused.
+func expiring(c candidate, now time.Time) (time.Time, bool) {
+	r, unused, ok := WeeklyUnused(c.obs, now)
+	if !ok || unused <= 0 {
+		return time.Time{}, false
+	}
+	return r.Truncate(time.Minute), true
+}
+
+// expiringNote says why prefer = "expiring" put c first: "work-team resets
+// in 9h with 40% unused, so it goes first". "" when it did not decide.
+func expiringNote(c candidate, in Input) string {
+	if in.Cfg.Preference() != config.PreferExpiring {
+		return ""
+	}
+	r, unused, ok := WeeklyUnused(c.obs, in.Now)
+	if !ok || unused <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s resets in %s with %.0f%% unused, so it goes first", c.acct.ID, inWords(r.Sub(in.Now)), unused)
+}
+
+// inWords is a span as a person says it: "40m", "9h", "2d 5h".
+func inWords(d time.Duration) string {
+	switch {
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	}
+	return fmt.Sprintf("%dd %dh", int(d.Hours())/24, int(d.Hours())%24)
 }
 
 // Best is the account a manual switch of this profile would land on now
@@ -659,6 +777,12 @@ type Verdict struct {
 	Worst    float64
 	Window   string
 	ClearsAt time.Time
+
+	// WeeklyResetsAt and WeeklyUnused are the weekly window as prefer =
+	// "expiring" weighs it (WeeklyUnused, IMPROVEMENTS F1): zero and nil
+	// when unknown, whatever prefer is.
+	WeeklyResetsAt time.Time
+	WeeklyUnused   *float64
 }
 
 // Explain runs the same reasoning as Decide and reports what it found for every
@@ -673,6 +797,7 @@ func Explain(in Input) (Decision, []Verdict) {
 	ordered := explainOrder(all, in)
 
 	out := make([]Verdict, 0, len(ordered))
+	first := true
 	for _, c := range ordered {
 		v := Verdict{
 			ID:     c.acct.ID,
@@ -684,6 +809,9 @@ func Explain(in Input) (Decision, []Verdict) {
 			if r := earliestReset(c); !r.IsZero() {
 				v.ClearsAt = r
 			}
+		}
+		if r, unused, ok := WeeklyUnused(c.obs, in.Now); ok {
+			v.WeeklyResetsAt, v.WeeklyUnused = r, &unused
 		}
 		if v.Active {
 			if blind, held := blindness(c, in); blind || held != "" {
@@ -738,6 +866,14 @@ func Explain(in Input) (Decision, []Verdict) {
 		default:
 			v.Eligible = true
 			v.Why = fmt.Sprintf("at %.0f%%, ready", c.worst)
+			if first {
+				// The first ready account in the order is the one rotation
+				// takes; say when prefer = "expiring" is why.
+				if e := expiringNote(c, in); e != "" {
+					v.Why += "; " + e
+				}
+				first = false
+			}
 		}
 		out = append(out, v)
 	}

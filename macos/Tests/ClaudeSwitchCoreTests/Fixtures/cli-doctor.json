@@ -1,0 +1,58 @@
+{
+  "checks": [
+    {
+      "fix": null,
+      "message": "~/.config/claudeswitch/config.toml: 3 accounts, 2 profiles",
+      "name": "config",
+      "status": "ok"
+    },
+    {
+      "fix": null,
+      "message": "3 accounts in the vault",
+      "name": "vault",
+      "status": "ok"
+    },
+    {
+      "fix": "keychain allow",
+      "message": "the daemon cannot read the vault without a prompt",
+      "name": "keychain",
+      "status": "fail"
+    },
+    {
+      "fix": "signin personal",
+      "message": "personal was refused (401): it needs signing in again",
+      "name": "login personal",
+      "status": "fail"
+    },
+    {
+      "fix": "signin work-2",
+      "message": "work-2's login expires in 3 days",
+      "name": "refresh work-2",
+      "status": "warn"
+    },
+    {
+      "fix": null,
+      "message": "reachable; last read 1m ago",
+      "name": "usage API",
+      "status": "ok"
+    },
+    {
+      "fix": "daemon restart",
+      "message": "installed, but it has not polled for 14m",
+      "name": "daemon",
+      "status": "fail"
+    },
+    {
+      "fix": "statusline install",
+      "message": "Claude Code's settings.json has no status line",
+      "name": "status line",
+      "status": "fail"
+    },
+    {
+      "fix": "plugin update",
+      "message": "the cs plugin is one release behind",
+      "name": "plugin",
+      "status": "warn"
+    }
+  ]
+}

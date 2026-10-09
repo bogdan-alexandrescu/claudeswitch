@@ -119,6 +119,7 @@ struct ProfileEditor: View {
             } else {
                 if profile.signedIn == "no" { SignInRow(profile: profile) }
                 PoolEditor(profile: profile)
+                if let paths = profile.paths { FoldersField(profile: profile, paths: paths) }
                 OverridesEditor(profile: profile)
                 ProfileChromePicker(profile: profile)
             }
@@ -426,7 +427,13 @@ struct OverridesEditor: View {
                 Text("THIS PROFILE'S THRESHOLDS").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16),
                                     GridItem(.flexible(), spacing: 16)], alignment: .leading, spacing: 16) {
-                    ForEach(keys) { s in OverrideField(profile: profile, setting: s) }
+                    ForEach(keys) { s in
+                        if s.type == "enum" {
+                            EnumOverrideField(profile: profile, setting: s)
+                        } else {
+                            OverrideField(profile: profile, setting: s)
+                        }
+                    }
                 }
             }
         }

@@ -13,6 +13,7 @@ cs statusline uninstall
 cs context                     [--config PATH]
 cs session                     [--since DURATION] [--profile NAME] [--detail] [--json] [--config PATH]
 cs history                     [--days N]
+cs history --usage             [--days N] [--json] [--config PATH]
 cs audit                       [-n N] [--kind KIND] [--since DURATION]
 ```
 
@@ -193,6 +194,52 @@ source's; its numbers here are illustrative.)
 
 Exit 0, or 1 if the transcripts cannot be read.
 
+### cs history --usage
+
+Each account's session and weekly utilization over the last `--days`
+(default 30), from the daemon's readings log, and the switches from its
+audit log (IMPROVEMENTS F7). It reads those two files and the config, and
+writes nothing; no keychain, no API.
+
+```
+  usage over the last 30 day(s), from the daemon's readings log
+
+  work-1             412 readings · peak 5h 91% · 7d 64% · last Thu 09 Oct 11:58
+  work-2             no readings
+
+  7 switches; `cs history --usage --json` has every reading and switch
+```
+
+`--json`:
+
+```json
+{"days": 30, "from": "2026-09-09T12:00:00Z", "to": "2026-10-09T12:00:00Z",
+ "accounts": [
+  {"id": "work-1", "profile": "work", "configured": true,
+   "series": [{"at": "2026-10-09T11:58:02Z", "five_hour": 42, "seven_day": 61.5}, …]},
+  {"id": "work-2", "profile": "work", "configured": true, "series": []}],
+ "switches": [
+  {"at": "2026-10-09T10:01:00Z", "profile": "work", "from": "work-1", "to": "work-2",
+   "reason": "active account at 86%, over the 85% session trigger", "forced": false}]}
+```
+
+- `accounts`: the configured ones in rotation order (disabled ones after),
+  then any the log names that the config no longer does (`configured`
+  `false`, `profile` `null`), by name. `profile` is the pool owner.
+- `series`: oldest first. `five_hour` / `seven_day` are percentages, `null`
+  when the reading did not report that window (never `0`).
+- `switches`: every `switch` in the audit log in the span, oldest first —
+  the daemon's, `cs use`'s and a profile seed's. `from` is `null` when none
+  was recorded.
+- `--json` without `--usage`, and `--days` under 1, are `usage` errors.
+
+The readings log (`~/.local/state/claudeswitch/readings.jsonl`) is written
+by the daemon only: one line per new reading of each account, kept 30
+days (the last day whole, older days thinned to one reading per account per
+15 minutes) and under 4 MiB. Its format is in
+[GUIDE → Usage history](../GUIDE.md#usage-history). With no daemon running,
+there is nothing new to show.
+
 ## cs audit
 
 What the daemon observed, decided and did, newest first, from its audit log:
@@ -210,6 +257,7 @@ Kinds and what their DETAIL shows:
 | `switch` | switch | `from → to` and the reason |
 | `rejection` | refused | the account, the window, when it cleared |
 | `decision` | decision | stay, switch or wait, the target, the reason |
+| `unpin` | unpin | the pin the safety valve lifted, and why (`pin on work-1 lifted: it was refused`) |
 | `severity` | severity | an account's limit changing severity, with the percentage |
 | `error` | error | the error |
 
@@ -219,7 +267,7 @@ made mid-turn. With an empty log: `no audit events yet (run \`claudeswitch watch
 | flag | default | meaning |
 |---|---|---|
 | `-n N` | `30` | how many events |
-| `--kind KIND` | all | only `decision`, `switch`, `rejection`, `severity` or `error` |
+| `--kind KIND` | all | only `decision`, `switch`, `rejection`, `unpin`, `severity` or `error` |
 | `--since DURATION` | all | only events newer than this, e.g. `24h` |
 
 `cs audit --kind decision` is how to check a dry-run daemon's judgement before

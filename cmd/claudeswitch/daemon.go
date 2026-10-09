@@ -87,6 +87,13 @@ type activity interface {
 
 type auditor interface{ Write(audit.Event) error }
 
+// readingsLog is where the daemon keeps past readings (internal/readings,
+// IMPROVEMENTS F7). Record writes a reading once however often it is handed
+// the same one.
+type readingsLog interface {
+	Record(account string, at time.Time, u *usage.Usage) error
+}
+
 type notifier interface {
 	Send(key, title, message string)
 	Switched(from, to, reason, headroom string)
@@ -125,6 +132,10 @@ type profileLoop struct {
 	// for holding another pool's account: said once per distinct finding.
 	lastRefusalSig   string
 	lastCrossPoolSig string
+	// lastUnpinSig says a dry run's pin lift once (IMPROVEMENTS F3);
+	// runwayWarned holds the runway notice to once per approach (F2).
+	lastUnpinSig string
+	runwayWarned bool
 
 	// hold keeps a config reload that removed this profile's active account
 	// from turning into a swap; see activeHold.
@@ -180,6 +191,26 @@ type daemon struct {
 	// item's own ItemRef); ghostItem reopens one (default keychain.LiveItem).
 	itemRef   func(keychain.Live) (service, file string, ok bool)
 	ghostItem func(service, file string) keychain.Live
+
+	// readings keeps each reading for `cs history --usage`; nil keeps none.
+	readings readingsLog
+}
+
+// recordReadings hands each configured account's current reading to the
+// readings log. A failure is logged and never stops the daemon.
+func (d *daemon) recordReadings() {
+	if d.readings == nil {
+		return
+	}
+	for _, a := range d.cfg.Accounts {
+		acct := d.st.Accounts[a.ID]
+		if acct == nil || acct.Last == nil || acct.LastAt.IsZero() {
+			continue
+		}
+		if err := d.readings.Record(a.ID, acct.LastAt, acct.Last); err != nil {
+			d.log.Warn("could not record a reading", "account", a.ID, "err", err)
+		}
+	}
 }
 
 // liveFor resolves a configured profile's live item: the item Claude Code
@@ -410,13 +441,17 @@ func (d *daemon) evaluate(ctx context.Context, il *profileLoop, trigger string) 
 	input := func() policy.Input {
 		return policy.Input{
 			Cfg: il.cfg, St: d.st, Now: time.Now(), LastSwitch: ist.LastSwitch, Pinned: ist.Pinned,
-			Lookahead: lookahead(il.cfg), Pool: il.pool, Live: ist,
+			PinHard: ist.PinHard, Lookahead: lookahead(il.cfg), Pool: il.pool, Live: ist,
 			// Whether an expired token explains an unreadable active account
 			// (IMPROVEMENTS A2): on an idle session it does.
 			SessionBusy: !il.det.IdleFor(d.idleGap),
 		}
 	}
 	dec := il.hold.gate(policy.Decide(input()), ist.Active, il.cfg)
+	if dec.Unpin != "" {
+		d.liftPin(il, ist, dec.Unpin)
+	}
+	d.noteRunway(il, input())
 	// Only record a decision when it says something new. A tick every twenty
 	// seconds writing "stay" produced 377 rows in one evening and buried the
 	// one rejection that mattered.
@@ -592,6 +627,55 @@ func (d *daemon) evaluate(ctx context.Context, il *profileLoop, trigger string) 
 	if msg := chromeSwitchNotice(il.cfg, d.st, readChromeLocal(), il.name, from, dec.Target); msg != "" {
 		il.log.Info(msg)
 		d.nt.Send("chrome:"+il.name+":"+from+":"+dec.Target, "Claude in Chrome", msg)
+	}
+}
+
+// liftPin is the pin safety valve (IMPROVEMENTS F3): the pinned account was
+// refused, ran out or needs a sign-in, so the decision was made unpinned
+// (policy.PinLifted) and the pin is cleared, said in the log, a notification
+// and the audit log (kind unpin). A dry run changes nothing and says once
+// what it would have done.
+func (d *daemon) liftPin(il *profileLoop, ist *state.ProfileState, why string) {
+	pinned := ist.Pinned
+	if !d.live {
+		if sig := pinned + "|" + why; sig != il.lastUnpinSig {
+			il.lastUnpinSig = sig
+			il.log.Warn("WOULD LIFT THE PIN (dry run)", "account", pinned, "because", why)
+			_ = d.aud.Write(audit.Event{Kind: "unpin", Profile: il.name, From: pinned, Reason: why, DryRun: true})
+		}
+		return
+	}
+	il.lastUnpinSig = ""
+	ist.LiftPin()
+	_ = d.save()
+	_ = d.aud.Write(audit.Event{Kind: "unpin", Profile: il.name, From: pinned, Reason: why})
+	il.log.Warn("pin lifted; rotating as usual", "account", pinned, "because", why)
+	d.nt.Send("unpin:"+il.name+":"+pinned, "claudeswitch lifted a pin", d.tag(il, why))
+}
+
+// RunwayWarning is how near the pool's runway (IMPROVEMENTS F2) must come
+// before the daemon says so.
+const RunwayWarning = 2 * time.Hour
+
+// noteRunway notifies once when the profile's pool is forecast to run dry
+// within RunwayWarning at this pace. It warns again only after the forecast
+// has moved off: dry beyond the warning, or a reset coming first. A runway
+// that is unknown, idle or already dry neither warns nor re-arms; running
+// out is the exhausted notice's to say.
+func (d *daemon) noteRunway(il *profileLoop, in policy.Input) {
+	now := in.Now
+	in.Unavailable = bestExclusions(d.cfg, d.st, il.name, now)
+	r := policy.Forecast(in)
+	switch {
+	case r.Kind == policy.RunwayRefills, r.Kind == policy.RunwayDry && r.DryAt.Sub(now) > RunwayWarning:
+		il.runwayWarned = false
+	case r.Kind == policy.RunwayDry && r.DryAt.After(now) && !il.runwayWarned:
+		il.runwayWarned = true
+		msg := fmt.Sprintf("pool runs dry at %s at this pace (in %s)",
+			r.DryAt.Local().Format("15:04"), r.DryAt.Sub(now).Round(time.Minute))
+		il.log.Warn("pool runs dry soon", "at", r.DryAt.Local().Format("15:04"),
+			"pace_per_min", fmt.Sprintf("%.2f", r.Pace))
+		d.nt.Send("runway:"+il.name, il.name+" pool runs dry soon", msg)
 	}
 }
 
@@ -963,6 +1047,7 @@ func (d *daemon) run(ctx context.Context, stop chan struct{}, sig <-chan os.Sign
 			return nil
 		case <-tick:
 			d.p.Tick(ctx)
+			d.recordReadings()
 			for _, il := range d.profs {
 				d.evaluate(ctx, il, "poll")
 			}
@@ -996,6 +1081,7 @@ func (d *daemon) run(ctx context.Context, stop chan struct{}, sig <-chan os.Sign
 				// longer holds their account.
 				d.releaseGhosts(ctx)
 			}
+			d.recordReadings() // the re-attribution polls above
 			if err := d.save(); err != nil {
 				d.log.Warn("state save failed", "err", err)
 			}

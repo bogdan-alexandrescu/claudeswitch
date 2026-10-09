@@ -24,7 +24,7 @@ func TestPollingRecordsTheVaultedPlan(t *testing.T) {
 	}
 	t.Cleanup(func() { readVault = old })
 	for _, id := range []string{"a", "b"} {
-		if _, _, err := p.tokenInfo(id); err != nil {
+		if _, _, _, err := p.tokenInfo(id); err != nil {
 			t.Fatal(err)
 		}
 	}
