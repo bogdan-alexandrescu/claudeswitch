@@ -1733,6 +1733,7 @@ func cmdUse(args []string) error {
 		return err
 	}
 	ist.SetActive(id)
+	ist.LiveKey, ist.LiveOrg = res.LiveKey, res.OrgID
 	// A deliberate manual switch gets the cooldown's protection too, so the
 	// daemon does not immediately rotate away from the account you just chose.
 	ist.LastSwitch = time.Now()

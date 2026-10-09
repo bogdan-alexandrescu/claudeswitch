@@ -439,7 +439,9 @@ type ProfileState struct {
 	// profile (its usage.CredKey, never the token) and the organization behind
 	// it. A token's organization never changes, so while the live item still
 	// holds that token, the §3 check knows it cannot hold an account of
-	// another organization without asking. The daemon owns both, like Item.
+	// another organization without asking. Whoever established Active (the
+	// daemon reading the item, or a verified swap) sets both, and they travel
+	// with Active in a merge: the newer ActiveAt wins.
 	LiveKey string `json:"live_key,omitempty"`
 	LiveOrg string `json:"live_org,omitempty"`
 }
@@ -897,6 +899,7 @@ func (s *State) SaveAs(as owner) error {
 				// `use` that happened while we were sleeping is newer than our belief.
 				if disk.ActiveAt.After(mine.ActiveAt) {
 					mine.Active, mine.ActiveAt = disk.Active, disk.ActiveAt
+					mine.LiveKey, mine.LiveOrg = disk.LiveKey, disk.LiveOrg
 				}
 				if mine.lifted == "" || disk.Pinned != mine.lifted {
 					mine.Pinned, mine.PinHard = disk.Pinned, disk.PinHard
@@ -915,10 +918,10 @@ func (s *State) SaveAs(as owner) error {
 				// have just established a newer one ourselves.
 				if disk.ActiveAt.After(mine.ActiveAt) {
 					mine.Active, mine.ActiveAt = disk.Active, disk.ActiveAt
+					mine.LiveKey, mine.LiveOrg = disk.LiveKey, disk.LiveOrg
 				}
 				// The daemon owns the resolved item; a CLI copy may be stale.
 				mine.Item = disk.Item
-				mine.LiveKey, mine.LiveOrg = disk.LiveKey, disk.LiveOrg
 			})
 			s.DaemonLive = disk.DaemonLive
 			s.DaemonSince = disk.DaemonSince

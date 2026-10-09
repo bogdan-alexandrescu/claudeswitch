@@ -177,7 +177,8 @@ func (v *Vault) SwapToWith(ctx context.Context, item keychain.Live, accountID, e
 	v.log.Info("swapped account", "account", accountID, "org", u.OrgID,
 		"five_hour", u.FiveHour.Pct(), "seven_day", u.SevenDay.Pct(),
 		"mcp_preserved", len(merged.MCPOAuth) > 0)
-	return &SwapResult{AccountID: accountID, OrgID: u.OrgID, Usage: u}, nil
+	return &SwapResult{AccountID: accountID, OrgID: u.OrgID, Usage: u,
+		LiveKey: usage.CredKey(incoming.AccessToken)}, nil
 }
 
 // lock takes Claude Code's credential locks for item's secure-storage dir.

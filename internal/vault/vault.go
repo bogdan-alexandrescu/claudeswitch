@@ -440,8 +440,12 @@ func (v *Vault) Has(accountID string) bool {
 
 // SwapResult describes what a swap actually did.
 type SwapResult struct {
-	AccountID  string
-	OrgID      string
+	AccountID string
+	OrgID     string
+	// LiveKey is the usage.CredKey of the token installed, set with OrgID
+	// when the swap verified it: the profile's state records both, so the
+	// §3 check knows the organization behind it without asking.
+	LiveKey    string
 	Usage      *usage.Usage
 	RolledBack bool
 }

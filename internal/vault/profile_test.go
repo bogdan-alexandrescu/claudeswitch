@@ -162,6 +162,9 @@ func TestSwapToInWritesThatProfilesItem(t *testing.T) {
 	if res.OrgID != "org-w" {
 		t.Errorf("verified org %q", res.OrgID)
 	}
+	if res.LiveKey != usage.CredKey("w2-token") {
+		t.Errorf("live key %q, want the installed token's key", res.LiveKey)
+	}
 	if strings.Join(work.writes, ",") != "w2-token" {
 		t.Errorf("work's item writes = %v, want the incoming token once", work.writes)
 	}

@@ -611,6 +611,7 @@ func (d *daemon) evaluate(ctx context.Context, il *profileLoop, trigger string) 
 	from := ist.Active
 	il.wantSwitchSince = time.Time{}
 	ist.SetActive(dec.Target)
+	ist.LiveKey, ist.LiveOrg = res.LiveKey, res.OrgID
 	ist.LastSwitch = time.Now()
 	ist.LastFrom = from
 	if res.Usage != nil {
