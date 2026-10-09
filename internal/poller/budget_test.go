@@ -44,7 +44,7 @@ func testPoller() (*Poller, *fakeAPI) {
 func TestAPollIsCountedOnce(t *testing.T) {
 	p, api := testPoller()
 	before := p.budget.Remaining()
-	p.fetchInto(context.Background(), &state.Account{ID: "a"}, "tok", usage.Scheduled)
+	p.fetchInto(context.Background(), &state.Account{ID: "a"}, "tok", time.Time{}, usage.Scheduled)
 	if api.calls["tok"] != 1 {
 		t.Fatalf("made %d calls, want 1", api.calls["tok"])
 	}
@@ -59,16 +59,16 @@ func TestARefusalPausesOnlyThatAccount(t *testing.T) {
 	ctx := context.Background()
 	live := &state.Account{ID: "live"}
 
-	if r := p.fetchInto(ctx, live, "refused", usage.Scheduled); r != usage.ReasonOK {
+	if r := p.fetchInto(ctx, live, "refused", time.Time{}, usage.Scheduled); r != usage.ReasonOK {
 		t.Fatalf("first call refused locally: %q", r)
 	}
-	if r := p.fetchInto(ctx, live, "refused", usage.Scheduled); r != usage.ReasonLockout {
+	if r := p.fetchInto(ctx, live, "refused", time.Time{}, usage.Scheduled); r != usage.ReasonLockout {
 		t.Errorf("the refused account called again during its backoff: %q", r)
 	}
 	if api.calls["refused"] != 1 {
 		t.Errorf("refused account reached the API %d times, want 1", api.calls["refused"])
 	}
-	if r := p.fetchInto(ctx, &state.Account{ID: "idle"}, "idle", usage.Scheduled); r != usage.ReasonOK {
+	if r := p.fetchInto(ctx, &state.Account{ID: "idle"}, "idle", time.Time{}, usage.Scheduled); r != usage.ReasonOK {
 		t.Errorf("an idle account was held by another account's lock: %q", r)
 	}
 	if api.calls["idle"] != 1 {

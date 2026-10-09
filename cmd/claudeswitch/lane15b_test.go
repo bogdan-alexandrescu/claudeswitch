@@ -16,7 +16,7 @@ import (
 
 // An account no pool lists belongs to default only by D6. Moving it out of
 // default is adding it to the other pool: default's pool has nothing to
-// remove (the owner's "profile default's pool does not list aieng-claude1").
+// remove (the owner's "profile default's pool does not list lab-1").
 func TestPoolMovesAnAccountDefaultHoldsOnlyByD6(t *testing.T) {
 	path := appWorld(t, profilesTOML) // a2 is listed nowhere
 	var buf bytes.Buffer

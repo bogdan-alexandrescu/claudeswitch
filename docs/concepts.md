@@ -144,10 +144,23 @@ budget: **`api_budget`** (12) calls per 5 minutes across every process, with
 one held back for swaps. The live account is read every **`poll_active`**
 (3 minutes), or every **`poll_hot`** (1 minute) once it is above
 **`hot_threshold`** (60%) and climbing; the others every **`poll_idle`**
-(10 minutes). While the daemon runs, it is the only reader: `cs status`, the
-status line and the app show its readings and spend nothing.
+(10 minutes). So is the live account of a profile where no session is
+working: nothing there is spending it, and it is read again as soon as one
+starts. A restarted daemon picks up from its last readings rather than
+reading everything again. While the daemon runs, it is the only reader:
+`cs status`, the status line and the app show its readings and spend nothing.
 
-A 429 clears by itself. Do not lower `poll_hot` below its default.
+A 429 clears by itself. The daemon backs off 5 minutes, doubling; when the
+API asks for a longer wait it waits longer each time it is refused again (up
+to an hour for an idle account, 30 minutes for the one in use). Do not lower
+`poll_hot` below its default.
+
+The usage API also answers an **expired** access token with 429. No session
+renews the token of a profile nobody is working in, so claudeswitch never
+sends an expired token: the account shows "access token expired; parked" and
+the daemon renews that profile's token itself (never a busy profile's, whose
+session renews its own). If the renewal is refused, the account needs a
+sign-in and the app says so.
 `cs doctor` shows the budget in use.
 [GUIDE → Advanced](GUIDE.md#advanced).
 

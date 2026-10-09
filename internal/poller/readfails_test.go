@@ -61,13 +61,13 @@ func TestFailedReadsAreCountedAndASuccessClearsThem(t *testing.T) {
 	withStatus(t, p, map[string]int{"bad": 500, "expired": 401}, nil)
 	ctx := context.Background()
 	a := &state.Account{ID: "a"}
-	p.fetchInto(ctx, a, "bad", usage.Scheduled)
-	p.fetchInto(ctx, a, "bad", usage.Scheduled)
-	p.fetchInto(ctx, a, "expired", usage.Scheduled)
+	p.fetchInto(ctx, a, "bad", time.Time{}, usage.Scheduled)
+	p.fetchInto(ctx, a, "bad", time.Time{}, usage.Scheduled)
+	p.fetchInto(ctx, a, "expired", time.Time{}, usage.Scheduled)
 	if a.ReadFails != 3 {
 		t.Fatalf("ReadFails = %d after three failed reads, want 3", a.ReadFails)
 	}
-	p.fetchInto(ctx, a, "good", usage.Scheduled)
+	p.fetchInto(ctx, a, "good", time.Time{}, usage.Scheduled)
 	if a.ReadFails != 0 || a.Last == nil {
 		t.Fatalf("ReadFails = %d after a good read (Last %v), want 0", a.ReadFails, a.Last)
 	}
@@ -81,11 +81,11 @@ func TestRateLimitingIsNotUnreadable(t *testing.T) {
 	withStatus(t, p, map[string]int{"bad": 500, "refused": 429}, nil)
 	ctx := context.Background()
 	a := &state.Account{ID: "a"}
-	p.fetchInto(ctx, a, "bad", usage.Scheduled)
-	if r := p.fetchInto(ctx, a, "refused", usage.Scheduled); r != usage.ReasonOK {
+	p.fetchInto(ctx, a, "bad", time.Time{}, usage.Scheduled)
+	if r := p.fetchInto(ctx, a, "refused", time.Time{}, usage.Scheduled); r != usage.ReasonOK {
 		t.Fatalf("429 call not made: %q", r)
 	}
-	if r := p.fetchInto(ctx, a, "refused", usage.Scheduled); r == usage.ReasonOK {
+	if r := p.fetchInto(ctx, a, "refused", time.Time{}, usage.Scheduled); r == usage.ReasonOK {
 		t.Fatalf("second call during backoff was made")
 	}
 	if a.ReadFails != 1 {
@@ -94,7 +94,8 @@ func TestRateLimitingIsNotUnreadable(t *testing.T) {
 }
 
 // The scheduled poll records when the access token it used expires, so the
-// policy can tell "expired on an idle session" from real trouble.
+// policy can tell "expired on an idle session" from real trouble. Since R2 a
+// token past its expiry is parked, not sent, so nothing counts as a failure.
 func TestTickRecordsTheTokenExpiry(t *testing.T) {
 	st := twoProfileState()
 	st.Profiles["work"].Active = "" // so a is the one account due first
@@ -109,8 +110,8 @@ func TestTickRecordsTheTokenExpiry(t *testing.T) {
 	if a == nil || !a.TokenExpiry.Equal(exp) {
 		t.Fatalf("a's TokenExpiry = %v, want %v", a, exp)
 	}
-	if a.ReadFails != 1 {
-		t.Errorf("ReadFails = %d, want 1", a.ReadFails)
+	if a.ReadFails != 0 {
+		t.Errorf("ReadFails = %d, want 0: an expired token is parked, not sent", a.ReadFails)
 	}
 }
 
@@ -147,16 +148,16 @@ func TestTheFailureStreakRecordsWhenItBegan(t *testing.T) {
 	ctx := context.Background()
 	a := &state.Account{ID: "a"}
 	before := time.Now()
-	p.fetchInto(ctx, a, "bad", usage.Scheduled)
+	p.fetchInto(ctx, a, "bad", time.Time{}, usage.Scheduled)
 	first := a.FailSince
 	if first.Before(before) || first.After(time.Now()) {
 		t.Fatalf("FailSince = %v, want the time of the first failure", first)
 	}
-	p.fetchInto(ctx, a, "bad", usage.Scheduled)
+	p.fetchInto(ctx, a, "bad", time.Time{}, usage.Scheduled)
 	if !a.FailSince.Equal(first) {
 		t.Errorf("a second failure moved FailSince from %v to %v", first, a.FailSince)
 	}
-	p.fetchInto(ctx, a, "good", usage.Scheduled)
+	p.fetchInto(ctx, a, "good", time.Time{}, usage.Scheduled)
 	if !a.FailSince.IsZero() {
 		t.Errorf("a good read left FailSince = %v", a.FailSince)
 	}

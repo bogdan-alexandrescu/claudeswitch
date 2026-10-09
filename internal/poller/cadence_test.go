@@ -81,7 +81,7 @@ func read(t *testing.T, p *Poller, api *scriptAPI, clock *time.Time, five float6
 	t.Helper()
 	api.five["tok-a"] = five
 	acct := p.st.Get("a")
-	if r := p.fetchInto(context.Background(), acct, "tok-a", usage.Scheduled); r != usage.ReasonOK || acct.LastErr != "" {
+	if r := p.fetchInto(context.Background(), acct, "tok-a", time.Time{}, usage.Scheduled); r != usage.ReasonOK || acct.LastErr != "" {
 		t.Fatalf("poll refused: %q %s", r, acct.LastErr)
 	}
 	p.schedule("a", *clock, acct)
@@ -127,8 +127,8 @@ func TestAQuietProfileNeverPollsHot(t *testing.T) {
 	p.Busy = func(string) bool { return false }
 	read(t, p, api, clock, 70)
 	*clock = clock.Add(time.Minute)
-	if got := read(t, p, api, clock, 72); got != 3*time.Minute {
-		t.Errorf("quiet profile: next poll in %v, want poll_active", got)
+	if got := read(t, p, api, clock, 72); got != 10*time.Minute {
+		t.Errorf("quiet profile: next poll in %v, want poll_idle (R4)", got)
 	}
 }
 

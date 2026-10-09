@@ -17,7 +17,7 @@ func TestLastRateIsTheRisingPairsRate(t *testing.T) {
 	acct := p.st.Get("a")
 	poll := func(five float64) {
 		api.five["tok-a"] = five
-		if r := p.fetchInto(context.Background(), acct, "tok-a", usage.Interactive); r != usage.ReasonOK {
+		if r := p.fetchInto(context.Background(), acct, "tok-a", time.Time{}, usage.Interactive); r != usage.ReasonOK {
 			t.Fatalf("poll refused: %q", r)
 		}
 	}

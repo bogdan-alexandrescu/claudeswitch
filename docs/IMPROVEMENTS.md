@@ -839,3 +839,76 @@ exact key names may grow, but these keys must exist.
   `burn_per_min`/a raised `projected` in `status --json`
   (`state.Projects`/`ProjectedFor`); the policy already projects only the
   active account. No golden changed.
+
+## 429s after the 0.6 releases (investigated and decided 2026-10-09)
+
+A read-only investigation of the daemon log, audit, ledger and readings
+found two causes. (1) An idle profile's live access token expires (no
+Claude Code session renews it), and the usage endpoint answers an expired
+token with **429**, not 401, so the daemon called it every 20 minutes for
+hours (25 strikes for work's work-team on 10-08/09; the same for
+another work-profile account on 10-08). (2) The account in use was really rate limited
+when several busy Claude Code sessions (which call /api/oauth/usage
+themselves) added to claudeswitch's ~28 reads an hour at poll_active 2m.
+First strikes of 20m mean the server sent a long Retry-After, which our
+20m lock cut short, so the next call was a guaranteed second strike.
+
+- **R2. Renew an idle profile's expired live token (owner, 2026-10-09).**
+  When a profile's live access token is expired (or within the refresh
+  window) and no Claude Code session in that profile is busy (the transcript
+  check, D15), the daemon refreshes the live item itself, holding Claude
+  Code's credential lock as RefreshIn already does, and re-reads. A token
+  past its expiry is never sent to the usage API: until it is renewed it is
+  parked with no strike. Owner accepted the costs: a keychain write, and a
+  session that is open but not busy loses its token.
+  *As built (2026-10-09):* `usage.Expired` is the test (a zero expiry is
+  unknown and still sent). The poller (`fetchInto`, which now takes the
+  token's expiry, for scheduled, candidate, `status` and live reads), the
+  vault's seat probe (`HoldsAccountWhy`), `Verify` and the swap's verify
+  (`fetchCred`) never send an expired token: `ReasonExpired` /
+  `usage.ExpiredError`, no call, no strike, no blind-failover count, and
+  `last_error` "not sent: the access token expired at HH:MM; parked until it
+  is renewed" (a needs-login error already there is kept). A parked account is
+  looked at again every minute (`ParkRecheck`, a local read). A swap that
+  installs an expired token stands unverified. The daemon's renewal
+  (`renewQuietLive`) runs on the two-minute vault tick after the re-capture
+  step: a profile whose live token (read from its own item) is expired or
+  within `refresh_window`, whose active account is vaulted, and which is not
+  busy (D15, `daemon.busy`) gets `RefreshIn(…, il.live, allowActive=true)`,
+  then `PollActiveIn`; at most one attempt per profile every 10 minutes;
+  audited `kind: refresh` with `profile`, `account`, `reason` and `error`;
+  logged "renewed a quiet profile's live token". A `NeedsLoginError` writes
+  the account's `last_error` (status and the app's banner read it), saves,
+  and sends the `relogin:<id>` notification. Gated on `auto_refresh` like the
+  idle refresh, and runs in dry-run like it. Not done: a live account with no
+  vault entry is left parked (RefreshIn renews through the vault). The
+  capture-time identity lookup in a swap (`seatForCapture`, profile endpoint)
+  still asks with whatever token is live, since an unknown seat there only
+  files a recovery copy.
+- **R3. Back off longer after a repeat 429 (owner, 2026-10-09).** On a second
+  long-wait 429 for the same token: 40m, then 60m for idle accounts; 20m then
+  30m for the account in use. The server's Retry-After is logged again.
+  *As built (2026-10-09):* `usage.LockFor`. A long wait is a `Retry-After`
+  over `MinBackoff` (5m); the ledger's lock counts them (`long`) beside
+  `strikes` until the next success. Each is honoured up to its step —
+  `LongWaitSteps` 20m, 40m, 60m (the last repeats) for an idle account,
+  `LiveLongWaitSteps` 20m, 30m for a credential marked live — and never less
+  than the doubling backoff. A Retry-After at or under 5m (§42's burst limit
+  sends 0) keeps the doubling schedule: 5m, 10m, 20m (10m live). A server
+  asking less than the step gets what it asked. `MaxLock` is now 60m (the
+  watchdog ignores locks, so it no longer bounds them). The poller's and the
+  vault's 429 warnings carry `retry_after`.
+- **R4. Fewer calls on idle profiles and at restart.** An idle profile's
+  live account is read at poll_idle, not poll_active; a restarted daemon
+  starts each account's schedule from its last reading.
+  *As built (2026-10-09):* `Poller.quiet` is D15's busy test, false when no
+  test is wired. A quiet profile's live account is scheduled at `poll_idle`,
+  is never overdue at `poll_active`, and is read at Scheduled priority; with
+  one profile it still polls hot while moving within reach (D16). It applies
+  with any number of profiles. The daemon's stale-decision warning allows a
+  quiet profile `poll_idle` more, and is not given for a parked (expired)
+  token. At restart `due` seeds every unscheduled account from `LastAt` plus
+  its routine interval, and `ResumeIn` skips a profile's startup read when its
+  live token is the recorded `live_key`, unexpired, and its account was read
+  within `poll_active`.
+- **poll_active back to 3m** on this machine (owner, 2026-10-09).

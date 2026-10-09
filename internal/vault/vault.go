@@ -95,10 +95,24 @@ func (v *Vault) fetch(ctx context.Context, token string, p usage.Priority) (*usa
 		// The budget applies the live cap itself when token was marked live
 		// (MarkLive) by whoever read it from a profile's item.
 		v.budget.Penalize(token, rl.RetryAfter)
+		wait, strikes := v.budget.CurrentBackoff(token)
+		v.log.Warn("usage API refused us; backing off", "consecutive", strikes,
+			"waiting", wait.Round(time.Second), "retry_after", rl.RetryAfter.Round(time.Second))
 	} else if err == nil {
 		v.budget.Succeeded(token)
 	}
 	return u, err
+}
+
+// fetchCred is fetch for a stored credential, which is never sent past its
+// expiry (R2): the usage endpoint answers an expired token with 429, not 401
+// (GROUND_TRUTH §46), so the call would only buy a strike. It returns a
+// *usage.ExpiredError instead, with no call made.
+func (v *Vault) fetchCred(ctx context.Context, o *keychain.OAuth, p usage.Priority) (*usage.Usage, error) {
+	if exp := o.Expiry(); usage.Expired(exp, time.Now()) {
+		return nil, &usage.ExpiredError{At: exp}
+	}
+	return v.fetch(ctx, o.AccessToken, p)
 }
 
 // Entry is what the vault knows about a stored account.
@@ -813,12 +827,11 @@ func (v *Vault) Verify(ctx context.Context, accountID string) error {
 	if err != nil {
 		return err
 	}
-	claimed := v.OrgOf(accountID)
-	u, err := v.fetch(ctx, o.AccessToken, usage.Swap)
+	u, err := v.fetchCred(ctx, o, usage.Swap)
 	if err != nil {
 		return err
 	}
-	if claimed != "" && u.OrgID != claimed {
+	if claimed := v.OrgOf(accountID); claimed != "" && u.OrgID != claimed {
 		return fmt.Errorf(
 			"vault entry %q is inconsistent: its metadata says organization %s but its "+
 				"credential belongs to %s. Re-add it with `claudeswitch add %s`",
@@ -911,6 +924,11 @@ func (v *Vault) HoldsAccountWhy(ctx context.Context, item keychain.Live, account
 			return false, true, time.Time{}
 		}
 	}
+	// Never asked with an expired token (R2): unknown, with no call, until
+	// the session or the daemon renews it.
+	if usage.Expired(live.ClaudeAIOAuth.Expiry(), time.Now()) {
+		return false, false, time.Time{}
+	}
 	p := v.probeSeat(ctx, live.ClaudeAIOAuth.AccessToken)
 	if p.seat == "" {
 		return false, false, p.retryAt
@@ -988,6 +1006,8 @@ func (v *Vault) probeSeat(ctx context.Context, token string) seatProbe {
 		} else if rl, isRL := usage.IsRateLimited(err); isRL {
 			// Only ever asked about live tokens: the live cap applies.
 			v.budget.PenalizeLive(token, rl.RetryAfter)
+			v.log.Warn("profile endpoint refused us; backing off",
+				"retry_after", rl.RetryAfter.Round(time.Second))
 			p.retryAt, _ = v.budget.LockedUntil(token)
 		}
 	} else if reason == usage.ReasonLockout {

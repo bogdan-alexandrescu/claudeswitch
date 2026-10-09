@@ -232,7 +232,7 @@ func TestADayOfUsageDrawsNoRefusals(t *testing.T) {
 			t.Fatalf("%s: nowhere to rotate to at %s", why, clock.Format("15:04:05"))
 		}
 		acct := st.Get(target)
-		if r := p.fetchInto(ctx, acct, "tok-"+target, usage.Swap); r != usage.ReasonOK || acct.LastErr != "" {
+		if r := p.fetchInto(ctx, acct, "tok-"+target, time.Time{}, usage.Swap); r != usage.ReasonOK || acct.LastErr != "" {
 			t.Fatalf("%s: the swap check of %s at %s was refused: %q %s",
 				why, target, clock.Format("15:04:05"), r, acct.LastErr)
 		}

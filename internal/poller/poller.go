@@ -57,6 +57,12 @@ const (
 	MovingBurn = 0.1
 	StillAfter = 5 * time.Minute
 
+	// ParkRecheck is how soon an account parked on an expired token (R2) is
+	// looked at again: a local read of its credential, no call. Claude Code
+	// renews a busy profile's token, and the daemon an idle one's, on their
+	// own schedules; this only notices the renewal.
+	ParkRecheck = time.Minute
+
 	// burstSpacing separates calls made in one on-demand sweep. The endpoint's
 	// limit is a burst allowance; spacing is what keeps a multi-account refresh
 	// from tripping it.
@@ -391,8 +397,21 @@ func (p *Poller) PollActiveIn(ctx context.Context, profile string) (*state.Accou
 	// Whoever is refused on this token next — the vault included — backs off
 	// no further than the live cap.
 	p.budget.MarkLive(blob.ClaudeAIOAuth.AccessToken)
-	p.fetchInto(ctx, scratch, blob.ClaudeAIOAuth.AccessToken, usage.Swap)
+	reason := p.fetchInto(ctx, scratch, blob.ClaudeAIOAuth.AccessToken, blob.ClaudeAIOAuth.Expiry(), usage.Swap)
 
+	if reason == usage.ReasonExpired {
+		// Parked (R2): no call, so nothing is learnt about attribution and
+		// nothing counts as a failure. The account attributed here says why
+		// it is not being read, unless it already says it needs a sign-in.
+		if prev := p.attributeIn(profile, ""); prev != Unattributed {
+			a := p.st.Get(prev)
+			a.TokenExpiry = blob.ClaudeAIOAuth.Expiry()
+			a.RefreshExpiry = blob.ClaudeAIOAuth.RefreshExpiry()
+			park(a, scratch.LastErr)
+			return a, fmt.Errorf("not reading the live credential: %s", scratch.LastErr)
+		}
+		return nil, fmt.Errorf("not reading the live credential: %s", scratch.LastErr)
+	}
 	if scratch.Last == nil && scratch.OrgID == "" {
 		// We could not read the credential's organization, so we cannot say
 		// which account is live. Leave the previous attribution alone and
@@ -547,16 +566,16 @@ func (p *Poller) RefreshStale(ctx context.Context, maxAge time.Duration) (int, e
 		if acct.Last != nil && p.now().Sub(acct.LastAt) < maxAge {
 			continue
 		}
-		tok, err := p.tokenFor(a.ID)
+		tok, exp, _, err := p.tokenInfo(a.ID)
 		if err != nil {
 			acct.LastErr = "no stored credential"
 			continue
 		}
 		p.budget.Pace(ctx)
-		switch p.fetchInto(ctx, acct, tok, usage.Scheduled) {
+		switch p.fetchInto(ctx, acct, tok, exp, usage.Scheduled) {
 		case usage.ReasonOK:
-		case usage.ReasonLockout, usage.ReasonAccount:
-			continue // this account is backing off; the others are not
+		case usage.ReasonLockout, usage.ReasonAccount, usage.ReasonExpired:
+			continue // this account is backing off or parked; the others are not
 		default:
 			return done, nil // out of budget; the rest keep what they had
 		}
@@ -608,15 +627,15 @@ func (p *Poller) RefreshCandidatesIn(ctx context.Context, olderThan time.Duratio
 			p.now().Sub(acct.LastAt) < olderThan {
 			continue
 		}
-		tok, err := p.tokenFor(a.ID)
+		tok, exp, _, err := p.tokenInfo(a.ID)
 		if err != nil {
 			continue
 		}
 		p.budget.Pace(ctx)
-		switch p.fetchInto(ctx, acct, tok, usage.Scheduled) {
+		switch p.fetchInto(ctx, acct, tok, exp, usage.Scheduled) {
 		case usage.ReasonOK:
 			done++
-		case usage.ReasonLockout, usage.ReasonAccount:
+		case usage.ReasonLockout, usage.ReasonAccount, usage.ReasonExpired:
 			continue
 		default:
 			return done
@@ -655,7 +674,9 @@ func (p *Poller) Tick(ctx context.Context) {
 		// reserve — so its reading never reaches the stale-decision cap.
 		priority := usage.Scheduled
 		overdueAt := time.Time{}
-		if p.isActive(a.ID) {
+		// A quiet profile's live account is read at poll_idle (R4), so it is
+		// never overdue at poll_active and never spends the hot reserve.
+		if prof, active := p.activeIn(a.ID); active && !p.quiet(prof) {
 			overdueAt = acct.LastAt.Add(p.overdueAfter())
 			switch {
 			case p.hot[a.ID]:
@@ -664,10 +685,15 @@ func (p *Poller) Tick(ctx context.Context) {
 				priority = usage.Overdue
 			}
 		}
-		switch reason := p.fetchInto(ctx, acct, tok, priority); reason {
+		switch reason := p.fetchInto(ctx, acct, tok, exp, priority); reason {
 		case usage.ReasonOK:
 			p.schedule(a.ID, now, acct)
 			return // one API call per tick keeps the budget honest
+		case usage.ReasonExpired:
+			// Parked (R2): no call was made. Look again shortly, for the
+			// renewed token, and give the tick to the next account.
+			p.hold(a.ID, now.Add(ParkRecheck))
+			continue
 		case usage.ReasonLockout:
 			// Only this account is backing off. Come back to it when its lock
 			// ends, and give the tick to the next account that is due.
@@ -710,6 +736,13 @@ func (p *Poller) mayPollHot(profile string) bool {
 	return p.Busy(profile)
 }
 
+// quiet reports whether a profile's sessions are known not to be busy (D15):
+// its live account is then read at poll_idle, not poll_active (R4), and the
+// daemon may renew its live token (R2). Unknown (no Busy) is not quiet.
+func (p *Poller) quiet(profile string) bool {
+	return p.Busy != nil && !p.Busy(profile)
+}
+
 // overdueAfter is how old the reading of the account in use may get before
 // a routine read of it is Overdue: config.OverdueAfter (3m15s at the 3m
 // default). With the overdue read's wait for its allowance it must stay below
@@ -749,6 +782,7 @@ func (p *Poller) hold(id string, til time.Time) {
 func (p *Poller) due(now time.Time) []config.Account {
 	var out []config.Account
 	for _, a := range p.cfg.Ordered() {
+		p.seed(a.ID)
 		if t, ok := p.nextPoll[a.ID]; ok && now.Before(t) && !p.overdueActive(a.ID, now) {
 			continue
 		}
@@ -762,8 +796,12 @@ func (p *Poller) due(now time.Time) []config.Account {
 }
 
 func (p *Poller) overdueActive(id string, now time.Time) bool {
-	if now.Before(p.held[id]) || !p.isActive(id) {
+	if now.Before(p.held[id]) {
 		return false
+	}
+	prof, active := p.activeIn(id)
+	if !active || p.quiet(prof) {
+		return false // a quiet profile's account is read at poll_idle (R4)
 	}
 	acct, ok := p.st.Accounts[id]
 	if !ok || acct.LastAt.IsZero() {
@@ -774,6 +812,74 @@ func (p *Poller) overdueActive(id string, now time.Time) bool {
 		iv = ActiveInterval
 	}
 	return !now.Before(acct.LastAt.Add(iv))
+}
+
+// seed starts an account with no schedule yet -- a restarted daemon's --
+// from its last reading (R4): due when that reading is its routine interval
+// old, rather than at once. Every account read in the last few minutes was
+// otherwise read again in the first ticks after a restart. One never read
+// stays unscheduled, and so due.
+func (p *Poller) seed(id string) {
+	if _, ok := p.nextPoll[id]; ok {
+		return
+	}
+	acct, ok := p.st.Accounts[id]
+	if !ok || acct.LastAt.IsZero() {
+		return
+	}
+	p.nextPoll[id] = acct.LastAt.Add(p.routineInterval(id))
+}
+
+// routineInterval is an account's cadence with nothing moving: poll_active
+// for the account in use in a busy (or unknown) profile, poll_idle for every
+// other account, a quiet profile's live one included (R4).
+func (p *Poller) routineInterval(id string) time.Duration {
+	if prof, active := p.activeIn(id); active && !p.quiet(prof) {
+		if iv := p.cfg.PollActive.Duration; iv > 0 {
+			return iv
+		}
+		return ActiveInterval
+	}
+	if iv := p.cfg.PollIdle.Duration; iv > 0 {
+		return iv
+	}
+	return IdleInterval
+}
+
+// ResumeIn lets a restarted daemon skip a profile's startup read (R4): when
+// its live token is the one last attributed there (ProfileState.LiveKey),
+// unexpired, and the account it holds was read within poll_active, the
+// attribution and the reading both stand. The account's schedule starts from
+// that reading. It reports whether it resumed; false means read as before.
+func (p *Poller) ResumeIn(profile string) bool {
+	ps := p.st.Profiles[profile]
+	if ps == nil || ps.Active == "" || ps.Active == Unattributed || ps.LiveKey == "" {
+		return false
+	}
+	blob, err := p.liveOf(profile).Read()
+	if err != nil || blob == nil || blob.ClaudeAIOAuth == nil {
+		return false
+	}
+	o := blob.ClaudeAIOAuth
+	now := p.now()
+	if usage.CredKey(o.AccessToken) != ps.LiveKey || usage.Expired(o.Expiry(), now) {
+		return false
+	}
+	acct, ok := p.st.Accounts[ps.Active]
+	if !ok || acct.Last == nil || acct.LastAt.IsZero() {
+		return false
+	}
+	iv := p.cfg.PollActive.Duration
+	if iv <= 0 {
+		iv = ActiveInterval
+	}
+	if now.Sub(acct.LastAt) >= iv {
+		return false
+	}
+	p.budget.MarkLive(o.AccessToken)
+	acct.TokenExpiry, acct.RefreshExpiry = o.Expiry(), o.RefreshExpiry()
+	p.seed(ps.Active)
+	return true
 }
 
 // noteMovement records when an account's reading rose, for the hot cadence.
@@ -862,8 +968,10 @@ func (p *Poller) schedule(id string, now time.Time, acct *state.Account) {
 		iv = IdleInterval
 	}
 	hot := false
-	// Active in any profile is active: it is the one being spent there.
-	if prof, active := p.activeIn(id); active {
+	// Active in any profile is active: it is the one being spent there. A
+	// quiet profile's is read at poll_idle (R4) unless it is moving within
+	// reach of its trigger where hot polling is allowed (one profile, D16).
+	if prof, active := p.activeIn(id); active && (!p.quiet(prof) || (p.mayPollHot(prof) && p.isHot(id, now, acct))) {
 		iv = p.cfg.PollActive.Duration
 		if iv <= 0 {
 			iv = ActiveInterval
@@ -895,7 +1003,16 @@ func (p *Poller) schedule(id string, now time.Time, acct *state.Account) {
 // The budget is consulted here and only here. Callers used to ask it first and
 // then call this, which asked again — so every poll was recorded twice, and the
 // window allowed half the calls its allowance says.
-func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token string, priority usage.Priority) usage.Reason {
+//
+// A token past its expiry (exp; zero is unknown) is never sent (R2): the
+// endpoint answers one with 429, not 401 (GROUND_TRUTH §46), and every such
+// call was a strike. It reports ReasonExpired, with no call, no strike and no
+// failure counted, and LastErr says so.
+func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token string, exp time.Time, priority usage.Priority) usage.Reason {
+	if usage.Expired(exp, p.now()) {
+		park(acct, (&usage.ExpiredError{At: exp}).Error())
+		return usage.ReasonExpired
+	}
 	// Ask every time, for every caller. This check used to run only for
 	// priority polls, so an ordinary one could reach the API while the budget
 	// was locked — collect a fresh Retry-After: 3600, and re-arm the very lock
@@ -918,9 +1035,12 @@ func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token strin
 			acct.LastErr = rl.Error()
 			// Report the backoff actually applied, not the header value: the
 			// endpoint sends Retry-After: 0, which means nothing (§42).
+			// And the header itself (R3): a long one is the server saying
+			// the refusal will last, and the backoff steps on it.
 			wait, strikes := p.budget.CurrentBackoff(token)
 			p.log.Warn("usage API refused us; backing off",
-				"account", acct.ID, "consecutive", strikes, "waiting", wait.Round(time.Second))
+				"account", acct.ID, "consecutive", strikes, "waiting", wait.Round(time.Second),
+				"retry_after", rl.RetryAfter.Round(time.Second))
 			return usage.ReasonOK
 		}
 		if usage.IsShapeError(err) {
@@ -984,6 +1104,16 @@ func (p *Poller) fetchInto(ctx context.Context, acct *state.Account, token strin
 	}
 	p.noteSeverity(key, u)
 	return usage.ReasonOK
+}
+
+// park records why an account is not being read: its token expired (R2). A
+// needs-login verdict already there is kept -- it says more, and the sign-in
+// banner reads it.
+func park(acct *state.Account, why string) {
+	if state.NeedsLoginErr(acct.LastErr) {
+		return
+	}
+	acct.LastErr = why
 }
 
 // scratchFor is the record a profile's live credential is read into before

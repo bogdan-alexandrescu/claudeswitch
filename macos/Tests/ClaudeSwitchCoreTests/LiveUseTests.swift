@@ -7,7 +7,7 @@ import Testing
 @Suite struct LiveUseTests {
     func list() throws -> ProfileList {
         try #require(ProfileList(data: try encode([
-            "profiles": [["name": "default", "declared": true, "pool": ["a1", "aieng-claude1"], "listed": ["a1"]],
+            "profiles": [["name": "default", "declared": true, "pool": ["a1", "lab-1"], "listed": ["a1"]],
                          ["name": "work", "declared": true, "pool": ["w1"], "listed": ["w1"]],
                          ["name": "lab", "declared": true, "pool": [String](), "listed": [String]()]],
             "ghosts": [Any]()])))
@@ -22,12 +22,12 @@ import Testing
 
     @Test func testAnAccountDefaultHoldsOnlyByD6IsAddedNotMoved() throws {
         let l = try list()
-        #expect(l.step(adding: "aieng-claude1", to: "work") == .add(account: "aieng-claude1", to: "work"),
+        #expect(l.step(adding: "lab-1", to: "work") == .add(account: "lab-1", to: "work"),
                 "no pool lists it: add it to work; never remove it from default")
         #expect(l.step(adding: "a1", to: "work") == .move(account: "a1", from: "default", to: "work"))
         #expect(l.step(adding: "w1", to: "lab") == .move(account: "w1", from: "work", to: "lab"))
         #expect(l.step(adding: "w1", to: "work") == .already)
-        #expect(l.step(adding: "aieng-claude1", to: "default") == .already)
+        #expect(l.step(adding: "lab-1", to: "default") == .already)
         #expect(l.step(adding: "nobody", to: "lab") == .add(account: "nobody", to: "lab"))
     }
 

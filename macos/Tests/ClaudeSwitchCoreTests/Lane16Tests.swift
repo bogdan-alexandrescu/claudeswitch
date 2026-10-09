@@ -336,10 +336,10 @@ final class Box<T>: @unchecked Sendable {
         """#.utf8))!
 
     @Test func testSuccessNotes() throws {
-        let moved = try #require(PoolResult(JSON(data: Data(#"{"account":"aieng-claude1","profile":"work","changed":true,"pools":{}}"#.utf8))!))
-        #expect(Notes.pool(moved) == "aieng-claude1 is now in work")
-        let same = try #require(PoolResult(JSON(data: Data(#"{"account":"aieng-claude1","profile":"work","changed":false,"pools":{}}"#.utf8))!))
-        #expect(Notes.pool(same) == "aieng-claude1 is already in work")
+        let moved = try #require(PoolResult(JSON(data: Data(#"{"account":"lab-1","profile":"work","changed":true,"pools":{}}"#.utf8))!))
+        #expect(Notes.pool(moved) == "lab-1 is now in work")
+        let same = try #require(PoolResult(JSON(data: Data(#"{"account":"lab-1","profile":"work","changed":false,"pools":{}}"#.utf8))!))
+        #expect(Notes.pool(same) == "lab-1 is already in work")
     }
 
     @Test func testOneVerbForListedAndD6Accounts() throws {

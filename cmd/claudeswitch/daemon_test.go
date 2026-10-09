@@ -45,7 +45,12 @@ type fakePoller struct {
 	cfgSet    *config.Config
 	// onPoll, when set, runs at every PollActiveIn: a network call.
 	onPoll func()
+	// resume is what ResumeIn answers per profile (R4); absent is false.
+	resume map[string]bool
 }
+
+// ResumeIn makes no call, so it is not recorded among calls.
+func (f *fakePoller) ResumeIn(prof string) bool { return f.resume[prof] }
 
 func (f *fakePoller) Tick(context.Context) { f.calls = append(f.calls, pollerCall{op: "tick"}) }
 func (f *fakePoller) PollActiveIn(_ context.Context, prof string) (*state.Account, error) {
@@ -102,6 +107,8 @@ type fakeVault struct {
 	refreshWindow time.Duration
 	// swapHook, when set, runs inside every swap: a test can hold one open.
 	swapHook func()
+	// refreshErr is what RefreshIn returns per account; absent succeeds.
+	refreshErr map[string]error
 }
 
 func itemKey(item keychain.Live) string {
@@ -165,6 +172,9 @@ func (f *fakeVault) NeedsRefresh(id string, w time.Duration) bool {
 func (f *fakeVault) VaultedAt(string) time.Time { return time.Now() }
 func (f *fakeVault) RefreshIn(_ context.Context, id, _ string, holder keychain.Live, _ bool) (*vault.Entry, error) {
 	f.calls = append(f.calls, vaultCall{"refresh", holder, id})
+	if err := f.refreshErr[id]; err != nil {
+		return nil, err
+	}
 	return &vault.Entry{AccountID: id}, nil
 }
 

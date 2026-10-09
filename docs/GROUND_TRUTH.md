@@ -470,7 +470,7 @@ Keychain item will break the running session.
 
 ## 17. Vaulting whatever is live is easy to do by mistake
 
-`claudeswitch add acme-work` was run without the intended `/login` having switched
+`claudeswitch add work-other` was run without the intended `/login` having switched
 accounts. It succeeded, verified against the usage API, and produced a vault entry that
 looked entirely healthy — but its org id was the personal account's. The result is two
 names for one account: `status` would show two rotation targets, the policy engine would
@@ -571,8 +571,8 @@ Run against the vaulted Acme (SSO, team, `max_5x`) account while the live sessio
 a different account:
 
 ```
-$ claudeswitch refresh work-main-personal
-  ✓ refreshed work-main-personal
+$ claudeswitch refresh work-personal
+  ✓ refreshed work-personal
     org           22222222-2222-2222-2222-222222222222
     new expiry    in 8h0m0s
     access token  …GgAA → (new, stored)
@@ -1353,3 +1353,30 @@ the second account, the same task ran in the second account's Chrome profile
 without that profile being opened or brought forward by hand. This confirms the
 inference in IMPROVEMENTS C1: the bridge is keyed by account, so one Chrome
 profile per account is enough for routing to follow a rotation.
+
+## 46. The usage endpoint answers an expired access token with 429, not 401 (observed 2026-10-08/09)
+
+A read-only investigation of `daemon.log`, the audit, the ledger and the
+readings (IMPROVEMENTS, "429s after the 0.6 releases"). An idle profile's live
+access token is renewed by nobody: no Claude Code session runs there to
+refresh it, and the daemon never refreshed a live item. Once it expired,
+`/api/oauth/usage` answered it with **429**, not the 401 a dead token gets, so
+the daemon took each answer for a rate limit, backed off 20 minutes, and
+asked again:
+
+- **work-team**, live in the work profile, 10-08 into 10-09: **25
+  consecutive strikes** on one token, one every 20 minutes, for hours.
+- **Another work-profile account**, the same shape on 10-08. The streak ended when Claude
+  Code was started in `~/.claude-work`: the session renewed the token, and the
+  next read was answered.
+
+What follows:
+
+- **A 429 on an expired token is not a rate limit**, and no backoff ends it;
+  only a renewal does. Sending the token again only buys another strike. The
+  token's own expiry, which the credential carries, is the test: claudeswitch
+  now never sends a token past it, and renews a quiet profile's itself (R2).
+- **First strikes of 20 minutes** in the same logs mean the server sent a
+  `Retry-After` longer than that, which `MaxLock` cut to 20 minutes, so the
+  next call was a sure second strike. The header was not logged at the time;
+  it is again (R3).

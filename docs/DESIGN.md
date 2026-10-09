@@ -175,14 +175,62 @@ interval doubles back toward `poll_active` rather than jumping. D3/D16 still
 gate hot polling to a busy profile when there are several. A re-attribution
 read of the live account counts as its poll, and an account that becomes the
 one in use is read once its reading is `poll_active` old rather than waiting out
-an idle schedule.
+an idle schedule (in a busy profile; a quiet one's waits `poll_idle`, below).
+
+**A quiet profile's live account is read at `poll_idle`** (R4, owner
+2026-10-09). "Quiet" is D15's test: no transcript write in the profile within
+`poll_active`. Nothing is spending that account from this machine, so a
+reading `poll_idle` old says what a fresher one would; it is not pulled in as
+overdue at `poll_active`, never spends the hot reserve, and the daemon's
+stale-decision warning allows it `poll_idle` more. The moment the profile is
+busy again its account is overdue and read on the next tick. With one profile
+an account still polls hot while it moves within reach (D16). The poller
+reports a profile as unknown (not quiet) when no busy test is wired, as in
+tests.
+
+**A restart starts each schedule from the last reading** (R4). An account with
+no schedule yet is due at its `LastAt` plus its routine interval, not at once,
+and a profile whose live token is the one last attributed (`live_key`),
+unexpired, with its account read within `poll_active`, skips the startup read
+altogether (`Poller.ResumeIn`). A restart used to read every profile and
+every account in its first ticks.
+
+**An expired access token is never sent** (R2, GROUND_TRUTH §46). The usage
+endpoint answers one with 429, not 401, so each call was a strike and no
+backoff ended them. The poller, the vault's seat probe and the swap's verify
+check the credential's own expiry first: past it, no call, no strike, no
+failure counted toward blind failover, and `last_error` says "access token
+expired; parked until it is renewed". A swap installing an expired token
+stands unverified — Claude Code renews it on first use. A parked account is
+looked at again every minute (a local read, no call).
+
+What unparks it: a busy profile's session renews its own token. A quiet
+profile's live token, once expired or within `refresh_window`, is renewed by
+the daemon on its two-minute vault tick — `RefreshIn` on the profile's own
+item, holding Claude Code's credential locks (§43), then a fresh read — at
+most once per profile every 10 minutes, audited as `kind: refresh` with the
+profile and account. Never a busy profile's: the refresh revokes the token its
+session holds (§16). A session open but not busy loses its token; the owner
+accepted that cost, and the keychain write. Not when `auto_refresh` is off,
+and not for a live account with no vault entry (`RefreshIn` renews through the
+vault). A dead refresh token writes the needs-login error into the account's
+`last_error`, where `status` and the app's sign-in banner read it, and sends
+one notification.
 
 **After a 429** the account backs off on our own schedule: 5 minutes, doubling,
 at most 20 (at most 10 for the account in use, since 5 + 10 covers the measured
 recovery). "In use" is any credential marked live in the ledger in the last hour,
-so the cap holds whoever is refused — the vault's swap and probe calls included. A longer `Retry-After` is still honoured up to `MaxLock`. A 429 never
-counts toward blind failover (4.4), and the transcript detector still re-decides
-at once on a refusal, whatever any lock says.
+so the cap holds whoever is refused — the vault's swap and probe calls
+included. A **long** `Retry-After` (over 5 minutes) is the server saying the
+refusal will last (R3, owner 2026-10-09): it is honoured up to a step that
+grows with each long-wait refusal of the same token since its last success —
+20, 40, then 60 minutes for an idle account; 20, then 30 for the account in
+use — and never cut below what the step allows. `Retry-After: 0`, §42's burst
+limit, keeps the 5-minute first strike. `MaxLock` is the longest step, 60
+minutes: the watchdog no longer counts a lock as blindness, so it no longer
+bounds it. Every 429 logs the header (`retry_after`) beside the backoff
+applied. A 429 never counts toward blind failover (4.4), and the transcript
+detector still re-decides at once on a refusal, whatever any lock says.
 
 `internal/poller/simulation_test.go` replays a working day (two trigger
 crossings on one account, three idle accounts, Claude Code's own reads, a

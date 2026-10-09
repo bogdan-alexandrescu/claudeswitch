@@ -157,8 +157,14 @@ func (v *Vault) SwapToWith(ctx context.Context, item keychain.Live, accountID, e
 			"Claude Code is probably refreshing it, so try again in a moment", item.Name())
 	}
 
-	u, verr := v.fetch(ctx, incoming.AccessToken, usage.Swap)
+	u, verr := v.fetchCred(ctx, incoming, usage.Swap)
 	switch {
+	case usage.IsExpired(verr):
+		// Never sent (R2): the endpoint answers an expired token with 429.
+		// Claude Code renews it on first use; the swap stands, unverified.
+		v.log.Info("swap installed without verifying: the incoming access token has expired, "+
+			"and Claude Code renews it on first use", "account", accountID)
+		return &SwapResult{AccountID: accountID}, nil
 	case verr != nil:
 		if _, ok := usage.IsRateLimited(verr); ok {
 			// The credential is installed and may well be fine; we simply cannot

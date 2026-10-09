@@ -362,6 +362,9 @@ type accountLock struct {
 	// Strikes counts consecutive refusals, so the backoff can grow rather than
 	// retrying at a fixed interval forever.
 	Strikes int `json:"strikes,omitempty"`
+	// Long counts the long-wait refusals among them (a Retry-After above
+	// MinBackoff), which step through the longer schedule (R3).
+	Long int `json:"long,omitempty"`
 }
 
 // lockKey names a credential in the ledger without storing it. Keying on the
@@ -480,7 +483,31 @@ const (
 	// ReasonAccount is this account's own allowance (§42) being down to its
 	// reserve, or empty. Only this account waits; the others are unaffected.
 	ReasonAccount Reason = "this account's usage allowance is low; deferred"
+	// ReasonExpired is a token past its expiry, never sent (R2): the usage
+	// endpoint answers one with 429, not 401 (GROUND_TRUTH §46), so sending
+	// it only buys a strike. It waits, parked, until it is renewed.
+	ReasonExpired Reason = "access token expired; parked until it is renewed"
 )
+
+// Expired reports whether a token expiring at exp is past it at now. A zero
+// expiry is unknown, not expired: the token is sent and the answer says.
+func Expired(exp, now time.Time) bool {
+	return !exp.IsZero() && !now.Before(exp)
+}
+
+// ExpiredError is a call not made because its token had expired (R2).
+type ExpiredError struct{ At time.Time }
+
+func (e *ExpiredError) Error() string {
+	return fmt.Sprintf("not sent: the access token expired at %s; parked until it is renewed",
+		e.At.Local().Format("15:04"))
+}
+
+// IsExpired reports whether err is a call not made for an expired token.
+func IsExpired(err error) bool {
+	var e *ExpiredError
+	return errors.As(err, &e)
+}
 
 // MinSpacing is the shortest gap between two calls this program will make.
 //
@@ -612,8 +639,9 @@ func (b *Budget) AccountLevel(cred string) float64 {
 // reaches the measured recovery on the second try.
 const MinBackoff = 5 * time.Minute
 
-// MaxBackoff caps the wait after repeated refusals. Long enough to stop
-// hammering, short enough that recovery is not missed by an hour.
+// MaxBackoff caps the wait after repeated refusals carrying no long
+// Retry-After. Long enough to stop hammering, short enough that recovery is
+// not missed by an hour.
 const MaxBackoff = 20 * time.Minute
 
 // MaxLiveBackoff caps it for the account in use. That account is the one a
@@ -623,15 +651,27 @@ const MaxBackoff = 20 * time.Minute
 // accounts can wait; this one waits no longer than a refusal lasts (5 + 10
 // minutes covers the measured 10–15). A refusal in the transcript is still
 // acted on at once by the detector, whatever this lock says. A longer
-// Retry-After from the server is still honoured.
+// Retry-After from the server is still honoured, up to LiveLongWaitSteps.
 const MaxLiveBackoff = 10 * time.Minute
 
+// LongWaitSteps is how much of a long Retry-After (above MinBackoff) is
+// honoured on each consecutive long-wait refusal of the same token, for an
+// idle account; LiveLongWaitSteps for the account in use (R3, owner
+// 2026-10-09). A first strike of 20m means the server asked for longer, and
+// cutting every one to a flat 20m made the next call a sure second strike.
+// The last step repeats. A server asking for less than the step is given
+// what it asked, and never less than the doubling backoff.
+var (
+	LongWaitSteps     = []time.Duration{20 * time.Minute, 40 * time.Minute, 60 * time.Minute}
+	LiveLongWaitSteps = []time.Duration{20 * time.Minute, 30 * time.Minute}
+)
+
 // MaxLock bounds how long we will stop calling the API, whatever Retry-After
-// says. It exists so the pause can never outlast the watchdog that is supposed
-// to notice a daemon which has stopped seeing: if it could, the watchdog would
-// kill a healthy daemon mid-wait and the restart would inherit the same lock.
-// Anything that needs a longer pause than this needs a person, not a timer.
-const MaxLock = 20 * time.Minute
+// says: the longest long-wait step. Retry-After: 3600 honoured literally on
+// the first refusal was too long to come back from a transient refusal, and
+// the watchdog no longer counts a lock as blindness (Poller.Blind), so the
+// bound is the schedule's, not the watchdog's.
+const MaxLock = 60 * time.Minute
 
 // Penalize records a 429 and backs off, doubling each time the refusals keep
 // coming.
@@ -647,6 +687,39 @@ func (b *Budget) Penalize(cred string, retryAfter time.Duration) {
 // PenalizeLive is Penalize for the credential currently in use.
 func (b *Budget) PenalizeLive(cred string, retryAfter time.Duration) {
 	b.penalize(cred, retryAfter, MaxLiveBackoff)
+}
+
+// LockFor is the lock a refusal arms: strikes and long are the consecutive
+// refusals and long-wait refusals counting this one, live whether the
+// credential is the account in use. Retry-After at or below MinBackoff
+// (§42's burst limit sends 0) gets the doubling backoff alone: 5m, 10m, 20m
+// (10m live). A longer one is honoured up to the long-wait step.
+func LockFor(retryAfter time.Duration, strikes, long int, live bool) time.Duration {
+	maxBackoff, steps := MaxBackoff, LongWaitSteps
+	if live {
+		maxBackoff, steps = MaxLiveBackoff, LiveLongWaitSteps
+	}
+	// Double per consecutive refusal, starting at the minimum.
+	if strikes < 1 {
+		strikes = 1
+	}
+	wait := MinBackoff << min(strikes-1, 6)
+	if wait > maxBackoff {
+		wait = maxBackoff
+	}
+	if retryAfter > MinBackoff && long > 0 {
+		ra := retryAfter
+		if step := steps[min(long, len(steps))-1]; ra > step {
+			ra = step
+		}
+		if ra > wait {
+			wait = ra
+		}
+	}
+	if wait > MaxLock {
+		wait = MaxLock
+	}
+	return wait
 }
 
 func (b *Budget) penalize(cred string, retryAfter, maxBackoff time.Duration) {
@@ -670,29 +743,17 @@ func (b *Budget) penalize(cred string, retryAfter, maxBackoff time.Duration) {
 		}
 
 		// Whoever reports it, a refusal of a live credential gets the live
-		// cap: the vault's swap and probe calls lock the token a session is
-		// running on just as surely as the poller's.
-		if at, ok := lf.Live[key]; ok && now.Sub(at) <= liveFor && maxBackoff > MaxLiveBackoff {
-			maxBackoff = MaxLiveBackoff
+		// schedule: the vault's swap and probe calls lock the token a session
+		// is running on just as surely as the poller's.
+		live := maxBackoff <= MaxLiveBackoff
+		if at, ok := lf.Live[key]; ok && now.Sub(at) <= liveFor {
+			live = true
 		}
 		l.Strikes++
-		wait := retryAfter
-		// Double per consecutive refusal, starting at the minimum.
-		backoff := MinBackoff << min(l.Strikes-1, 6)
-		if backoff > maxBackoff {
-			backoff = maxBackoff
+		if retryAfter > MinBackoff {
+			l.Long++
 		}
-		if wait < backoff {
-			wait = backoff
-		}
-		// Cap what the API asks for, too. Retry-After: 3600 was being honoured
-		// literally, which is longer than any watchdog will wait — so the
-		// process was killed and restarted for the whole hour, seeing nothing.
-		// We come back early and, if the API still refuses, back off again.
-		if wait > MaxLock {
-			wait = MaxLock
-		}
-		til := now.Add(wait)
+		til := now.Add(LockFor(retryAfter, l.Strikes, l.Long, live))
 		if til.After(l.Until) {
 			l.Until = til
 		}

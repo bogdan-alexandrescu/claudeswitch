@@ -45,6 +45,9 @@ import (
 type daemonPoller interface {
 	Tick(ctx context.Context)
 	PollActiveIn(ctx context.Context, profile string) (*state.Account, error)
+	// ResumeIn: may a restarted daemon skip this profile's startup read, its
+	// live token and reading being the ones last recorded (R4)?
+	ResumeIn(profile string) bool
 	RefreshCandidatesIn(ctx context.Context, olderThan time.Duration, profile string) int
 	ApplyRejection(accountID, window string, resetsAt time.Time)
 	Blind(limit time.Duration) (time.Duration, bool)
@@ -136,6 +139,11 @@ type profileLoop struct {
 	// runwayWarned holds the runway notice to once per approach (F2).
 	lastUnpinSig string
 	runwayWarned bool
+
+	// liveRenewAt is when the daemon last tried to renew this profile's live
+	// token (R2), so a failing renewal is retried at most every
+	// liveRenewEvery.
+	liveRenewAt time.Time
 
 	// hold keeps a config reload that removed this profile's active account
 	// from turning into a swap; see activeHold.
@@ -420,6 +428,13 @@ func (d *daemon) start(ctx context.Context) {
 		if il.live == nil {
 			continue
 		}
+		// A restart is not news (R4): a profile whose live token is the one
+		// last attributed, read within poll_active, needs no call to confirm.
+		if d.p.ResumeIn(il.name) {
+			il.log.Info("resuming from the last reading; no startup read",
+				"account", d.profState(il).Active)
+			continue
+		}
 		if _, err := d.p.PollActiveIn(ctx, il.name); err != nil {
 			il.log.Warn("initial active poll failed", "err", err)
 		}
@@ -475,8 +490,20 @@ func (d *daemon) evaluate(ctx context.Context, il *profileLoop, trigger string) 
 	// Acting on a reading that is too old to trust is how the daemon sat at
 	// 93% without rotating: its polls were failing, "stay" is logged at
 	// debug level, and nothing said a word. Staleness is now loud.
-	if a, ok := d.st.Accounts[ist.Active]; ok && a.Last != nil {
-		if age := time.Since(a.LastAt); age > staleDecisionAfter(il.cfg) {
+	//
+	// A quiet profile's live account is read at poll_idle (R4), so a reading
+	// that old is expected there; and one parked on an expired token (R2) is
+	// not being read at all, which its last error already says.
+	if a, ok := d.st.Accounts[ist.Active]; ok && a.Last != nil && !usage.Expired(a.TokenExpiry, time.Now()) {
+		limit := staleDecisionAfter(il.cfg)
+		if !d.busy(il.name) {
+			idle := d.cfg.PollIdle.Duration
+			if idle <= 0 {
+				idle = poller.IdleInterval
+			}
+			limit += idle
+		}
+		if age := time.Since(a.LastAt); age > limit {
 			il.log.Warn("deciding on a stale reading — the poller is not keeping up",
 				"account", ist.Active, "age", age.Round(time.Second),
 				"reading", fmt.Sprintf("%.0f%%", a.Projected(time.Now())),
@@ -819,6 +846,7 @@ func (d *daemon) maintainVault(ctx context.Context) {
 	if !cfg.RefreshEnabled() {
 		return
 	}
+	d.renewQuietLive(ctx)
 	for _, a := range cfg.Ordered() {
 		if d.activeAnywhere(a.ID) || !v.Has(a.ID) {
 			continue
@@ -880,6 +908,86 @@ func (d *daemon) maintainVault(ctx context.Context) {
 			continue
 		}
 		log.Info("refreshed an idle account", "account", a.ID, "why", why)
+	}
+}
+
+// liveRenewEvery is how often, at most, the daemon tries to renew one
+// profile's live token (R2).
+const liveRenewEvery = 10 * time.Minute
+
+// renewQuietLive renews the live token of each quiet profile whose token has
+// expired or is within refresh_window (R2, owner 2026-10-09).
+//
+// No Claude Code session renews an idle profile's token, and the usage
+// endpoint answers an expired one with 429, not 401 (GROUND_TRUTH §46): the
+// daemon read such a profile every 20 minutes for hours, a strike each time.
+// The poller now parks an expired token instead of sending it; this is what
+// unparks it. RefreshIn writes the profile's own live item holding Claude
+// Code's credential locks, as Claude Code refreshes it (§43); the profile is
+// then read again.
+//
+// A busy profile (D15) is never renewed here: its session renews its own
+// token, and a refresh revokes the one it holds (§16). A session open but not
+// busy does lose its token; the owner accepted that cost. A dead refresh
+// token parks the account as needing a sign-in, where status and the app's
+// banner look (LastErr), and says so once by notification.
+func (d *daemon) renewQuietLive(ctx context.Context) {
+	window := d.cfg.RefreshWindow.Duration
+	if window <= 0 {
+		window = vault.RefreshWindow
+	}
+	for _, il := range d.profs {
+		if il.live == nil {
+			continue
+		}
+		id := d.profState(il).Active
+		if id == "" || id == poller.Unattributed || !d.v.Has(id) {
+			continue
+		}
+		blob, err := il.live.Read()
+		if err != nil || blob == nil || blob.ClaudeAIOAuth == nil {
+			continue
+		}
+		exp := blob.ClaudeAIOAuth.Expiry()
+		if exp.IsZero() || time.Until(exp) >= window || d.busy(il.name) {
+			continue
+		}
+		if time.Since(il.liveRenewAt) < liveRenewEvery {
+			continue
+		}
+		il.liveRenewAt = time.Now()
+		why := "live token near expiry on a quiet profile"
+		if usage.Expired(exp, time.Now()) {
+			why = "live token expired on a quiet profile"
+		}
+		rctx, cancel := context.WithTimeout(ctx, 40*time.Second)
+		_, err = d.v.RefreshIn(rctx, id, d.cfg.SeatOf(id), il.live, true)
+		cancel()
+		ev := audit.Event{Kind: "refresh", Profile: il.name, Account: id, Reason: why}
+		if err != nil {
+			ev.Err = err.Error()
+			_ = d.aud.Write(ev)
+			var needsLogin *oauth.NeedsLoginError
+			if errors.As(err, &needsLogin) {
+				il.log.Error("the live account needs an interactive login: its refresh token is spent",
+					"account", id, "detail", err)
+				d.nt.Send("relogin:"+id, d.tag(il, id+" needs a login"),
+					"its refresh token is spent; run `cs login "+id+" --direct`")
+				d.st.Get(id).LastErr = err.Error()
+				if serr := d.saveCLI(); serr != nil {
+					il.log.Warn("could not record that an account needs a login", "account", id, "err", serr)
+				}
+				continue
+			}
+			il.log.Warn("could not renew the live token; trying again later",
+				"account", id, "why", why, "retry_in", liveRenewEvery, "err", err)
+			continue
+		}
+		_ = d.aud.Write(ev)
+		il.log.Info("renewed a quiet profile's live token", "account", id, "why", why)
+		if _, err := d.p.PollActiveIn(ctx, il.name); err != nil {
+			il.log.Debug("could not read the renewed live credential", "err", err)
+		}
 	}
 }
 

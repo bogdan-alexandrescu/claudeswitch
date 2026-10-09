@@ -65,7 +65,7 @@ func TestAnAccountActiveInAnyProfilePollsAtTheActiveCadence(t *testing.T) {
 }
 
 // D3: with two profiles, only a busy one polls hot. A hot but quiet profile
-// is not spending, so it polls at poll_active.
+// is not spending, so it polls at poll_idle (R4; poll_active before).
 func TestOnlyABusyProfilePollsHot(t *testing.T) {
 	now := time.Now()
 	for _, busy := range []bool{false, true} {
@@ -76,7 +76,7 @@ func TestOnlyABusyProfilePollsHot(t *testing.T) {
 		acct.ID = "w1"
 		movingAt(p, acct, 2, now) // and moving within reach (DESIGN 4.3c)
 		p.schedule("w1", now, acct)
-		want := 2 * time.Minute
+		want := 10 * time.Minute
 		if busy {
 			want = 20 * time.Second
 		}

@@ -155,7 +155,7 @@ func TestLinuxLiveCredentialFollowsTheSecureStorageDir(t *testing.T) {
 }
 
 // The vault is shared by every profile, so it stays put whatever
-// CLAUDE_CONFIG_DIR says: claudeswitch run from a acme session must see the
+// CLAUDE_CONFIG_DIR says: claudeswitch run from an acme session must see the
 // same accounts as the daemon.
 func TestLinuxVaultDoesNotFollowTheConfigDir(t *testing.T) {
 	home := t.TempDir()

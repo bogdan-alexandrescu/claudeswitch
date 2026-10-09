@@ -178,9 +178,18 @@ refresh_window = "1h"     # renew this long before a token expires
 refresh_probe  = "24h"    # also refresh each idle account this often; "0s" disables
 ```
 
-Those are the defaults. It never refreshes the account currently in use — that
-would revoke the token your session is holding; Claude Code renews that one
-itself and `SyncActive` re-captures it. Refreshing runs in dry-run too: dry-run
+Those are the defaults. It never refreshes the account in use in a profile
+where a session is working (a transcript write within `poll_active`) — that
+would revoke the token the session is holding; Claude Code renews that one
+itself and `SyncActive` re-captures it. A profile where nothing is working
+has no one to renew its token, and the usage API answers an expired one with
+429, so the daemon renews that profile's live token itself once it is within
+`refresh_window` of expiring, writing the profile's credential while holding
+Claude Code's lock, at most once every 10 minutes (audited as `refresh`). A
+session open there but idle loses its old token and picks up the new one. An
+expired token is never sent to the usage API: until it is renewed the account
+shows "access token expired; parked". If the renewal is refused, the account
+needs a sign-in, and `status`, the app and a notification say so. Refreshing runs in dry-run too: dry-run
 means "do not rotate", and letting every stored credential expire while watching
 would be a strange reading of it.
 
@@ -490,7 +499,7 @@ hard_floor       = 99     # above this, swap mid-turn rather than wait for an id
 switch_when      = "idle"
 hot_threshold    = 60     # poll_hot only above this (or burning fast), and only while moving toward the trigger
 poll_hot         = "1m"   # the default; faster drains the usage API's burst allowance
-poll_active      = "3m"   # the default: the account in use when not moving; under 2m runs at 2m and warns
+poll_active      = "3m"   # the default: the account in use, when not moving and a session works in its profile; under 2m runs at 2m and warns
 cooldown         = "10m"
 max_switch_wait  = "30s"  # how long a due switch waits for an idle gap
 landing_margin   = 10     # a switch target's session window needs this many points below its trigger
