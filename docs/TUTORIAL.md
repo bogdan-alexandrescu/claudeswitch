@@ -71,7 +71,7 @@ claudeswitch v0.6.4
 If your shell says `cs: command not found`, add `~/.local/bin` to your `PATH`
 and open a new terminal.
 
-On macOS, run `cs whoami` once now. macOS asks whether `claudeswitch` may use
+On macOS, run `cs daemon check` once now. macOS asks whether `claudeswitch` may use
 the Keychain item that holds Claude Code's login. Click **Always Allow**. The
 daemon you install in the next step runs in the background and cannot answer
 that prompt itself.

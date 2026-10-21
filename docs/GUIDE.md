@@ -87,7 +87,7 @@ claudeswitch profile pool <p> add|remove <id> [--to <other>]
 claudeswitch profile set <p> <key> <value|inherit>   # per-profile thresholds and models
 claudeswitch profile set <p> paths "~/src/work/**"   # the folders that pick the profile
 claudeswitch profile which       # the profile this folder picks
-claudeswitch daemon status|start|stop|restart|live|dry-run|install|uninstall
+claudeswitch daemon status|start|stop|restart|live|dry-run|install|uninstall|check
 claudeswitch watch [--live]      # run the daemon in the foreground
 claudeswitch uninstall           # stop the daemon and remove what was installed
 ```
