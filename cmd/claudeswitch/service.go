@@ -246,7 +246,7 @@ func thisBinary() (string, error) {
 	return filepath.Abs(p)
 }
 
-const daemonUsage = "usage: claudeswitch daemon status|start|stop|restart|live|dry-run|install|uninstall " +
+const daemonUsage = "usage: claudeswitch daemon status|start|stop|restart|live|dry-run|install|uninstall|check " +
 	"[--live|--dry-run] [--json]"
 
 // cmdDaemon is `cs daemon <verb>`.
@@ -280,6 +280,11 @@ func cmdDaemon(args []string) error {
 }
 
 func runDaemonCmd(w io.Writer, verb, mode string, asJSON bool) error {
+	if verb == "check" {
+		// Before the service is looked at: it is what to run before installing.
+		// The service runs the default config, so that is the one checked.
+		return daemonCheck(w, "", asJSON)
+	}
 	goos := serviceSeams.goos
 	paths, err := servicePathsFor(goos)
 	if err != nil {

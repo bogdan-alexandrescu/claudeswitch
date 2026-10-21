@@ -186,7 +186,7 @@ func usageText() {
   account    list | rename | delete | pin | unpin | priority
   priority <id>...
              set the rotation order
-  daemon     status | start | stop | restart | live | dry-run | install | uninstall
+  daemon     status | start | stop | restart | live | dry-run | install | uninstall | check
              the background service, as install.sh sets it up
   statusline one compact line for Claude Code's status line (read-only)
              install / uninstall set it in ~/.claude/settings.json
