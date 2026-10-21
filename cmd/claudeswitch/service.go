@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/state"
 )
@@ -342,6 +343,10 @@ func runDaemonCmd(w io.Writer, verb, mode string, asJSON bool) error {
 				if err := svc(launchctlPath, "load", paths.file); err != nil {
 					return err
 				}
+			} else if err := svc(launchctlPath, "start", serviceLabel); err != nil {
+				// A loaded job whose daemon exited cleanly stays down:
+				// KeepAlive restarts it only after a failure.
+				return err
 			}
 		} else if err := svc(systemctlPath(), "--user", "start", serviceUnit); err != nil {
 			return err
@@ -384,7 +389,27 @@ func runDaemonCmd(w io.Writer, verb, mode string, asJSON bool) error {
 	default:
 		return appErr(codeUsage, daemonUsage, "unknown daemon command %q", verb)
 	}
+	awaitDaemon(verb != "stop" && verb != "uninstall")
 	return emitDaemonStatus(w, goos, paths, verb, asJSON)
+}
+
+// launchctl and systemctl return once the job is loaded or unloaded, not once
+// the daemon has taken or let go of its lock. Read at once, a daemon still
+// starting was "loaded, not running", and the app showed that, offering Start
+// for a daemon that ran (observed 2026-10-21). So a verb waits, up to
+// daemonSettleWait, for the lock to say what the verb did.
+var (
+	daemonSettleWait = 5 * time.Second
+	daemonSettleStep = 50 * time.Millisecond
+)
+
+// awaitDaemon waits until a daemon is running (want) or is not, or the wait
+// runs out; the status read after it says which.
+func awaitDaemon(want bool) {
+	deadline := time.Now().Add(daemonSettleWait)
+	for daemonRunning() != want && time.Now().Before(deadline) {
+		time.Sleep(daemonSettleStep)
+	}
 }
 
 func svc(name string, args ...string) error {

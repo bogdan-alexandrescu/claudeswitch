@@ -34,7 +34,7 @@ claudeswitch uninstall [--credentials] [--yes] [--config PATH]
 | `status` | whether the service is installed and loaded, whether a daemon is running, its mode and the binary it runs |
 | `install` | registers **this** binary as the service and loads it. Without a flag it keeps the mode of an existing install, and a new install is dry run |
 | `uninstall` | unloads the service and removes its file. State, config and credentials stay |
-| `start` | loads (macOS) or starts (Linux) the installed service |
+| `start` | loads (macOS) or starts (Linux) the installed service; on macOS a loaded job whose daemon has exited is started again |
 | `stop` | unloads or stops it |
 | `restart` | reloads it, so it runs the file as it now is. Use it after replacing the binary |
 | `live` | rewrites the service in live mode and reloads it |
@@ -52,7 +52,8 @@ own credential, whatever this shell's `CLAUDE_CONFIG_DIR` says, so it works
 when no profile stands for your shell.
 
 Every verb ends by printing the status (paths shortened here; it prints them
-in full):
+in full). A verb that starts or stops the daemon first waits, up to 5 seconds,
+for the daemon to have started or exited, so `running` says what the verb did:
 
 ```
   daemon (launchd)

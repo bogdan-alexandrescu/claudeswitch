@@ -1470,3 +1470,22 @@ compiling, made the rest. A clean restart reproduced it at 24s.
 Since then the detector seeds in one walk and takes its lock only to store the
 result. A profile whose walk is not done counts as busy, as an unknown profile
 always has (R4), so its account in use keeps the poll_active cadence.
+
+## 51. The Live toggle reported a running daemon as "loaded, not running" (observed 2026-10-21)
+
+Renaming an account from the app was refused with "stop the daemon before
+renaming (it owns the state file)". The Daemon pane said "loaded, not running"
+and offered Start rather than Stop, so there seemed to be nothing left to stop.
+The log showed otherwise. The Live toggle, switched off at 10:59:11, had
+reloaded the service, and a dry-run daemon was "watching" from 10:59:12 until
+11:01:40, holding daemon.lock all the while. `daemon dry-run`, like every
+verb, answered with the status read straight after `launchctl load` returned.
+At that moment the new daemon had not yet taken its lock, so `running` was
+false. The pane kept that answer, because it re-read the status only when the
+window opened. The rename's refusal was right; the pane was wrong.
+
+Since then a verb that starts or stops the daemon waits up to 5s for the lock
+to agree before answering, and the pane re-reads the status each time it is
+shown. A second fault turned up on the way. On macOS, `daemon start` did
+nothing for a job that was loaded but whose daemon had exited cleanly
+(KeepAlive restarts it only after a failure). It now runs `launchctl start`.

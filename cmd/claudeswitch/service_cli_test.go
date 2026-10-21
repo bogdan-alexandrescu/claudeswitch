@@ -45,6 +45,8 @@ func (f *fakeService) run(name string, args ...string) (string, error) {
 	case strings.Contains(call, "enable --now"), strings.Contains(call, "systemctl --user start"),
 		strings.Contains(call, "systemctl --user restart"):
 		f.loaded = true
+	case strings.Contains(call, "disable --now"), strings.Contains(call, "systemctl --user stop"):
+		f.loaded = false
 	}
 	return "", nil
 }
@@ -61,7 +63,9 @@ func serviceWorld(t *testing.T, goos string) (*fakeService, string, string) {
 	f := &fakeService{}
 	old, oldRunning, oldDurable := serviceSeams, daemonRunning, nonDurable
 	serviceSeams = serviceDeps{goos: goos, run: f.run, exe: func() (string, error) { return bin, nil }}
-	daemonRunning = func() bool { return false }
+	// The fake daemon runs while its job is loaded and takes its lock at once,
+	// so a verb's wait for it (awaitDaemon) ends on the first look.
+	daemonRunning = func() bool { return f.loaded }
 	nonDurable = func(string) string { return "" } // t.TempDir is a temporary directory
 	t.Cleanup(func() {
 		serviceSeams, daemonRunning, nonDurable = old, oldRunning, oldDurable

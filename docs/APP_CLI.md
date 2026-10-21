@@ -483,7 +483,9 @@ test fails if it runs `security`), so the app may run it on every refresh:
   windows are `null` when unknown.
 
 `claudeswitch account rename <old> <new> --json` → `{"account": "new", "previous": "old"}`.
-Errors: `invalid_value` (a bad name), `daemon_running`, `failed`.
+Errors: `invalid_value` (a bad name), `daemon_running`, `failed`. The app
+answers `daemon_running` itself: `daemon status`, then `daemon stop` when a
+daemon runs, the rename, and `daemon start` whatever the rename did.
 
 `claudeswitch account delete <id> --yes --json` (also `account remove`,
 and `claudeswitch remove <id>`) — owner decision M5: deletes the vault
@@ -690,7 +692,8 @@ live credential is staler than the vaulted one: `--force`).
 manages the service the way `install.sh` does — a launchd agent
 (`~/Library/LaunchAgents/xyz.claudeswitch.daemon.plist`) or a systemd user
 unit (`~/.config/systemd/user/claudeswitch.service`) — and answers every
-verb with the status after it:
+verb with the status after it (a verb that starts or stops the daemon waits up
+to 5s for it to have done so, so `running` is not read mid-start):
 
 ```json
 {"action": "live", "platform": "launchd", "file": "/…/xyz.claudeswitch.daemon.plist",

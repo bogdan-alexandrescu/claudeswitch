@@ -389,6 +389,9 @@ struct DaemonPane: View {
         .formStyle(.grouped)
         .tint(.csAccent)
         }
+        // Read afresh each time the pane is shown: the status from when the
+        // window opened, or from the last verb, may no longer be true.
+        .onAppear { store.loadDaemon() }
         .confirming($pending)
         .confirmationDialog("Uninstall the daemon?", isPresented: $confirmUninstall) {
             Button("Uninstall", role: .destructive) { store.setDaemon(.uninstall, title: "Could not uninstall the daemon") }

@@ -678,7 +678,7 @@ struct RenameSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Rename \(old)").font(.title3.bold())
             TextField("New name", text: $name).textFieldStyle(.roundedBorder).onSubmit(save)
-            Text("Renaming needs the daemon stopped (Daemon pane); the CLI says so if it runs.")
+            Text("A running daemon is stopped for a moment while the account is renamed, then started again.")
                 .font(.caption).foregroundStyle(.secondary)
             if let e = error { InlineError(message: e.message, hint: e.hint) }
             HStack {
@@ -696,10 +696,16 @@ struct RenameSheet: View {
     func save() {
         let (o, n) = (old, name)
         Task {
-            switch await store.call("rename", { $0.accountRename(o, to: n) }) {
-            case .success:
+            let r = await store.call("rename", { $0.accountRenamePausingDaemon(o, to: n) })
+            store.loadDaemon()
+            switch r {
+            case .success(let p):
                 store.refresh(full: true, profiles: true)
                 dismiss()
+                if let e = p.restartError {
+                    store.alertBinding(.settings).wrappedValue =
+                        AlertItem("Renamed \(o) to \(n), but the daemon did not start again", e)
+                }
             case .failure(.app(let e)): error = e
             case .failure(let e): error = AppError(code: "failed", message: e.message, hint: e.hint)
             }

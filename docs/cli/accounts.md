@@ -335,6 +335,8 @@ lost. It also repairs a name written before the current naming rule.
 
 Stop the daemon first: a running daemon refuses the rename
 (`daemon_running`, hint `stop it first: claudeswitch daemon stop`).
+The menu-bar app's Rename does that for you: it stops a running daemon
+service, renames, and starts it again in the mode it had.
 
 ## cs remove
 
