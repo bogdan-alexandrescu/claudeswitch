@@ -91,6 +91,10 @@ then finish:
 claudeswitch login <id> --code <code>
 ```
 
+(This session has no terminal to prompt in, so the code is pasted here. In a
+terminal of their own, `claudeswitch login` asks for the name, the pool and the
+browser and finishes when the browser comes back, with no code to paste.)
+
 ## 4. Report
 
 On success, say it is vaulted, and pass on the config line it prints (`added
