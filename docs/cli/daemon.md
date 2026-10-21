@@ -13,7 +13,7 @@ and, when live, swaps. Its log is `~/.local/state/claudeswitch/daemon.log` (on
 Linux, `journalctl --user -u claudeswitch`).
 
 ```
-claudeswitch daemon status|start|stop|restart|live|dry-run|install|uninstall [--live|--dry-run] [--json]
+claudeswitch daemon status|start|stop|restart|live|dry-run|install|uninstall|check [--live|--dry-run] [--json]
 claudeswitch watch [--live] [--idle-gap D] [--quiet] [-v] [--config PATH]
 claudeswitch uninstall [--credentials] [--yes] [--config PATH]
 ```
@@ -39,14 +39,17 @@ claudeswitch uninstall [--credentials] [--yes] [--config PATH]
 | `restart` | reloads it, so it runs the file as it now is. Use it after replacing the binary |
 | `live` | rewrites the service in live mode and reloads it |
 | `dry-run` | rewrites it in dry-run mode and reloads it |
+| `check` | reads every profile's live credential once, as the daemon will, so macOS asks for Keychain access now. A profile not signed in yet is skipped |
 
 `start`, `stop`, `restart`, `live` and `dry-run` need the service installed
 (`not_installed`, with the `daemon install` command). `install` refuses a
 binary in a temporary or translocated location, which would be gone after a
 restart (`binary_not_durable`): install the binary in `~/.local/bin` first.
-On macOS, run `cs whoami` once before `install` and click **Always Allow**,
-because the daemon cannot answer the Keychain prompt
-([README → Daemon](../../README.md#daemon)).
+On macOS, run `cs daemon check` once before `install` and click **Always
+Allow**, because the daemon cannot answer the Keychain prompt
+([README → Daemon](../../README.md#daemon)). It reads each profile through its
+own credential, whatever this shell's `CLAUDE_CONFIG_DIR` says, so it works
+when no profile stands for your shell.
 
 Every verb ends by printing the status (paths shortened here; it prints them
 in full):
@@ -62,11 +65,20 @@ in full):
 
 or `not installed; install it with: claudeswitch daemon install`.
 
+`check` prints one line per profile instead, `ok` (with the credential it
+read), `skip` or `FAIL` (with what went wrong):
+
+```
+  ok    work             Claude Code-credentials-0ac30e20
+  skip  side             not signed in yet
+```
+
 `--json`: `{"action", "platform", "file", "log", "installed", "loaded",
 "running", "mode", "binary", "this_binary", "binary_is_this"}`, and while a
 daemon runs, `"daemon_live"`, `"daemon_version"` and `"since"`. `mode` is
 `"live"`, `"dry-run"`, or `null` when not installed. Full contract:
-[APP_CLI → daemon](../APP_CLI.md#daemon).
+[APP_CLI → daemon](../APP_CLI.md#daemon), which also has `check`'s own
+`--json` shape.
 
 ### Dry run first
 
@@ -138,8 +150,9 @@ the app, the plugin or the status line; the full list is in
 - `0`: done (including `uninstall` answered no).
 - `1`: refused or failed: `not_installed`, `unsupported_platform` (no launchd
   or systemd), `service_failed` (launchctl or systemctl failed; the hint is
-  its output), `binary_not_durable`, or `watch` finding a daemon already
-  running. With `--json` the error is
+  its output), `binary_not_durable`, `watch` finding a daemon already
+  running, or `check` finding a credential it could not read (with
+  `--json`, `check` counts those in `failed` and exits 0). With `--json` the error is
   `{"error": {"code", "message", "hint", "retry_at"}}` on stdout; see
   [APP_CLI → Error codes](../APP_CLI.md#error-codes).
 - `2`: `watch` or `uninstall` with a flag it does not know.
