@@ -100,3 +100,44 @@ func TestDaemonStartStartsALoadedJobThatIsNotRunning(t *testing.T) {
 		t.Errorf("start reloaded a job already loaded: %v (plist in %s)", f.calls, home)
 	}
 }
+
+// A reload stops one daemon and starts another, and the one stopping can
+// still hold the lock as launchctl returns: "running" was then the daemon
+// going away, and the status (its start time, its mode) described it
+// (observed 2026-10-21: `daemon live` answered daemon_live false, the old
+// dry-run daemon's). A reload waits for a daemon that started after it.
+func TestDaemonReloadWaitsForTheNewDaemon(t *testing.T) {
+	serviceWorld(t, "darwin")
+	daemonJSON(t, "install", "dry-run")
+	for _, verb := range []string{"live", "dry-run", "restart", "install"} {
+		old := daemonStartedAt
+		looks := 0
+		daemonStartedAt = func() time.Time {
+			looks++
+			if looks <= 3 {
+				return time.Now().Add(-time.Hour) // the daemon being replaced
+			}
+			return time.Now()
+		}
+		daemonJSON(t, verb, "")
+		daemonStartedAt = old
+		if looks < 4 {
+			t.Errorf("%s answered after %d looks, before the new daemon had started", verb, looks)
+		}
+	}
+}
+
+// A start that finds the daemon already running starts nothing new, so it
+// does not wait for a newer one.
+func TestDaemonStartOfARunningDaemonDoesNotWaitForANewOne(t *testing.T) {
+	serviceWorld(t, "darwin")
+	daemonJSON(t, "install", "live")
+	old := daemonStartedAt
+	t.Cleanup(func() { daemonStartedAt = old })
+	daemonStartedAt = func() time.Time { return time.Now().Add(-time.Hour) }
+	start := time.Now()
+	daemonJSON(t, "start", "")
+	if d := time.Since(start); d > time.Second {
+		t.Errorf("start of a running daemon waited %s for a newer one", d)
+	}
+}

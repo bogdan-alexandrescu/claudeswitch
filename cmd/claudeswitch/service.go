@@ -295,6 +295,9 @@ func runDaemonCmd(w io.Writer, verb, mode string, asJSON bool) error {
 		return emitDaemonStatus(w, goos, paths, "status", asJSON)
 	}
 	bin, isLive, installed := installedService(goos, paths.file)
+	// A verb that starts a daemon waits for one that started after it began:
+	// one being replaced can still hold the lock as launchctl returns.
+	began, wasRunning := time.Now(), daemonRunning()
 	need := func() error {
 		if !installed {
 			return appErr(codeNotInstalled, "install it: claudeswitch daemon install", "the daemon service is not installed (%s)", paths.file)
@@ -389,7 +392,18 @@ func runDaemonCmd(w io.Writer, verb, mode string, asJSON bool) error {
 	default:
 		return appErr(codeUsage, daemonUsage, "unknown daemon command %q", verb)
 	}
-	awaitDaemon(verb != "stop" && verb != "uninstall")
+	switch verb {
+	case "stop", "uninstall":
+		awaitDaemon(false, time.Time{})
+	case "start":
+		if wasRunning {
+			awaitDaemon(true, time.Time{}) // nothing new was started
+		} else {
+			awaitDaemon(true, began)
+		}
+	default:
+		awaitDaemon(true, began)
+	}
 	return emitDaemonStatus(w, goos, paths, verb, asJSON)
 }
 
@@ -403,11 +417,28 @@ var (
 	daemonSettleStep = 50 * time.Millisecond
 )
 
-// awaitDaemon waits until a daemon is running (want) or is not, or the wait
-// runs out; the status read after it says which.
-func awaitDaemon(want bool) {
+// daemonStartedAt is when the running daemon recorded that it started
+// watching (zero when none has). A seam.
+var daemonStartedAt = func() time.Time {
+	st, err := state.Load("")
+	if err != nil {
+		return time.Time{}
+	}
+	return st.DaemonSince
+}
+
+// awaitDaemon waits until a daemon is running (want) or is not and, with a
+// non-zero `after`, until the running one started at or after it; or until
+// the wait runs out. The status read after it says which.
+func awaitDaemon(want bool, after time.Time) {
+	settled := func() bool {
+		if daemonRunning() != want {
+			return false
+		}
+		return after.IsZero() || !daemonStartedAt().Before(after)
+	}
 	deadline := time.Now().Add(daemonSettleWait)
-	for daemonRunning() != want && time.Now().Before(deadline) {
+	for !settled() && time.Now().Before(deadline) {
 		time.Sleep(daemonSettleStep)
 	}
 }

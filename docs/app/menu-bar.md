@@ -33,12 +33,13 @@ never animates, so Reduce Motion has nothing to stop.
 
 ## The glyph
 
-The glyph is two rings of dots. The **outer ring is the week**, the **inner
-ring is the session**, each lit up to the live account's reading. A small dot
-on the outer ring, the satellite, sits at the week's reading. It is a template
-image, so macOS draws it in the menu bar's own colour, light or dark; trouble
-is shown by shape (a warning mark and the trailing `!`), never by colour
-alone.
+The glyph is two rings of dots. The **outer ring is the session**, the
+**inner ring is the week**, each lit up to the live account's reading and
+coloured by it: green when little is used, amber at half, red when the window
+is spent. A small dot on the inner ring, the satellite, sits at the week's
+reading. Unlit dots take the menu bar's own colour, light or dark. Trouble is
+also shown by shape (a warning mark and the trailing `!`), so it reads without
+colour.
 
 <p align="center"><img src="../images/glyph-states.png" width="534" alt="The glyph's four states on a light and a dark menu bar: healthy, climbing, switching and needs you"></p>
 

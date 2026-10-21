@@ -243,7 +243,8 @@ claudeswitch profile with a live account, that account's resolved Chrome
 profile (`account`, `profile`, `profile_dir`, `name`, `rule`) and the rotation
 that made it live (`last_from`, `last_switch`). The app's sign-in banner is
 built from `live`: a `profile` rule with a `last_from` means the shared Chrome
-profile is still signed in as the account before.
+profile may still be signed in as the account before. It is inferred, not read:
+claudeswitch cannot see the extension's login.
 
 ## cs chrome forget \<account\>
 
@@ -309,7 +310,7 @@ in use:
 - to an account with its own Chrome profile:
   `Claude in Chrome: use the work-team Chrome profile (cs chrome work-team)`;
 - to one that uses its profile's Chrome profile:
-  `Claude in Chrome in "Work" is still signed in as work-1; sign it in as work-team (cs chrome signin work-team)`
+  `Claude in Chrome in "Work" may still be signed in as work-1; sign it in as work-team (cs chrome signin work-team)`
   (or `may be signed in as another account` when the account before had its
   own);
 - to one with neither, once any account has a Chrome profile:

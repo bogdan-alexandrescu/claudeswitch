@@ -20,8 +20,8 @@ public struct GlyphReading: Equatable {
     /// The live account's week and session, 0…1.
     public var week: Double
     public var session: Double
-    /// Where the satellite sits on the outer ring, 0…1; nil draws none
-    /// (no data yet, or the warning mark instead).
+    /// Where the satellite sits on the inner (week) ring, 0…1; nil draws
+    /// none (no data yet, or the warning mark instead).
     public var satellite: Double?
     /// VoiceOver's reading of the item.
     public var accessibility: String
@@ -75,30 +75,36 @@ public struct GlyphReading: Equatable {
     }
 }
 
-/// The menu-bar image: the rings drawn from a reading, as a template so
-/// macOS tints it for light, dark and selected menu bars.
+/// The menu-bar image: the rings drawn from a reading in colour, each ring
+/// lit in the usage ramp at its own reading (revised 2026-10-21; it was a
+/// one-colour template before), unlit dots in the menu bar's ink.
 public enum MenuGlyph {
     public static let size = NSSize(width: 18, height: 18)
     /// Dot radius in the 64-unit box, heavier than the icon's so the dots
     /// survive at 18 pt.
     public static let dotRadius: CGFloat = 2.6
 
-    public static func image(_ r: GlyphReading, size: NSSize = MenuGlyph.size) -> NSImage {
+    /// `dark` picks the ramp and the ink for a dark or a light menu bar. Nil
+    /// decides when the image is drawn, from the appearance it is drawn in:
+    /// the menu bar's, which is dark over a dark wallpaper even in light mode.
+    public static func image(_ r: GlyphReading, size: NSSize = MenuGlyph.size, dark: Bool? = nil) -> NSImage {
         let img = NSImage(size: size, flipped: true) { rect in
             guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
-            draw(r, in: ctx, rect: rect)
+            draw(r, in: ctx, rect: rect, dark: dark ?? Palette.isDark(NSAppearance.currentDrawing()))
             return true
         }
-        img.isTemplate = true
+        img.isTemplate = false
         img.accessibilityDescription = r.accessibility
         return img
     }
 
     /// Draws into a y-down context.
-    public static func draw(_ r: GlyphReading, in ctx: CGContext, rect: CGRect, color: CGColor = .black) {
+    public static func draw(_ r: GlyphReading, in ctx: CGContext, rect: CGRect, dark: Bool) {
+        // Unlit dots in the menu bar's text colour, faint, as the template's were.
+        let ink = CGColor(gray: dark ? 1 : 0, alpha: 1)
         TwinRings.draw(in: ctx, rect: rect, week: r.week, session: r.session,
                        satellite: r.state == .needsYou ? nil : r.satellite,
-                       dotRadius: dotRadius, colors: .mono(color), flipped: true)
+                       dotRadius: dotRadius, colors: .usage(dark: dark, unlit: ink), flipped: true)
         guard r.state == .needsYou else { return }
         ctx.saveGState()
         let s = min(rect.width, rect.height) / TwinRings.box
@@ -114,7 +120,7 @@ public enum MenuGlyph {
         ctx.setLineJoin(.round)
         ctx.drawPath(using: .fillStroke)
         ctx.setBlendMode(.normal)
-        ctx.setFillColor(color)
+        ctx.setFillColor(Palette.usage(1, dark: dark).cgColor)
         ctx.addPath(tri)
         ctx.fillPath()
         ctx.setBlendMode(.clear)

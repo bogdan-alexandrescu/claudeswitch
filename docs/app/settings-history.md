@@ -20,9 +20,8 @@ daemon as it polls, plus every switch.
 | dashed grey rule | rotation switched a profile **away** from it |
 | top right | the week's latest figure and how many switches touched the account |
 
-The colours are the rings': the week is the outer ring's accent, the session
-the inner ring's. Each line is one point per hour (the hour's highest
-reading). Where the daemon recorded nothing for more than six hours (it was
+The week's line is in the accent and the session's in the second accent.
+Each line is one point per hour (the hour's highest reading). Where the daemon recorded nothing for more than six hours (it was
 stopped, or the Mac slept) the line breaks rather than bridging the gap, and
 a reading the daemon could not take is left out: an unknown figure is never
 drawn as 0.

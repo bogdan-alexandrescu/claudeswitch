@@ -75,6 +75,35 @@ public enum Palette {
     public static let tick = dynamic("csTick", light: 0x17181b, dark: 0xb6f0dc)
     public static let onAccent = dynamic("csOnAccent", light: 0xffffff, dark: 0x0d1b24)
 
+    /// The rings' usage ramp (revised 2026-10-21): a ring's lit dots go from
+    /// green at 0% used through amber at 50% to red at 100%. These stops are
+    /// for dark backgrounds; on a white popover or a light menu bar they lack
+    /// contrast, so light backgrounds get the darker set.
+    static let usageDark: [UInt32] = [0x3fbf98, 0xf0c75e, 0xff7a7a]
+    static let usageLight: [UInt32] = [0x1f9d77, 0xc98f12, 0xe0474c]
+
+    /// The ramp at `fraction` used, 0…1 (clamped). It blends hue,
+    /// saturation and brightness rather than red, green and blue: an sRGB
+    /// blend of green and amber passes through a muddy olive, a hue blend
+    /// through a clean yellow-green.
+    public static func usage(_ fraction: Double, dark: Bool) -> NSColor {
+        let stops = dark ? usageDark : usageLight
+        let f = fraction.isFinite ? min(max(fraction, 0), 1) : 0
+        let x = f * Double(stops.count - 1)
+        let i = min(Int(x), stops.count - 2)
+        let t = CGFloat(x - Double(i))
+        var a: (h: CGFloat, s: CGFloat, b: CGFloat) = (0, 0, 0), z = a, alpha: CGFloat = 0
+        rgb(stops[i]).getHue(&a.h, saturation: &a.s, brightness: &a.b, alpha: &alpha)
+        rgb(stops[i + 1]).getHue(&z.h, saturation: &z.s, brightness: &z.b, alpha: &alpha)
+        // The short way round the hue circle (red sits next to 0, amber at 0.12).
+        var dh = z.h - a.h
+        if dh > 0.5 { dh -= 1 } else if dh < -0.5 { dh += 1 }
+        var h = a.h + dh * t
+        if h < 0 { h += 1 } else if h >= 1 { h -= 1 }
+        let hsb = NSColor(hue: h, saturation: a.s + (z.s - a.s) * t, brightness: a.b + (z.b - a.b) * t, alpha: 1)
+        return hsb.usingColorSpace(.sRGB) ?? hsb
+    }
+
     public static func rgb(_ hex: UInt32, alpha: CGFloat = 1) -> NSColor {
         NSColor(srgbRed: CGFloat((hex >> 16) & 0xff) / 255, green: CGFloat((hex >> 8) & 0xff) / 255,
                 blue: CGFloat(hex & 0xff) / 255, alpha: alpha)
@@ -127,9 +156,11 @@ public enum Dots {
     }
 }
 
-/// The Twin rings mark: the week as 30 dots on an outer 270° arc, the
-/// 5-hour session as 19 on an inner one, and a satellite at the week's
-/// reading. Geometry in a 64-unit box, y down, as in the brand SVG.
+/// The Twin rings mark: the 5-hour session as 30 dots on an outer 270° arc,
+/// the week as 19 on an inner one, and a satellite on the inner ring at the
+/// week's reading (revised 2026-10-21; the week was outside before). Each
+/// ring's lit dots are coloured by its own reading. Geometry in a 64-unit
+/// box, y down, as in the brand SVG.
 public enum TwinRings {
     public static let box: CGFloat = 64
     public static let center = CGPoint(x: 32, y: 33)
@@ -152,26 +183,28 @@ public enum TwinRings {
     }
 
     public struct Colors {
-        public var outer: CGColor
-        public var inner: CGColor
+        /// A ring's lit colour at its reading, 0…1.
+        public var lit: (Double) -> CGColor
         /// Unlit dots, drawn at `unlitAlpha`.
         public var unlit: CGColor
         public var unlitAlpha: CGFloat
 
-        public init(outer: CGColor, inner: CGColor, unlit: CGColor, unlitAlpha: CGFloat = TwinRings.unlitOpacity) {
-            self.outer = outer
-            self.inner = inner
+        public init(lit: @escaping (Double) -> CGColor, unlit: CGColor, unlitAlpha: CGFloat = TwinRings.unlitOpacity) {
+            self.lit = lit
             self.unlit = unlit
             self.unlitAlpha = unlitAlpha
         }
 
-        /// One colour for everything: a template image.
-        public static func mono(_ c: CGColor) -> Colors { Colors(outer: c, inner: c, unlit: c) }
+        /// One colour for everything.
+        public static func mono(_ c: CGColor) -> Colors { Colors(lit: { _ in c }, unlit: c) }
 
-        /// The app icon's: frost unlit, glacier week, meltwater session.
-        public static var icon: Colors {
-            Colors(outer: Palette.glacier.cgColor, inner: Palette.meltwater.cgColor, unlit: Palette.frost.cgColor)
+        /// Each ring lit in the usage ramp at its own reading.
+        public static func usage(dark: Bool, unlit: CGColor) -> Colors {
+            Colors(lit: { Palette.usage($0, dark: dark).cgColor }, unlit: unlit)
         }
+
+        /// The app icon's: the ramp on the graphite tile, frost unlit.
+        public static var icon: Colors { usage(dark: true, unlit: Palette.frost.cgColor) }
     }
 
     /// Draws the mark into `rect` (fitted, centred). `flipped` says the
@@ -201,11 +234,11 @@ public enum TwinRings {
                 ctx.fillEllipse(in: CGRect(x: p.x - dotRadius, y: p.y - dotRadius, width: 2 * dotRadius, height: 2 * dotRadius))
             }
         }
-        arc(outerRadius, outerCount, week, colors.outer)
-        arc(innerRadius, innerCount, session, colors.inner)
+        arc(outerRadius, outerCount, session, colors.lit(session))
+        arc(innerRadius, innerCount, week, colors.lit(week))
         if let f = satellite {
-            let p = point(radius: outerRadius, fraction: f)
-            ctx.setFillColor(colors.outer)
+            let p = point(radius: innerRadius, fraction: f)
+            ctx.setFillColor(colors.lit(f))
             ctx.fillEllipse(in: CGRect(x: p.x - satelliteRadius, y: p.y - satelliteRadius,
                                        width: 2 * satelliteRadius, height: 2 * satelliteRadius))
         }
@@ -267,7 +300,7 @@ public enum AppIcon {
         let rect = CGRect(x: tile.midX - m / 2, y: tile.midY - m / 2, width: m, height: m)
         // Small sizes get fatter dots so the rings survive at 16 px.
         let dot: CGFloat = size <= 32 ? 2.6 : 2.1
-        TwinRings.draw(in: ctx, rect: rect, week: 0.62, session: 0.3, satellite: 0.62, dotRadius: dot,
+        TwinRings.draw(in: ctx, rect: rect, week: 0.3, session: 0.62, satellite: 0.3, dotRadius: dot,
                        colors: .icon)
     }
 

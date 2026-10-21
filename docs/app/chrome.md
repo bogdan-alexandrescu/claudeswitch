@@ -44,7 +44,7 @@ CLI: `cs chrome open <id>`.
 
 ## The sign-in banner
 
-<p align="center"><img src="../images/popover-chrome-signin.png" width="384" alt="The work card: Claude in Chrome in &quot;Work&quot; is still signed in as work-1, with a Sign in as work-team button and a close button"></p>
+<p align="center"><img src="../images/popover-chrome-signin.png" width="384" alt="The work card: Claude in Chrome in &quot;Work&quot; may still be signed in as work-1, with a Sign in as work-team button and a close button"></p>
 
 When a profile's accounts share a Chrome profile and rotation moved the
 profile to another account, its card says which Chrome profile is still

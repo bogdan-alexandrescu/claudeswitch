@@ -15,8 +15,10 @@ extension Color {
 /// The tokens resolved for a colour scheme, for Canvas drawing.
 struct BrandTokens {
     let accent, accent2, track, tick: Color
+    let dark: Bool
 
     init(_ scheme: ColorScheme) {
+        dark = scheme == .dark
         let ap = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)!
         func r(_ c: NSColor) -> Color {
             var out = c
@@ -28,6 +30,9 @@ struct BrandTokens {
         track = r(Palette.track)
         tick = r(Palette.tick)
     }
+
+    /// The rings' usage ramp at `fraction` used, 0…1.
+    func usage(_ fraction: Double) -> Color { Color(nsColor: Palette.usage(fraction, dark: dark)) }
 }
 
 /// Geist, the wordmark's face (SIL OFL 1.1, Resources/Geist-OFL.txt).
@@ -62,9 +67,10 @@ enum BrandFont {
     }
 }
 
-/// The Twin rings mark in the UI's colours: lit week dots in accent, lit
-/// session dots in accent2, unlit in track, an optional threshold dot per
-/// ring in tick, and the satellite at the week's reading.
+/// The Twin rings mark in the UI's colours: the session on the outer ring
+/// and the week on the inner, each ring's lit dots in the usage ramp at its
+/// own reading, unlit in track, an optional threshold dot per ring in tick,
+/// and the satellite on the inner ring at the week's reading.
 struct TwinRingsView: View {
     var week: Double
     var session: Double
@@ -75,9 +81,6 @@ struct TwinRingsView: View {
     /// Threshold fractions (0…1), drawn as a larger tick-coloured dot.
     var weekThreshold: Double?
     var sessionThreshold: Double?
-    /// Override the lit colours (a warning, say).
-    var outer: Color?
-    var inner: Color?
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -100,10 +103,10 @@ struct TwinRingsView: View {
                     }
                 }
             }
-            arc(TwinRings.outerRadius, TwinRings.outerCount, week, outer ?? t.accent, weekThreshold)
-            arc(TwinRings.innerRadius, TwinRings.innerCount, session, inner ?? t.accent2, sessionThreshold)
+            arc(TwinRings.outerRadius, TwinRings.outerCount, session, t.usage(session), sessionThreshold)
+            arc(TwinRings.innerRadius, TwinRings.innerCount, week, t.usage(week), weekThreshold)
             if satellite {
-                dot(TwinRings.point(radius: TwinRings.outerRadius, fraction: week), satelliteRadius, outer ?? t.accent)
+                dot(TwinRings.point(radius: TwinRings.innerRadius, fraction: week), satelliteRadius, t.usage(week))
             }
         }
         .accessibilityHidden(true)
@@ -132,7 +135,7 @@ struct Wordmark: View {
 
     var body: some View {
         HStack(spacing: size * 0.47) {
-            TwinRingsView(week: 0.62, session: 0.3, dotRadius: 2.6)
+            TwinRingsView(week: 0.3, session: 0.62, dotRadius: 2.6)
                 .frame(width: mark, height: mark)
             Text("claudeswitch")
                 .font(BrandFont.wordmark(size))
@@ -197,9 +200,10 @@ struct PillShape: InsettableShape {
     func inset(by amount: CGFloat) -> PillShape { PillShape(inset: inset + amount) }
 }
 
-/// One usage window as a dot dial: 30 dots lit to the reading, the
-/// profile's threshold as a larger tick-coloured dot, a satellite at the
-/// reading, the figure in the middle, and the label and reset below.
+/// One usage window as a dot dial: 30 dots lit to the reading in the rings'
+/// usage ramp, the profile's threshold as a larger tick-coloured dot, a
+/// satellite at the reading, the figure in the middle, and the label and
+/// reset below.
 struct DialView: View {
     let title: String
     let window: WindowReading?
@@ -253,14 +257,10 @@ struct DialView: View {
         return r.isEmpty ? "" : ", " + r
     }
 
-    /// The accent while there is room; warnings keep their semantic colours.
+    /// The rings' usage ramp at the reading: green unused, red spent.
     func litColor(_ t: BrandTokens) -> Color {
-        guard let p = pct else { return t.accent }
-        switch Level.of(p, trigger: trigger) {
-        case .ok: return t.accent
-        case .near: return .orange
-        case .over: return .red
-        }
+        guard let p = pct, p.isFinite else { return t.usage(0) }
+        return t.usage(p / 100)
     }
 }
 
@@ -270,6 +270,7 @@ struct DotBarView: View {
     let window: WindowReading?
     let trigger: Double
     let now: Date
+    @Environment(\.colorScheme) private var scheme
 
     var pct: Double? { window?.utilization }
 
@@ -310,9 +311,11 @@ struct DotBarView: View {
         return Format.pct(pct) + (r.isEmpty ? "" : " · " + r)
     }
 
+    /// The rings' usage ramp, as the dials have it (docs/BRAND.md: both
+    /// forms use the same colours).
     var lit: Color {
-        guard let p = pct else { return .csAccent }
-        return levelColor(Level.of(p, trigger: trigger))
+        guard let p = pct, p.isFinite else { return BrandTokens(scheme).usage(0) }
+        return BrandTokens(scheme).usage(p / 100)
     }
 }
 

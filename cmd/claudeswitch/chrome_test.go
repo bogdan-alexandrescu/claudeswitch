@@ -658,3 +658,23 @@ func TestChromeHintIgnoresOtherToolsAndOtherErrors(t *testing.T) {
 		}
 	}
 }
+
+// `cs chrome --help` prints the usage and opens nothing. Its flag error was
+// ignored and an empty command fell through to `open`, so it opened Chrome
+// (reported 2026-10-21).
+func TestChromeHelpPrintsUsageAndOpensNothing(t *testing.T) {
+	cfg := chromeWorld(t, "darwin")
+	for _, h := range []string{"--help", "-h", "-help", "help"} {
+		testshim.ResetLaunches()
+		out, _, err := runChromeT(t, h, "--config", cfg)
+		if err != nil {
+			t.Fatalf("%s: %v", h, err)
+		}
+		if !strings.Contains(out, "usage: claudeswitch chrome") {
+			t.Errorf("%s printed %q, want the usage", h, out)
+		}
+		if l := testshim.Launches(); len(l) != 0 {
+			t.Errorf("%s launched %q", h, l)
+		}
+	}
+}

@@ -935,3 +935,117 @@ First strikes of 20m mean the server sent a long Retry-After, which our
   `orgUUID`, which the authorize endpoint honours; an account signing in
   again asks for its own. The app's Add account sheet has an Organization
   row. GROUND_TRUTH §48; seat attribution within one organization, §49.
+
+## Requests from a SwarmCloud session: rotation and claude.ai identity (received 2026-10-21, not decided)
+
+A long-running SwarmCloud session asked for these, on the owner's behalf,
+after a rotation that day. Claude in Chrome then refused every call ("the
+OAuth token Claude Code is using belongs to a different claude.ai account"),
+and an Artifact the session had published stopped being reachable, because it
+sat in the previous account's organization. Nothing here is decided. The
+"today" notes say what already exists.
+
+1. **Detect it.** `cs status`, `cs doctor` and the status line show which
+   claude.ai account Claude Code presents next to the quota account, and warn
+   when the Chrome extension is signed into another (or say "unknown").
+   Today: the daemon log and the popover card carry C2's "Claude in Chrome
+   in <profile> is still signed in as <old>" notice; the status line and
+   `doctor` do not.
+2. **A sticky browser identity.** Keep one account as what claude.ai features
+   see while rotation moves model traffic. Claude Code derives the bridge's
+   account from its live token (C1), so the split looks impossible without
+   Claude Code's help. The fallback asked for: never rotate away from the
+   browser's account while a session has claude-in-chrome connected, or ask
+   first.
+3. **Re-pair after a switch.** Open the extension's sign-in for the new
+   account, or print the one step that re-pairs it; a `cs browser` command
+   for the manual case. Today: C1/C2's notice with its sign-in action, and
+   `cs chrome signin <account>`.
+4. **Keep CLAUDE_CODE_OAUTH_TOKEN consistent.** claudeswitch never sets it (it
+   swaps the keychain item). If something else sets it, `doctor` could warn
+   that it and the live credential name different accounts.
+5. **A home account for claude.ai objects.** Artifacts and other objects
+   published while a rotated account is active land in that account's
+   organization. Publish as a configured home account, or warn first.
+6. **Record identity changes.** `cs why` and `cs session` note when a rotation
+   changed the claude.ai identity, not only the quota account.
+
+A second session (ai-studio-f3, profile default, Chrome profile "1-Alice
+Personal") reported the same error the same day, with more evidence:
+
+- **`/chrome` (reconnect) did not clear it**, and nor did `cs use` to any of
+  four accounts, `personal` included. `personal` is the account named in
+  `~/.claude.json`'s `oauthAccount` (bob@personal.example).
+  `CLAUDE_CODE_OAUTH_TOKEN` was not set. `list_connected_browsers` returned
+  nothing on every account. The session's guess, unverified: a running Claude
+  Code keeps the identity it started with in memory, and a hot swap never
+  updates it, so only `/logout` + `/login` or a restart resets it. That would
+  contradict GROUND_TRUTH §45, where re-routing after a switch was confirmed
+  on 2026-10-08, so it needs a test on the current Claude Code. Asked for:
+  bring the recorded login and the bridge in line on every switch, or say in
+  `use`'s output, with the exact command, that the person has to do it.
+- **Likely bug: the notice names the previous account, not the extension's.**
+  Each `use` printed `Claude in Chrome in "1-Alice Personal" is still signed
+  in as <x>`, with x the account it had just left. claudeswitch cannot read
+  the extension's login (C1), so the notice states an inference as fact.
+- **Bug: `cs chrome --help` opened the Chrome profile** instead of printing
+  help.
+
+**Tested 2026-10-21, 21:13Z, in a third session** (profile default; it never
+ran `/login`, and its credential was hot-swapped several times that day):
+
+- With `~/.claude.json`'s `oauthAccount` at lab3@acme.xyz (another session
+  had just run `/login` as it) and the live token AI-Eng-3's, Claude in Chrome
+  worked in this session. Two browsers were connected to the account, and
+  the one picked last was used. So a running session does not keep the
+  identity it started with: the "in memory" guess is wrong in that form.
+- `cs use work-team`, then a browser call: it still worked, so a switch
+  does not break a bridge connection already open. Switched back to
+  AI-Eng-3 afterwards.
+- Likely, still to confirm: the check that fails ("the OAuth token Claude
+  Code is using belongs to a different claude.ai account than the one
+  Claude Code is logged in as") runs when Claude Code connects to the
+  bridge, and compares the live token's account with `oauthAccount`, which
+  a hot swap leaves alone (`cs whoami` already notes the cached account
+  block does not follow a swap). A connect after a swap would then fail
+  until `/login` brings `oauthAccount` in line. To confirm: swap, then
+  `/chrome` to force a reconnect (only a person can type it).
+
+### Proposed answers (2026-10-21, not decided)
+
+What claudeswitch can and cannot do, given C1: it cannot read or write the
+extension's login, and an extension signs in only through claude.ai's own
+approval page, which a person clicks.
+
+- **P1. Keep Claude Code's recorded login in step with each swap.** On every
+  swap (`use`, the daemon, a seed), also rewrite `oauthAccount` in that
+  profile's `.claude.json` to the new account, from what the vault already
+  records (email, account uuid, organization). It touches that one key, with
+  a read-modify-write. This is the likely cause of the bridge refusal above,
+  and Claude Code's "logged in as" would stop naming an old account too. To
+  test before building: does a running Claude Code keep `oauthAccount` in
+  memory and write it back over the change?
+- **P2. "Rotate the Chrome login": one Chrome profile per account.** The
+  extension's login inside one Chrome profile cannot be moved, but a Chrome
+  profile per account, each signed in once, needs no move. The bridge picks
+  the browser signed in as the live account by itself (GROUND_TRUTH §45),
+  and with one browser per account the "several browsers, none selected"
+  prompt never comes up. `cs chrome add <account>` already does this. The
+  proposal: make it the recommended setup and have `setup` and the app offer
+  it per account, rather than one shared Chrome profile per profile.
+  Remembering a named browser per account (its display name and deviceId,
+  from ai-studio-9d) only helps a session pick one, through its own
+  `select_browser`; claudeswitch cannot call that tool for it.
+- **P3. Show the mismatch.** The status line, `cs status` and `cs doctor`
+  read `oauthAccount` (not secret) and mark it when it is not the live
+  account, e.g. `◎ AI-Eng-3 29% · login lab3`, or `login personal ≠` when
+  it differs. `doctor` says which command lines them up.
+- **P4. Hold a rotation while a browser task runs.** The transcript detector
+  already sees each session's recent tool calls; a `claude-in-chrome` call
+  in the last few minutes would make the session busy, as a mid-turn session
+  is, so rotation waits for a gap (and still goes at the hard floor).
+- **P5. Record identity changes.** The audit and `cs why` note when a swap
+  left the recorded login on another account.
+- **P6. A home account for claude.ai objects: warn only.** Where an Artifact
+  is published is Claude Code's choice, made at the time, so claudeswitch
+  could only show the live account's organization (P3).

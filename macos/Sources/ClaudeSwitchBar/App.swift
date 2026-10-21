@@ -393,7 +393,7 @@ enum Render {
                     Text(r.0).frame(width: 90, alignment: .leading)
                     ForEach([false, true], id: \.self) { dark in
                         HStack(spacing: 4) {
-                            Image(nsImage: MenuGlyph.image(r.1)).renderingMode(.template)
+                            Image(nsImage: MenuGlyph.image(r.1, dark: dark))
                             Text(r.2).monospacedDigit()
                         }
                         .font(.system(size: 13))
@@ -530,10 +530,11 @@ struct MoreMenuFacsimile: View {
 }
 
 /// The menu-bar item: the Twin rings drawn live from the followed profile's
-/// week (outer) and session (inner), and its live account with its
-/// utilization. The glyph is a template image, so macOS tints it for every
-/// menu bar; trouble is carried by its warning mark and a trailing "!"
-/// rather than by colour. A missing or too-old binary shows a question mark.
+/// session (outer) and week (inner), and its live account with its
+/// utilization. The glyph is in colour, each ring green to red by its use,
+/// drawn for the menu bar's light or dark appearance; trouble also carries
+/// its warning mark and a trailing "!", which read without colour. A
+/// missing or too-old binary shows a question mark.
 /// It is redrawn whenever the store changes and never animated, so Reduce
 /// Motion has nothing to stop.
 struct MenuBarLabel: View {

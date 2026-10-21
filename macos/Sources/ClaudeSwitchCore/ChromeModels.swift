@@ -87,7 +87,8 @@ public struct ChromeSignInNotice: Equatable {
     /// One rotation's identity, for dismissing it.
     public var key: String
 
-    public var text: String { "Claude in Chrome in \"\(chromeName)\" is still signed in as \(old)" }
+    /// "May": the old account is inferred, never read from the extension.
+    public var text: String { "Claude in Chrome in \"\(chromeName)\" may still be signed in as \(old)" }
     public var button: String { "Sign in as \(account)" }
 }
 

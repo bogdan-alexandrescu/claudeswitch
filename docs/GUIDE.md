@@ -424,7 +424,7 @@ account. Then:
   `cs use` say `Claude in Chrome: use the work-b Chrome profile (cs chrome
   work-b)`;
 - to one that uses its profile's Chrome profile, they say
-  `Claude in Chrome in "Work" is still signed in as work-a; sign it in as
+  `Claude in Chrome in "Work" may still be signed in as work-a; sign it in as
   work-b (cs chrome signin work-b)`, and the app's card shows the same with a
   **Sign in as work-b** button (dismissable until the next rotation);
 - to one with neither, once you have set up a Chrome profile for any account,

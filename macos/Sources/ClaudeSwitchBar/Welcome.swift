@@ -122,7 +122,7 @@ struct WelcomeView: View {
 
     var header: some View {
         HStack(alignment: .center, spacing: 16) {
-            TwinRingsView(week: 0.62, session: 0.3, dotRadius: 2.4, satelliteRadius: 4.6)
+            TwinRingsView(week: 0.3, session: 0.62, dotRadius: 2.4, satelliteRadius: 4.6)
                 .frame(width: 64, height: 64)
             VStack(alignment: .leading, spacing: 6) {
                 Text("claudeswitch")

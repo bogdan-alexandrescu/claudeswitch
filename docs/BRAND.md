@@ -9,9 +9,14 @@ Two concentric dotted dials, each sweeping 270° with the gap at the bottom.
 
 | Part | What it is | Detail |
 |---|---|---|
-| Outer ring | the weekly window | 30 dots |
-| Inner ring | the 5-hour session | 19 dots |
-| Satellite | the week's current reading | one larger dot on the outer ring |
+| Outer ring | the 5-hour session | 30 dots |
+| Inner ring | the weekly window | 19 dots |
+| Satellite | the week's current reading | one larger dot on the inner ring |
+
+Each ring's lit dots are coloured by that ring's own use, on the usage ramp
+below: green when little is used, through amber at half, to red when the
+window is spent. (Until 2026-10-21 the week was the outer ring and the rings
+were one accent colour.)
 
 The mark is a gauge, not a decoration. Wherever it is live (the menu-bar glyph,
 the popover dials) the lit dots and the satellite show real readings.
@@ -50,8 +55,23 @@ Overriding those needs an asset-catalog `AccentColor`, which needs full Xcode
 to build; the app builds with the Command Line Tools alone (decided
 2026-10-08).
 
-The warnings are semantic. Amber and red appear only when something needs
-attention, and nothing else is ever drawn in them.
+The warnings are semantic. Outside the rings, amber and red appear only when
+something needs attention, and nothing else is ever drawn in them.
+
+### The usage ramp
+
+The rings, the popover's dials and its dot bars colour their lit dots by the
+reading, blending hue, saturation and brightness between three stops (a
+red-green-blue blend of green and amber passes through olive):
+
+| Used | On dark | On light |
+|---|---|---|
+| 0% | `#3fbf98` green | `#1f9d77` |
+| 50% | `#f0c75e` amber | `#c98f12` |
+| 100% | `#ff7a7a` red | `#e0474c` |
+
+The light stops are darker because the dark ones lack contrast on a white
+popover or a light menu bar. The app icon uses the dark stops.
 
 ## Type
 
@@ -65,11 +85,13 @@ attention, and nothing else is ever drawn in them.
 
 - **Dials and bars.** The popover shows the session and the week as two dot
   dials. A switch in the popover changes them to dot bars, and the same choice
-  is a setting. Both forms use the same dots, colours and threshold dot.
+  is a setting. Both forms use the same dots, the usage ramp and the threshold
+  dot.
 - **Appearance.** System, Light or Dark. It is set in Advanced → This app and
   in the popover's ⋯ menu.
-- **The live glyph.** The menu-bar glyph is the live rings, drawn as a template
-  image so it follows the menu bar's own colour. It has four states:
+- **The live glyph.** The menu-bar glyph is the live rings, in colour: each
+  ring lit on the usage ramp, unlit dots in the menu bar's own ink, drawn for
+  a light or a dark menu bar. It has four states:
 
 | State | What the glyph shows |
 |---|---|
@@ -78,8 +100,8 @@ attention, and nothing else is ever drawn in them.
 | Switching | the rings during a rotation to another account |
 | Needs you | the rings with a warning mark: the live account needs attention (a sign-in, a refusal) |
 
-Because the glyph is a template image, its states are told apart by shape (the
-fill and the warning mark), never by colour alone.
+Its states are told apart by shape too (the fill and the warning mark), so they
+read without colour.
 
 ## The CLI
 

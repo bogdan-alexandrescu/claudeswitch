@@ -99,9 +99,20 @@ func cmdChrome(args []string) error {
 	return err
 }
 
+const chromeUsage = "usage: claudeswitch chrome add <account> [--existing <folder|name>] | " +
+	"chrome forget <account> | chrome [open|signin] [<account>] | chrome list|profiles [--json]"
+
 // runChrome is `cs chrome` without the exits: add, open, list, forget, and
 // a bare account (or nothing) to open.
 func runChrome(stdout, stderr io.Writer, args []string) error {
+	// Before the flags are parsed: a help flag fails the parse, which left no
+	// command, and no command means `open`, so --help opened Chrome.
+	if len(args) > 0 && args[0] == "help" || slices.ContainsFunc(args, func(a string) bool {
+		return a == "-h" || a == "-help" || a == "--help"
+	}) {
+		fmt.Fprintln(stdout, chromeUsage)
+		return nil
+	}
 	fs := flag.NewFlagSet("chrome", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	cfgPath := fs.String("config", "", "path to config.toml")
@@ -120,10 +131,7 @@ func runChrome(stdout, stderr io.Writer, args []string) error {
 	if *asJSON {
 		human = stderr
 	}
-	usageErr := func() error {
-		return chromeFail("usage", "", "usage: claudeswitch chrome add <account> [--existing <folder|name>] | "+
-			"chrome forget <account> | chrome [open|signin] [<account>] | chrome list|profiles [--json]")
-	}
+	usageErr := func() error { return chromeFail("usage", "", chromeUsage) }
 	if *existing != "" && sub != "add" {
 		return usageErr()
 	}

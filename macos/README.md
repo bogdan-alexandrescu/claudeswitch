@@ -5,13 +5,14 @@ shows what claudeswitch knows and manages it all: profiles, accounts,
 settings and the daemon (IMPROVEMENTS M1, M3-M7).
 
 - **Menu bar:** the Twin rings, drawn live from the followed profile's live
-  account (outer ring the week, inner ring the 5-hour session, the satellite
-  at the week's reading), then that account and its binding utilization,
+  account (outer ring the 5-hour session, inner ring the week, the satellite
+  on the inner ring at the week's reading, each ring green to red by its
+  use), then that account and its binding utilization,
   e.g. `work · work-1 41%` (no profile name with one profile). While rotation
   is switching, the satellite moves to the incoming account's week; when the
   live account is refused or needs a login, a warning triangle replaces the
-  satellite and the text gets a trailing `!`. It is a template image, so
-  macOS tints it for every menu bar. Icon only is a setting (Advanced).
+  satellite and the text gets a trailing `!`. Its unlit dots follow the menu
+  bar's light or dark appearance. Icon only is a setting (Advanced).
 - **Popover:** the daemon (live or dry run, how long since it polled, "not
   polling for 9m" when it has stopped) and a card per profile. The followed
   profile's card is open: its directory, the live account as a picker of the

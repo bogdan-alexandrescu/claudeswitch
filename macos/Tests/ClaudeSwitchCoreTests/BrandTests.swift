@@ -194,13 +194,14 @@ private func scratchDefaults(_ name: String = #function) -> UserDefaults {
     }
 }
 
-/// The menu-bar image is a template, so macOS tints it for every menu bar.
+/// The menu-bar image is drawn in colour (the rings' usage ramp), for the
+/// menu bar's light or dark appearance.
 @Suite struct MenuGlyphTests {
-    @Test func testItIsATemplateAtMenuBarSize() throws {
+    @Test func testItIsInColourAtMenuBarSize() throws {
         let s = try cardsSnapshot()
         for p in ["default", "review"] {
             let img = MenuGlyph.image(GlyphReading.of(s, profile: p))
-            #expect(img.isTemplate)
+            #expect(!img.isTemplate)
             #expect(img.size == NSSize(width: 18, height: 18))
             #expect(img.accessibilityDescription?.hasPrefix("ClaudeSwitch") == true)
         }

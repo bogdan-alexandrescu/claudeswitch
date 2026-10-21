@@ -7,7 +7,7 @@ stands, and hot-swaps Claude Code onto a fresh account before the current one
 hits its limit: no restart, no lost session. It ships as a Go CLI plus daemon
 (macOS and Linux), a native macOS menu-bar app and a Claude Code plugin.
 
-Latest release: **v0.7.4**
+Latest release: **v0.7.5**
 ([releases](https://github.com/bogdan-alexandrescu/claudeswitch/releases)).
 
 <p align="center"><img src="docs/images/popover.png" width="384" alt="The ClaudeSwitch menu-bar popover: the daemon is live, the default profile is on work-1 and the work profile is on work-team"></p>
@@ -136,7 +136,7 @@ arm64, and a `checksums.txt`. The archives are reproducible: the same tag
 always produces the same bytes.
 
 ```sh
-VERSION=v0.7.4
+VERSION=v0.7.5
 TARGET=darwin_arm64            # darwin_amd64, linux_amd64, linux_arm64
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 curl -LO "$BASE/claudeswitch_${VERSION}_${TARGET}.tar.gz"
@@ -162,7 +162,7 @@ cd claudeswitch
 symlink, and installs the daemon in dry-run (see [Daemon](#daemon)). To build
 the binary alone: `go build -o bin/claudeswitch ./cmd/claudeswitch`.
 
-**Verify it worked:** `cs version` prints `claudeswitch v0.7.4` for the release
+**Verify it worked:** `cs version` prints `claudeswitch v0.7.5` for the release
 binary (a build from source prints `claudeswitch dev`). If the shell cannot
 find `cs`, add `~/.local/bin` to your `PATH`.
 
@@ -233,7 +233,7 @@ Re-run it after pulling to update.
 From a release, as a universal build:
 
 ```sh
-VERSION=v0.7.4
+VERSION=v0.7.5
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 ZIP="ClaudeSwitch-${VERSION#v}-macos.zip"
 curl -LO "$BASE/$ZIP"
@@ -259,7 +259,7 @@ to install it. [macos/README.md](macos/README.md) has the details.
 
 **Verify it worked:** the Twin rings glyph with the live account and its
 utilization appears in the menu bar, and **About ClaudeSwitch** in its ⋯ menu
-shows version 0.7.4. If you see nothing on a MacBook with a notch, see
+shows version 0.7.5. If you see nothing on a MacBook with a notch, see
 [Troubleshooting](#troubleshooting).
 
 ### Claude Code plugin
@@ -388,9 +388,10 @@ each action.
 The menu-bar item is the Twin rings, drawn live, then the followed profile's
 live account and its binding utilization, for example
 `default · personal 44%` (no profile name when you have only one). The outer
-ring is the week, the inner ring the session, and the small dot on the outer
-ring sits at the week's reading. The glyph is a template image, so it takes the
-menu bar's own colour, light or dark. It has four states:
+ring is the session, the inner ring the week, and the small dot on the inner
+ring sits at the week's reading. Each ring is coloured by its own use, from
+green through amber to red, and the unlit dots take the menu bar's own colour,
+light or dark. It has four states:
 
 <p align="center"><img src="docs/images/glyph-states.png" width="534" alt="The menu-bar glyph in its four states, on a light and a dark menu bar: healthy, climbing, switching (the dot moves to the incoming account's week), and needs you (a warning mark and a trailing !)"></p>
 
@@ -489,7 +490,7 @@ to, so nothing can rotate there until you sign in to it again
 
 ### Claude in Chrome on the card
 
-<p align="center"><img src="docs/images/popover-chrome-signin.png" width="384" alt="The work profile's card after a rotation from work-1 to work-team: an amber banner says Claude in Chrome in &quot;Work&quot; is still signed in as work-1, with a Sign in as work-team button"></p>
+<p align="center"><img src="docs/images/popover-chrome-signin.png" width="384" alt="The work profile's card after a rotation from work-1 to work-team: an amber banner says Claude in Chrome in &quot;Work&quot; may still be signed in as work-1, with a Sign in as work-team button"></p>
 
 When a profile's accounts share one Chrome profile, the Claude in Chrome
 extension there stays signed in to the account before a rotation. The card

@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 // `cs daemon …` drives a fake launchctl/systemctl: the real ones would
@@ -61,14 +62,16 @@ func serviceWorld(t *testing.T, goos string) (*fakeService, string, string) {
 		t.Fatal(err)
 	}
 	f := &fakeService{}
-	old, oldRunning, oldDurable := serviceSeams, daemonRunning, nonDurable
+	old, oldRunning, oldDurable, oldStarted := serviceSeams, daemonRunning, nonDurable, daemonStartedAt
 	serviceSeams = serviceDeps{goos: goos, run: f.run, exe: func() (string, error) { return bin, nil }}
-	// The fake daemon runs while its job is loaded and takes its lock at once,
-	// so a verb's wait for it (awaitDaemon) ends on the first look.
+	// The fake daemon runs while its job is loaded and takes its lock and
+	// records its start at once, so a verb's wait for it (awaitDaemon) ends
+	// on the first look.
 	daemonRunning = func() bool { return f.loaded }
+	daemonStartedAt = time.Now
 	nonDurable = func(string) string { return "" } // t.TempDir is a temporary directory
 	t.Cleanup(func() {
-		serviceSeams, daemonRunning, nonDurable = old, oldRunning, oldDurable
+		serviceSeams, daemonRunning, nonDurable, daemonStartedAt = old, oldRunning, oldDurable, oldStarted
 		if len(f.relative) > 0 {
 			t.Errorf("ran %v by a bare name; launchctl and systemctl go by absolute path", f.relative)
 		}

@@ -46,7 +46,7 @@ Pick the archive for your machine (`darwin_arm64` for Apple silicon,
 put the binary in `~/.local/bin` with `cs` as a short name for it:
 
 ```sh
-VERSION=v0.7.4
+VERSION=v0.7.5
 TARGET=darwin_arm64
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 curl -LO "$BASE/claudeswitch_${VERSION}_${TARGET}.tar.gz"
@@ -65,7 +65,7 @@ cs version
 ```
 
 ```
-claudeswitch v0.7.4
+claudeswitch v0.7.5
 ```
 
 If your shell says `cs: command not found`, add `~/.local/bin` to your `PATH`
@@ -408,10 +408,11 @@ else Chrome's last used.
 ### When the card says to sign in
 
 Here `work` shares the "Work" Chrome profile, and has just rotated from
-work-1 to work-team. The extension in "Work" is still signed in as work-1, so
-the work card says so:
+work-1 to work-team. The extension in "Work" was signed in as work-1, so the
+work card says it may still be (claudeswitch cannot read the extension's
+login, so it says "may"):
 
-<p align="center"><img src="images/popover-chrome-signin.png" width="384" alt="The work card: an amber banner says Claude in Chrome in &quot;Work&quot; is still signed in as work-1, with a Sign in as work-team button and a close button"></p>
+<p align="center"><img src="images/popover-chrome-signin.png" width="384" alt="The work card: an amber banner says Claude in Chrome in &quot;Work&quot; may still be signed in as work-1, with a Sign in as work-team button and a close button"></p>
 
 Click **Sign in as work-team**. It opens the "Work" Chrome profile at the
 claude.ai and Claude in Chrome sign-in pages. Sign in to both as work-team.

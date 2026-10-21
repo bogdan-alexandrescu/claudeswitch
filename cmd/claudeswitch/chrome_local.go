@@ -301,10 +301,12 @@ func chromeSwitchNotice(cfg *config.Config, st *state.State, local chromeLocal, 
 	if r.Rule != "profile" {
 		return chromeRotationNotice(st, from, to)
 	}
-	// The account before used this Chrome profile too, so its extension
-	// was signed in as it; otherwise who it is signed in as is not known.
+	// The account before used this Chrome profile too, so its extension was
+	// probably signed in as it; otherwise who it is signed in as is not
+	// known. Either way it is inferred: claudeswitch cannot read the
+	// extension's login (C1), so the notice says "may".
 	if from != "" && st.ChromeOf(from) == nil {
-		return fmt.Sprintf("Claude in Chrome in %q is still signed in as %s; sign it in as %s (cs chrome signin %s)",
+		return fmt.Sprintf("Claude in Chrome in %q may still be signed in as %s; sign it in as %s (cs chrome signin %s)",
 			r.label(), from, to, to)
 	}
 	return fmt.Sprintf("Claude in Chrome in %q may be signed in as another account; sign it in as %s (cs chrome signin %s)",
