@@ -1,5 +1,29 @@
 {
  "ghosts": [],
+ "pools": [
+  {
+   "accounts": [
+    "work-1",
+    "personal"
+   ],
+   "name": "default",
+   "own": true,
+   "profiles": [
+    "default"
+   ]
+  },
+  {
+   "accounts": [
+    "work-team",
+    "work-2"
+   ],
+   "name": "work",
+   "own": true,
+   "profiles": [
+    "work"
+   ]
+  }
+ ],
  "profiles": [
   {
    "declared": true,
@@ -16,6 +40,9 @@
    "pool": [
     "work-1",
     "personal"
+   ],
+   "pools": [
+    "default"
    ],
    "signed_in": "yes",
    "thresholds": {
@@ -40,6 +67,9 @@
    "pool": [
     "work-team",
     "work-2"
+   ],
+   "pools": [
+    "work"
    ],
    "signed_in": "yes",
    "thresholds": {

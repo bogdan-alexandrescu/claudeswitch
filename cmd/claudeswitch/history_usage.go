@@ -63,16 +63,21 @@ func historyUsage(w io.Writer, cfgPath string, days int, asJSON bool, now time.T
 
 	accounts := []map[string]any{}
 	for _, id := range ids {
-		var owner string
-		if cfg != nil {
-			owner, _ = cfg.ProfileOf(id)
+		var owner, pool string
+		profiles := []string{}
+		if cfg != nil && configured[id] {
+			profiles = nonNilList(cfg.ProfilesOf(id))
+			pool, _ = cfg.PoolOf(id)
+		}
+		if len(profiles) > 0 {
+			owner = profiles[0] // the first, for readers older than shared pools (D31)
 		}
 		s := series[id]
 		if s == nil {
 			s = []point{}
 		}
-		accounts = append(accounts, map[string]any{"id": id, "profile": orNull(owner),
-			"configured": configured[id], "series": s})
+		accounts = append(accounts, map[string]any{"id": id, "profile": orNull(owner), "pool": orNull(pool),
+			"profiles": profiles, "configured": configured[id], "series": s})
 	}
 
 	events, err := audit.Tail("", math.MaxInt)

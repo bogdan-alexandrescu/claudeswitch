@@ -63,6 +63,9 @@ type pendingFlow struct {
 	AccountID string    `json:"account_id"`
 	OrgID     string    `json:"org_id"`
 	Pinned    bool      `json:"pinned"`
+	Org       string    `json:"org,omitempty"`
+	JoinPool  string    `json:"join_pool,omitempty"`
+	NoPool    bool      `json:"no_pool,omitempty"`
 	Profile   string    `json:"profile,omitempty"`
 	URL       string    `json:"url"`
 	Verifier  string    `json:"verifier"`
@@ -99,9 +102,16 @@ type Pending struct {
 	AccountID string
 	OrgID     string
 	Pinned    bool
+	// Org is the organization the authorize URL asked for (orgUUID), ""
+	// when the browser's own was left to decide.
+	Org string
 	// Profile is the declared profile whose pool a new account joins when
 	// the login completes (PROFILES D20), "" for none.
 	Profile string
+	// JoinPool is the pool a new account was told to join (D37): a [[pool]]
+	// or a profile's own; NoPool, none. Either overrides Profile.
+	JoinPool string
+	NoPool   bool
 }
 
 // Save writes the flow so a later invocation can complete it. 0600, and
@@ -112,7 +122,8 @@ func (f *AuthFlow) Save(p Pending) error {
 		return err
 	}
 	b, err := json.Marshal(pendingFlow{
-		AccountID: p.AccountID, OrgID: p.OrgID, Pinned: p.Pinned, Profile: p.Profile, URL: f.URL,
+		AccountID: p.AccountID, OrgID: p.OrgID, Pinned: p.Pinned, Org: p.Org, Profile: p.Profile, URL: f.URL,
+		JoinPool: p.JoinPool, NoPool: p.NoPool,
 		Verifier: f.verifier, State: f.state, StartedAt: time.Now(),
 	})
 	if err != nil {
@@ -145,8 +156,8 @@ func LoadPending() (*AuthFlow, Pending, error) {
 			time.Since(pf.StartedAt).Round(time.Minute))
 	}
 	return &AuthFlow{URL: pf.URL, verifier: pf.Verifier, state: pf.State},
-		Pending{AccountID: pf.AccountID, OrgID: pf.OrgID, Pinned: pf.Pinned,
-			Profile: pf.Profile}, nil
+		Pending{AccountID: pf.AccountID, OrgID: pf.OrgID, Pinned: pf.Pinned, Org: pf.Org,
+			Profile: pf.Profile, JoinPool: pf.JoinPool, NoPool: pf.NoPool}, nil
 }
 
 // ClearPending removes a saved flow. Called as soon as it is used or abandoned,
@@ -188,12 +199,19 @@ func BeginAuth(orgID string) (*AuthFlow, error) { return beginAuth(orgID, false,
 // Extra carries optional authorize parameters used to steer WHICH account a
 // login returns — the thing the browser session otherwise decides on its own.
 //
-// These are standard OIDC parameters and all appear in the Claude Code binary,
-// but Claude Code's own login sends none of them, so whether this endpoint
-// honours any is unverified. They cost nothing to try: a parameter that is
+// Claude Code's own login sends orgUUID and login_hint when its managed
+// settings ask for them; prompt it never sends. Whether this endpoint honours
+// any of them is unverified. They cost nothing to try: a parameter that is
 // ignored still yields a working credential, and one that is rejected fails
 // visibly before anything is stored.
 type Extra struct {
+	// Org asks for an organization, as orgUUID: the parameter Claude Code
+	// itself sends for its forceLoginOrgUUID setting, which "selects it
+	// during login, bypassing the organization selection step" (read from
+	// its authorize-URL builder, 2.1.304). GROUND_TRUTH §31 found
+	// organization_uuid ignored; orgUUID is a different name and was never
+	// tried. What comes back is checked against it either way.
+	Org string
 	// Prompt is typically "select_account" (force the account chooser) or
 	// "login" (force re-authentication even with a live session).
 	Prompt string
@@ -233,6 +251,9 @@ func beginAuth(orgID string, pinOrg bool, e Extra) (*AuthFlow, error) {
 		{"code_challenge", challenge},
 		{"code_challenge_method", "S256"},
 		{"state", st},
+	}
+	if e.Org != "" {
+		pairs = append(pairs, [2]string{"orgUUID", e.Org})
 	}
 	if pinOrg && orgID != "" {
 		pairs = append(pairs, [2]string{"organization_uuid", orgID})

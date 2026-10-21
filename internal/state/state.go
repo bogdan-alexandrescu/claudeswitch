@@ -649,6 +649,11 @@ func (s *State) Profile(name string) *ProfileState {
 // goes through here, so finding them when profiles arrive is a grep.
 func (s *State) Default() *ProfileState { return s.Profile(DefaultProfile) }
 
+// Path is the file this state was loaded from and saves to: a writer that
+// waited for the switch lock reads it again from here, so its §3 check sees
+// what was written meanwhile.
+func (s *State) Path() string { return s.path }
+
 // SetActive records which account the live credential belongs to, stamping when
 // that was established so a merge can tell whose belief is newer.
 func (in *ProfileState) SetActive(id string) {

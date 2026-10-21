@@ -1,0 +1,46 @@
+{
+ "pools": [
+  {
+   "accounts": [
+    "personal"
+   ],
+   "name": "personal",
+   "own": false,
+   "profiles": [
+    "default"
+   ]
+  },
+  {
+   "accounts": [
+    "team-1",
+    "team-2",
+    "team-3"
+   ],
+   "name": "team",
+   "own": false,
+   "profiles": [
+    "default",
+    "work"
+   ]
+  },
+  {
+   "accounts": [
+    "ops-1"
+   ],
+   "name": "ops",
+   "own": false,
+   "profiles": [
+    "work"
+   ]
+  },
+  {
+   "accounts": [],
+   "name": "spare",
+   "own": false,
+   "profiles": []
+  }
+ ],
+ "unlisted": [
+  "loose-1"
+ ]
+}

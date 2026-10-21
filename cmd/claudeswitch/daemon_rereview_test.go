@@ -37,8 +37,11 @@ func TestDaemonUnresolvedProfileRefusesUnlessItHasNoItem(t *testing.T) {
 	}
 }
 
-// A refusal that persists is reported once — audit row, log line and
-// notification — not on every twenty-second tick.
+// A refusal that persists is reported once — audit row and log line — not
+// on every twenty-second tick. Since D34 it is routine (an account in use
+// in another profile), so the line is INFO and there is no refusal
+// notification; the profile decides again without the account, and its
+// wait is said once.
 func TestDaemonPersistentRefusalIsReportedOnce(t *testing.T) {
 	r := newRig(t, twoProfiles(), true)
 	overWorkPool(r)
@@ -51,11 +54,14 @@ func TestDaemonPersistentRefusalIsReportedOnce(t *testing.T) {
 	if errs := r.aud.kind("error"); len(errs) != 1 {
 		t.Errorf("%d refusal rows over four ticks, want 1", len(errs))
 	}
-	if n := strings.Count(r.logs.String(), "REFUSED A SWAP"); n != 1 {
+	if n := strings.Count(r.logs.String(), "in use in another profile"); n != 1 {
 		t.Errorf("%d refusal log lines, want 1", n)
 	}
-	if len(r.nt.sent) != 1 {
-		t.Errorf("notifications = %q, want one", r.nt.sent)
+	if strings.Contains(r.logs.String(), "level=ERROR") {
+		t.Errorf("a routine refusal logged an error:\n%s", r.logs.String())
+	}
+	if len(r.nt.sent) != 1 || !strings.Contains(r.nt.sent[0], "no account free") {
+		t.Errorf("notifications = %q, want the wait, said once", r.nt.sent)
 	}
 
 	// The evidence changes: that is new, and said again.

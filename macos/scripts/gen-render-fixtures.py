@@ -13,6 +13,16 @@ from anyone's state.
   hero         two healthy profiles, no warnings: the README's hero image
   tutorial     the CLI screenshots' story, after work rotated to work-team,
                with the Chrome sign-in notice (README app section, TUTORIAL)
+  pools        shared pools: two [[pool]] blocks both profiles list (team
+               second in each), one pool each lists first, an empty pool
+               no profile lists, an account in no pool, and team-2 live in
+               work, so in use for default
+  older-cli    a binary from before shared pools: no pool keys, and
+               `pool list` answers `usage`
+
+The sets before pools are configs with no [[pool]] blocks: write() gives
+them what the CLI reports for one (each profile its own pool, named after
+it, and the accounts no pool lists), unless a set brings its own.
 
     python3 macos/scripts/gen-render-fixtures.py
 """
@@ -74,7 +84,32 @@ def info(id, profile, active_in=None, plan="Max 20x", email=None, state="availab
             "profile": profile, "active_in": active_in, "pinned": False, "state": state, "reading": None}
 
 
+def own_pools(files):
+    """What the CLI reports for a config with no [[pool]] blocks: each
+    declared profile's own pool (its listed accounts; an empty one is no
+    pool), the accounts no pool lists, and pool and profiles per account."""
+    plist, alist = files["cli-profile-list.json"], files["cli-account-list.json"]
+    pools, owner = [], {}
+    for p in plist["profiles"]:
+        p["pools"] = [p["name"]] if p.get("declared", True) else []
+        if p.get("declared", True) and p["listed"]:
+            pools.append({"name": p["name"], "accounts": p["listed"], "profiles": [p["name"]], "own": True})
+            for a in p["listed"]:
+                owner[a] = p["name"]
+    plist["pools"] = pools
+    has_default = any(p["name"] == "default" for p in plist["profiles"])
+    unlisted = []
+    for a in alist["accounts"]:
+        a["pool"] = owner.get(a["id"])
+        a["profiles"] = [owner[a["id"]]] if a["id"] in owner else (["default"] if has_default else [])
+        if a["id"] not in owner:
+            unlisted.append(a["id"])
+    files["cli-pool-list.json"] = {"pools": pools, "unlisted": unlisted}
+
+
 def write(name, files):
+    if "cli-pool-list.json" not in files:
+        own_pools(files)
     d = os.path.join(OUT, name)
     if os.path.exists(d):
         shutil.rmtree(d)
@@ -278,3 +313,97 @@ write("tutorial", {
              "used_by_accounts": ["research"], "used_by_profiles": []},
             {"folder": "claudeswitch-personal", "in_chrome": True, "last_used": False, "name": None,
              "used_by_accounts": ["personal"], "used_by_profiles": []}]}})
+
+# Shared pools (docs/PROFILES.md §10): personal is default's first pool,
+# ops work's first; both list team second; spare is empty and no profile
+# lists it; loose-1 is in no pool (default's, last). team-2 is live in work,
+# so in default it is in use by work and not offered.
+pool_accounts = {
+    "personal": rec("personal", 14, 38),
+    "team-1": rec("team-1", 3, 4, err="usage API: 401 Unauthorized"),
+    "team-2": rec("team-2", 41, 55),
+    "team-3": rec("team-3", 6, 12),
+    "ops-1": rec("ops-1", 9, 31),
+    "loose-1": rec("loose-1", 0, 2),
+}
+team = ["team-1", "team-2", "team-3"]
+shared = [
+    {"name": "personal", "accounts": ["personal"], "profiles": ["default"], "own": False},
+    {"name": "team", "accounts": team, "profiles": ["default", "work"], "own": False},
+    {"name": "ops", "accounts": ["ops-1"], "profiles": ["work"], "own": False},
+    {"name": "spare", "accounts": [], "profiles": [], "own": False}]
+pool_prof = [prof("default", ["personal"] + team + ["loose-1"], ["personal"] + team, live="personal", sa=85, sw=98),
+             prof("work", ["ops-1"] + team, ["ops-1"] + team, dir="~/.claude-work", live="team-2", sa=85, sw=98)]
+pool_prof[0]["pools"], pool_prof[1]["pools"] = ["personal", "team"], ["ops", "team"]
+
+
+def pool_why(name, pool, active, reason, elsewhere):
+    accts = []
+    for a in pool:
+        u = pool_accounts[a]["last_usage"]
+        fh, sd = u["five_hour"]["utilization"], u["seven_day"]["utilization"]
+        why = "in use by " + elsewhere[a] if a in elsewhere else "at %d%%, ready" % max(fh, sd)
+        if a == "team-1":
+            why = "needs a sign-in"
+        accts.append({"id": a, "active": a == active, "eligible": a not in elsewhere and a != "team-1",
+                      "utilization": max(fh, sd), "window": "seven_day" if sd >= fh else "five_hour",
+                      "why": why, "active_in": elsewhere.get(a)})
+    return {"profile": name, "pool": pool, "accounts": accts,
+            "decision": {"kind": "stay", "reason": reason},
+            "current": name == "default", "best": None, "best_why": None,
+            "thresholds": {"switch_at": 85, "switch_at_weekly": 98, "hard_floor": 99, "landing_margin": 10}}
+
+
+def pinfo(id, pool, profiles, active_in=None, plan="Team", email=None, state="available"):
+    i = info(id, profiles[0] if profiles else None, active_in, plan=plan, email=email, state=state)
+    i["pool"], i["profiles"] = pool, profiles
+    return i
+
+
+write("pools", {
+    "state.json": {"version": 1, "accounts": pool_accounts,
+                   "profiles": {"default": {"active_account": "personal", "last_switch": NOW, "active_at": NOW},
+                                "work": {"active_account": "team-2", "last_switch": NOW, "active_at": NOW}},
+                   "emails": {"personal": "person1@example.com", "team-2": "person2@example.com"},
+                   "daemon_live": True, "daemon_since": "2026-10-08T01:00:00Z", "daemon_build_time": Z,
+                   "saved_at": NOW},
+    "cli-profile-list.json": {"profiles": pool_prof, "ghosts": [], "pools": shared},
+    "cli-pool-list.json": {"pools": shared, "unlisted": ["loose-1"]},
+    "why-profiles.json": {"dir": "/Users/example", "profiles": [
+        dict(pool_why("default", ["personal"] + team + ["loose-1"], "personal",
+                      "active account at 38%, under the 98% trigger", {"team-2": "work"}), best="team-3"),
+        dict(pool_why("work", ["ops-1"] + team, "team-2",
+                      "active account at 55%, under the 98% trigger", {}), best="ops-1")]},
+    "cli-account-list.json": {"accounts": [
+        pinfo("personal", "personal", ["default"], "default", plan="Max 20x", email="person1@example.com"),
+        pinfo("team-1", "team", ["default", "work"], state="needs_login"),
+        pinfo("team-2", "team", ["default", "work"], "work", email="person2@example.com"),
+        pinfo("team-3", "team", ["default", "work"]),
+        pinfo("ops-1", "ops", ["work"], plan="Max 20x"),
+        pinfo("loose-1", None, ["default"], plan="Pro")]}})
+
+# A binary from before shared pools: the hero's picture, with none of the
+# pool keys, and `pool list` refused as an unknown command would be.
+write("older-cli", {
+    "state.json": {"version": 1, "accounts": hero_accounts,
+                   "profiles": {"default": {"active_account": "work-1", "last_switch": NOW, "active_at": NOW},
+                                "work": {"active_account": "work-team", "last_switch": NOW, "active_at": NOW}},
+                   "emails": {"work-1": "person1@example.com", "work-team": "person2@example.com"},
+                   "daemon_live": True, "daemon_since": "2026-10-08T01:00:00Z", "daemon_build_time": Z,
+                   "saved_at": NOW},
+    "cli-profile-list.json": {"profiles": [prof("default", ["work-1", "personal"], ["work-1", "personal"],
+                                                live="work-1", sa=85, sw=98),
+                                           prof("work", ["work-team", "work-2"], ["work-team", "work-2"],
+                                                dir="~/.claude-work", live="work-team", sa=85, sw=98)],
+                              "ghosts": []},
+    "cli-pool-list.json": {"error": {"code": "usage", "message": "unknown command \"pool\"", "hint": ""}},
+    "why-profiles.json": {"dir": "/Users/example", "profiles": [
+        hero_why("default", ["work-1", "personal"], "work-1",
+                 "active account at 41%, under the 98% trigger", "personal"),
+        hero_why("work", ["work-team", "work-2"], "work-team",
+                 "active account at 12%, under the 98% trigger", "work-2")]},
+    "cli-account-list.json": {"accounts": [
+        info("work-1", "default", "default", email="person1@example.com"),
+        info("personal", "default", plan="Pro"),
+        info("work-team", "work", "work", plan="Team", email="person2@example.com"),
+        info("work-2", "work", plan="Max 5x")]}})

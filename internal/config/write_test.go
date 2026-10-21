@@ -113,17 +113,22 @@ func TestWriteKeepsEverySetting(t *testing.T) {
 				OrgID: "org-2", Reserve: 70, Enabled: &off},
 		},
 		Profiles: []Profile{
-			{Name: "work", Dir: "~/.claude-work", Pool: []string{"work"},
+			{Name: "work", Dir: "~/.claude-work", Pools: []string{"shared"},
 				SwitchAt: 75, SwitchAtWeekly: 90, HardFloor: 97, LandingMargin: &workMargin,
 				Models: []string{"Othermodel"}, Chrome: "Profile 1", Prefer: PreferRoom, Paths: []string{"~/src/work/**"}},
 			{Name: "default", Pool: []string{"personal"}}, // no dir: CLAUDE_CONFIG_DIR unset
 		},
+		Pools: []Pool{{Name: "shared", Accounts: []string{"work"}}},
 	}
 	requireEveryFieldSet(t, reflect.ValueOf(*in), "Config")
 	for i, a := range in.Accounts {
 		requireEveryFieldSet(t, reflect.ValueOf(a), fmt.Sprintf("Accounts[%d]", i))
 	}
 	requireEveryFieldSet(t, reflect.ValueOf(in.Profiles[0]), "Profiles[0]")
+	requireEveryFieldSet(t, reflect.ValueOf(in.Pools[0]), "Pools[0]")
+	if len(in.Profiles[1].Pool) == 0 {
+		t.Error("Profiles[1].Pool is zero in the fixture; a profile's own pool must be written too")
+	}
 
 	path := filepath.Join(t.TempDir(), "config.toml")
 	if err := in.Write(path); err != nil {
@@ -159,6 +164,10 @@ func requireEveryFieldSet(t *testing.T, v reflect.Value, where string) {
 			continue // checked element by element
 		case "Label":
 			continue // retired: Load refuses a config that sets it
+		case "Pool":
+			if where == "Profiles[0]" {
+				continue // a profile sets pool or pools (D35): Profiles[1] sets pool
+			}
 		}
 		if v.Field(i).IsZero() {
 			t.Errorf("%s.%s is zero in the fixture; set it so Write is tested on it", where, f.Name)

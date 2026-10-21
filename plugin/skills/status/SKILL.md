@@ -28,7 +28,9 @@ Summarise for the user in a few lines:
 - the **active** account and its session and weekly utilization, with reset times
 - any account marked refused/burnt, and when it recovers
 - the account with the **most room** if the active one is at or past the
-  switch threshold shown in the output
+  switch threshold shown in the output. Skip an account whose state reads
+  `in use by <profile>`: it is live in another profile that shares its pool,
+  so this profile cannot take it until that one moves off it
 
 Do not paste the whole table back unless asked — the user can read it in the
 tool output. If the command is not found, say claudeswitch is not installed and

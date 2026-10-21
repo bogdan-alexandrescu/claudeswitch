@@ -96,7 +96,7 @@ func profileCreate(w io.Writer, o createOptions) error {
 	if err := checkNewDir(cfg, base, dir); err != nil {
 		return err
 	}
-	if err := checkNewPool(cfg, o.pool); err != nil {
+	if err := checkNewPool(cfg, o.name, o.pool); err != nil {
 		return err
 	}
 
@@ -188,7 +188,8 @@ func profileCreate(w io.Writer, o createOptions) error {
 // (owner decision, lane 10 security review): until then the daemon's §3
 // checks do not know the profile, and could swap the seeded account into
 // another one meanwhile. With no daemon running it seeds at once. Either way
-// the config and state are read afresh for the §3 check.
+// the config and state are read afresh for the §3 check, under the switch
+// lock (D34), which is held through the write and its resolution.
 func seedWhenLoaded(w io.Writer, cfgPath string, v seedVault, name, hashDir, fsDir, id string) error {
 	if daemonRunning() {
 		fmt.Fprintf(w, "\n    waiting for the daemon to load profile %s…\n", name)
@@ -203,6 +204,12 @@ func seedWhenLoaded(w io.Writer, cfgPath string, v seedVault, name, hashDir, fsD
 				"profile, run: claudeswitch profile seed %s %s", name, seedWait, id, name, id)
 		}
 	}
+	lock, err := takeSwitchLock(fmt.Sprintf("no credential was written; to seed it then, run: "+
+		"claudeswitch profile seed %s %s", name, id))
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		return fmt.Errorf("the config would not load back: %w", err)
@@ -350,11 +357,16 @@ func checkNewDir(cfg *config.Config, base, dir string) error {
 	return nil
 }
 
-// checkNewPool is D1 for the new pool: configured accounts, each once, none
-// listed in another profile's pool. An account no pool lists joins default
-// only by rule (D6), and the new pool may take it; naming it in a pool is
-// how an account leaves default.
-func checkNewPool(cfg *config.Config, pool []string) error {
+// checkNewPool is D32 for the new profile's own pool (D35): configured
+// accounts, each once, none in another pool. An account no pool lists joins
+// default only by rule (D6), and the new pool may take it; naming it in a
+// pool is how an account leaves default. To share an account the new
+// profile lists its pool instead, once it exists (cs profile pools).
+func checkNewPool(cfg *config.Config, name string, pool []string) error {
+	if _, block := cfg.PoolNamed(name); block && len(pool) > 0 {
+		return appErr(codeInvalidValue, fmt.Sprintf("make it without --pool, then: claudeswitch profile pools %s %s",
+			name, name), "a [[pool]] is named %q already, and a profile's own pool would have that name too", name)
+	}
 	seen := map[string]bool{}
 	for _, id := range pool {
 		if seen[id] {
@@ -365,14 +377,16 @@ func checkNewPool(cfg *config.Config, pool []string) error {
 			return appErr(codeNotFound, "", "--pool names %q, which the config does not have; sign it in first "+
 				"(`claudeswitch login %s --direct`)", id, id)
 		}
-		for _, in := range cfg.Profiles {
-			for _, p := range in.Pool {
-				if p == id {
-					return appErr(codeInOtherPool, "", "account %q is in the pool of profile %q; pools must not overlap, since "+
-						"one credential live in two profiles is logged out by whichever refreshes first",
-						id, in.Name)
-				}
+		if p, ok := cfg.PoolOf(id); ok {
+			what := fmt.Sprintf("pool %q", p)
+			if _, block := cfg.PoolNamed(p); !block {
+				what = fmt.Sprintf("the pool of profile %q", p)
 			}
+			return appErr(codeInOtherPool,
+				fmt.Sprintf("to share it, make the profile without %s, then: claudeswitch profile pools %s %s",
+					id, name, p),
+				"account %q is in %s; an account is in one pool, since its quota would otherwise be "+
+					"counted twice (profiles share a pool by listing it)", id, what)
 		}
 	}
 	return nil
@@ -432,7 +446,8 @@ func seedConflict(cfg *config.Config, st *state.State, v holdsChecker, self, id 
 // configured, which Claude Code hashes), created (never updated) while
 // holding Claude Code's credential locks for fsDir (the same dir on disk,
 // GROUND_TRUTH §43), then confirmed by resolving the item the way every
-// later command will. cfg and st are fresh from disk (seedWhenLoaded).
+// later command will. cfg and st are fresh from disk, and the caller holds
+// the switch lock (seedWhenLoaded).
 func seedProfile(w io.Writer, cfg *config.Config, st *state.State, v seedVault, name, hashDir, fsDir, id string) error {
 	// Again, against the config and state now on disk: time has passed
 	// since the first check, and a daemon may have swapped meanwhile.
@@ -681,7 +696,20 @@ func profileList(w io.Writer, cfgPath string) error {
 		}
 		fmt.Fprintf(w, "  %s\n", in.Name)
 		fmt.Fprintf(w, "    dir   %s\n", dir)
-		fmt.Fprintf(w, "    pool  %s\n", nonEmpty(strings.Join(in.Pool, ", "), "(empty)"))
+		if i := declaredIndex(cfg, in.Name); i >= 0 && len(cfg.Profiles[i].Pools) > 0 {
+			// The pools it lists, in the order it uses them (D33).
+			var tiers []string
+			for t, name := range in.PoolNames {
+				label := name
+				if name == "" {
+					label = "in no pool"
+				}
+				tiers = append(tiers, fmt.Sprintf("%s (%s)", label, nonEmpty(strings.Join(in.Tiers[t], ", "), "empty")))
+			}
+			fmt.Fprintf(w, "    pools %s\n", strings.Join(tiers, ", then "))
+		} else {
+			fmt.Fprintf(w, "    pool  %s\n", nonEmpty(strings.Join(in.Pool, ", "), "(empty)"))
+		}
 		if len(in.Paths) > 0 {
 			fmt.Fprintf(w, "    paths %s\n", strings.Join(in.Paths, ", "))
 		}

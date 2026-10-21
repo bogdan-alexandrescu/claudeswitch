@@ -1,0 +1,7 @@
+{
+ "error": {
+  "code": "usage",
+  "hint": "",
+  "message": "unknown command \"pool\""
+ }
+}

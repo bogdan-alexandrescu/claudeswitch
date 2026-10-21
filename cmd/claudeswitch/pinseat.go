@@ -12,6 +12,18 @@ import (
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/vault"
 )
 
+// joinPool is the [[pool]] a new account joining profile prof goes into
+// (D20 with D31): the first pool prof lists, or "" when it lists none and the
+// account goes into its own pool.
+func joinPool(cfg *config.Config, prof string) string {
+	for _, in := range cfg.Profiles {
+		if in.Name == prof && len(in.Pools) > 0 {
+			return in.Pools[0]
+		}
+	}
+	return ""
+}
+
 // recordSeat makes the config name the seat a credential was just verified to
 // belong to. It is the step that used to be left to the person: a seat uuid is
 // only knowable after signing in, so a block written in advance is unpinned by
@@ -27,6 +39,12 @@ import (
 // textual and parsed back before it replaces the file, so comments and order
 // survive and a config this could not produce cleanly is never left on disk.
 func recordSeat(cfg *config.Config, id string, e *vault.Entry, pool string) (string, error) {
+	return recordSeatTo(cfg, id, e, joinTarget{Profile: pool})
+}
+
+// recordSeatTo is recordSeat with where a new account goes said in full
+// (D37).
+func recordSeatTo(cfg *config.Config, id string, e *vault.Entry, j joinTarget) (string, error) {
 	if e == nil || e.AccountUUID == "" || e.OrgID == "" {
 		return "", fmt.Errorf("the credential did not say which seat it is, so %s cannot be pinned", id)
 	}
@@ -42,13 +60,35 @@ func recordSeat(cfg *config.Config, id string, e *vault.Entry, pool string) (str
 	case existing == nil:
 		block := fmt.Sprintf("\n[[account]]\nid           = %q\n"+
 			"account_uuid = %q\norg_id       = %q\n", id, e.AccountUUID, e.OrgID)
-		place, err := appendAccountInPool(cfg.Path, id, block, pool)
+		// pool is a profile whose own pool takes it; into, a [[pool]].
+		pool, into := j.Profile, ""
+		switch {
+		case j.Pool != "":
+			pool = ""
+			if _, named := cfg.PoolNamed(j.Pool); named {
+				into = j.Pool
+			} else {
+				pool = j.Pool // a profile's own pool, by its name (D35)
+			}
+		case j.None:
+			pool = ""
+		case pool != "":
+			into = joinPool(cfg, pool)
+		}
+		place, err := appendAccountInPool(cfg.Path, id, block, pool, into)
 		if err != nil {
 			return "", err
 		}
 		msg := fmt.Sprintf("added %s to %s, pinned to seat %s", id, cfg.Path, usage.ShortSeat(seat))
-		if pool != "" {
+		switch {
+		case into != "" && pool == "":
+			msg += fmt.Sprintf(", in pool %q", into)
+		case into != "":
+			msg += fmt.Sprintf(", in pool %q (the first profile %q uses)", into, pool)
+		case pool != "":
 			msg += fmt.Sprintf(", in profile %q's pool", pool)
+		case j.None:
+			msg += fmt.Sprintf(", in no pool (profile %q uses it last)", config.DefaultProfile)
 		}
 		switch place {
 		case priorityNamed:
@@ -92,6 +132,8 @@ var (
 	profileHdr  = regexp.MustCompile(`^\s*\[\[\s*profile\s*\]\]\s*(#.*)?$`)
 	nameLine    = regexp.MustCompile(`^\s*name\s*=\s*(?:"([^"]*)"|'([^']*)')`)
 	poolLine    = regexp.MustCompile(`^\s*pool\s*=\s*\[`)
+	poolHdr     = regexp.MustCompile(`^\s*\[\[\s*pool\s*\]\]\s*(#.*)?$`)
+	accountsKey = regexp.MustCompile(`^\s*accounts\s*=\s*\[`)
 )
 
 // addToPool names id last in the pool of the [[profile]] block called prof,
@@ -101,16 +143,28 @@ var (
 // back before it is written (writeConfigFile), so a layout this misreads is
 // discarded rather than installed.
 func addToPool(text, prof, id string) (string, error) {
+	return addToList(text, profileHdr, "profile", prof, poolLine, "pool", id)
+}
+
+// addToPoolBlock is addToPool for the accounts of the [[pool]] called name
+// (D31).
+func addToPoolBlock(text, name, id string) (string, error) {
+	return addToList(text, poolHdr, "pool", name, accountsKey, "accounts", id)
+}
+
+// addToList names id last in the list key of the [[kind]] block whose name
+// line says name (hdr and keyLine match its header and the key's line).
+func addToList(text string, hdr *regexp.Regexp, kind, name string, keyLine *regexp.Regexp, key, id string) (string, error) {
 	lines := strings.Split(text, "\n")
 	start, end, nameAt := -1, len(lines), -1
 	for i := 0; i < len(lines); i++ {
-		if !profileHdr.MatchString(lines[i]) {
+		if !hdr.MatchString(lines[i]) {
 			continue
 		}
 		j := i + 1
 		found := -1
 		for ; j < len(lines) && !tableHeader.MatchString(lines[j]); j++ {
-			if m := nameLine.FindStringSubmatch(lines[j]); m != nil && m[1]+m[2] == prof {
+			if m := nameLine.FindStringSubmatch(lines[j]); m != nil && m[1]+m[2] == name {
 				found = j
 			}
 		}
@@ -121,11 +175,11 @@ func addToPool(text, prof, id string) (string, error) {
 		i = j - 1
 	}
 	if start < 0 {
-		return "", fmt.Errorf("no [[profile]] block named %q to add %s to", prof, id)
+		return "", fmt.Errorf("no [[%s]] block named %q to add %s to", kind, name, id)
 	}
 	poolAt := -1
 	for k := start + 1; k < end; k++ {
-		if poolLine.MatchString(lines[k]) {
+		if keyLine.MatchString(lines[k]) {
 			poolAt = k
 			break
 		}
@@ -133,7 +187,7 @@ func addToPool(text, prof, id string) (string, error) {
 	quoted := strconv.Quote(id)
 	if poolAt < 0 {
 		out := append([]string{}, lines[:nameAt+1]...)
-		out = append(out, "pool = ["+quoted+"]")
+		out = append(out, key+" = ["+quoted+"]")
 		out = append(out, lines[nameAt+1:]...)
 		return strings.Join(out, "\n"), nil
 	}
@@ -176,7 +230,7 @@ func addToPool(text, prof, id string) (string, error) {
 			last = i
 		}
 	}
-	return "", fmt.Errorf("profile %q's pool list is not closed", prof)
+	return "", fmt.Errorf("the %s list of %s %q is not closed", key, kind, name)
 }
 
 // pinAccount writes account_uuid and org_id into the existing [[account]] block

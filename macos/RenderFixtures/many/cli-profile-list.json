@@ -13,6 +13,59 @@
    "why": "repointed"
   }
  ],
+ "pools": [
+  {
+   "accounts": [
+    "personal"
+   ],
+   "name": "default",
+   "own": true,
+   "profiles": [
+    "default"
+   ]
+  },
+  {
+   "accounts": [
+    "w01",
+    "w02",
+    "w03",
+    "w04",
+    "w05",
+    "w06",
+    "w07",
+    "w08",
+    "w09",
+    "w10",
+    "w11",
+    "w12"
+   ],
+   "name": "work",
+   "own": true,
+   "profiles": [
+    "work"
+   ]
+  },
+  {
+   "accounts": [
+    "old-sso"
+   ],
+   "name": "review",
+   "own": true,
+   "profiles": [
+    "review"
+   ]
+  },
+  {
+   "accounts": [
+    "research-team-extremely-long-account-name"
+   ],
+   "name": "client-example-enterprise-integration",
+   "own": true,
+   "profiles": [
+    "client-example-enterprise-integration"
+   ]
+  }
+ ],
  "profiles": [
   {
    "declared": true,
@@ -28,6 +81,9 @@
    "pool": [
     "personal",
     "x-unpooled"
+   ],
+   "pools": [
+    "default"
    ],
    "signed_in": "yes",
    "thresholds": {
@@ -76,6 +132,9 @@
     "w11",
     "w12"
    ],
+   "pools": [
+    "work"
+   ],
    "signed_in": "yes",
    "thresholds": {
     "hard_floor": 98,
@@ -97,6 +156,9 @@
    "pinned": "old-sso",
    "pool": [
     "old-sso"
+   ],
+   "pools": [
+    "review"
    ],
    "signed_in": "no",
    "thresholds": {
@@ -120,6 +182,9 @@
    "pool": [
     "research-team-extremely-long-account-name"
    ],
+   "pools": [
+    "client-example-enterprise-integration"
+   ],
    "signed_in": "unknown",
    "thresholds": {
     "hard_floor": 98,
@@ -138,6 +203,9 @@
    "overrides": {},
    "pinned": null,
    "pool": [],
+   "pools": [
+    "scratch"
+   ],
    "signed_in": "no",
    "thresholds": {
     "hard_floor": 98,

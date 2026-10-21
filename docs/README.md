@@ -29,8 +29,9 @@ the CLI command it runs, and its default.
   Claude Code, the Chrome globe, Pin, banners, and the ⋯ menu.
 - [Settings → Profiles](app/settings-profiles.md): pools, per-profile
   thresholds, the Chrome profile picker, new and removed profiles.
-- [Settings → Accounts](app/settings-accounts.md): rotation order, each
-  account's menu, recovery copies.
+- [Settings → Accounts](app/settings-accounts.md): accounts grouped by pool,
+  dragging to reorder or to move between pools, New pool, a pool's Rename
+  and Delete, each account's menu, recovery copies.
 - [Settings → Rotation](app/settings-rotation.md): when and where rotation
   moves a profile.
 - [Settings → Polling](app/settings-polling.md): how often accounts are read,
@@ -44,7 +45,8 @@ the CLI command it runs, and its default.
 - [Settings → Advanced](app/settings-advanced.md): Appearance, dials or bars,
   the terminal, Icon only, the binary, and the advanced settings.
 - [Add account](app/add-account.md): signing in with a browser, or saving the
-  current login.
+  current login, with the pool it goes into and the organization to sign in
+  to.
 - [Claude in Chrome in the app](app/chrome.md): Chrome profiles per profile
   and per account, and the sign-in banner.
 - [First-run setup](app/first-run.md): the welcome window's four steps, and
@@ -64,7 +66,7 @@ One page per command group, with every subcommand and flag, an example, the
 - [Accounts](cli/accounts.md): `use`, `login`, `add`, `refresh`, `accounts`,
   `account …`, `priority`, `rename`, `remove`, `forget`, `identify`,
   `recovery`.
-- [Profiles](cli/profiles.md): `profile …` and `run`.
+- [Profiles](cli/profiles.md): `profile …`, `pool …` and `run`.
 - [Config](cli/config.md): `config`, and every setting with its default and
   range.
 - [Daemon](cli/daemon.md): `daemon …`, `watch`, `uninstall`.

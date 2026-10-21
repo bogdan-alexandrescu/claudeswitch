@@ -1,5 +1,6 @@
 {
  "ghosts": [],
+ "pools": [],
  "profiles": [
   {
    "declared": false,
@@ -15,6 +16,7 @@
     "x-unpooled",
     "w01"
    ],
+   "pools": [],
    "signed_in": "yes",
    "thresholds": {
     "hard_floor": 98,

@@ -43,23 +43,44 @@ func TestCallsPerWindowCountsAnActiveAccountPerProfile(t *testing.T) {
 	}
 }
 
-// Validation uses that arithmetic: a cadence that fits one profile can be
-// too much for two.
-func TestValidateRejectsACadenceTwoProfilesCannotAfford(t *testing.T) {
-	c, _ := Load(filepath.Join(t.TempDir(), "missing.toml")) // the defaults
-	c.APIBudget = 4                                          // 3 available after the swap reserve
-	c.PollActive = Duration{Duration: 2 * time.Minute}
-	c.PollIdle = Duration{Duration: 10 * time.Minute}
-	c.Accounts = []Account{{ID: "a"}, {ID: "w1"}}
-	c.Priority = []string{"a", "w1"}
-	if err := c.Validate(); err != nil {
-		t.Fatalf("one profile (3.0 calls) should fit: %v", err)
+// D36: the machine-wide window is api_budget for each profile with an
+// account to use. Two busy profiles under one profile's window held routine
+// reads 14 minutes stale (GROUND_TRUTH §47).
+func TestTheWindowGrowsWithTheProfilesInUse(t *testing.T) {
+	c := &Config{APIBudget: 12, Accounts: []Account{{ID: "a"}, {ID: "w1"}, {ID: "off", Enabled: new(bool)}}}
+	if got := c.WindowAllowance(); got != 12 {
+		t.Errorf("no profiles: %d, want 12", got)
 	}
 	c.Profiles = []Profile{
 		{Name: "default", Pool: []string{"a"}},
 		{Name: "work", Dir: "~/.claude-work", Pool: []string{"w1"}},
+		{Name: "spare", Dir: "~/.claude-spare"},
+		{Name: "idle", Dir: "~/.claude-idle", Pool: []string{"off"}},
 	}
+	if got := c.WindowAllowance(); got != 24 {
+		t.Errorf("two profiles with an enabled account: %d, want 24", got)
+	}
+}
+
+// Validation checks a cadence against that window: what one profile's window
+// could not afford, two profiles' can, and a budget too small for both is
+// still refused.
+func TestValidateChecksTheCadenceAgainstTheGrownWindow(t *testing.T) {
+	c, _ := Load(filepath.Join(t.TempDir(), "missing.toml")) // the defaults
+	c.APIBudget = 4
+	c.PollActive = Duration{Duration: 2 * time.Minute}
+	c.PollIdle = Duration{Duration: 10 * time.Minute}
+	c.Accounts = []Account{{ID: "a"}, {ID: "w1"}}
+	c.Priority = []string{"a", "w1"}
+	c.Profiles = []Profile{
+		{Name: "default", Pool: []string{"a"}},
+		{Name: "work", Dir: "~/.claude-work", Pool: []string{"w1"}},
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("two active accounts (5.0 calls) against 7 available should fit: %v", err)
+	}
+	c.APIBudget = 2
 	if err := c.Validate(); err == nil {
-		t.Fatal("two active accounts (5.0 calls) against 3 available must not validate")
+		t.Fatal("5.0 calls against 3 available must not validate")
 	}
 }

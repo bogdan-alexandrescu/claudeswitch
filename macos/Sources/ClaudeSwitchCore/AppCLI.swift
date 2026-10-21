@@ -82,8 +82,6 @@ public extension Result where Failure == CallError {
     var failureHint: String? { failure?.hint }
 }
 
-public enum PoolVerb: String { case add, remove }
-
 public enum DaemonVerb: Equatable {
     case status, start, stop, restart, live, dryRun, uninstall
     case install(live: Bool?)
@@ -257,12 +255,67 @@ public extension CLI {
         decode({ ["profile", "forget", try Argv.name(profile, "profile"), "--json"] }, ForgetResult.init)
     }
 
-    func profilePool(_ profile: String, _ verb: PoolVerb, account: String, to: String?) -> Result<PoolResult, CallError> {
+    /// The pools a profile uses, in order (D31, D33); answers the profile
+    /// as `profile list` reports it. A profile's own pool holding accounts
+    /// is converted first, and leads unless the list names it.
+    func profilePools(_ profile: String, _ pools: [String]) -> Result<ProfileInfo, CallError> {
         decode({
-            var a = ["profile", "pool", try Argv.name(profile, "profile"), verb.rawValue, try Argv.name(account, "account")]
-            if let t = to { a.append(try Argv.flag("to", Argv.name(t, "profile"), "profile")) }
+            guard !pools.isEmpty else { throw CallError.refused("usage", "Choose at least one pool.") }
+            return ["profile", "pools", try Argv.name(profile, "profile")] + (try pools.map { try Argv.name($0, "pool") })
+                + ["--json"]
+        }, ProfileInfo.init)
+    }
+
+    // MARK: pools (shared pools, docs/PROFILES.md §10)
+
+    /// Every pool, and the accounts in no pool. Config only: no keychain.
+    func poolList() -> Result<PoolList, CallError> {
+        decode({ ["pool", "list", "--json"] }, PoolList.init)
+    }
+
+    /// A new [[pool]] holding `accounts`, each in no pool now (the CLI
+    /// refuses one in a pool: in_other_pool). Answers the pool list.
+    func poolCreate(_ name: String, accounts: [String]) -> Result<PoolList, CallError> {
+        decode({
+            ["pool", "create", try Argv.name(name, "pool")] + (try accounts.map { try Argv.name($0, "account") }) + ["--json"]
+        }, PoolList.init)
+    }
+
+    /// An account in no pool joins one.
+    func poolAdd(_ pool: String, account: String) -> Result<PoolList, CallError> {
+        decode({ ["pool", "add", try Argv.name(pool, "pool"), try Argv.name(account, "account"), "--json"] }, PoolList.init)
+    }
+
+    /// The account is then in no pool: default uses it, after its pools (D6).
+    func poolRemove(_ pool: String, account: String) -> Result<PoolList, CallError> {
+        decode({ ["pool", "remove", try Argv.name(pool, "pool"), try Argv.name(account, "account"), "--json"] },
+               PoolList.init)
+    }
+
+    /// Out of its pool, if any, and into `to`, in one edit.
+    func poolMove(_ account: String, to pool: String) -> Result<PoolList, CallError> {
+        decode({
+            ["pool", "move", try Argv.name(account, "account"), try Argv.flag("to", Argv.name(pool, "pool"), "pool"), "--json"]
+        }, PoolList.init)
+    }
+
+    /// Any pool (D38): its accounts go to `to` (nil: the CLI's default, no
+    /// pool), and the profiles that listed it stop listing it.
+    func poolDelete(_ name: String, to: PoolPick? = nil) -> Result<PoolList, CallError> {
+        decode({
+            var a = ["pool", "delete", try Argv.name(name, "pool")]
+            switch to {
+            case .pool(let n)?: a.append(try Argv.flag("to", Argv.name(n, "pool"), "pool"))
+            case .none?: a.append("--no-pool")
+            case nil: break
+            }
             return a + ["--json"]
-        }, PoolResult.init)
+        }, PoolList.init)
+    }
+
+    /// Any pool (D39); a profile's own becomes a [[pool]] of the new name.
+    func poolRename(_ name: String, to newName: String) -> Result<PoolList, CallError> {
+        decode({ ["pool", "rename", try Argv.name(name, "pool"), try Argv.name(newName, "pool"), "--json"] }, PoolList.init)
     }
 
     /// A per-profile override; "" (or "inherit") removes it.
@@ -350,11 +403,17 @@ public extension CLI {
     /// opens it, in the browser chosen.
     /// `profile` is the pool a new account joins; an existing account
     /// keeps its own, and the answer's `pending.profile` says which.
-    func loginStart(account: String, profile: String?, browser: String?) -> Result<LoginStart, CallError> {
+    /// `org` is the organization to sign in to (`--org`); an existing
+    /// account asks for its own without it.
+    /// `pool` is where a new account goes (D37), in place of `profile`.
+    func loginStart(account: String, profile: String?, browser: String?, org: String? = nil,
+                    pool: PoolPick? = nil) -> Result<LoginStart, CallError> {
         decode({
             var a = ["login", try Argv.name(account, "account"), "--direct", "--json", "--no-open"]
             if let p = profile { a.append(try Argv.flag("profile", Argv.name(p, "profile"), "profile")) }
             if let b = browser, !b.isEmpty { a.append(try Argv.flag("browser", b, "browser")) }
+            if let o = org { a.append(try Argv.flag("org", o, "organization")) }
+            if let p = pool { a += try NewAccountPool.args(p) }
             return a
         }, LoginStart.init)
     }
@@ -372,12 +431,13 @@ public extension CLI {
     /// (the source; nil: the default one), adding it to `profile` (the
     /// target pool). With no name the CLI refuses with name_required, the
     /// name suggested for that source's login as the whole hint.
-    func add(account: String?, from: String?, profile: String?) -> Result<AccountAdded, CallError> {
+    func add(account: String?, from: String?, profile: String?, pool: PoolPick? = nil) -> Result<AccountAdded, CallError> {
         decode(timeout: 90, {
             var a = ["add"]
             if let id = account { a.append(try Argv.name(id, "account")) }
             if let f = from { a.append(try Argv.flag("from", Argv.name(f, "profile"), "profile")) }
             if let p = profile { a.append(try Argv.flag("profile", Argv.name(p, "profile"), "profile")) }
+            if let p = pool { a += try NewAccountPool.args(p) }
             return a + ["--json"]
         }, AccountAdded.init)
     }

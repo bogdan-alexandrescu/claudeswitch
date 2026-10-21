@@ -11,19 +11,6 @@ public struct Confirmation: Equatable {
 }
 
 public enum Confirm {
-    public static func poolRemove(account: String, from: String) -> Confirmation {
-        Confirmation(title: "Remove \(account) from \(from)?",
-                     message: "\(account) goes back to \(StateFile.defaultProfile)'s accounts, and "
-                        + "\(from) stops rotating to it.",
-                     action: "Remove", destructive: true)
-    }
-
-    public static func poolMove(account: String, from: String, to: String) -> Confirmation {
-        Confirmation(title: "Move \(account) to \(to)?",
-                     message: "\(account) leaves \(from)'s accounts and joins \(to)'s: only \(to) rotates to it from now on.",
-                     action: "Move", destructive: false)
-    }
-
     public static func forgetGhost(profile: String, account: String) -> Confirmation {
         Confirmation(title: "Forget \(profile)?",
                      message: "The last login of the old profile \(profile) (\(account)) is no longer guarded: "

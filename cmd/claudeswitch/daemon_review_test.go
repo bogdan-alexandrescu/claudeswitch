@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/state"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/vault"
 )
 
@@ -164,5 +165,59 @@ func TestDaemonForeignCredentialFromAnotherPoolIsFlagged(t *testing.T) {
 	if !strings.Contains(logs, "level=ERROR") || !strings.Contains(logs, "another profile's pool") ||
 		!strings.Contains(logs, "pool_of=work") {
 		t.Fatalf("no cross-pool error logged:\n%s", logs)
+	}
+}
+
+// An idle account's refresh revokes the token it replaces, so it holds the
+// switch lock (D34): a `cs use` of that account cannot install the old token
+// between the check that it is live nowhere and the refresh. While another
+// writer holds the lock, the refresh waits for the next pass.
+func TestDaemonIdleRefreshHoldsTheSwitchLock(t *testing.T) {
+	r := newRig(t, twoProfiles(), true)
+	st := r.d.st
+	st.Profile("default").SetActive("a")
+	st.Profile("work").SetActive("w1")
+	r.v.needsRefresh["b"] = true
+
+	held, err := state.AcquireSwitchLock(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.d.maintainVault(context.Background())
+	held.Release()
+	if refreshed := r.v.ops("refresh"); len(refreshed) != 0 {
+		t.Fatalf("refreshed %+v while another writer held the switch lock", refreshed)
+	}
+
+	unlocked := 0
+	r.v.onCall = func(op string) {
+		if op != "refresh" {
+			return
+		}
+		if l, err := state.AcquireSwitchLock(0); err == nil {
+			l.Release()
+			unlocked++
+		}
+	}
+	r.d.maintainVault(context.Background())
+	if refreshed := r.v.ops("refresh"); len(refreshed) != 1 || refreshed[0].account != "b" {
+		t.Fatalf("refreshed %+v, want b", refreshed)
+	}
+	if unlocked != 0 {
+		t.Fatal("refreshed b without the switch lock")
+	}
+}
+
+// A profile whose detector is still on its startup walk has not been seen
+// idle: it counts as busy, so its account in use keeps poll_active's cadence
+// (R4: unknown is busy) rather than the quiet profile's poll_idle.
+func TestAProfileStillSeedingCountsAsBusy(t *testing.T) {
+	r := newRig(t, twoProfiles(), true)
+	r.dets["work"].unseeded = true
+	if !r.d.busy("work") {
+		t.Error("work is still seeding: busy() must say busy")
+	}
+	if r.d.busy("default") {
+		t.Error("default is seeded and has seen nothing: busy() must say idle")
 	}
 }

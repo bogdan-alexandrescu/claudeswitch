@@ -110,8 +110,9 @@ func quoteAll(v []string) []string {
 func multiProfile(cfg *config.Config) bool { return len(cfg.EffectiveProfiles()) > 1 }
 
 // refuseOutsidePool is D5: a manual swap stays within the target profile's
-// pool. There is no --force, because a manual swap across pools is how one
-// credential comes to be live in two profiles (§3).
+// pools. There is no --force, because a manual swap outside them is how one
+// credential comes to be live in two profiles (§3). The refusal names every
+// profile that may use the account (D31).
 //
 // With no [[profile]] blocks it refuses nothing: there is one profile, and
 // `use` never consulted the config before profiles.
@@ -124,11 +125,15 @@ func refuseOutsidePool(cfg *config.Config, target config.Profile, accountID stri
 			return nil
 		}
 	}
-	if owner, ok := cfg.ProfileOf(accountID); ok {
-		return &appError{Code: codeOutsidePool, Message: fmt.Sprintf("account %q is in the pool of profile %q, not of profile %q; pools are fixed, "+
-			"since one credential live in two profiles is logged out by whichever refreshes first. "+
-			"To use it there: `claudeswitch use %s --profile %s`",
-			accountID, owner, target.Name, accountID, owner)}
+	if owners := cfg.ProfilesOf(accountID); len(owners) > 0 {
+		who := fmt.Sprintf("profile %q", owners[0])
+		if len(owners) > 1 {
+			who = "profiles " + strings.Join(quoteAll(owners), ", ")
+		}
+		return &appError{Code: codeOutsidePool, Message: fmt.Sprintf("account %q is in the pools of %s, not of profile %q; "+
+			"a profile uses only its pools, since one credential live in two profiles is logged out by whichever "+
+			"refreshes first. To use it there: `claudeswitch use %s --profile %s`",
+			accountID, who, target.Name, accountID, owners[0])}
 	}
 	return &appError{Code: codeOutsidePool, Message: fmt.Sprintf("account %q is in no profile's pool, so no profile may use it; "+
 		"add it to a pool in the config first", accountID)}

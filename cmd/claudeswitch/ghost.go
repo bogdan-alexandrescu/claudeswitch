@@ -426,13 +426,14 @@ const profileUsage = "usage: claudeswitch profile create <name> [--dir PATH] [--
 	"       claudeswitch profile list\n" +
 	"       claudeswitch profile remove <name> [--to <profile>] [--yes]\n" +
 	"       claudeswitch profile forget <name>\n" +
+	"       claudeswitch profile pools <name> <pool>...\n" +
 	"       claudeswitch profile pool <name> add|remove <account> [--to <profile>]\n" +
 	"       claudeswitch profile set <name> <key> <value|inherit>\n" +
 	"       claudeswitch profile which [--dir PATH]\n" +
 	"       claudeswitch profile hook zsh|bash|fish\n" +
 	"  each takes --json; forget releases the guard on a removed or re-pointed profile's old credential"
 
-// cmdProfile is `cs profile create|seed|list|remove|forget|pool|set|which|hook`.
+// cmdProfile is `cs profile create|seed|list|remove|forget|pools|pool|set|which|hook`.
 func cmdProfile(args []string) error {
 	if len(args) == 0 {
 		return appErr(codeUsage, profileUsage, "name a profile command")
@@ -475,6 +476,14 @@ func cmdProfile(args []string) error {
 			return profileListJSON(w, *cfgPath)
 		}
 		return profileList(w, *cfgPath)
+	case "pools":
+		if len(p) < 2 {
+			return appErr(codeUsage, profilePoolsUsage, "pools takes a profile and the pools it uses, in order")
+		}
+		if *to != "" {
+			return appErr(codeUsage, profilePoolsUsage, "--to is a flag of profile remove and profile pool remove")
+		}
+		return profilePools(w, *cfgPath, p[0], p[1:], *asJSON)
 	case "pool":
 		if len(p) != 3 {
 			return appErr(codeUsage, poolUsage, "pool takes a profile, add or remove, and an account")

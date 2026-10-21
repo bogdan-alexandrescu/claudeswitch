@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// Two locks, two jobs.
+// Three locks, three jobs.
 //
 // daemon.lock is held for the daemon's whole life: it enforces one daemon per
 // machine, and lets the CLI tell whether a daemon is running (if the CLI can
@@ -17,9 +17,18 @@ import (
 //
 // state.lock is taken briefly around any read-modify-write of state.json, so a
 // CLI mutation and a daemon save cannot interleave into a lost update.
+//
+// switch.lock (D34, docs/PROFILES.md §10) is held by whoever puts an account
+// into a live credential — the daemon's swap, `use`, switching back after a
+// login, a seed — from the §3 check (is it live in another profile?)
+// through the write and its verify. With pools shared between profiles two
+// writers can each pass §3 for one account a moment apart and both write
+// it; one lock makes the second check see the first write. Taken before
+// state.lock when both are held, never after.
 const (
 	daemonLockName = "daemon.lock"
 	stateLockName  = "state.lock"
+	switchLockName = "switch.lock"
 )
 
 type Lock struct {
@@ -101,6 +110,41 @@ func AcquireDaemonLock() (*Lock, error) {
 			return nil, fmt.Errorf("another claudeswitch daemon is already running: %w", err)
 		}
 		time.Sleep(daemonLockRetry)
+	}
+}
+
+// SwitchLockWait is how long a command waits for the switch lock before
+// refusing. A swap holding it is a §3 check, sometimes a refresh of the
+// target, a keychain write and one usage call to verify: seconds as a rule,
+// and bounded by the swap's own 80-second limit.
+const SwitchLockWait = 30 * time.Second
+
+// switchLockRetry is how often a waiting writer tries the lock again.
+const switchLockRetry = 25 * time.Millisecond
+
+// ErrSwitchBusy is AcquireSwitchLock's answer when another writer held the
+// switch lock for the whole wait.
+var ErrSwitchBusy = errors.New("another claudeswitch command or the daemon is switching an account")
+
+// AcquireSwitchLock takes the switch lock, waiting up to wait for another
+// writer to let go (zero: not at all). It fails with ErrSwitchBusy when the
+// wait runs out, and with the underlying error when the lock file cannot be
+// opened or locked at all.
+func AcquireSwitchLock(wait time.Duration) (*Lock, error) {
+	path := lockPath(switchLockName)
+	deadline := time.Now().Add(wait)
+	for {
+		l, err := tryLock(path)
+		if err == nil {
+			return l, nil
+		}
+		if !errors.Is(err, syscall.EWOULDBLOCK) {
+			return nil, err
+		}
+		if !time.Now().Before(deadline) {
+			return nil, fmt.Errorf("%w (waited %s for %s)", ErrSwitchBusy, wait, path)
+		}
+		time.Sleep(switchLockRetry)
 	}
 }
 

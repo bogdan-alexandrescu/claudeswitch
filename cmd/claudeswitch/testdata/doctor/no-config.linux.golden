@@ -15,7 +15,7 @@
   [ok  ] transcripts     $HOME/.claude/projects (0 project dirs)
   [ok  ] auto-refresh    renews at 1h0m0s before expiry; probes idle accounts every 24h0m0s
   [ok  ] poll cadence    active 3m0s · hot 1m0s · idle 10m0s
-         └ 0.0 of 11 usage calls per 5 min (api_budget 12, one held for swaps)
+         └ 0.0 of 11 usage calls per 5 min (api_budget 12 per profile in use, one held for swaps)
   [ok  ] account rate    in use 20/h · hot 60/h for up to 15m · idle 6/h
          └ each account's allowance is ~20 calls and refills ~30/h; a hot spell spends 7.5 of the 10 held for it (hot_reserve)
          └ routine reads leave it alone; the account in use dips into it only once its reading is 3m15s old (stale-decision warning at 4m0s)

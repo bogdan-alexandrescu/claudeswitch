@@ -11,6 +11,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
@@ -255,7 +257,7 @@ func (p *Poller) tokenInfo(accountID string) (string, time.Time, time.Time, erro
 func sharedBudgetFor(cfg *config.Config) *usage.Budget {
 	b := usage.Shared()
 	if cfg != nil && cfg.APIBudget > 0 {
-		b.SetAllowance(cfg.APIBudget)
+		b.SetAllowance(cfg.WindowAllowance())
 	}
 	if cfg != nil {
 		if err := b.SetModel(cfg.HotReserveCalls(), cfg.UnseenPerHour()); err != nil {
@@ -296,7 +298,7 @@ func (p *Poller) Budget() *usage.Budget { return p.budget }
 func (p *Poller) SetConfig(cfg *config.Config) {
 	p.cfg = cfg
 	if cfg.APIBudget > 0 {
-		p.budget.SetAllowance(cfg.APIBudget)
+		p.budget.SetAllowance(cfg.WindowAllowance())
 	}
 	if err := p.budget.SetModel(cfg.HotReserveCalls(), cfg.UnseenPerHour()); err != nil {
 		p.log.Warn("usage model setting not applied", "err", err)
@@ -429,7 +431,7 @@ func (p *Poller) PollActiveIn(ctx context.Context, profile string) (*state.Accou
 		}
 		return p.st.Get(prev), fmt.Errorf("could not confirm the active account: %s", scratch.LastErr)
 	}
-	id := p.attributeIn(profile, scratch.OrgID)
+	id := p.attributeSeat(profile, scratch.OrgID, blob.ClaudeAIOAuth.AccessToken)
 	acct := p.st.Get(id)
 	acct.OrgID = scratch.OrgID
 	acct.RefreshExpiry = blob.ClaudeAIOAuth.RefreshExpiry()
@@ -465,9 +467,14 @@ func (p *Poller) PollActiveIn(ctx context.Context, profile string) (*state.Accou
 // live in a second profile (§3: whichever refreshes first revokes the
 // other's copy). Once per distinct finding: re-attribution runs on every
 // save tick, and the same error each time is noise that buries the next one.
+//
+// Since shared pools (D31) an account may be in several profiles' pools:
+// it is foreign only to a profile none of whose pools hold it, and
+// pool_of names every profile that may use it.
 func (p *Poller) noteCrossPool(profile, id string) {
-	owner, ok := p.cfg.ProfileOf(id)
-	foreign := ok && owner != profile
+	owners := p.cfg.ProfilesOf(id)
+	owner := strings.Join(owners, ",")
+	foreign := len(owners) > 0 && !p.cfg.InPool(profile, id)
 	other, two := p.activeIn(id)
 	two = two && other != profile && id != Unattributed
 	if !two {
@@ -518,6 +525,20 @@ func (p *Poller) attribute(orgID string) string { return p.attributeIn(state.Def
 // whichever pool it is from. With no profiles configured the pool is every
 // account and the two passes find the same answer.
 func (p *Poller) attributeIn(profile, orgID string) string {
+	return p.attributeSeat(profile, orgID, "")
+}
+
+// attributeSeat is attributeIn told the live access token, for when several
+// seats share the organization. The usage endpoint names the organization,
+// not the seat, and taking the first of those seats in priority order filed
+// the live account's reading under another one at every re-attribution,
+// until the seat check moved it back seconds later: that seat then showed
+// the live one's 12% while it was at 86% (2026-10-20, three seats in one
+// team organization). Among seats of the organization, the one whose stored
+// token is the live token wins; then the profile's current account; then
+// priority order, as before. The daemon's seat check still corrects a hand
+// login it cannot see.
+func (p *Poller) attributeSeat(profile, orgID, liveToken string) string {
 	if orgID == "" {
 		if a := p.activeOf(profile); a != "" {
 			return a
@@ -532,16 +553,37 @@ func (p *Poller) attributeIn(profile, orgID string) string {
 		func(id string) bool { return inPool[id] },
 		func(string) bool { return true },
 	} {
+		// The configured organization first, then one observed, as before.
+		var seats []string
 		for _, a := range p.cfg.Ordered() {
 			if pass(a.ID) && a.OrgID == orgID {
-				return a.ID
+				seats = append(seats, a.ID)
 			}
 		}
-		for _, a := range p.cfg.Ordered() {
-			if ex, ok := p.st.Accounts[a.ID]; ok && pass(a.ID) && ex.OrgID == orgID {
-				return a.ID
+		if len(seats) == 0 {
+			for _, a := range p.cfg.Ordered() {
+				if ex, ok := p.st.Accounts[a.ID]; ok && pass(a.ID) && ex.OrgID == orgID {
+					seats = append(seats, a.ID)
+				}
 			}
 		}
+		if len(seats) == 0 {
+			continue
+		}
+		if len(seats) > 1 {
+			if liveToken != "" {
+				for _, id := range seats {
+					if b, err := readVault(id); err == nil && b.ClaudeAIOAuth != nil &&
+						b.ClaudeAIOAuth.AccessToken == liveToken {
+						return id
+					}
+				}
+			}
+			if cur := p.activeOf(profile); slices.Contains(seats, cur) {
+				return cur
+			}
+		}
+		return seats[0]
 	}
 	return Unattributed
 }

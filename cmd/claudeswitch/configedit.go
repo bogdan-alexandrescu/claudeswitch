@@ -20,7 +20,7 @@ import (
 // (an array value may span lines), or anything else (blank, comment).
 type tomlEntry struct {
 	start, end int    // byte offsets; end is the '\n' that ends it, or len(text)
-	header     string // "account", "profile" or "other" on a table header
+	header     string // "account", "profile", "pool" or "other" on a table header
 	key        string // on a key = value line
 	valStart   int    // the value's first byte
 	valEnd     int    // just past the value (past ']' for an array, before a comment)
@@ -54,6 +54,8 @@ func scanTOML(text string) []tomlEntry {
 				e.header = "account"
 			case profileHdr.MatchString(line):
 				e.header = "profile"
+			case poolHdr.MatchString(line):
+				e.header = "pool"
 			}
 			sec = len(out)
 			e.section = sec
@@ -177,7 +179,7 @@ func arrayItems(v string) []string {
 }
 
 // blockRef names where a key lives: the top level (kind ""), or the
-// [[account]] with that id, or the [[profile]] with that name.
+// [[account]] with that id, or the [[profile]] or [[pool]] with that name.
 type blockRef struct{ kind, name string }
 
 func (b blockRef) String() string {
@@ -186,6 +188,8 @@ func (b blockRef) String() string {
 		return "the top level"
 	case "account":
 		return fmt.Sprintf("the [[account]] block %q", b.name)
+	case "pool":
+		return fmt.Sprintf("the [[pool]] block %q", b.name)
 	}
 	return fmt.Sprintf("the [[profile]] block %q", b.name)
 }
@@ -275,6 +279,25 @@ func setKey(text string, ref blockRef, key, value string) (string, error) {
 	return text[:at] + line + text[at:], nil
 }
 
+// replaceKey writes key = value where oldKey is written in ref, keeping the
+// line's place, indent and trailing comment. found is false when ref has no
+// oldKey.
+func replaceKey(text string, ref blockRef, oldKey, key, value string) (out string, found bool, err error) {
+	es := scanTOML(text)
+	sec, _, ok := findSection(text, es, ref)
+	if !ok {
+		return "", false, fmt.Errorf("no %s in the config", ref)
+	}
+	k := keyIn(es, sec, oldKey)
+	if k < 0 {
+		return text, false, nil
+	}
+	e := es[k]
+	lead := text[e.start:e.valStart]
+	indent := lead[:len(lead)-len(strings.TrimLeft(lead, " \t"))]
+	return text[:e.start] + indent + key + " = " + value + text[e.valEnd:], true, nil
+}
+
 // deleteKey removes key's line from ref; absent is no change.
 func deleteKey(text string, ref blockRef, key string) (string, error) {
 	es := scanTOML(text)
@@ -320,7 +343,7 @@ func tomlList(v []string) string {
 	return "[" + strings.Join(q, ", ") + "]"
 }
 
-// deleteBlock removes the [[account]] or [[profile]] block ref, with any
+// deleteBlock removes the [[account]], [[profile]] or [[pool]] block ref, with any
 // comment lines directly above its header; comments directly above the
 // next header stay with it.
 func deleteBlock(text string, ref blockRef) (string, error) {

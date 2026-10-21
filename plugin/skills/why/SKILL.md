@@ -19,11 +19,14 @@ This reads saved state only; it makes no API calls. It prints the decision
 its binding window and utilization, and the reason.
 
 With several Claude Code profiles configured, it prints one block per
-profile: each decides only within its own pool and with its own thresholds.
-Answer about the profile the user means — this session's unless they name
-another — and use `claudeswitch why --profile <name>` to show just that one.
-An account missing from a block belongs to another profile's pool, which is
-by design, not a fault.
+profile: each decides only within the pools it uses, in their order, and
+with its own thresholds. Answer about the profile the user means — this
+session's unless they name another — and use
+`claudeswitch why --profile <name>` to show just that one. An account
+missing from a block is in a pool that profile does not use, which is by
+design, not a fault. Profiles that list the same pool share its accounts
+one at a time: an account marked "in use by <profile>" is live there, so
+this profile skips it until that one moves off it.
 
 If the question is about something that already happened ("why did it switch
 at 14:00"), also run:

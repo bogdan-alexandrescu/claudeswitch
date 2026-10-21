@@ -1,0 +1,36 @@
+{
+  "chrome": null,
+  "chrome_name": null,
+  "chrome_resolved": null,
+  "declared": true,
+  "dir": "~/.claude-work",
+  "from_env": false,
+  "listed": [
+    "team-1",
+    "team-2",
+    "team-3",
+    "ops-1"
+  ],
+  "live": "team-2",
+  "name": "work",
+  "overrides": {},
+  "paths": [],
+  "pinned": null,
+  "pool": [
+    "team-1",
+    "team-2",
+    "team-3",
+    "ops-1"
+  ],
+  "pools": [
+    "team",
+    "ops"
+  ],
+  "signed_in": "yes",
+  "thresholds": {
+    "hard_floor": 98,
+    "landing_margin": 10,
+    "switch_at": 90,
+    "switch_at_weekly": 95
+  }
+}

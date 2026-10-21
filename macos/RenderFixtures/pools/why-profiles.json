@@ -1,0 +1,135 @@
+{
+ "dir": "/Users/example",
+ "profiles": [
+  {
+   "accounts": [
+    {
+     "active": true,
+     "active_in": null,
+     "eligible": true,
+     "id": "personal",
+     "utilization": 38,
+     "why": "at 38%, ready",
+     "window": "seven_day"
+    },
+    {
+     "active": false,
+     "active_in": null,
+     "eligible": false,
+     "id": "team-1",
+     "utilization": 4,
+     "why": "needs a sign-in",
+     "window": "seven_day"
+    },
+    {
+     "active": false,
+     "active_in": "work",
+     "eligible": false,
+     "id": "team-2",
+     "utilization": 55,
+     "why": "in use by work",
+     "window": "seven_day"
+    },
+    {
+     "active": false,
+     "active_in": null,
+     "eligible": true,
+     "id": "team-3",
+     "utilization": 12,
+     "why": "at 12%, ready",
+     "window": "seven_day"
+    },
+    {
+     "active": false,
+     "active_in": null,
+     "eligible": true,
+     "id": "loose-1",
+     "utilization": 2,
+     "why": "at 2%, ready",
+     "window": "seven_day"
+    }
+   ],
+   "best": "team-3",
+   "best_why": null,
+   "current": true,
+   "decision": {
+    "kind": "stay",
+    "reason": "active account at 38%, under the 98% trigger"
+   },
+   "pool": [
+    "personal",
+    "team-1",
+    "team-2",
+    "team-3",
+    "loose-1"
+   ],
+   "profile": "default",
+   "thresholds": {
+    "hard_floor": 99,
+    "landing_margin": 10,
+    "switch_at": 85,
+    "switch_at_weekly": 98
+   }
+  },
+  {
+   "accounts": [
+    {
+     "active": false,
+     "active_in": null,
+     "eligible": true,
+     "id": "ops-1",
+     "utilization": 31,
+     "why": "at 31%, ready",
+     "window": "seven_day"
+    },
+    {
+     "active": false,
+     "active_in": null,
+     "eligible": false,
+     "id": "team-1",
+     "utilization": 4,
+     "why": "needs a sign-in",
+     "window": "seven_day"
+    },
+    {
+     "active": true,
+     "active_in": null,
+     "eligible": true,
+     "id": "team-2",
+     "utilization": 55,
+     "why": "at 55%, ready",
+     "window": "seven_day"
+    },
+    {
+     "active": false,
+     "active_in": null,
+     "eligible": true,
+     "id": "team-3",
+     "utilization": 12,
+     "why": "at 12%, ready",
+     "window": "seven_day"
+    }
+   ],
+   "best": "ops-1",
+   "best_why": null,
+   "current": false,
+   "decision": {
+    "kind": "stay",
+    "reason": "active account at 55%, under the 98% trigger"
+   },
+   "pool": [
+    "ops-1",
+    "team-1",
+    "team-2",
+    "team-3"
+   ],
+   "profile": "work",
+   "thresholds": {
+    "hard_floor": 99,
+    "landing_margin": 10,
+    "switch_at": 85,
+    "switch_at_weekly": 98
+   }
+  }
+ ]
+}

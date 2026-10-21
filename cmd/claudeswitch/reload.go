@@ -115,6 +115,21 @@ func configChanges(old, next *config.Config) []string {
 	if !slices.Equal(old.Priority, next.Priority) {
 		out = append(out, fmt.Sprintf("priority %v → %v", old.Priority, next.Priority))
 	}
+	// What each profile uses, in its order (D33). Profiles that came or went
+	// are said by the reload itself.
+	oldProf := map[string]config.Profile{}
+	for _, in := range old.EffectiveProfiles() {
+		oldProf[in.Name] = in
+	}
+	for _, in := range next.EffectiveProfiles() {
+		was, ok := oldProf[in.Name]
+		if !ok {
+			continue
+		}
+		if a, b := tiersText(was), tiersText(in); a != b {
+			out = append(out, fmt.Sprintf("profile %s uses %s (was %s)", in.Name, b, a))
+		}
+	}
 	num := func(name string, a, b float64) {
 		if a != b {
 			out = append(out, fmt.Sprintf("%s %g → %g", name, a, b))
@@ -357,4 +372,21 @@ func (h *activeHold) gate(dec policy.Decision, active string, cfg *config.Config
 	return policy.Decision{Kind: policy.Stay, Reason: fmt.Sprintf(
 		"the active account %q left the config; holding until the live credential is attributed again "+
 			"or %s passes (would have switched to %s: %s)", h.lost, holdLimit(cfg), dec.Target, dec.Reason)}
+}
+
+// tiersText is a profile's pools in its order, as status writes them: "team
+// (t1, t2), then mine (p1)"; the accounts no pool lists are "no pool (…)".
+func tiersText(in config.Profile) string {
+	var parts []string
+	for i, t := range in.Tiers {
+		name := "no pool"
+		if i < len(in.PoolNames) && in.PoolNames[i] != "" {
+			name = in.PoolNames[i]
+		}
+		parts = append(parts, fmt.Sprintf("%s (%s)", name, strings.Join(t, ", ")))
+	}
+	if len(parts) == 0 {
+		return "no accounts"
+	}
+	return strings.Join(parts, ", then ")
 }

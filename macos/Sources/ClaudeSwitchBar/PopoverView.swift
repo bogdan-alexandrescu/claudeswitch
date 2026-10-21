@@ -405,29 +405,22 @@ struct AccountPicker: View {
 }
 
 /// The pool's accounts, with their headroom; choosing one runs
-/// `use <id> --profile P --json`.
+/// `use <id> --profile P --json`. One live in another profile that shares
+/// its pool is shown "in use by" that profile, and not offered (D34).
 struct AccountMenuItems: View {
     @EnvironmentObject var store: Store
     let card: ProfileCard
 
     var body: some View {
         ForEach(card.accounts) { a in
+            let elsewhere = store.snapshot?.liveElsewhere(a.id, notIn: card.name)
             Button {
-                if !a.isActive { store.use(a.id, profile: card.name) }
+                if !a.isActive && elsewhere == nil { store.use(a.id, profile: card.name) }
             } label: {
-                Text(line(a))
+                Text(Format.pickerLine(a, inUseBy: elsewhere, now: store.snapshot?.now ?? Date()))
             }
-            .disabled(a.isActive)
+            .disabled(a.isActive || elsewhere != nil)
         }
-    }
-
-    /// "work-1  41% · available · trigger Thu 09:30" (F2: the ETA only when
-    /// the CLI knows it).
-    func line(_ a: AccountView) -> String {
-        var s: String = (a.isActive ? "✓ " : "") + a.id
-        s += "  " + Format.pct(a.bindingPct) + " · " + a.status.label
-        if let eta = Runway.accountETA(a.triggerAt, now: store.snapshot?.now ?? Date()) { s += " · " + eta }
-        return s
     }
 }
 

@@ -40,8 +40,14 @@ public struct AccountInfo: Equatable, Identifiable {
     public var plan: String?
     public var seat: String?
     public var enabled: Bool
-    /// The profile whose pool holds it.
+    /// The first profile that may use it.
     public var profile: String?
+    /// The pool that lists it, a [[pool]] or a profile's own (shared
+    /// pools); nil in none (D6), and from an older CLI.
+    public var pool: String?
+    /// Every profile that may use it; nil from a CLI that predates shared
+    /// pools.
+    public var profiles: [String]?
     /// The profile it is live in.
     public var activeIn: String?
     public var pinned: Bool
@@ -63,6 +69,9 @@ public struct AccountInfo: Equatable, Identifiable {
         seat = text(j["seat"])
         enabled = j["enabled"].bool ?? true
         profile = text(j["profile"])
+        pool = text(j["pool"])
+        profiles = (j.raw as? [String: Any])?.keys.contains("profiles") == true
+            ? j["profiles"].array.compactMap(\.string) : nil
         activeIn = text(j["active_in"])
         pinned = j["pinned"].bool ?? false
         pinHard = j["pin_hard"].bool
@@ -145,49 +154,40 @@ public enum ProfileRemoval {
         return destinations(list, removing: name).contains("default") ? "default" : nil
     }
 
+    /// The accounts that move when it goes (`profile remove`'s `moved`):
+    /// its own pool's, and for default the accounts in no pool (D6). The
+    /// [[pool]] blocks it lists stay, for any other profile that lists them.
+    /// Without the pools (an older CLI), every account it uses.
+    public static func ownAccounts(_ p: ProfileInfo, pools: PoolList?) -> [String] {
+        guard let l = pools else { return p.pool }
+        var out = l.pool(p.name).flatMap { $0.own ? $0.accounts : nil } ?? []
+        if p.name == StateFile.defaultProfile { out += l.unlisted }
+        return out
+    }
+
     /// Whether the sheet asks where its accounts go: not when it has none.
-    public static func needsDestination(_ p: ProfileInfo) -> Bool { !p.pool.isEmpty }
+    public static func needsDestination(_ p: ProfileInfo, pools: PoolList? = nil) -> Bool {
+        !ownAccounts(p, pools: pools).isEmpty
+    }
 
     /// The sheet's explanation, before the CLI's own confirmation.
-    public static func summary(_ p: ProfileInfo, to: String) -> String {
-        var s = p.pool.isEmpty
-            ? "It has no accounts."
-            : "Its accounts (\(p.pool.joined(separator: ", "))) move to \(to)."
+    public static func summary(_ p: ProfileInfo, to: String, pools: PoolList? = nil) -> String {
+        let own = ownAccounts(p, pools: pools)
+        let listed = pools.flatMap { l in ProfilePools.shown(p, pools: l)?.filter { l.pool($0)?.own == false } } ?? []
+        let stay = "the pools it uses (\(listed.joined(separator: ", "))) stay"
+        var s: String
+        switch (own.isEmpty, listed.isEmpty) {
+        case (true, true): s = "It has no accounts."
+        case (true, false): s = "It has no accounts of its own; \(stay)."
+        case (false, true): s = "Its accounts (\(own.joined(separator: ", "))) move to \(to)."
+        case (false, false): s = "Its own accounts (\(own.joined(separator: ", "))) move to \(to); \(stay)."
+        }
         s += " Its folder \(p.dir ?? "~/.claude") and its saved login stay on disk; nothing is deleted."
         if let live = p.live {
             s += " \(live) may still be signed in there, so it stays guarded: no other profile uses it"
                 + " until that login is gone, or you forget the old profile."
         }
         return s
-    }
-}
-
-// MARK: pool moves (the owner's live use)
-
-/// What putting an account into a profile's pool takes.
-public enum PoolStep: Equatable {
-    /// It is there already.
-    case already
-    /// No pool lists it (default holds it by D6 alone, or nobody does):
-    /// `pool add`. Never a remove from a pool that does not list it.
-    case add(account: String, to: String)
-    /// Another pool lists it: `pool remove <from> --to <to>`.
-    case move(account: String, from: String, to: String)
-}
-
-public extension ProfileList {
-    /// The profile whose config pool lists an account; with an older CLI
-    /// (no `listed`), the one whose effective pool holds it.
-    func lister(of account: String) -> String? {
-        profiles.first { ($0.listed ?? $0.pool).contains(account) }?.name
-    }
-
-    func step(adding account: String, to target: String) -> PoolStep {
-        if profile(target)?.pool.contains(account) == true { return .already }
-        if let from = lister(of: account), from != target {
-            return .move(account: account, from: from, to: target)
-        }
-        return .add(account: account, to: target)
     }
 }
 

@@ -331,7 +331,7 @@ func TestWhyJSONBestSkipsAccountsLiveElsewhereOrNeedingLogin(t *testing.T) {
 	_, cfg, st := multiWorld(t)
 	st.Default().SetActive("w2") // signed in by hand in the default profile
 	work := whyBlock(t, whyJSON(cfg, st, time.Now(), ""), "work")
-	if work["best"] != nil || !strings.Contains(work["best_why"].(string), "w2: live in default") {
+	if work["best"] != nil || !strings.Contains(work["best_why"].(string), "w2: in use by default") {
 		t.Fatalf("work: best %v, why %v", work["best"], work["best_why"])
 	}
 
@@ -358,11 +358,12 @@ func whyBlock(t *testing.T, out map[string]any, name string) map[string]any {
 // Owner decision (lane 16): a login saved from one profile into another's
 // accounts stays allowed, and says what happens next.
 func TestAddAcrossProfilesSaysWhatHappens(t *testing.T) {
-	if got := crossProfileNote("default", "work"); got !=
+	cfg := loadOrFail(t, writeConfig(t, profilesTOML)) // w1 is work's alone
+	if got := crossProfileNote(cfg, "default", "work", "w1"); got !=
 		"still signed in in default — default will move off it; work can use it after" {
 		t.Fatalf("note = %q", got)
 	}
-	if got := crossProfileNote("work", "work"); got != "" {
+	if got := crossProfileNote(cfg, "work", "work", "w1"); got != "" {
 		t.Fatalf("same profile: note = %q", got)
 	}
 }

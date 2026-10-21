@@ -97,7 +97,8 @@ the app is notifying for the next two minutes, and the daemon skips its own
 rotation notice meanwhile. Quit the app, or turn its notifications off with
 Settings → Advanced → **Notifications with actions**, and the daemon's
 notice comes back within two minutes. Only the rotation notice moves to the
-app: every other daemon notice (all accounts burnt, a pool running dry, a
-lifted pin, Claude in Chrome) still comes from the daemon.
+app: every other daemon notice ("all accounts are burnt", or "<profile>: no
+account free" when the accounts left are in use in another profile; a pool
+running dry; a lifted pin; Claude in Chrome) still comes from the daemon.
 
 [← Documentation index](../README.md)

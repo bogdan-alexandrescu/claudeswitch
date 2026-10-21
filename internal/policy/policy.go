@@ -105,6 +105,14 @@ type Input struct {
 	// Nil means every configured account, which is the single-profile case.
 	Pool []string
 
+	// Tiers is the profile's pools in the order it lists them (D33,
+	// config.Profile.Tiers): a candidate in a later tier is chosen only when
+	// no candidate in an earlier one passes the same test. Within a tier the
+	// choice is today's (better). Nil, or one tier, is one pool: exactly the
+	// choice before shared pools. An account in Pool but in no tier counts as
+	// the last.
+	Tiers [][]string
+
 	// Live is the live credential's state being decided about: which account
 	// it holds. Nil means the default profile's, St.Default(). LastSwitch and
 	// Pinned stay separate fields, as before.
@@ -117,10 +125,53 @@ type Input struct {
 	// False when unknown (the CLI has no detector), which errs toward holding.
 	SessionBusy bool
 
-	// Unavailable names accounts Best must not offer, each with why: live
-	// or maybe live in another profile, or needing a sign-in. Decide does
-	// not read it (the daemon's own §3 check guards a swap).
+	// Unavailable names accounts that are not candidates, each with why:
+	// live or maybe live in another profile ("in use by work"), or, for
+	// Best, needing a sign-in. Since shared pools (D34) Decide, failover
+	// and Explain pass them over for the next candidate, as Best and
+	// Forecast always have, rather than choosing one for the daemon's §3
+	// check to refuse. It never applies to the active account, which is
+	// this profile's own.
 	Unavailable map[string]string
+}
+
+// tierOf is the tier an account is in: its pool's place in the profile's
+// order (D33). Without tiers every account is in tier 0.
+func (in Input) tierOf(id string) int {
+	for i, t := range in.Tiers {
+		for _, a := range t {
+			if a == id {
+				return i
+			}
+		}
+	}
+	if len(in.Tiers) == 0 {
+		return 0
+	}
+	return len(in.Tiers)
+}
+
+// unavailable reports whether a candidate other than the active account is
+// out of reach (Input.Unavailable).
+func (in Input) unavailable(id string) bool {
+	_, out := in.Unavailable[id]
+	return out && id != in.active()
+}
+
+// unavailableNote names the accounts of this pool passed over as
+// unavailable, for a decision that found nothing else: " (t2: in use by
+// work)". "" when none were.
+func unavailableNote(all []candidate, in Input) string {
+	var parts []string
+	for _, c := range all {
+		if in.unavailable(c.acct.ID) {
+			parts = append(parts, c.acct.ID+": "+in.Unavailable[c.acct.ID])
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(parts, "; ") + ")"
 }
 
 // active is the account the live credential being decided about holds.
@@ -167,6 +218,8 @@ type candidate struct {
 	// which makes the account unknown (DESIGN 4.4).
 	model      string
 	unreadable string
+	// tier is the candidate's pool's place in the profile's order (D33).
+	tier int
 }
 
 // windowLabel is windowName with the counted model, when its limit is the
@@ -222,7 +275,7 @@ func Decide(in Input) Decision {
 		if c, ok := bestWithin(all, in, 0, false); ok {
 			return Decision{Kind: Switch, Target: c.acct.ID, Reason: why + shortNote(c, in)}
 		}
-		return waiting(all, in, "no account is currently usable")
+		return waiting(all, in, "no account is currently usable"+unavailableNote(all, in))
 	}
 
 	// An account that has been refused must be left alone until it resets, no
@@ -288,7 +341,7 @@ func Decide(in Input) Decision {
 		if activeBurnt {
 			why = "active account was refused and nothing else is usable"
 		}
-		return waiting(all, in, why)
+		return waiting(all, in, why+unavailableNote(all, in))
 	}
 
 	reason := fmt.Sprintf("active account at %.0f%% of its %s, over the %.0f%% trigger",
@@ -420,7 +473,8 @@ func failover(all []candidate, in Input, active candidate) Decision {
 	}
 	c, ok := bestWithin(all, in, in.Cfg.Margin(), true)
 	if !ok {
-		return Decision{Kind: Stay, Reason: why + "; no healthy account to fail over to, so holding"}
+		return Decision{Kind: Stay, Reason: why + "; no healthy account to fail over to, so holding" +
+			unavailableNote(all, in)}
 	}
 	return Decision{Kind: Switch, Target: c.acct.ID, Reason: why + "; failing over to a healthy account",
 		Failover: true}
@@ -433,7 +487,7 @@ func gather(in Input) []candidate {
 			continue
 		}
 		obs := in.St.Accounts[a.ID]
-		c := candidate{acct: a, obs: obs, avail: state.Unknown}
+		c := candidate{acct: a, obs: obs, avail: state.Unknown, tier: in.tierOf(a.ID)}
 		if obs != nil {
 			// Counted models' weekly limits stand in for the weekly window
 			// where higher (I6). With none configured obs is unchanged.
@@ -519,13 +573,23 @@ func bestEligible(all []candidate, in Input) (candidate, bool) {
 }
 
 // usable is everything bestEligible asks of a candidate except the margin.
+// An account live in another profile is not (D34): one credential is live
+// in at most one profile (§3), so a shared account in use elsewhere waits
+// its turn rather than being chosen for the daemon's check to refuse.
 func usable(c candidate, in Input) bool {
-	return c.acct.ID != in.active() && c.avail == state.Available && !c.over
+	return c.acct.ID != in.active() && c.avail == state.Available && !c.over && !in.unavailable(c.acct.ID)
 }
 
 // bestWithin is bestEligible with the margin given: zero for the hard-floor
 // and refusal fallbacks. readable also requires the candidate's own last poll
 // to have succeeded, for failing over from a blind account onto a seeing one.
+//
+// Pool by pool (D33): of the candidates passing the test, those in the
+// profile's earliest pool are preferred, and among them better decides as
+// it always has. So a later pool's account is chosen only when no earlier
+// pool's passes this same test, and whether there is anything to choose at
+// all — which is what decides when a profile rotates or holds — is
+// unchanged by the order.
 func bestWithin(all []candidate, in Input, margin float64, readable bool) (candidate, bool) {
 	var best candidate
 	found := false
@@ -536,7 +600,7 @@ func bestWithin(all []candidate, in Input, margin float64, readable bool) (candi
 		if readable && c.obs.ReadFails > 0 {
 			continue
 		}
-		if found && !better(c, best, in) {
+		if found && !ahead(c, best, in) {
 			continue
 		}
 		best, found = c, true
@@ -544,12 +608,22 @@ func bestWithin(all []candidate, in Input, margin float64, readable bool) (candi
 	return best, found
 }
 
+// ahead reports whether a is chosen before b: an earlier pool first (D33),
+// then better. With one pool it is better.
+func ahead(a, b candidate, in Input) bool {
+	if a.tier != b.tier {
+		return a.tier < b.tier
+	}
+	return better(a, b, in)
+}
+
 // better reports whether a ranks ahead of b for selection: by room. Equal
 // room means the configured priority decides, which is the order candidates already arrive in — so this
 // answers false for a tie and the incumbent keeps its place.
 //
-// bestEligible and Explain share it, because `why` claiming to list accounts
-// "in order" while ordering them by something else is worse than not saying so:
+// bestEligible and Explain share it (through ahead, which puts an earlier
+// pool first), because `why` claiming to list accounts "in order" while
+// ordering them by something else is worse than not saying so:
 // it showed an account with one point of room at the top, marked ready, when a
 // pool that had just reset would actually have been chosen.
 //
@@ -627,9 +701,10 @@ func inWords(d time.Duration) string {
 // (the app's "Switch to best"), and a warning or why there is none. Owner
 // decision (lane 16): it is automatic rotation's own pick — usable
 // (readable, not refused, not reserved, under its trigger), clear of the
-// landing margin (bestEligible), ranked by better. When nothing clears the
-// margin, the best account inside it is still returned, with a warning of
-// how little room it has: a person may move anyway. A pin or the cooldown
+// landing margin (bestEligible), ranked by ahead: pool by pool (D33), then
+// better. When nothing clears the margin, the best account inside it is
+// still returned, with a warning of how little room it has: a person may
+// move anyway. A pin or the cooldown
 // holds automatic rotation only, so neither applies. Accounts in
 // in.Unavailable (live elsewhere, needing a sign-in) are never offered.
 // name is the profile, for the reasons.
@@ -651,7 +726,8 @@ type Choice struct {
 	// never 0.
 	ActiveRoom, BestRoom *float64
 	// OnBest is "Already on the best" (M12, owner 2026-10-08): there is a
-	// best account and better does not rank it ahead of the live one. False
+	// best account and ahead does not rank it before the live one — an
+	// account of a later pool than the live one never does (D33). False
 	// whenever either room is unknown, and while the live account is
 	// refused (a 429 leaves it no room, whatever its reading says).
 	OnBest bool
@@ -679,7 +755,7 @@ func Choose(in Input, name string) Choice {
 	pick := func(c candidate, why string) Choice {
 		out.ID, out.Why, out.BestRoom = c.acct.ID, why, room(c)
 		out.OnBest = haveActive && active.avail != state.Burnt &&
-			out.ActiveRoom != nil && out.BestRoom != nil && !better(c, active, in)
+			out.ActiveRoom != nil && out.BestRoom != nil && !ahead(c, active, in)
 		return out
 	}
 	if c, ok := bestEligible(all, in); ok {
@@ -825,6 +901,13 @@ func Explain(in Input) (Decision, []Verdict) {
 				continue
 			}
 		}
+		if in.unavailable(c.acct.ID) {
+			// In use by another profile (D34), whatever its reading says:
+			// never shown as ready, since rotation will not take it.
+			v.Why = in.Unavailable[c.acct.ID]
+			out = append(out, v)
+			continue
+		}
 		if !c.obs.HasReading() {
 			v.Why = "never read"
 			out = append(out, v)
@@ -884,13 +967,15 @@ func Explain(in Input) (Decision, []Verdict) {
 // in order" is a true statement. The active account stays first — it is the one
 // the reader is asking about — and the rest follow in selection order, which is
 // stable for ties because sort.SliceStable preserves the configured priority.
+// With several pools that order is pool by pool (D33), so the first ready
+// account listed is still the one rotation takes.
 func explainOrder(all []candidate, in Input) []candidate {
 	out := append([]candidate(nil), all...)
 	sort.SliceStable(out, func(i, j int) bool {
 		if a := out[i].acct.ID == in.active(); a != (out[j].acct.ID == in.active()) {
 			return a
 		}
-		return better(out[i], out[j], in)
+		return ahead(out[i], out[j], in)
 	})
 	return out
 }

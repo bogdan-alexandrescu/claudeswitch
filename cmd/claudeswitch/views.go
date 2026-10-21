@@ -28,6 +28,7 @@ type profileView struct {
 	ist      *state.ProfileState
 	pool     []string // nil: every account
 	declared bool     // false for the implicit profile of a config without blocks
+	profiles []string // every effective profile's name, for D34
 }
 
 func viewOf(cfg *config.Config, st *state.State, in config.Profile) profileView {
@@ -35,7 +36,7 @@ func viewOf(cfg *config.Config, st *state.State, in config.Profile) profileView 
 		return profileView{in: in, cfg: cfg, ist: st.Default()}
 	}
 	return profileView{in: in, cfg: cfg.ForProfile(in.Name), ist: st.Profile(in.Name),
-		pool: append([]string{}, in.Pool...), declared: true}
+		pool: append([]string{}, in.Pool...), declared: true, profiles: cfg.ProfileNames()}
 }
 
 // profileViews is one view per effective profile, in config order, or only
@@ -57,7 +58,10 @@ func (v profileView) input(st *state.State, now time.Time) policy.Input {
 		Lookahead: lookahead(v.cfg),
 	}
 	if v.declared {
-		in.Pool, in.Live = v.pool, v.ist
+		in.Pool, in.Live, in.Tiers = v.pool, v.ist, v.in.Tiers
+		// D34, as the daemon decides: what another profile is on is not a
+		// candidate here.
+		in.Unavailable = inUseElsewhereOf(v.profiles, st, v.in.Name)
 	}
 	return in
 }
@@ -92,7 +96,8 @@ func triggerAtJSON(r policy.Runway, id string) any {
 }
 
 // runways is every profile's runway, keyed by profile, and every account's
-// trigger_at from the runway of the profile whose pool holds it.
+// trigger_at from the runway of the profile it is live in, else of the first
+// that may use it (D31: several can).
 type runways struct {
 	profiles map[string]map[string]any
 	accounts map[string]any
@@ -106,7 +111,9 @@ func runwayJSON(cfg *config.Config, st *state.State, now time.Time) runways {
 		addRunwayJSON(m, r)
 		out.profiles[v.in.Name] = m
 		for _, id := range v.in.Pool {
-			out.accounts[id] = triggerAtJSON(r, id)
+			if _, set := out.accounts[id]; !set || v.ist.Active == id {
+				out.accounts[id] = triggerAtJSON(r, id)
+			}
 		}
 	}
 	return out
@@ -139,11 +146,22 @@ func (v profileView) heading(w io.Writer) {
 	fmt.Fprintf(w, "\n  %s %s %s  %s\n", render.Bold("profile"), render.Bold(v.in.Name),
 		fmt.Sprintf("(switch ≥%.0f%% / ≥%.0f%%)", v.cfg.TriggerFor(usage.FiveHourKey), v.cfg.TriggerFor(usage.SevenDayKey)),
 		render.Grey(launchedAs(v.in)))
-	pool := "empty — nothing to rotate to"
+	pool := "pool empty — nothing to rotate to"
 	if len(v.pool) > 0 {
-		pool = strings.Join(v.pool, ", ")
+		pool = "pool " + strings.Join(v.pool, ", ")
 	}
-	fmt.Fprintf(w, "  %s\n", render.Grey(fmt.Sprintf("pool %s · hard floor ≥%.0f%%", pool, v.cfg.HardFloor)))
+	if len(v.in.Pools) > 0 {
+		// It lists pools (D31): name them, in the order it uses them (D33).
+		var tiers []string
+		for t, name := range v.in.PoolNames {
+			if name == "" {
+				name = "in no pool"
+			}
+			tiers = append(tiers, fmt.Sprintf("%s (%s)", name, nonEmpty(strings.Join(v.in.Tiers[t], ", "), "empty")))
+		}
+		pool = "pools " + strings.Join(tiers, ", then ")
+	}
+	fmt.Fprintf(w, "  %s\n", render.Grey(fmt.Sprintf("%s · hard floor ≥%.0f%%", pool, v.cfg.HardFloor)))
 }
 
 // activeIn names the profile whose live credential holds accountID, or "".
@@ -157,15 +175,20 @@ func activeIn(cfg *config.Config, st *state.State, accountID string) string {
 	return ""
 }
 
-// addProfileJSON adds, with more than one profile, the profile whose pool
-// holds an account and the one it is live in. Nothing with one profile.
+// addProfileJSON adds, with more than one profile, where an account sits:
+// its pool (D31; null in none), every profile that may use it, the first of
+// them as "profile" (for older readers), and the one it is live in. Nothing
+// with one profile.
 func addProfileJSON(m map[string]any, cfg *config.Config, st *state.State, accountID string) {
 	if !multiProfile(cfg) {
 		return
 	}
-	if owner, ok := cfg.ProfileOf(accountID); ok {
-		m["profile"] = owner
+	profiles := nonNilList(cfg.ProfilesOf(accountID))
+	if len(profiles) > 0 {
+		m["profile"] = profiles[0]
 	}
+	pool, _ := cfg.PoolOf(accountID)
+	m["pool"], m["profiles"] = orNull(pool), profiles
 	if in := activeIn(cfg, st, accountID); in != "" {
 		m["active_in"] = in
 	}
@@ -220,7 +243,7 @@ func renderWhy(w io.Writer, cfg *config.Config, st *state.State, now time.Time, 
 			v.heading(w)
 		}
 		dec, verdicts := policy.Explain(v.input(st, now))
-		render.Why(w, render.WhyOptions{Cfg: v.cfg, St: st, Decision: dec, Verdicts: verdicts})
+		render.Why(w, render.WhyOptions{Cfg: v.cfg, St: st, Decision: dec, Verdicts: verdicts, Profile: v.in.Name})
 	}
 }
 
@@ -237,7 +260,7 @@ func whyJSON(cfg *config.Config, st *state.State, now time.Time, only string) ma
 		in := views[0].input(st, now)
 		dec, verdicts := policy.Explain(in)
 		r := views[0].runway(cfg, st, now)
-		m := map[string]any{"decision": decisionJSON(dec), "accounts": verdictsJSON(verdicts, views[0].cfg, st, now, r)}
+		m := map[string]any{"decision": decisionJSON(dec), "accounts": verdictsJSON(verdicts, views[0].cfg, st, now, r, views[0].in.Name)}
 		addBest(m, in, "", cfg, st, now)
 		addRunwayJSON(m, r)
 		return m
@@ -249,7 +272,7 @@ func whyJSON(cfg *config.Config, st *state.State, now time.Time, only string) ma
 		r := v.runway(cfg, st, now)
 		m := map[string]any{
 			"profile": v.in.Name, "pool": v.pool, "thresholds": thresholdsJSON(v.cfg),
-			"decision": decisionJSON(dec), "accounts": verdictsJSON(verdicts, v.cfg, st, now, r),
+			"decision": decisionJSON(dec), "accounts": verdictsJSON(verdicts, v.cfg, st, now, r, v.in.Name),
 		}
 		addBest(m, in, v.in.Name, cfg, st, now)
 		addRunwayJSON(m, r)
@@ -293,7 +316,7 @@ func bestExclusions(cfg *config.Config, st *state.State, name string, now time.T
 	}
 	for _, v := range profileViews(cfg, st, "") {
 		if a := v.ist.Active; a != "" && a != state.Unattributed && v.in.Name != name {
-			out[a] = "live in " + v.in.Name
+			out[a] = "in use by " + v.in.Name
 		}
 	}
 	for _, g := range allGhosts(cfg, st) {

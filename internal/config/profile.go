@@ -35,9 +35,15 @@ const DefaultProfile = "default"
 // of profiles on one folder, or one inside another's (validateFolders). Only
 // one profile may omit dir.
 type Profile struct {
-	Name string   `toml:"name"`
-	Dir  string   `toml:"dir"`
+	Name string `toml:"name"`
+	Dir  string `toml:"dir"`
+	// Pool is, as declared, the profile's own pool (D35: a pool named after
+	// the profile, used by it alone). In EffectiveProfiles it is every
+	// account the profile may use, its tiers in order.
 	Pool []string `toml:"pool"`
+	// Pools names the [[pool]] blocks the profile uses, in the order it uses
+	// them (D31, D33). A profile sets Pool or Pools, not both.
+	Pools []string `toml:"pools"`
 	// Threshold overrides (D4). Zero means unset: fall back to the global.
 	SwitchAt       float64 `toml:"switch_at"`
 	SwitchAtWeekly float64 `toml:"switch_at_weekly"`
@@ -63,19 +69,112 @@ type Profile struct {
 	// blocks. Its dir is whatever this process's CLAUDE_CONFIG_DIR says, which
 	// is today's single-profile behaviour. Never set on a declared profile.
 	FromEnv bool `toml:"-"`
+
+	// Set by EffectiveProfiles only. Tiers is the accounts of each pool the
+	// profile uses, in its order (D33); PoolNames names them, "" for the
+	// accounts no pool lists, which the profile named default uses last (D6).
+	Tiers     [][]string `toml:"-"`
+	PoolNames []string   `toml:"-"`
+}
+
+// Pool is a named group of accounts that profiles list to use (D31). An
+// account is in at most one pool (D32).
+//
+//	[[pool]]
+//	name     = "team"
+//	accounts = ["team-a", "team-b"]
+type Pool struct {
+	Name     string   `toml:"name"`
+	Accounts []string `toml:"accounts"`
+}
+
+// PoolNamed is the [[pool]] block with this name.
+func (c *Config) PoolNamed(name string) (Pool, bool) {
+	for _, p := range c.Pools {
+		if p.Name == name {
+			return p, true
+		}
+	}
+	return Pool{}, false
+}
+
+// PoolOf names the pool an account is in: a [[pool]] block, or the profile
+// whose own pool lists it (D35). False for an account no pool lists.
+func (c *Config) PoolOf(accountID string) (string, bool) {
+	for _, p := range c.Pools {
+		for _, id := range p.Accounts {
+			if id == accountID {
+				return p.Name, true
+			}
+		}
+	}
+	for _, in := range c.Profiles {
+		for _, id := range in.Pool {
+			if id == accountID {
+				return in.Name, true
+			}
+		}
+	}
+	return "", false
+}
+
+// ProfilesOf names every profile that may use an account, in declaration
+// order. Since D31 there can be several; one at a time holds it (§3).
+func (c *Config) ProfilesOf(accountID string) []string {
+	var out []string
+	for _, in := range c.EffectiveProfiles() {
+		for _, id := range in.Pool {
+			if id == accountID {
+				out = append(out, in.Name)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// InPool reports whether profile may use an account.
+func (c *Config) InPool(profile, accountID string) bool {
+	in, ok := c.ProfileNamed(profile)
+	if !ok {
+		return false
+	}
+	for _, id := range in.Pool {
+		if id == accountID {
+			return true
+		}
+	}
+	return false
+}
+
+// SubscribersOf names the profiles that list a [[pool]] block.
+func (c *Config) SubscribersOf(pool string) []string {
+	var out []string
+	for _, in := range c.Profiles {
+		for _, p := range in.Pools {
+			if p == pool {
+				out = append(out, in.Name)
+				break
+			}
+		}
+	}
+	return out
 }
 
 // EffectiveProfiles is every profile with its effective pool: the declared
-// ones, with each account no pool names added to "default" (D6) after the
-// accounts it lists; or, with none declared, one implicit "default" holding
-// every account and resolving its dir from the environment.
+// ones, each with the accounts of the pools it uses in its order (D31, D33)
+// — its own pool (D35) or the [[pool]] blocks it lists — and, for "default",
+// each account no pool names after them (D6); or, with none declared, one
+// implicit "default" holding every account and resolving its dir from the
+// environment.
 func (c *Config) EffectiveProfiles() []Profile {
 	if len(c.Profiles) == 0 {
 		pool := make([]string, 0, len(c.Accounts))
 		for _, a := range c.Accounts {
 			pool = append(pool, a.ID)
 		}
-		return []Profile{{Name: DefaultProfile, Pool: pool, FromEnv: true}}
+		return []Profile{{Name: DefaultProfile, Pool: pool, FromEnv: true,
+			Tiers: [][]string{pool}, PoolNames: []string{""}}}
 	}
 	listed := map[string]bool{}
 	for _, in := range c.Profiles {
@@ -83,16 +182,42 @@ func (c *Config) EffectiveProfiles() []Profile {
 			listed[id] = true
 		}
 	}
+	for _, p := range c.Pools {
+		for _, id := range p.Accounts {
+			listed[id] = true
+		}
+	}
 	out := make([]Profile, len(c.Profiles))
 	for i, in := range c.Profiles {
-		in.Pool = append([]string(nil), in.Pool...)
-		if in.Name == DefaultProfile {
-			for _, a := range c.Accounts {
-				if !listed[a.ID] {
-					in.Pool = append(in.Pool, a.ID)
-				}
+		var tiers [][]string
+		var names []string
+		if len(in.Pool) > 0 {
+			tiers = append(tiers, append([]string(nil), in.Pool...))
+			names = append(names, in.Name)
+		}
+		for _, name := range in.Pools {
+			if p, ok := c.PoolNamed(name); ok {
+				tiers = append(tiers, append([]string(nil), p.Accounts...))
+				names = append(names, name)
 			}
 		}
+		if in.Name == DefaultProfile {
+			var stray []string
+			for _, a := range c.Accounts {
+				if !listed[a.ID] {
+					stray = append(stray, a.ID)
+				}
+			}
+			if len(stray) > 0 {
+				tiers = append(tiers, stray)
+				names = append(names, "")
+			}
+		}
+		in.Pool = nil
+		for _, t := range tiers {
+			in.Pool = append(in.Pool, t...)
+		}
+		in.Tiers, in.PoolNames = tiers, names
 		out[i] = in
 	}
 	return out
@@ -117,7 +242,8 @@ func (c *Config) ProfileNamed(name string) (Profile, bool) {
 	return Profile{}, false
 }
 
-// ProfileOf names the profile whose pool holds an account.
+// ProfileOf names the first profile that may use an account. Since D31
+// several can: anything that decides on it asks ProfilesOf or InPool.
 func (c *Config) ProfileOf(accountID string) (string, bool) {
 	for _, in := range c.EffectiveProfiles() {
 		for _, id := range in.Pool {
@@ -214,13 +340,50 @@ func (c *Config) ModelsFor(profile string) []string {
 	return c.Models
 }
 
-func (c *Config) validateProfiles() error {
-	if len(c.Profiles) == 0 {
-		return nil
+// validatePools checks the [[pool]] blocks (D31, D32) and returns, for each
+// account they list, the pool that lists it.
+func (c *Config) validatePools(accounts map[string]Account) (map[string]string, error) {
+	poolOf := map[string]string{}
+	seen := map[string]bool{}
+	for _, p := range c.Pools {
+		if p.Name == "" {
+			return nil, fmt.Errorf("every [[pool]] needs a name")
+		}
+		if err := ValidName("pool name", p.Name); err != nil {
+			return nil, err
+		}
+		if seen[p.Name] {
+			return nil, fmt.Errorf("pool %q is declared twice", p.Name)
+		}
+		seen[p.Name] = true
+		for _, id := range p.Accounts {
+			if _, ok := accounts[id]; !ok {
+				return nil, fmt.Errorf("pool %q names unknown account %q", p.Name, id)
+			}
+			if other, ok := poolOf[id]; ok {
+				if other == p.Name {
+					return nil, fmt.Errorf("pool %q lists account %q twice", p.Name, id)
+				}
+				return nil, fmt.Errorf("account %q is in both pool %q and pool %q; an account "+
+					"belongs to one pool (profiles share a pool by listing it)", id, other, p.Name)
+			}
+			poolOf[id] = p.Name
+		}
 	}
+	return poolOf, nil
+}
+
+func (c *Config) validateProfiles() error {
 	accounts := map[string]Account{}
 	for _, a := range c.Accounts {
 		accounts[a.ID] = a
+	}
+	declaredPool, err := c.validatePools(accounts)
+	if err != nil {
+		return err
+	}
+	if len(c.Profiles) == 0 {
+		return nil
 	}
 	names := map[string]bool{}
 	unsetBy := "" // the profile that omits dir
@@ -254,19 +417,43 @@ func (c *Config) validateProfiles() error {
 				in.Name, in.Dir)
 		}
 
+		if len(in.Pool) > 0 && len(in.Pools) > 0 {
+			return fmt.Errorf("profile %q sets both pool and pools; use pools, and put its own "+
+				"accounts in a [[pool]] it lists", in.Name)
+		}
+		if len(in.Pool) > 0 {
+			if _, clash := c.PoolNamed(in.Name); clash {
+				return fmt.Errorf("profile %q has its own pool, which is named after it, and a "+
+					"[[pool]] is also named %q; rename one", in.Name, in.Name)
+			}
+		}
 		for _, id := range in.Pool {
 			if _, ok := accounts[id]; !ok {
 				return fmt.Errorf("profile %q: pool names unknown account %q", in.Name, id)
+			}
+			if other, ok := declaredPool[id]; ok {
+				return fmt.Errorf("account %q is in both pool %q and profile %q's own pool; an "+
+					"account belongs to one pool (profiles share a pool by listing it)", id, other, in.Name)
 			}
 			if other, ok := poolOwner[id]; ok {
 				if other == in.Name {
 					return fmt.Errorf("profile %q lists account %q twice", in.Name, id)
 				}
-				return fmt.Errorf("account %q is in the pools of both profile %q and profile %q; "+
-					"pools must not overlap, since a credential live in two profiles is revoked "+
-					"by whichever refreshes it first", id, other, in.Name)
+				return fmt.Errorf("account %q is in the own pools of both profile %q and profile %q; "+
+					"an account belongs to one pool: to share it, put it in a [[pool]] both "+
+					"profiles list", id, other, in.Name)
 			}
 			poolOwner[id] = in.Name
+		}
+		listedPools := map[string]bool{}
+		for _, name := range in.Pools {
+			if _, ok := c.PoolNamed(name); !ok {
+				return fmt.Errorf("profile %q lists pool %q, which no [[pool]] block declares", in.Name, name)
+			}
+			if listedPools[name] {
+				return fmt.Errorf("profile %q lists pool %q twice", in.Name, name)
+			}
+			listedPools[name] = true
 		}
 
 		for _, o := range []struct {
@@ -308,7 +495,10 @@ func (c *Config) validateProfiles() error {
 	if !names[DefaultProfile] {
 		var stray []string
 		for _, a := range c.Accounts {
-			if _, ok := poolOwner[a.ID]; !ok && a.IsEnabled() {
+			if _, ok := poolOwner[a.ID]; ok {
+				continue
+			}
+			if _, ok := declaredPool[a.ID]; !ok && a.IsEnabled() {
 				stray = append(stray, a.ID)
 			}
 		}
@@ -327,6 +517,14 @@ func (c *Config) validateProfiles() error {
 // are a config error, validateFolders.)
 func (c *Config) profileWarnings() []string {
 	var out []string
+	if len(c.Profiles) > 0 {
+		for _, p := range c.Pools {
+			if len(p.Accounts) > 0 && len(c.SubscribersOf(p.Name)) == 0 {
+				out = append(out, fmt.Sprintf("pool %q is listed by no profile, so %s rotate nowhere; "+
+					"add it to a profile's pools", p.Name, strings.Join(quoteAll(p.Accounts), ", ")))
+			}
+		}
+	}
 	for _, in := range c.Profiles {
 		weekly, floor := c.SwitchAtWeeklyFor(in.Name), c.HardFloorFor(in.Name)
 		if in.SwitchAtWeekly == 0 && in.HardFloor == 0 {
@@ -352,11 +550,17 @@ func quoteAll(v []string) []string {
 // not written: an unlisted account joining default is a rule, and writing it
 // out would turn it into a listing the person never made.
 func (c *Config) writeProfiles(b *strings.Builder) {
+	for _, p := range c.Pools {
+		b.WriteString("\n[[pool]]\n")
+		fmt.Fprintf(b, "name     = %q\n", p.Name)
+		fmt.Fprintf(b, "accounts = %s\n", tomlStrings(p.Accounts))
+	}
 	if len(c.Profiles) == 0 {
 		return
 	}
-	b.WriteString("\n# Claude Code profiles. Each rotates only within its own pool; pools must\n")
-	b.WriteString("# not overlap. Accounts in no pool join the profile named \"default\".\n")
+	b.WriteString("\n# Claude Code profiles. Each rotates over the pools it lists, in order; an\n")
+	b.WriteString("# account is in one pool, and profiles that list one pool share it, one at a\n")
+	b.WriteString("# time. Accounts in no pool join the profile named \"default\".\n")
 	b.WriteString("# dir is CLAUDE_CONFIG_DIR exactly as you launch Claude Code with it;\n")
 	b.WriteString("# no dir means CLAUDE_CONFIG_DIR unset, which is not the same as \"~/.claude\".\n")
 	b.WriteString("# Two profiles may not share a folder, or nest one inside another.\n")
@@ -370,6 +574,9 @@ func (c *Config) writeProfiles(b *strings.Builder) {
 		}
 		if len(in.Pool) > 0 {
 			fmt.Fprintf(b, "pool = %s\n", tomlStrings(in.Pool))
+		}
+		if len(in.Pools) > 0 {
+			fmt.Fprintf(b, "pools = %s\n", tomlStrings(in.Pools))
 		}
 		if in.SwitchAt > 0 {
 			fmt.Fprintf(b, "switch_at        = %g\n", in.SwitchAt)

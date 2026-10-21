@@ -141,7 +141,7 @@ table in `cmd/claudeswitch/config_cli.go` and `config.Defaults()` in
 | `poll_active` | duration | `3m0s` | at least 2m (120s) | | how often to read the account in use |
 | `poll_hot` | duration | `1m0s` | above 0 | | ...and when it is near the trigger or burning fast |
 | `poll_idle` | duration | `10m0s` | at least 2m (120s) | | how often to read the others |
-| `api_budget` | int | `12` | at least 2 | | usage calls per 5 minutes, across every process |
+| `api_budget` | int | `12` | at least 2 | | usage calls per 5 minutes, across every process, for each profile with an account to use (two busy profiles get twice the window) |
 | `landing_margin` | number | `10` | [0, 50] | yes | a switch target needs this many points below its own trigger (`0` = off) |
 | `prefer` | enum | `room` | `room`, `expiring` | yes | which eligible account a rotation takes: `room`, the one with the most room; `expiring`, the one whose weekly window resets soonest with quota unused (room breaks ties) |
 | `blind_failover_polls` | int | `3` | at least 0 | | fail over after this many unreadable polls of the account in use (`0` = hold) |

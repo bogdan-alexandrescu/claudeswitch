@@ -37,7 +37,7 @@ An open card shows, top to bottom:
 | element | what it shows or does | CLI |
 |---|---|---|
 | name and directory | the profile, and its config directory (`~/.claude` for `default`) | `cs profile list` |
-| account picker | the live account and its plan. Pick another account of the profile's pool to switch to it now. Accounts that cannot be used say why, and each says when it reaches its trigger at its pace (`trigger Thu 09:30`) when the CLI can tell | `cs use <id> --profile <p>`; ETAs from `cs why --json` (`trigger_at`) |
+| account picker | the live account and its plan. Pick another account of the profile's pools to switch to it now. An account live in another profile that shares its pool says `in use by work` and cannot be picked. Accounts that cannot be used say why, and each says when it reaches its trigger at its pace (`trigger Thu 09:30`) when the CLI can tell | `cs use <id> --profile <p>`; ETAs from `cs why --json` (`trigger_at`) |
 | globe | opens the live account's Chrome profile. Hidden where Chrome is not supported | `cs chrome open <id>` |
 | banners | Claude in Chrome sign-in, card errors and problems (below) | |
 | **Session** and **Week** | the live account's two windows, as dials or bars (below) | `cs status` |

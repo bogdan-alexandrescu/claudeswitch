@@ -101,7 +101,13 @@ type Detector struct {
 	// every line is ruinous, so one per file is enough.
 	lastCWD string
 	cwdFrom string
+
+	// seeded is set once the startup walk has stored what it found (seed).
+	seeded bool
 }
+
+// walkDir walks the transcripts tree; a seam, so a test can hold a walk open.
+var walkDir = filepath.WalkDir
 
 // ProjectsRoot is where Claude Code keeps transcripts: <config dir>/projects.
 func ProjectsRoot() string {
@@ -137,9 +143,7 @@ func (d *Detector) Run(stop <-chan struct{}) error {
 	}
 	defer w.Close()
 
-	d.seedOffsets()
-	d.ScanNow()
-	d.seedCWD()
+	d.seed()
 	d.addWatches(w)
 
 	// fsnotify can miss a newly created project directory; a slow rescan is the
@@ -197,20 +201,56 @@ func (d *Detector) addWatches(w *fsnotify.Watcher) {
 	}
 }
 
-// seedOffsets marks every existing file as already-read, so starting the daemon
-// does not replay weeks of old rejections as if they just happened.
-func (d *Detector) seedOffsets() {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	_ = filepath.WalkDir(d.root, func(p string, e os.DirEntry, err error) error {
+// seed takes stock of the tree once, at startup: every existing file is
+// marked already-read, so starting the daemon does not replay weeks of old
+// rejections as if they just happened; the newest write seeds lastWrite, so a
+// daemon launched mid-turn does not believe the machine is idle; and the
+// newest transcript names where work is happening.
+//
+// One walk, made without the lock. The default profile's tree was 13,756
+// files on 2026-10-20, walked three times with the first walk holding the
+// lock LastActivity takes, so the daemon's first busy check waited for it:
+// 6s warm, 24-77s cold, nearly four minutes with the machine busy, reading
+// and rotating nothing meanwhile. Until it is done, Seeded says so.
+func (d *Detector) seed() {
+	offsets := map[string]int64{}
+	newest, newestAt := "", time.Time{}
+	_ = walkDir(d.root, func(p string, e os.DirEntry, err error) error {
 		if err != nil || e.IsDir() || !strings.HasSuffix(p, ".jsonl") {
 			return nil
 		}
 		if fi, err := e.Info(); err == nil {
-			d.offsets[p] = fi.Size()
+			offsets[p] = fi.Size()
+			if fi.ModTime().After(newestAt) {
+				newest, newestAt = p, fi.ModTime()
+			}
 		}
 		return nil
 	})
+	cwd := firstCWD(newest)
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for p, n := range offsets {
+		if _, ok := d.offsets[p]; !ok {
+			d.offsets[p] = n
+		}
+	}
+	if newestAt.After(d.lastWrite) {
+		d.lastWrite = newestAt
+	}
+	if cwd != "" && d.lastCWD == "" {
+		d.lastCWD, d.cwdFrom = cwd, newest
+	}
+	d.seeded = true
+}
+
+// Seeded reports whether the startup walk is done. Before it, LastActivity
+// knows nothing, which is not the same as idle.
+func (d *Detector) Seeded() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.seeded
 }
 
 func (d *Detector) scanFile(path string) {
@@ -445,58 +485,25 @@ func (d *Detector) WorstLatency() time.Duration {
 	return d.worstLatency
 }
 
-// seedCWD reads the newest transcript's last record so a freshly started daemon
-// knows where work is happening without waiting for the next write.
-func (d *Detector) seedCWD() {
-	newest, newestAt := "", time.Time{}
-	_ = filepath.WalkDir(d.root, func(p string, e os.DirEntry, err error) error {
-		if err != nil || e.IsDir() || !strings.HasSuffix(p, ".jsonl") {
-			return nil
-		}
-		if fi, err := e.Info(); err == nil && fi.ModTime().After(newestAt) {
-			newest, newestAt = p, fi.ModTime()
-		}
-		return nil
-	})
-	if newest == "" {
-		return
+// firstCWD is the working directory a transcript records, "" when it names
+// none or cannot be read: a session's directory does not change, so the first
+// record that has one is enough.
+func firstCWD(path string) string {
+	if path == "" {
+		return ""
 	}
-	f, err := os.Open(newest)
+	f, err := os.Open(path)
 	if err != nil {
-		return
+		return ""
 	}
 	defer f.Close()
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	cwd := ""
 	for sc.Scan() {
 		var l line
 		if json.Unmarshal(sc.Bytes(), &l) == nil && l.CWD != "" {
-			cwd = l.CWD
-			break // a session's directory does not change
+			return l.CWD
 		}
 	}
-	if cwd != "" {
-		d.mu.Lock()
-		d.lastCWD, d.cwdFrom = cwd, newest
-		d.mu.Unlock()
-	}
-}
-
-// ScanNow seeds lastWrite once at startup so a daemon launched mid-turn does
-// not believe the machine is idle. One walk, not one per tick.
-func (d *Detector) ScanNow() {
-	newest := time.Time{}
-	_ = filepath.WalkDir(d.root, func(p string, e os.DirEntry, err error) error {
-		if err != nil || e.IsDir() || !strings.HasSuffix(p, ".jsonl") {
-			return nil
-		}
-		if fi, err := e.Info(); err == nil && fi.ModTime().After(newest) {
-			newest = fi.ModTime()
-		}
-		return nil
-	})
-	d.mu.Lock()
-	d.lastWrite = newest
-	d.mu.Unlock()
+	return ""
 }

@@ -30,8 +30,34 @@ func TestBudgetHoldsBackOneCallForSwaps(t *testing.T) {
 	if ok, _ := b.Allow("tok", Swap); !ok {
 		t.Fatal("priority call refused; the reserved slot must remain for a swap check")
 	}
-	if ok, reason := b.Allow("tok", Swap); ok || reason != ReasonBudget {
-		t.Fatalf("budget exhausted but call allowed: ok=%v reason=%q", ok, reason)
+	if ok, reason := b.Allow("tok", Scheduled); ok || reason != ReasonBudget {
+		t.Fatalf("scheduled call with the window full: ok=%v reason=%q", ok, reason)
+	}
+}
+
+// One held-back slot is not enough for one switch: `cs use` asks whose
+// credential it overwrites and then verifies the incoming one, two swap
+// calls, while the daemon's own swap-priority reads take the slot too. With
+// two profiles polling hot, routine reads keep the window at its edge, so the
+// verify was refused by our own bookkeeping and a good switch rolled back
+// (observed 2026-10-20, "usage API call budget exhausted"). The machine-wide
+// window guards routine polling; a swap call is counted in it, never refused
+// by it. The account's own allowance and a 429's lock still apply.
+func TestTheWindowNeverRefusesASwapCall(t *testing.T) {
+	b, _ := fixedBudget(time.Now())
+	for i := 0; i < DefaultAllowance; i++ {
+		b.Allow(string(rune('a'+i)), Swap)
+	}
+	for i := 0; i < 3; i++ {
+		if ok, reason := b.Allow("incoming", Swap); !ok {
+			t.Fatalf("swap call %d refused with the window full: %q", i, reason)
+		}
+	}
+	if got := len(b.calls); got != DefaultAllowance+3 {
+		t.Errorf("window holds %d calls, want %d: a swap call must still be counted", got, DefaultAllowance+3)
+	}
+	if ok, reason := b.Allow("other", Scheduled); ok || reason != ReasonBudget {
+		t.Errorf("routine polling past the window: ok=%v %q", ok, reason)
 	}
 }
 
