@@ -100,7 +100,7 @@ func browserLogin(ctx context.Context, w io.Writer, extra oauth.Extra, open func
 		return nil, err
 	}
 	if err := open(flow.URL); err != nil {
-		fmt.Fprintf(w, "    could not open a browser (%v)\n", err)
+		fmt.Fprintf(w, "    %v\n", err)
 	}
 	fmt.Fprintf(w, "    If no browser opened, or the wrong one did, open this in the right one:\n\n%s\n\n", flow.URL)
 	fmt.Fprintf(w, "    waiting for the browser to come back… (Ctrl-C to stop)\n")
@@ -127,7 +127,7 @@ func openBrowser(w io.Writer, browser string) func(string) error {
 			cmd = exec.Command("open", u)
 		}
 		if err := cmd.Run(); err != nil {
-			return err
+			return fmt.Errorf("%s did not open: %w", nonEmpty(browser, "the default browser"), err)
 		}
 		fmt.Fprintf(w, "    opened in %s — sign in as the account you want, and approve\n",
 			nonEmpty(browser, "your default browser"))
