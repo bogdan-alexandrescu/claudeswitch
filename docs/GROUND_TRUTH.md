@@ -1489,3 +1489,27 @@ to agree before answering, and the pane re-reads the status each time it is
 shown. A second fault turned up on the way. On macOS, `daemon start` did
 nothing for a job that was loaded but whose daemon had exited cleanly
 (KeepAlive restarts it only after a failure). It now runs `launchctl start`.
+
+## 52. The browser can hand the code back to a listener on this machine (confirmed 2026-10-21)
+
+Every login so far sent the browser to the code page (`redirect_uri` =
+`https://platform.claude.com/oauth/code/callback`), and the code it showed was pasted
+into `login --code`. Claude Code's own `/login` needs no paste. Its authorize-URL
+builder (2.1.306) picks the redirect:
+
+```
+redirect_uri = useManualRedirect ? MANUAL_REDIRECT_URL : `http://localhost:${port}/callback`
+```
+
+The token exchange repeats the same choice. The listener binds `127.0.0.1` on a port
+of the system's choosing, serves `/callback`, and checks `state`. The client id is
+the same one claudeswitch already uses.
+
+`login --direct` at a terminal now does the same (`oauth.Callback`). The code page
+stays for `--no-open`, `--json` and no terminal.
+
+**Confirmed the same day.** An existing Team seat was signed in again with
+`login <id> --direct` at a terminal. The authorize endpoint accepted the localhost
+`redirect_uri`, the browser came back to the listener on its own, and the token
+endpoint accepted the code with the same `redirect_uri`. The vaulted access token
+then had 7h59m left.
