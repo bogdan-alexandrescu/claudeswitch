@@ -172,7 +172,9 @@ func usageText() {
 
   login <id> sign in to an account and vault it, verifying it is the right one
              --direct leaves your live session untouched, whatever happens;
-             finish it with: login <id> --code <code>
+             at a terminal the browser hands the result back by itself, and
+             login with no <id> asks for the name, the pool and the browser;
+             with --no-open, finish it with: login <id> --code <code>
              --org <org-id>: sign in to that organization; --pool <pool> or
              --no-pool: where a new account goes
   add <id>   vault the credential that is live right now, as <id>

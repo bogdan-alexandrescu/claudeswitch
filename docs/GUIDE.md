@@ -144,9 +144,11 @@ to it directly instead. Any name works, including one your config has never
 seen; it is written in, pinned to whichever seat actually signed in:
 
 ```sh
+cs login                                     # at a terminal: asks for the name, pool and browser
 cs login work-b --direct                     # sign in, verify, vault, add to config
 cs login work-b --direct --browser Safari    # ...in a browser signed into that account
-cs login work-b --code <code>                # finish, with the code the browser shows
+cs login work-b --direct --no-open           # no terminal or browser here: print the URL, then
+cs login work-b --code <code>                # ...finish with the code the browser shows
 cs login work-c --direct --org 11111111-1111-1111-1111-111111111111
                                              # ...asking for that organization
 cs login work-b --direct --pool team         # ...a new account goes into the pool team

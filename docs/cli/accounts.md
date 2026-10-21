@@ -92,6 +92,7 @@ written.
 ## cs login
 
 ```
+cs login                     (at a terminal: asks for the name, the pool and the browser)
 cs login <id> --direct [--browser APP] [--no-open] [--org ID] [--profile NAME | --pool NAME | --no-pool] [--sso] [--email ADDR] [--prompt select_account|login] [--json]
 cs login <id> --code <code> [--json]
 cs login <id> [--profile NAME] [--keep] [--sso] [--browser APP]
@@ -102,7 +103,31 @@ the credential and, for a new name, writes it into the config pinned to the
 seat that came back.
 
 **`--direct`** (recommended) obtains the credential itself and never touches
-any live session. It prints (or opens) the authorize URL and stops:
+any live session.
+
+**At a terminal it finishes in one go.** It opens the sign-in page and the
+browser comes back to claudeswitch by itself, the way Claude Code's own
+login does: to a listener on this machine (`127.0.0.1`, at
+`http://localhost:<port>/callback`), so there is no code to copy. It asks
+which browser when `--browser` is not given, and which pool a new account
+joins when the config does not settle that (no `--profile`, `--pool` or
+`--no-pool`, and no profile named `default`). `cs login` with no name asks
+for the name first. Ctrl-C stops it, with nothing stored.
+
+```
+$ cs login
+  Name it: research
+  Pool it joins (work, home) [work]:
+  Open in which browser (Safari, Firefox) [Safari]: Firefox
+    opened in Firefox — sign in as the account you want, and approve
+    waiting for the browser to come back… (Ctrl-C to stop)
+
+  ✓ vaulted research (organization 11111111)
+```
+
+**With `--json`, `--no-open` or no terminal** (the app, a script, a machine
+you reach over SSH), it prints the authorize URL and stops. So does a
+terminal login when nothing can listen on this machine:
 
 ```
   Then finish with:
@@ -125,8 +150,8 @@ another profile; the message suggests `--direct`.
 |---|---|---|
 | `--direct` | off | obtain the credential without touching the live session |
 | `--code CODE` | none | finish a `--direct` login started earlier, with the code from the callback page |
-| `--browser APP` | your default browser | open the authorize URL in this browser application, such as `Safari` or `"Brave Browser"`. A browser you do not normally use has its own cookies, which is how you get a different account |
-| `--no-open` | off | with `--direct`: print the URL, open nothing |
+| `--browser APP` | your default browser; at a terminal, asked from those installed | open the authorize URL in this browser application, such as `Safari` or `"Brave Browser"`. A browser you do not normally use has its own cookies, which is how you get a different account |
+| `--no-open` | off | with `--direct`: print the URL, open nothing, and finish with `--code` |
 | `--profile NAME` | this shell's profile; with `--direct`, none | without `--direct`, the profile to sign in through; with `--direct`, the profile whose pool a new account joins (its own pool, or the first it lists). With `--direct` and none of `--profile`, `--pool` and `--no-pool`, a new account is in no pool, which the profile named `default` uses last |
 | `--keep` | off | without `--direct`: stay on the newly signed-in account instead of switching back |
 | `--sso` | off | use the SSO login flow |
