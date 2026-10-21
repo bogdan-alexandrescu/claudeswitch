@@ -74,6 +74,11 @@ profiles. A runtime check stays anyway, before every write to a live item,
 because manual commands and config reloads are where that kind of structural
 guarantee breaks.
 
+Since shared pools (§10, D31) the structure no longer holds: an account in a
+pool two profiles list can be chosen by either. Rotation passes over an
+account live in another profile (D34), and the runtime check, now under one
+machine-wide switch lock, is what enforces this.
+
 ## 4. Model
 
 ```
@@ -242,7 +247,7 @@ without the rest.
 
 ## 8. Decisions (2026-10-07)
 
-- **D1. Pool model: fixed pool per profile.** Each profile rotates only within
+- **D1 (superseded by D31). Pool model: fixed pool per profile.** Each profile rotates only within
   its own `pool`. Pools must not overlap (config error). Chosen over a shared
   pool with exclusion: predictable, and keeps work and personal separate, at
   the cost that headroom in one pool cannot help the other.
@@ -336,7 +341,7 @@ without the rest.
   works on such a config, moving the vault item too. Suggested names are always
   valid.
 
-- **D24. Pools stay separate (2026-10-07).** Overlapping pools were
+- **D24 (superseded by D31). Pools stay separate (2026-10-07).** Overlapping pools were
   considered — an account listed in several profiles, live in one at a time —
   and withdrawn the same day: D1 stands, and an account belongs to exactly one
   profile.
@@ -523,3 +528,219 @@ As built (lane 15):
 3. Profile config + resolution + `doctor` checks.
 4. Daemon: per-profile detector and evaluate, exclusion invariant, shared poller.
 5. CLI `--profile`, env-resolved default, status line, `status`/`top` blocks.
+
+## 10. Shared pools (owner, 2026-10-20)
+
+Asked for as "accounts usable in two or more profiles", then shaped by the
+owner as named pools that profiles subscribe to. §3 is unchanged: one
+credential is live in at most one profile at a time.
+
+- **D31. Named pools, subscribed by profiles.** Supersedes D1 (fixed pool per
+  profile) and D24 (pools stay separate). A `[[pool]]` block names a group of
+  accounts; a profile lists the pools it uses. Two profiles that list one pool
+  share its accounts.
+
+  ```toml
+  [[pool]]
+  name     = "acme"
+  accounts = ["team-a", "team-b", "team-c"]
+
+  [[pool]]
+  name     = "own"
+  accounts = ["personal", "spare"]
+
+  [[profile]]
+  name  = "default"
+  pools = ["own", "acme"]
+
+  [[profile]]
+  name  = "work"
+  dir   = "~/.claude-work"
+  pools = ["acme"]
+  ```
+
+- **D32. One pool per account.** An account listed in two pools is a config
+  error naming both. Profiles share pools; pools do not share accounts, so an
+  account's quota is never counted twice in a pool's totals or its run-out
+  forecast.
+
+- **D33. Pool by pool.** A profile uses its pools in the order it lists them:
+  an account in a later pool is chosen only when no account in an earlier one
+  is usable (under its trigger, readable, not refused, not needing a sign-in,
+  not live in another profile). Within a pool the global `priority` order
+  decides. Only the choice of the next account changes; when a profile
+  rotates does not, so a profile on a later pool's account moves back only at
+  its next rotation.
+
+- **D34. A shared account is used by one profile at a time.** Rotation treats
+  an account live in another profile as unavailable and takes the next
+  candidate, rather than refusing the swap and waiting as it did when pools
+  could not overlap. `use` still refuses it, naming the profile it is live
+  in. One machine-wide switch lock is held from the §3 check through the
+  write and its verify, by the daemon and by every command that writes a live
+  credential, so two writers cannot both pass §3 for one account.
+
+- **D35. Old configs keep working.** `pool = [...]` on a profile is a pool
+  named after that profile, used by it alone. A profile sets `pool` or
+  `pools`, not both. Accounts no pool lists keep D6: the profile named
+  `default` uses them, after its own pools.
+
+- **D36. The machine-wide call window grows with the profiles in use**:
+  `api_budget` calls per five minutes for each profile whose pools hold an
+  enabled account, at least one profile's worth. Each account's own allowance
+  (GROUND_TRUTH §42), which is the limit the endpoint enforces, is unchanged.
+  Two busy profiles had held routine reads 14 minutes stale under one
+  profile's window (GROUND_TRUTH §47).
+
+- **D37. A new account goes into the pool you choose** (owner, 2026-10-20).
+  The Add account sheet's Profile row becomes Pool: every pool (a profile's
+  own pool under its profile's name) and "No pool". It starts on the last
+  pool that only the profile it was opened from uses (for default with none,
+  No pool), so nothing is shared unless chosen.
+  On the CLI, `login --direct` and `add` take `--pool NAME` or `--no-pool`;
+  `--profile P` alone keeps D20 (P's own pool, or the first pool P lists). An
+  account that already exists keeps its pool, shown and not chosen. Chosen
+  over "the profile's first pool", which for a profile that uses a shared
+  pool first would have shared every account added through it.
+
+- **D38. Any pool can be deleted** (owner, 2026-10-20), its accounts moved
+  to a pool chosen then, or to no pool, and the profiles that listed it no
+  longer listing it. One confirmation names all of it. It is refused only
+  when an account in use in a profile would land where that profile cannot
+  use it (§3), or in no pool with no profile named default to use it.
+  `cs pool delete <name> [--to <pool> | --no-pool]`; with neither flag the
+  accounts go to no pool, as before.
+
+- **D39. Any pool can be renamed** (owner, 2026-10-20): `cs pool rename <old>
+  <new>` renames a [[pool]] and every profile's listing of it. A profile's
+  own pool, renamed, becomes a [[pool]] of that name which the profile
+  lists, nothing else changing.
+
+### As configured (built 2026-10-20)
+
+`EffectiveProfiles` gives each profile `Pool` (every account it may use, in
+order), `Tiers` (each pool's accounts, in the profile's order) and
+`PoolNames` (each tier's pool, `""` for the D6 accounts no pool lists).
+`ProfilesOf(id)`, `InPool(profile, id)`, `PoolOf(id)` and
+`SubscribersOf(pool)` replace the single-owner `ProfileOf` wherever a
+decision depends on it. A pool no profile lists is a warning, not an error.
+
+### Policy and daemon (built 2026-10-20)
+
+- D33: `policy.Input.Tiers` is the profile's `Tiers`. Of the candidates
+  passing the test at hand, the earliest pool's are preferred and today's
+  ranking (room, priority, `prefer`) picks among them, so `Decide`, blind
+  failover, `Choose` (Best and "Already on the best"), `why`'s order and the
+  runway all go pool by pool. The landing margin is part of the test: an
+  earlier pool's account short of it is passed over for a later pool's that
+  clears it, and a profile holds until the hard floor only when no pool has
+  one, as it did with one pool. Past the hard floor the best short account
+  is the earliest pool's. One pool decides exactly as before.
+- D34: `Decide`, failover and `Explain` honour `Input.Unavailable` as Best
+  and the runway did: an account in it is never chosen, `why` gives its
+  reason ("in use by work") instead of a reading, and a wait names what it
+  passed over. The daemon fills it from
+  state (each other profile's recorded live account), then runs the §3
+  check on the target against every other live item and ghost; a target
+  found there, or that may be there (D18), is added and the profile decides
+  again until a target passes or none is left. That finding is logged at
+  INFO ("swap target is in use in another profile"), audited once per
+  finding, and not notified. A wait with accounts in use elsewhere is
+  notified as "<profile>: no account free", naming them, not "all accounts
+  are burnt".
+- D17 under sharing: an account is from "another profile's pool" only when
+  no pool the profile uses holds it (`InPool`); `pool_of` names every
+  profile that may use it.
+- The switch lock is `switch.lock` beside `state.lock` and `daemon.lock` in
+  `~/.local/state/claudeswitch` (an exclusive flock), taken before
+  `state.lock`, never after. It is held from the §3 check through the
+  write, its verify (freshening the target first, I3, included) and the
+  state save by the daemon's swap, `use` (not `--dry-run`), switching back
+  after a `login`, and `profile create --seed` / `profile seed` (after the
+  D29 wait). Each reads state again once it holds the lock. The daemon waits
+  up to 2 s, then defers the swap to its next tick (INFO); a command waits
+  up to 30 s, then refuses with `switch_busy`, nothing changed.
+- Switching back after a non-`--direct` `login` now makes the §3 check
+  too: in the minutes the login took, the account was live nowhere and a
+  profile sharing its pool may have taken it. If so it is not put back, and
+  the command says so.
+
+### CLI and JSON (contract for the build)
+
+- `cs pool list [--json]`: `{"pools": [{"name", "accounts": [...],
+  "profiles": [...]}], "unlisted": [...]}`. A profile's own pool (D35)
+  appears under its profile's name with `"own": true`.
+- `cs pool create <name> [<account>...] [--json]`; an account already in a
+  pool is refused (`in_other_pool`), naming it.
+- `cs pool add <pool> <account>`, `cs pool remove <pool> <account>` (the
+  account is then in no pool: D6), `cs pool move <account> --to <pool>`,
+  `cs pool delete <name>` (refused while a profile lists it, naming them:
+  `pool_in_use`). Each `--json` answer is the `pool list` object.
+- `cs profile pools <profile> <pool>...` sets the pools a profile uses, in
+  order. A profile with its own pool has it converted first: a `[[pool]]`
+  named after the profile holds its accounts and leads the list unless the
+  list says otherwise. `--json` answers `profile list`'s entry for it.
+- `cs profile pool <profile> add|remove <account>` keeps working on a
+  profile's own pool; on a profile that lists pools it is a `usage` error
+  pointing to `cs pool`.
+- Account JSON (`account list`, `status`, `history --usage`) gains `pool`
+  (name or null) and `profiles` (every profile that may use it); `profile`
+  stays, as the first of them, for older apps. `active_in` is unchanged.
+  `login --code` and `add` gain `profiles` only: their `pool` has been the
+  profile's account list since lane 12, and keys are never repurposed.
+- `profile list --json` gives each profile `pools` (names, in order) and the
+  top level `pools` as in `cs pool list`.
+- `status`, `why` and the app show an account live in another profile as
+  "in use by <profile>" in every other profile that may use it, never as
+  ready.
+
+### As built: CLI (2026-10-20)
+
+- `cs pool` (`pool_cli.go`) and `cs profile pools` edit a copy of the
+  config's layout (the `[[pool]]` blocks, each profile's `pool` and
+  `pools`), validate it as a whole config, check §3 account by account, and
+  only then write the text edits between the two layouts, parsed back to
+  exactly the new one. The §3 check: an account a profile stops using must
+  not be live (or maybe live) there; one a profile starts using must not be
+  live outside the profiles that may use it after the edit, a ghost
+  included. Sharing with the profile it is live in passes (D34).
+- A profile's own pool is addressed by its name in every pool command. Every
+  declared profile that lists no pools has one, empty or not (`pool list`
+  shows it with `"own": true`). `profile pools` converts a profile's own
+  pool when it holds accounts or the list names it; naming another
+  profile's own pool converts that one too, and that profile then lists it,
+  so both share it. The `pools` line takes the `pool` line's place.
+- New error code `pool_in_use`; `in_other_pool` now covers D32.
+- `profile pool` refuses a profile that lists pools, and `--to` naming one
+  (`usage`, pointing to `cs pool`).
+- D20 with pools: a new account joining a profile that lists pools goes
+  into the first one it lists. `profile remove` moves only the profile's own
+  accounts (its own pool, and for `default` the D6 ones), into `--to`'s own
+  pool or the first it lists; the `[[pool]]` blocks it listed stay, and one
+  left unlisted is named in the output.
+- Account JSON: `pool` and `profiles` in `account list`, `status` (several
+  profiles) and `history --usage`; `profile` is the first of `profiles`.
+  `login --code`/`add` gain `profiles` only: their `pool` has been a list of
+  the profile's accounts since lane 12 and stays one.
+- `status` (both views) and `why` (text and JSON) show an account state
+  records live in another profile as "in use by <profile>", never eligible,
+  whatever the policy's verdict says; why's account entries carry
+  `active_in`. Best's exclusion reads "in use by" too.
+- `account pin` pins in the profile the account is live in, or `--profile`;
+  `rename` and `account delete` reach `[[pool]]` lists; Chrome judges an
+  account live nowhere in this shell's profile when that one may use it,
+  else the first; `add --from S --profile T` says S keeps a shared account
+  until its own rotation moves on.
+
+### Build order
+
+1. D36, on its own.
+2. Config: `[[pool]]`, `pools`, D32 and D35 validation, and one helper for the
+   pools and profiles an account is in, replacing the single-owner `ProfileOf`
+   everywhere it decides something.
+3. Policy and daemon: D33 order, D34 exclusion and re-decision, the switch
+   lock.
+4. CLI: pool commands, subscribing, JSON (`pool` per account, `pools` per
+   profile, and the pools themselves), status and `why`.
+5. App: mockups for the owner first, then the Profiles and Accounts panes.
+

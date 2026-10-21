@@ -13,11 +13,12 @@ import (
 )
 
 // `cs profile remove <name> [--to <profile>]` (lane 15): removes a
-// [[profile]] block. Its pool's accounts move to --to, or to `default` (D6);
+// [[profile]] block. Its own pool's accounts (D35) move to --to, or to
+// `default` (D6), into the first pool that profile lists if it lists any;
 // with neither, an enabled account would be in no pool, which is refused
-// (would_orphan). The last profile cannot be removed (last_profile), and
-// `default` needs --to while other profiles exist, since accounts in no
-// pool join it.
+// (would_orphan). The [[pool]] blocks it lists stay as they are (D31). The
+// last profile cannot be removed (last_profile), and `default` needs --to
+// while other profiles exist, since accounts in no pool join it.
 //
 // Nothing on disk but the config changes: the profile's folder and its
 // keychain item (or credential file) stay. The account last live there may
@@ -71,7 +72,24 @@ func profileRemove(w io.Writer, cfgPath, name, to string, yes, asJSON bool) erro
 		dst = config.DefaultProfile
 	}
 	eff, _ := cfg.ProfileNamed(name)
-	moving := append([]string{}, eff.Pool...)
+	// What moves is the profile's own: its own pool (D35) and, for default,
+	// the accounts no pool lists (D6). The [[pool]] blocks it lists stay,
+	// for the profiles that list them too (D31).
+	moving := []string{}
+	var kept []string
+	ownPool := len(cfg.Profiles[declaredIndex(cfg, name)].Pools) == 0
+	for t, pool := range eff.PoolNames {
+		if (pool == name && ownPool) || pool == "" {
+			moving = append(moving, eff.Tiers[t]...)
+		} else {
+			kept = append(kept, pool)
+		}
+	}
+	// Into a profile that lists pools, they join its first (as D20).
+	into := ""
+	if dst != "" {
+		into = joinPool(cfg, dst)
+	}
 	if dst == "" {
 		for _, id := range moving {
 			if accountByID(cfg, id).IsEnabled() {
@@ -117,7 +135,11 @@ func profileRemove(w io.Writer, cfgPath, name, to string, yes, asJSON bool) erro
 		if dst == "" || len(moving) == 0 {
 			return out, nil
 		}
-		next, found, err := mapArray(out, blockRef{"profile", dst}, "pool", func(v []string) []string {
+		ref, key := blockRef{"profile", dst}, "pool"
+		if into != "" {
+			ref, key = blockRef{"pool", into}, "accounts"
+		}
+		next, found, err := mapArray(out, ref, key, func(v []string) []string {
 			for _, id := range moving {
 				if !slices.Contains(v, id) {
 					v = append(v, id)
@@ -129,7 +151,7 @@ func profileRemove(w io.Writer, cfgPath, name, to string, yes, asJSON bool) erro
 			return "", err
 		}
 		if !found {
-			next, err = setKey(out, blockRef{"profile", dst}, "pool", tomlList(moving))
+			next, err = setKey(out, ref, key, tomlList(moving))
 		}
 		return next, err
 	}, func(back *config.Config) error {
@@ -140,8 +162,8 @@ func profileRemove(w io.Writer, cfgPath, name, to string, yes, asJSON bool) erro
 			return nil
 		}
 		for _, id := range moving {
-			if got, _ := back.ProfileOf(id); got != dst {
-				return fmt.Errorf("the edit parsed but %q landed in the pool of profile %q, not of %q; discarded", id, got, dst)
+			if got, _ := back.PoolOf(id); !back.InPool(dst, id) || got != nonEmpty(into, dst) {
+				return fmt.Errorf("the edit parsed but %q landed in pool %q, not %q; discarded", id, got, nonEmpty(into, dst))
 			}
 		}
 		return nil
@@ -216,10 +238,20 @@ func profileRemove(w io.Writer, cfgPath, name, to string, yes, asJSON bool) erro
 	}
 	fmt.Fprintf(w, "\n  ✓ removed profile %s from %s\n", name, cfg.Path)
 	if len(moving) > 0 {
-		if dst != "" {
+		switch {
+		case into != "":
+			fmt.Fprintf(w, "    its accounts (%s) are now in pool %s, the first profile %s uses\n",
+				strings.Join(moving, ", "), into, dst)
+		case dst != "":
 			fmt.Fprintf(w, "    its accounts (%s) are now in profile %s's pool\n", strings.Join(moving, ", "), dst)
-		} else {
+		default:
 			fmt.Fprintf(w, "    its accounts (%s) are disabled and now in no pool\n", strings.Join(moving, ", "))
+		}
+	}
+	for _, p := range kept {
+		if len(back.SubscribersOf(p)) == 0 {
+			fmt.Fprintf(w, "    pool %s is listed by no profile now, so its accounts rotate nowhere until one "+
+				"lists it (claudeswitch profile pools <profile> <pool>...)\n", p)
 		}
 	}
 	fmt.Fprintf(w, "    its folder %s and its saved login were not deleted\n", nonEmpty(eff.Dir, "~/.claude"))
@@ -245,13 +277,24 @@ func profileRemove(w io.Writer, cfgPath, name, to string, yes, asJSON bool) erro
 func removeSummary(name string, eff config.Profile, moving []string, dst, live string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "removing profile %q deletes its [[profile]] block", name)
+	var kept []string
+	for _, p := range eff.PoolNames {
+		if p != "" && (p != name || len(eff.Pools) > 0) {
+			kept = append(kept, p)
+		}
+	}
 	switch {
+	case len(moving) == 0 && len(kept) > 0:
+		b.WriteString("; it has no accounts of its own")
 	case len(moving) == 0:
 		b.WriteString("; its pool is empty")
 	case dst != "":
 		fmt.Fprintf(&b, "; its accounts (%s) move to profile %q", strings.Join(moving, ", "), dst)
 	default:
 		fmt.Fprintf(&b, "; its disabled accounts (%s) are left in no pool", strings.Join(moving, ", "))
+	}
+	if len(kept) > 0 {
+		fmt.Fprintf(&b, "; the pools it lists (%s) stay, for any other profile that lists them", strings.Join(kept, ", "))
 	}
 	fmt.Fprintf(&b, ". Its folder %s and its saved login stay on disk: nothing is deleted. ",
 		nonEmpty(eff.Dir, "~/.claude"))

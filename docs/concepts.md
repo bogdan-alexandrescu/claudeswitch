@@ -18,12 +18,18 @@ seat, and refuse a credential whose seat does not match.
 
 A **profile** is one Claude Code config directory: `default` is `~/.claude`
 (the Claude Code you get when `CLAUDE_CONFIG_DIR` is unset), and a profile
-such as `work` has its own, such as `~/.claude-work`. Each profile has a
-**pool**: the accounts it may rotate between. Pools never overlap. One daemon
-drives every profile.
+such as `work` has its own, such as `~/.claude-work`. A **pool** is a group
+of accounts, and an account is in one pool. A profile rotates over the
+pools it uses, in order: its own (`pool = [...]` on the profile) or the
+named `[[pool]]` blocks it lists (`pools = [...]`). Two profiles that list
+the same pool share its accounts, one profile at a time: an account live in
+one is "in use by" it in the other. Accounts in no pool join the profile
+named `default`. One daemon drives every profile.
 
 With no `[[profile]]` blocks in the config, everything is one implicit
-`default` profile. `cs profile create` declares the first real one.
+`default` profile. `cs profile create` declares the first real one,
+`cs pool` makes and edits named pools, and `cs profile pools` sets the ones
+a profile uses ([cs profile](cli/profiles.md#pool)).
 `cs run <profile>` starts Claude Code in a profile.
 
 An account is live in at most one profile at a time. Refreshing a token

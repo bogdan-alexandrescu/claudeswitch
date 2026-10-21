@@ -789,7 +789,8 @@ one requested (`33333333…`). Accepted-and-ignored is a different fact from rej
 worth stating precisely: the parameter costs nothing and buys nothing.
 
 **Conclusion: which organization a login returns is decided by the BROWSER SESSION, and
-nothing in the request can override it.** Confirmed against three parameters, all of which
+nothing in the request can override it.** *(Amended by §48: the parameters tried were not
+the one Claude Code itself sends. Its `forceLoginOrgUUID` setting sends `orgUUID`.)* Confirmed against three parameters, all of which
 are accepted and silently ignored: `organization_uuid`, `prompt=select_account`, and
 `prompt=login`. Only `--sso` behaves differently, and only because it selects the
 SSO-backed org.
@@ -1380,3 +1381,75 @@ What follows:
   `Retry-After` longer than that, which `MaxLock` cut to 20 minutes, so the
   next call was a sure second strike. The header was not logged at the time;
   it is again (R3).
+
+## 47. One slot held back for swaps did not cover one switch (observed 2026-10-20)
+
+`cs use` failed with "the new credential could not read usage: usage API call budget
+exhausted (call budget spent for this window)" and rolled back, more than once. The
+ledger at the time held 11 calls in the five-minute window, of an allowance of 12:
+two profiles were both polling their live accounts hot (one call a minute each),
+plus the idle accounts. Routine polling stops one short of the allowance so a
+swap can be checked; but a `cs use` from a fresh process makes **two** swap-priority
+calls (whose credential it overwrites, then the incoming one's verify), and the
+daemon's own swap-priority reads (re-attributing each profile's live credential)
+take the same slot. The verify was refused by our own bookkeeping, not by the API.
+
+The same window starved routine reads: the daemon logged "deciding on a stale
+reading ... last_error=not polled: call budget spent for this window" for the
+work profile's live account, 14 minutes old.
+
+Since then a swap-priority call is counted in the machine-wide window but never
+refused by it. The limit that is real is per account (§42), which still applies,
+as do a 429's lock and the pacing between calls. A verify refused by the incoming
+account's own allowance is reported as a local pause, so the switch stands
+unverified, as it does on a 429.
+
+## 48. Claude Code asks for an organization with `orgUUID`, and the endpoint honours it (confirmed 2026-10-20)
+
+§24 and §31 concluded that nothing in the authorize request chooses the organization.
+The parameters tried were `organization_uuid`, `prompt=select_account` and `prompt=login`.
+Claude Code's own authorize-URL builder (2.1.304) sends a different one when its
+managed setting `forceLoginOrgUUID` is set, documented as selecting that organization
+"during login, bypassing the organization selection step":
+
+```
+code=true, client_id, response_type=code, redirect_uri, scope,
+code_challenge, code_challenge_method=S256, state, orgUUID=<org>, login_hint, login_method
+```
+
+How it showed up: a person in two organizations re-added the one whose seat had
+expired. Their browser sat in the other organization, already vaulted under another
+name, so the login came back as that seat and was refused as a duplicate. There was
+no way to ask for the right one.
+
+`login --direct` now sends `orgUUID` when it knows the organization: the account's
+pinned one when signing it in again, or `--org` for a new one. The completion checks
+the organization that comes back against the one asked for *before* the duplicate
+check, and logs "a sign-in came back in another organization than it asked for"
+when they differ.
+
+**Confirmed the same day.** The person whose sign-in had come back in the
+already-vaulted organization signed in again through the Add account sheet, with
+the other organization's id pasted. The browser was the same one that had landed in
+the team organization minutes before. The credential came back in the organization
+asked for and was stored. So `orgUUID` is honoured where `organization_uuid` was
+not (§31), and choosing the organization no longer depends on what the browser
+shows.
+
+
+## 49. Re-attribution by organization filed one seat's reading under another (observed 2026-10-20)
+
+Three seats in one team organization were in one profile's pool. Every 15 minutes
+the daemon re-read the profile's live credential, and the usage endpoint named only
+its organization (§32: quota is per seat, but the header is per organization). The
+poller took the first seat of that organization in priority order, so the live
+seat's reading (12% of the session) was filed under another seat that was at 86%.
+Seconds later the vault's seat check found the mismatch ("the live credential belongs
+to a different account than we thought") and moved the attribution back, but the
+false reading stayed until that seat's own next poll, up to ten minutes. A rotation in
+that window could have chosen it on 12% and landed over its trigger. The history
+kept the false points.
+
+Since then, among seats sharing the live organization, the one whose stored access
+token is the live token wins, then the profile's current account, then priority order
+as before. No call is spent.

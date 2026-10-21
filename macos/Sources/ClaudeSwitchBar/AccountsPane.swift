@@ -1,15 +1,24 @@
 import AppKit
 import ClaudeSwitchCore
 import SwiftUI
+import UniformTypeIdentifiers
 
-/// Accounts: rotation order (drag, or Move up/down from the keyboard and
-/// VoiceOver), and per account rename, move to a profile, sign in again,
-/// Chrome, delete; then the recovery copies.
+/// Accounts: one section per pool (shared pools, docs/PROFILES.md §10), in
+/// rotation order within each (drag, or Move up/down from the keyboard and
+/// VoiceOver); drag a row onto another pool to move it there. Per account:
+/// rename, move to a pool, sign in again, Chrome, delete; then the recovery
+/// copies. With no [[profile]] blocks, or a binary from before pools, one
+/// list in rotation order.
 struct AccountsPane: View {
     @EnvironmentObject var store: Store
     @State private var renaming: String?
     @State private var deleting: DeleteAsk?
     @State private var pending: PendingAction?
+    @State private var creatingPool = false
+    /// The pool being renamed or deleted (D38, D39), in its sheet. Settable
+    /// for the render harness.
+    @State var renamingPool: String?
+    @State var deletingPool: String?
 
     struct DeleteAsk: Identifiable {
         var id: String { account }
@@ -17,10 +26,17 @@ struct AccountsPane: View {
         var message: String
     }
 
+    var grouped: Bool { PoolLayout.grouped(store.pools, profiles: store.profiles) }
+
+    var sections: [PoolSection] {
+        store.pools.map { PoolLayout.sections($0, order: store.accountIDs, profiles: store.profiles) } ?? []
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             PaneHeader(title: "Accounts",
-                       subtitle: "Drag to change the order rotation spends them in.") {
+                       subtitle: grouped ? "Drag to reorder within a pool, or onto another pool to move it there."
+                                         : "Drag to change the order rotation spends them in.") {
                 Button("Add account") {
                     store.addAccount = AddAccountRequest(profile: AddForm.initialTarget(requested: nil, list: store.profiles))
                 }
@@ -29,24 +45,24 @@ struct AccountsPane: View {
             }
             .padding([.horizontal, .top], 24)
             List {
-                Section {
-                    ForEach(store.accountIDs, id: \.self) { id in
-                        AccountRow(id: id, rename: { renaming = id }, delete: { askDelete(id) },
-                                   move: { step in askMove(step) }, shift: { by in shift(id, by: by) })
-                    }
-                    .onMove { from, to in
-                        var ids = store.accountIDs
-                        ids.move(fromOffsets: from, toOffset: to)
-                        store.setPriority(ids)
-                    }
-                } header: {
+                if grouped {
+                    // One ForEach, headers as rows: a List row drops only
+                    // within the ForEach it came from, so one per pool
+                    // offered no other pool a drop spot.
+                    let all = sections
+                    let rows = PoolLayout.rows(all)
+                    ForEach(rows) { r in poolRow(r, all: all) }
+                        .onMove { from, to in moved(rows, all: all, from: from, to: to) }
                     HStack {
-                        Text("Rotation order")
-                        if store.isBusy("priority") { ProgressView().controlSize(.mini) }
                         Spacer()
-                        AccountColumns(plan: "Plan")
-                        Color.clear.frame(width: AccountColumns.trailing, height: 1)
+                        Button("New pool") { creatingPool = true }
+                            .disabled(store.binaryPath == nil)
+                            .help("A pool groups accounts; profiles list the pools they use")
                     }
+                    .moveDisabled(true)
+                    .listRowSeparator(.hidden)
+                } else {
+                    flat
                 }
                 RecoverySection()
             }
@@ -54,6 +70,13 @@ struct AccountsPane: View {
         }
         .sheet(item: Binding(get: { renaming.map(RenameTarget.init) }, set: { renaming = $0?.id })) { t in
             RenameSheet(old: t.id).environmentObject(store)
+        }
+        .sheet(isPresented: $creatingPool) { NewPoolSheet().environmentObject(store) }
+        .sheet(item: Binding(get: { renamingPool.map(RenameTarget.init) }, set: { renamingPool = $0?.id })) { t in
+            RenamePoolSheet(name: t.id).environmentObject(store)
+        }
+        .sheet(item: Binding(get: { deletingPool.map(RenameTarget.init) }, set: { deletingPool = $0?.id })) { t in
+            DeletePoolSheet(name: t.id).environmentObject(store)
         }
         .confirmationDialog(deleting.map { "Delete \($0.account)?" } ?? "",
                             isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
@@ -65,21 +88,101 @@ struct AccountsPane: View {
         .confirming($pending)
     }
 
-    struct RenameTarget: Identifiable { var id: String }
-
-    /// "Move to X", with the same confirmation and checks as the Profiles
-    /// pane (owner decision): the CLI refuses a live account itself.
-    func askMove(_ step: PoolStep) {
-        guard let c = Confirm.poolStep(step) else { return }
-        pending = PendingAction(confirmation: c) { store.movePool(step, key: "move:\(account(step))") }
-    }
-
-    func account(_ step: PoolStep) -> String {
-        switch step {
-        case .already: return ""
-        case .add(let a, _), .move(let a, _, _): return a
+    /// One list in rotation order: no [[profile]] blocks (nothing to
+    /// group), or a binary that predates pools (said in a line).
+    var flat: some View {
+        Section {
+            ForEach(store.accountIDs, id: \.self) { id in
+                row(id, targets: [], inPool: false)
+            }
+            .onMove { from, to in
+                var ids = store.accountIDs
+                ids.move(fromOffsets: from, toOffset: to)
+                store.setPriority(ids)
+            }
+            if store.poolsUnsupported {
+                Label("Update claudeswitch to group accounts into pools and share them between profiles.",
+                      systemImage: "info.circle")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .moveDisabled(true)
+            }
+        } header: {
+            HStack {
+                Text("Rotation order")
+                if store.isBusy("priority") { ProgressView().controlSize(.mini) }
+                Spacer()
+                AccountColumns(plan: "Plan")
+                Color.clear.frame(width: AccountColumns.trailing, height: 1)
+            }
         }
     }
+
+    /// A pool's rows: its accounts, reordered by a drag within it; a row
+    /// from another section dropped here moves into this pool. An empty
+    /// pool has one row saying so, which a dragged row can land under too.
+    @ViewBuilder func poolRow(_ r: PoolRow, all: [PoolSection]) -> some View {
+        switch r {
+        case .header(let sid):
+            if let s = all.first(where: { $0.id == sid }) {
+                PoolHeader(section: s, columns: sid == all.first?.id, busy: busy(s),
+                           rename: s.name.map { n in { renamingPool = n } },
+                           delete: s.name.map { n in { deletingPool = n } })
+                    .font(.subheadline).foregroundStyle(.secondary)
+                    .padding(.top, sid == all.first?.id ? 0 : 14)
+                    .moveDisabled(true)
+                    .listRowSeparator(.hidden)
+            }
+        case .account(let id, let sid):
+            row(id, targets: PoolLayout.targets(for: id, sections: all), inPool: sid != PoolSection.noPool.id)
+        case .empty(let sid):
+            if let s = all.first(where: { $0.id == sid }) {
+                EmptyPoolRow(section: s)
+                    .moveDisabled(true)
+            }
+        }
+    }
+
+    /// A move in the one list: a reorder within a pool, or a move to the
+    /// pool whose header the row was dropped under (confirmed first).
+    func moved(_ rows: [PoolRow], all: [PoolSection], from: IndexSet, to: Int) {
+        switch PoolLayout.move(rows, from: from, to: to) {
+        case .reorder(let sid, let f, let t):
+            guard let s = all.first(where: { $0.id == sid }) else { return }
+            store.setPriority(RotationOrder.reorder(store.accountIDs, section: s.accounts, from: f, to: t))
+        case .drop(let id, let sid):
+            guard let s = all.first(where: { $0.id == sid }) else { return }
+            askDrop(id, onto: s)
+        case .none:
+            break
+        }
+    }
+
+    func row(_ id: String, targets: [PoolSection], inPool: Bool) -> some View {
+        AccountRow(id: id, rename: { renaming = id }, delete: { askDelete(id) },
+                   targets: targets, canLeave: inPool,
+                   moveTo: { askDrop(id, onto: $0) }, leave: { askDrop(id, onto: .noPool) }, shift: { by in shift(id, by: by) })
+    }
+
+    func busy(_ s: PoolSection) -> Bool {
+        s.accounts.contains { store.isBusy("move:\($0)") } || s.name.map { store.isBusy("pool:\($0)") } == true
+    }
+
+    // MARK: moving between pools
+
+    /// Confirmed, then `pool move` or `pool remove` (a drop within its own
+    /// pool is a reorder, handled by the list).
+    func askDrop(_ id: String, onto s: PoolSection) {
+        guard store.accountIDs.contains(id), let pools = store.pools,
+              let d = PoolLayout.drop(id, onto: s, pools: pools) else { return }
+        pending = PendingAction(confirmation: Confirm.poolDrop(d, pools: pools, defaultExists: defaultExists)) {
+            store.runDrop(d)
+        }
+    }
+
+    var defaultExists: Bool { store.profiles.map { $0.profile(StateFile.defaultProfile) != nil } ?? true }
+
+
+    struct RenameTarget: Identifiable { var id: String }
 
     func shift(_ id: String, by: Int) {
         if let ids = RotationOrder.move(store.accountIDs, id, by: by) { store.setPriority(ids) }
@@ -134,19 +237,86 @@ struct AccountsPane: View {
     }
 }
 
+/// A pool section's header: "TEAM · used by default (2nd), work (2nd)", and
+/// on the first one the Plan column's label.
+struct PoolHeader: View {
+    let section: PoolSection
+    let columns: Bool
+    let busy: Bool
+    /// A pool's Rename… and Delete… (D38, D39); nil for the accounts in no
+    /// pool.
+    var rename: (() -> Void)?
+    var delete: (() -> Void)?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            (Text(section.title).fontWeight(.semibold) + Text(" · " + section.subtitle))
+                .lineLimit(1).truncationMode(.tail)
+                .help(section.title + " · " + section.subtitle)
+            if busy { ProgressView().controlSize(.mini) }
+            Spacer()
+            if columns {
+                AccountColumns(plan: "Plan")
+            }
+            if let rename, let delete {
+                Menu {
+                    Button("Rename…", action: rename)
+                    Button("Delete…", role: .destructive, action: delete)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .frame(width: AccountColumns.trailing, alignment: .trailing)
+                .accessibilityLabel("Actions for pool \(section.name ?? section.title)")
+            } else if columns {
+                Color.clear.frame(width: AccountColumns.trailing, height: 1)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel((section.name.map { "Pool \($0)" } ?? section.title) + ", " + section.subtitle)
+    }
+}
+
+/// An empty pool's one row: where to drop an account. Delete is in the
+/// pool's header menu, with every other pool's.
+struct EmptyPoolRow: View {
+    let section: PoolSection
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Image(systemName: "tray.and.arrow.down").foregroundStyle(.tertiary).accessibilityHidden(true)
+                Text("No accounts. Drag one here to move it into \(section.name ?? "this pool").")
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+        }
+        .padding(.vertical, 6)
+    }
+}
+
 struct AccountRow: View {
     @EnvironmentObject var store: Store
     let id: String
     let rename: () -> Void
     let delete: () -> Void
-    let move: (PoolStep) -> Void
+    /// "Move to pool": every other pool; empty in one list.
+    var targets: [PoolSection] = []
+    /// It is in a pool, and can be taken out of it (to no pool).
+    var canLeave = false
+    var moveTo: (PoolSection) -> Void = { _ in }
+    var leave: () -> Void = {}
     let shift: (Int) -> Void
 
     var view: AccountView? { store.snapshot?.accounts.first { $0.id == id } }
     var record: AccountRecord? { store.state?.accounts[id] }
-    /// `account list --json`: the plan (lane 15).
+    /// `account list --json`: the plan (lane 15), its pool and profiles.
     var info: AccountInfo? { store.accountList?.account(id) }
     var email: String? { store.state?.emails[id] ?? info?.email }
+    /// The profile it is live in.
+    var liveIn: String? { store.liveIn(id) }
 
     var body: some View {
         HStack(spacing: 16) {
@@ -154,21 +324,23 @@ struct AccountRow: View {
             MiniRings(account: view, size: 34)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
-                    Text(id).bold().lineLimit(1).truncationMode(.middle).help(id)
+                    Text(id).bold().lineLimit(1).truncationMode(.middle).help(id).layoutPriority(1)
                     if let e = email {
                         Text(e).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).help(e)
                     }
-                    if let v = view { StatusChip(status: v.status, now: store.snapshot?.now ?? Date()).fixedSize() }
+                    chips
                 }
-                HStack(spacing: 0) {
-                    Text(details).lineLimit(1).truncationMode(.middle)
-                    if let l = loginText {
-                        // Kept whole: when the login renews matters more than the seat.
-                        Text((details.isEmpty ? "" : " · ") + l).lineLimit(1).fixedSize()
+                // Whole segments give way from the end, the seat first and who
+                // uses it last: a stub such as "s…" or "Chro…" says nothing.
+                // Truncating is the last resort.
+                ViewThatFits(in: .horizontal) {
+                    ForEach(lineVariants, id: \.self) { v in
+                        detailsRow(v, truncating: false)
                     }
+                    detailsRow(lineVariants.last ?? "", truncating: true)
                 }
                 .font(.caption).foregroundStyle(.secondary)
-                .help([details, loginText ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
+                .help([line, loginText ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
             }
             Spacer(minLength: 8)
             if busy { ProgressView().controlSize(.small) }
@@ -191,24 +363,37 @@ struct AccountRow: View {
         .accessibilityAction(named: "Move down") { shift(1) }
     }
 
+    /// Its state, and where it is live: "in use: work" takes the place of
+    /// "available" (the owner's layout); trouble stays beside it.
+    @ViewBuilder var chips: some View {
+        if let v = view, !(liveIn != nil && v.status == .available) {
+            StatusChip(status: v.status, now: store.snapshot?.now ?? Date()).fixedSize()
+        }
+        if let p = liveIn {
+            Badge(text: "in use: " + p, color: .csAccent)
+                .help("\(id) is live in \(p)" + (usedBy.count > 1 ? "; the other profiles that use it take another" : ""))
+        }
+    }
+
     var busy: Bool {
         store.isBusy("delete:\(id)") || store.isBusy("chrome:\(id)") || store.isBusy("move:\(id)")
     }
 
-    var targets: [String] { store.profiles?.moveTargets(for: id) ?? [] }
-
     @ViewBuilder var actions: some View {
         Button("Rename…", action: rename)
-        Menu("Move to profile") {
-            if targets.isEmpty { Text("No other profile") }
-            ForEach(targets, id: \.self) { p in
-                Button("Move to \(p)…") {
-                    if let s = store.profiles?.step(adding: id, to: p) { move(s) }
+        if !targets.isEmpty || canLeave {
+            Menu("Move to pool") {
+                ForEach(targets) { s in
+                    Button((s.name ?? s.title) + "…") { moveTo(s) }
+                }
+                if canLeave {
+                    if !targets.isEmpty { Divider() }
+                    Button("In no pool…", action: leave)
                 }
             }
+            .disabled(store.binaryPath == nil)
         }
-        .disabled(store.binaryPath == nil)
-        Button("Sign in again…") { store.addAccount = AddAccountRequest(account: id, profile: store.pool(of: id)) }
+        Button("Sign in again…") { store.addAccount = AddAccountRequest(account: id, profile: store.profile(of: id)) }
         Divider()
         Button("Move up") { shift(-1) }
             .disabled(store.accountIDs.first == id)
@@ -265,15 +450,54 @@ struct AccountRow: View {
         }
     }
 
-    /// Profile, seat and figure: shortened in the middle when the row is
-    /// narrow.
-    var details: String {
+    /// Every profile that may use it (shared pools: several may).
+    var usedBy: [String] {
+        info?.profiles ?? store.profile(of: id).map { [$0] } ?? []
+    }
+
+    /// "used by default, work"; nil when nothing says.
+    var usedByText: String? {
+        if !usedBy.isEmpty { return "used by " + usedBy.joined(separator: ", ") }
+        return info?.profiles != nil ? "used by no profile" : nil
+    }
+
+    /// Who uses it, then figure, Chrome and seat.
+    var line: String { lineSegments.joined(separator: " · ") }
+
+    /// Who uses it, the figure, Chrome and the seat, in that order.
+    var lineSegments: [String] { ([usedByText ?? ""] + detailParts).filter { !$0.isEmpty } }
+
+    /// The line with whole segments dropped from the end, longest first.
+    var lineVariants: [String] {
+        let s = lineSegments
+        guard !s.isEmpty else { return [""] }
+        return (1...s.count).reversed().map { s.prefix($0).joined(separator: " · ") }
+    }
+
+    /// One way of drawing the line, with when the login renews kept whole: it
+    /// matters more than the seat.
+    func detailsRow(_ text: String, truncating: Bool) -> some View {
+        HStack(spacing: 0) {
+            if truncating {
+                Text(text).lineLimit(1).truncationMode(.tail)
+            } else {
+                Text(text).lineLimit(1).fixedSize()
+            }
+            if let l = loginText {
+                Text((text.isEmpty ? "" : " · ") + l).lineLimit(1).fixedSize()
+            }
+        }
+    }
+
+    /// Figure, Chrome and seat.
+    var details: String { detailParts.joined(separator: " · ") }
+
+    var detailParts: [String] {
         var parts: [String] = []
-        if let p = store.pool(of: id) { parts.append("profile " + p) }
+        if let v = view, let p = v.bindingPct { parts.append(Format.pct(p) + " " + Format.window(v.bindingWindow)) }
         if chromeChoice != .sameAsProfile { parts.append("Chrome " + chromeLabel) }
         if let s = record?.seat { parts.append("seat " + shortSeat(s)) }
-        if let v = view, let p = v.bindingPct { parts.append(Format.pct(p) + " " + Format.window(v.bindingWindow)) }
-        return parts.joined(separator: " · ")
+        return parts
     }
 
     var loginText: String? {
@@ -291,6 +515,112 @@ struct AccountRow: View {
     }
 }
 
+/// "New pool": a name, and accounts to start with. One already in a pool
+/// leaves it (said beside it, and confirmed); `pool create` takes the ones
+/// in no pool, `pool move` brings in the others.
+struct NewPoolSheet: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.dismiss) private var dismiss
+    @State var name = ""
+    @State var picked: Set<String> = []
+    @State var error: AppError?
+    @State private var pending: PendingAction?
+
+    var selected: [String] { store.accountIDs.filter(picked.contains) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("New pool").font(.title3.bold())
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 8) {
+                GridRow {
+                    Text("Name").frame(width: NewProfileSheet.labelWidth, alignment: .leading)
+                    TextField("Name", text: $name, prompt: Text("e.g. team")).labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                }
+                GridRow(alignment: .top) {
+                    Text("Accounts").frame(width: NewProfileSheet.labelWidth, alignment: .leading)
+                    accounts
+                }
+            }
+            Text("No profile uses a new pool until one lists it: in Profiles, open a profile and choose Change… beside its pools.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let e = error { InlineError(message: e.message, hint: e.hint) }
+            HStack(spacing: 8) {
+                if store.isBusy("newpool") { ProgressView().controlSize(.small) }
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Create") { ask() }
+                    .keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
+                    .disabled(name.isEmpty || store.isBusy("newpool"))
+            }
+        }
+        .padding(24)
+        .frame(width: 480)
+        .confirming($pending)
+    }
+
+    /// Every account, with the pool it would leave; capped in height.
+    var accounts: some View {
+        let ids = store.accountIDs
+        let rows = VStack(alignment: .leading, spacing: 4) {
+            if ids.isEmpty { Text("No accounts yet").foregroundStyle(.secondary) }
+            ForEach(ids, id: \.self) { id in
+                Toggle(isOn: Binding(get: { picked.contains(id) },
+                                     set: { on in if on { picked.insert(id) } else { picked.remove(id) } })) {
+                    HStack(spacing: 4) {
+                        Text(id).lineLimit(1).truncationMode(.middle)
+                        if let n = NewPoolPlan.note(for: id, pools: store.pools) {
+                            Text(n).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+                        }
+                    }
+                    .help(id)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        return Group {
+            if ids.count > 6 {
+                ScrollView { rows.padding(8) }
+                    .frame(height: 168)
+                    .background(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.secondary.opacity(0.25)))
+            } else {
+                rows
+            }
+        }
+    }
+
+    func ask() {
+        let plan = NewPoolPlan.make(name: name, selected: selected, pools: store.pools)
+        if let c = plan.confirmation {
+            pending = PendingAction(confirmation: c) { create(plan) }
+        } else {
+            create(plan)
+        }
+    }
+
+    func create(_ plan: NewPoolPlan) {
+        error = nil
+        Task {
+            if let e = await store.poolCall("newpool", { $0.poolCreate(plan.name, accounts: plan.create) }) {
+                error = AppError(code: e.code ?? "failed", message: e.message, hint: e.hint)
+                return
+            }
+            for d in plan.moves {
+                guard case .move(let a, _, let to) = d else { continue }
+                if let e = await store.poolCall("newpool", { $0.poolMove(a, to: to) }) {
+                    error = AppError(code: e.code ?? "failed",
+                                     message: "\(plan.name) was created, but \(a) could not be moved in: " + e.message,
+                                     hint: e.hint)
+                    return
+                }
+            }
+            store.note = "Created the pool \(plan.name); add it to a profile in Profiles"
+            dismiss()
+        }
+    }
+}
+
 /// The Plan column of the Accounts pane, the header's and each row's laid
 /// out alike.
 struct AccountColumns: View {
@@ -304,16 +634,27 @@ struct AccountColumns: View {
     }
 }
 
+/// A small pill: a state ("available", "needs login") or where an account
+/// is live ("in use: work").
+struct Badge: View {
+    let text: String
+    let color: Color
+
+    var body: some View {
+        Text(text).lineLimit(1).truncationMode(.tail)
+            .font(.caption2)
+            .padding(.horizontal, 6).padding(.vertical, 1)
+            .background(PillShape().fill(color.opacity(0.18)))
+            .foregroundStyle(color)
+    }
+}
+
 struct StatusChip: View {
     let status: AccountStatus
     let now: Date
 
     var body: some View {
-        Text(Format.status(status, now: now))
-            .font(.caption2)
-            .padding(.horizontal, 6).padding(.vertical, 1)
-            .background(PillShape().fill(color.opacity(0.18)))
-            .foregroundStyle(color)
+        Badge(text: Format.status(status, now: now), color: color)
     }
 
     var color: Color {
@@ -446,3 +787,124 @@ struct RecoverySection: View {
         }
     }
 }
+
+/// Renaming a pool (D39). A profile's own pool becomes a pool of its own
+/// with the new name, which that profile uses.
+struct RenamePoolSheet: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.dismiss) private var dismiss
+    let name: String
+    @State var newName = ""
+    @State var error: AppError?
+
+    var own: Bool { store.pools?.pool(name)?.own ?? false }
+    var trimmed: String { newName.trimmingCharacters(in: .whitespacesAndNewlines) }
+    var busy: Bool { store.isBusy("pool:\(name)") }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Rename pool \(name)").font(.title3.bold())
+            TextField("New name", text: $newName, prompt: Text(name))
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(rename)
+            Text(own
+                 ? "\(name) is profile \(name)'s own pool. Renamed, it becomes a pool of its own, with the same accounts, that \(name) uses."
+                 : "Every profile that uses it keeps using it, in the same place in its order.")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let e = error { InlineError(message: e.message, hint: e.hint) }
+            HStack(spacing: 8) {
+                if busy { ProgressView().controlSize(.small) }
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Rename", action: rename).keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
+                    .disabled(trimmed.isEmpty || trimmed == name || busy)
+            }
+        }
+        .padding(24)
+        .frame(width: 440)
+    }
+
+    func rename() {
+        guard !trimmed.isEmpty, trimmed != name else { return }
+        error = nil
+        let (old, new) = (name, trimmed)
+        Task {
+            if let e = await store.poolCall("pool:\(old)", { $0.poolRename(old, to: new) }) {
+                if case .app(let a) = e { error = a } else { error = AppError(code: "failed", message: e.message, hint: e.hint) }
+            } else {
+                store.note = "Renamed the pool \(old) to \(new)"
+                dismiss()
+            }
+        }
+    }
+}
+
+/// Deleting a pool (D38): where its accounts go, and which profiles stop
+/// using it, said before anything is done.
+struct DeletePoolSheet: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.dismiss) private var dismiss
+    let name: String
+    @State var to: PoolPick?
+    @State var error: AppError?
+
+    var plan: PoolDeletePlan? { store.pools.map { PoolDeletePlan.make(name, pools: $0, profiles: store.profiles) } }
+    var busy: Bool { store.isBusy("pool:\(name)") }
+    /// Where its accounts go: the choice, else where the plan starts.
+    var chosen: Binding<PoolPick?> { Binding(get: { to ?? plan?.initial }, set: { to = $0 }) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Delete pool \(name)?").font(.title3.bold())
+            if let p = plan {
+                if !p.accounts.isEmpty {
+                    Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 4) {
+                        GridRow {
+                            Text("Move its accounts to")
+                            Picker("Move its accounts to", selection: chosen) {
+                                ForEach(p.destinations, id: \.self) { Text($0.label).tag(Optional($0.pick)) }
+                            }
+                            .labelsHidden()
+                        }
+                        GridRow {
+                            Color.clear.frame(width: 1, height: 1)
+                            Text(p.accounts.joined(separator: ", "))
+                                .font(.caption).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                Text(p.summary(to: chosen.wrappedValue))
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let e = error { InlineError(message: e.message, hint: e.hint) }
+            HStack(spacing: 8) {
+                if busy { ProgressView().controlSize(.small) }
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Delete \(name)", role: .destructive, action: delete)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .disabled(busy || plan == nil)
+            }
+        }
+        .padding(24)
+        .frame(width: 480)
+    }
+
+    func delete() {
+        error = nil
+        let (n, dest) = (name, (plan?.accounts.isEmpty ?? true) ? nil : chosen.wrappedValue)
+        Task {
+            if let e = await store.poolCall("pool:\(n)", { $0.poolDelete(n, to: dest) }) {
+                if case .app(let a) = e { error = a } else { error = AppError(code: "failed", message: e.message, hint: e.hint) }
+            } else {
+                store.note = "Deleted the pool \(n)"
+                dismiss()
+            }
+        }
+    }
+}
+

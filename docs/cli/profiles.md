@@ -1,13 +1,20 @@
 # cs profile
 
-Create, list, seed, edit and remove Claude Code profiles, and start Claude Code in one.
+Create, list, seed, edit and remove Claude Code profiles, share pools of
+accounts between them, and start Claude Code in one.
 
 See also: [Concepts → profiles and pools](../concepts.md) · [Settings → Profiles](../app/settings-profiles.md) · [GUIDE → Multiple Claude Code profiles](../GUIDE.md#multiple-claude-code-profiles) · [docs/PROFILES.md](../PROFILES.md) · [APP_CLI → profile](../APP_CLI.md#profile)
 
-A profile is one Claude Code config directory with its own pool of accounts.
-`default` is the profile with no `dir`: Claude Code with `CLAUDE_CONFIG_DIR`
-unset (`~/.claude`). With no `[[profile]]` blocks in the config, everything is
-one implicit `default` profile.
+A profile is one Claude Code config directory that rotates over the accounts
+of its pools. `default` is the profile with no `dir`: Claude Code with
+`CLAUDE_CONFIG_DIR` unset (`~/.claude`). With no `[[profile]]` blocks in the
+config, everything is one implicit `default` profile.
+
+A profile's accounts come either from its own pool (`pool = [...]` on the
+profile, a pool named after it that only it uses) or from the named pools it
+lists (`pools = [...]`, each a `[[pool]]` block). An account is in one pool.
+Profiles that list the same pool share its accounts, one profile at a time:
+an account live in one profile is "in use by" it in every other.
 
 ```
 claudeswitch profile create <name> [--dir PATH] [--pool a,b] [--seed <account>]
@@ -15,14 +22,23 @@ claudeswitch profile seed <name> <account>
 claudeswitch profile list
 claudeswitch profile remove <name> [--to <profile>] [--yes]
 claudeswitch profile forget <name>
+claudeswitch profile pools <name> <pool>...
 claudeswitch profile pool <name> add|remove <account> [--to <profile>]
 claudeswitch profile set <name> <key> <value|inherit>
 claudeswitch profile which [--dir PATH]
 claudeswitch profile hook zsh|bash|fish
 claudeswitch run [<profile>] [-- claude arguments]
+
+claudeswitch pool list
+claudeswitch pool create <name> [<account>...]
+claudeswitch pool add <pool> <account>
+claudeswitch pool remove <pool> <account>
+claudeswitch pool move <account> --to <pool>
+claudeswitch pool rename <pool> <new-name>
+claudeswitch pool delete <name> [--to <pool> | --no-pool]
 ```
 
-Every `profile` subcommand takes `--json` and `--config PATH`.
+Every `profile` and `pool` subcommand takes `--json` and `--config PATH`.
 
 | flag | applies to | meaning | default |
 |---|---|---|---|
@@ -32,6 +48,8 @@ Every `profile` subcommand takes `--json` and `--config PATH`.
 | `--pool a,b` | `create` | comma-separated accounts it rotates within | empty |
 | `--seed <account>` | `create` | a vaulted account from the pool to sign it in with | none |
 | `--to <profile>` | `remove`, `pool … remove` | the profile whose pool the accounts join instead | none |
+| `--to <pool>` | `pool move`, `pool delete` | the pool the account (or the deleted pool's accounts) goes to | required for `move`; no pool for `delete` |
+| `--no-pool` | `pool delete` | the deleted pool's accounts go to no pool; the profile named `default` uses them last | the default |
 | `--yes` | `remove` | do not ask for confirmation | off |
 | `--dir PATH` | `which` | the folder to ask about | the current folder |
 
@@ -49,8 +67,10 @@ credential. With no `[[profile]]` blocks yet it declares `default` too. Every
 step and every refusal is described in
 [GUIDE → Making a profile](../GUIDE.md#making-a-profile-and-starting-claude-code-in-one).
 
-A pool account another profile's pool already lists is refused
-(`in_other_pool`). If a running daemon does not load the new profile within 10
+`--pool` makes the profile's own pool. An account already in a pool, another
+profile's own or a `[[pool]]`, is refused (`in_other_pool`), naming that pool:
+an account is in one pool. To share it, make the profile without it and list
+its pool: `cs profile pools <name> <pool>`. If a running daemon does not load the new profile within 10
 seconds, the profile is made but not signed in (`daemon_not_loaded`), and
 `cs profile seed` finishes it.
 
@@ -79,14 +99,19 @@ cs profile list
 
 <p align="center"><img src="../images/cli-profile-list.svg" width="720" alt="Output of cs profile list: default in ~/.claude with pool personal and research, live personal; work in ~/.claude-work with pool work-1 and work-team, live work-1"></p>
 
-Each profile's directory, pool and the account recorded live in it. `live`
+Each profile's directory, pool and the account recorded live in it. A
+profile that lists pools has a `pools` line instead, each pool with its
+accounts in the order the profile uses them:
+`pools mine (p1), then team (t1, t2)`. `live`
 reads `none recorded` before the daemon has recorded one, and adds
 `; not signed in` when the profile has no credential. A profile with
 `paths` (below) has a `paths` line too.
 
-`--json` lists every profile with its dir, pool, live and pinned account,
+`--json` lists every profile with its dir, pool, the names of its pools
+(`pools`), live and pinned account,
 whether it is signed in, its overrides, its effective thresholds and its
-Chrome profile, plus the guarded old credentials (`ghosts`). The exact shape
+Chrome profile, plus the guarded old credentials (`ghosts`) and every pool
+(`pools`, as `pool list --json` gives them). The exact shape
 is in [APP_CLI → profile](../APP_CLI.md#profile).
 
 ## profile remove
@@ -95,8 +120,11 @@ is in [APP_CLI → profile](../APP_CLI.md#profile).
 cs profile remove work --to default
 ```
 
-Removes a `[[profile]]` block. Its pool's accounts move to `--to`, or to
-`default`. Only the config changes: the profile's folder and its credential
+Removes a `[[profile]]` block. Its own pool's accounts move to `--to`, or to
+`default`; into a profile that lists pools, they join the first one it lists.
+The `[[pool]]` blocks it listed stay as they are, for any other profile that
+lists them; one no profile lists any more is named in the output, since its
+accounts then rotate nowhere. Only the config changes: the profile's folder and its credential
 stay. The account last live there may still be in use by a running session, so
 it is guarded and installed nowhere else until that credential no longer holds
 it, or until `cs profile forget <name>`.
@@ -126,6 +154,33 @@ credentials.
 
 `--json`: `{"profile": "work", "released": 1}`.
 
+## profile pools
+
+```sh
+cs profile pools work team
+cs profile pools default mine team
+```
+
+Sets the pools a profile uses, in the order it uses them: an account in a
+later pool is chosen only when no account in an earlier one is usable. Each
+name is a `[[pool]]` block, or a profile's own pool, which goes by the
+profile's name (`pool list` shows both). Two profiles that list one pool
+share its accounts, one profile at a time.
+
+A profile with its own pool (`pool = [...]`) has it converted first: a
+`[[pool]]` named after the profile takes its accounts, and leads the list
+unless the list names it somewhere else. Naming another profile's own pool
+converts that one the same way, and that profile then lists it, so both
+share it. Nothing is lost: each profile can use the accounts it could before.
+
+It prints `profile work uses team, in that order; a running daemon picks this
+up by itself`, and a line for each pool it converted. Refusals: an unknown
+pool or profile (`not_found`), a pool named twice (`invalid_value`), no pools
+(`usage`), and an account a profile stops using while it is or may be live
+there (`live`). Sharing an account with the profile it is live in is fine.
+
+`--json` answers with the profile as `profile list --json` describes one.
+
 ## profile pool
 
 ```sh
@@ -133,15 +188,83 @@ cs profile pool work add work-team
 cs profile pool default remove research --to work
 ```
 
-`add` puts an account in a profile's pool. Pools never overlap, so an account
-another pool lists is refused (`in_other_pool`); move it with
-`remove … --to`, which takes it out of one pool and into another in one edit.
+Edits a profile's own pool. `add` puts an account in it. An account is in
+one pool, so one another pool lists is refused (`in_other_pool`); for a
+profile's own pool move it with `remove … --to`, which takes it out of one
+pool and into another in one edit, and for a `[[pool]]` the hint names
+`cs pool move` and `cs profile pools`.
 `remove` without `--to` refuses to leave an account in no pool
 (`would_orphan`). An account that is or may be live in the profile it leaves
-is refused (`live`), with the `cs use` command that frees it.
+is refused (`live`), with the `cs use` command that frees it. A profile that
+lists pools has no own pool to edit: `profile pool` on it is a `usage` error
+pointing to `cs pool`, and so is `--to` naming one.
 
 It prints `work-team is now in profile work's pool; a running daemon picks
 this up by itself`. `--json`: `{"account", "profile", "changed", "pools"}`.
+
+## pool
+
+```sh
+cs pool list
+cs pool create team work-1 work-2
+cs profile pools default mine team
+cs profile pools work team
+cs pool move work-3 --to team
+cs pool remove team work-2
+cs pool delete old
+```
+
+Named pools of accounts, the `[[pool]]` blocks in the config:
+
+```toml
+[[pool]]
+name     = "team"
+accounts = ["work-1", "work-2"]
+
+[[profile]]
+name  = "default"
+pools = ["mine", "team"]
+
+[[profile]]
+name  = "work"
+dir   = "~/.claude-work"
+pools = ["team"]
+```
+
+- `list`: every pool with its accounts and the profiles that use it, each
+  profile's own pool under the profile's name, and the accounts in no pool
+  (the profile named `default` uses those, after its pools).
+- `create <name> [<account>...]`: a new `[[pool]]`, appended to the config.
+  A name another pool or a profile's own pool has is `invalid_value`; an
+  account already in a pool is `in_other_pool`, naming it. No profile uses a
+  new pool until one lists it (`profile pools`).
+- `add <pool> <account>`: an account in no pool joins one. One in another
+  pool is `in_other_pool`: move it instead.
+- `remove <pool> <account>`: the account is then in no pool, so `default`
+  uses it. With no `default` profile that would leave it unusable, which the
+  config refuses: `would_orphan`.
+- `move <account> --to <pool>`: out of its pool and into another, in one
+  edit.
+- `delete <name>`: a pool no profile lists. One a profile lists, or a
+  profile's own, is `pool_in_use`, naming the profiles. Its accounts are then
+  in no pool.
+
+A pool name is a profile's own pool when no `[[pool]]` has it, so
+`cs pool add solo s2` edits `pool = [...]` on the profile `solo`.
+
+Every edit changes only the lines it is about, keeps comments, and is parsed
+back before it replaces the file. An account a profile stops using while it
+is, or may be, live there is refused (`live`), as is one a profile starts
+using while it is live in a profile that cannot use it. Each `--json` answer
+is the `pool list` object:
+
+```json
+{"pools": [
+  {"name": "team", "accounts": ["work-1", "work-2"], "profiles": ["default", "work"], "own": false},
+  {"name": "mine", "accounts": ["personal"], "profiles": ["default"], "own": false},
+  {"name": "solo", "accounts": ["s1"], "profiles": ["solo"], "own": true}],
+ "unlisted": ["spare"]}
+```
 
 ## profile set
 
@@ -202,7 +325,7 @@ paths = ["~/src/work/**", "~/clients/acme"]
   `~/clients/*` covers everything inside each client folder.
 - Two profiles whose paths could both match one folder are refused when the
   config loads (`profiles "default" and "work" have paths that overlap`),
-  like overlapping pools. One profile's own patterns may overlap.
+  like an account in two pools. One profile's own patterns may overlap.
 - A folder is matched as given, then with its links resolved.
 - `a,b` sets several (no comma inside a pattern); `inherit` (or `""`)
   removes them. A pattern that would overlap another profile's is
@@ -298,3 +421,18 @@ else the one your shell's `CLAUDE_CONFIG_DIR` belongs to:
 - `2`: `run` with a flag it does not know.
 
 [← Documentation index](../README.md)
+
+## pool rename and pool delete
+
+`cs pool rename <pool> <new-name>` (D39) renames a `[[pool]]` where it is
+written, with every profile's listing of it, so its comments and its place in
+each profile's order stay. A profile's own pool, renamed, becomes a `[[pool]]`
+of the new name that the profile lists instead. A name another pool has is
+refused (`invalid_value`).
+
+`cs pool delete <name>` (D38) deletes any pool, a profile's own included. Its
+accounts go to `--to <pool>`, or to no pool (`--no-pool`, the default), and
+every profile that listed it stops listing it. It is refused when an account
+in use in a profile would land where that profile cannot use it (`live`), or
+in no pool with no profile named `default` to use it (`would_orphan`).
+

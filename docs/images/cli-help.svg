@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="820" height="1570" viewBox="0 0 820 1570" role="img" aria-label="cs">
-<rect x="0.5" y="0.5" width="819" height="1569" rx="9" fill="#17181b" stroke="#2c2f35"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="1721" viewBox="0 0 820 1721" role="img" aria-label="cs">
+<rect x="0.5" y="0.5" width="819" height="1720" rx="9" fill="#17181b" stroke="#2c2f35"/>
 <path d="M0.5 32 V9.5 a9 9 0 0 1 9 -9 H810.5 a9 9 0 0 1 9 9 V32 Z" fill="#1f2125" stroke="#2c2f35"/>
 <circle cx="18" cy="16" r="5.5" fill="#3a3d43"/>
 <circle cx="36" cy="16" r="5.5" fill="#3a3d43"/>
@@ -89,25 +89,33 @@
 <text x="121.4" y="1096.7" textLength="405.6" lengthAdjust="spacingAndGlyphs">remove a profile; its accounts join --to, or default</text>
 <text x="35.6" y="1115.6" textLength="163.8" lengthAdjust="spacingAndGlyphs">profile forget &lt;name&gt;</text>
 <text x="121.4" y="1134.4" textLength="538.2" lengthAdjust="spacingAndGlyphs">release the guard on a removed or re-pointed profile&#x27;s old credential</text>
-<text x="35.6" y="1153.3" textLength="444.6" lengthAdjust="spacingAndGlyphs">profile pool &lt;name&gt; add|remove &lt;account&gt; [--to &lt;profile&gt;]</text>
-<text x="121.4" y="1172.1" textLength="351.0" lengthAdjust="spacingAndGlyphs">change a profile&#x27;s pool (pools never overlap)</text>
-<text x="35.6" y="1191.0" textLength="312.0" lengthAdjust="spacingAndGlyphs">profile set &lt;name&gt; &lt;key&gt; &lt;value|inherit&gt;</text>
-<text x="121.4" y="1209.8" textLength="421.2" lengthAdjust="spacingAndGlyphs">a per-profile switch_at, switch_at_weekly, hard_floor,</text>
-<text x="121.4" y="1228.7" textLength="187.2" lengthAdjust="spacingAndGlyphs">landing_margin or models</text>
-<text x="35.6" y="1247.5" textLength="234.0" lengthAdjust="spacingAndGlyphs">run &lt;profile&gt; [-- claude args]</text>
-<text x="121.4" y="1266.4" textLength="475.8" lengthAdjust="spacingAndGlyphs">start Claude Code in a profile (CLAUDE_CONFIG_DIR set for it)</text>
-<text x="35.6" y="1285.2" textLength="156.0" lengthAdjust="spacingAndGlyphs">chrome add &lt;account&gt;</text>
-<text x="121.4" y="1304.1" textLength="468.0" lengthAdjust="spacingAndGlyphs">open a Chrome profile for that account, for Claude in Chrome</text>
-<text x="35.6" y="1322.9" textLength="195.0" lengthAdjust="spacingAndGlyphs">chrome [open] [&lt;account&gt;]</text>
-<text x="121.4" y="1341.8" textLength="452.4" lengthAdjust="spacingAndGlyphs">open it (no account: the one live in this shell&#x27;s profile)</text>
-<text x="35.6" y="1360.6" textLength="234.0" lengthAdjust="spacingAndGlyphs">chrome list | forget &lt;account&gt;</text>
-<text x="35.6" y="1398.3" textLength="577.2" lengthAdjust="spacingAndGlyphs">Several Claude Code profiles ([[profile]] in the config): use, add, login,</text>
-<text x="35.6" y="1417.2" textLength="592.8" lengthAdjust="spacingAndGlyphs">whoami, status, top, why and plan take --profile NAME. Without it, a command</text>
-<text x="35.6" y="1436.0" textLength="561.6" lengthAdjust="spacingAndGlyphs">acts on the profile this shell&#x27;s CLAUDE_CONFIG_DIR belongs to (use, add,</text>
-<text x="35.6" y="1454.9" textLength="499.2" lengthAdjust="spacingAndGlyphs">login, whoami), or shows every profile (status, top, why, plan).</text>
-<text x="35.6" y="1492.6" textLength="538.2" lengthAdjust="spacingAndGlyphs">For scripts and the menu-bar app: config, profile, account, priority,</text>
-<text x="35.6" y="1511.4" textLength="569.4" lengthAdjust="spacingAndGlyphs">remove, recovery, use, add, login --direct/--code and daemon take --json,</text>
-<text x="35.6" y="1530.3" textLength="491.4" lengthAdjust="spacingAndGlyphs">never prompt, and fail with {&quot;error&quot;:{&quot;code&quot;,&quot;message&quot;,&quot;hint&quot;}}</text>
-<text x="35.6" y="1549.1" textLength="475.8" lengthAdjust="spacingAndGlyphs">(docs/APP_CLI.md). version --json names the contract version.</text>
+<text x="35.6" y="1153.3" textLength="234.0" lengthAdjust="spacingAndGlyphs">profile pools &lt;name&gt; &lt;pool&gt;...</text>
+<text x="121.4" y="1172.1" textLength="452.4" lengthAdjust="spacingAndGlyphs">the pools a profile uses, in order; profiles that list one</text>
+<text x="121.4" y="1191.0" textLength="358.8" lengthAdjust="spacingAndGlyphs">pool share its accounts, one profile at a time</text>
+<text x="35.6" y="1209.8" textLength="444.6" lengthAdjust="spacingAndGlyphs">profile pool &lt;name&gt; add|remove &lt;account&gt; [--to &lt;profile&gt;]</text>
+<text x="121.4" y="1228.7" textLength="429.0" lengthAdjust="spacingAndGlyphs">change a profile&#x27;s own pool (an account is in one pool)</text>
+<text x="35.6" y="1247.5" textLength="507.0" lengthAdjust="spacingAndGlyphs">pool list | create &lt;name&gt; [&lt;account&gt;...] | add &lt;pool&gt; &lt;account&gt; |</text>
+<text x="35.6" y="1266.4" textLength="460.2" lengthAdjust="spacingAndGlyphs">pool remove &lt;pool&gt; &lt;account&gt; | move &lt;account&gt; --to &lt;pool&gt; |</text>
+<text x="35.6" y="1285.2" textLength="553.8" lengthAdjust="spacingAndGlyphs">pool rename &lt;pool&gt; &lt;new-name&gt; | delete &lt;name&gt; [--to &lt;pool&gt; | --no-pool]</text>
+<text x="121.4" y="1304.1" textLength="475.8" lengthAdjust="spacingAndGlyphs">named pools of accounts ([[pool]]); a profile&#x27;s own pool goes</text>
+<text x="121.4" y="1322.9" textLength="163.8" lengthAdjust="spacingAndGlyphs">by the profile&#x27;s name</text>
+<text x="35.6" y="1341.8" textLength="312.0" lengthAdjust="spacingAndGlyphs">profile set &lt;name&gt; &lt;key&gt; &lt;value|inherit&gt;</text>
+<text x="121.4" y="1360.6" textLength="421.2" lengthAdjust="spacingAndGlyphs">a per-profile switch_at, switch_at_weekly, hard_floor,</text>
+<text x="121.4" y="1379.5" textLength="187.2" lengthAdjust="spacingAndGlyphs">landing_margin or models</text>
+<text x="35.6" y="1398.3" textLength="234.0" lengthAdjust="spacingAndGlyphs">run &lt;profile&gt; [-- claude args]</text>
+<text x="121.4" y="1417.2" textLength="475.8" lengthAdjust="spacingAndGlyphs">start Claude Code in a profile (CLAUDE_CONFIG_DIR set for it)</text>
+<text x="35.6" y="1436.0" textLength="156.0" lengthAdjust="spacingAndGlyphs">chrome add &lt;account&gt;</text>
+<text x="121.4" y="1454.9" textLength="468.0" lengthAdjust="spacingAndGlyphs">open a Chrome profile for that account, for Claude in Chrome</text>
+<text x="35.6" y="1473.7" textLength="195.0" lengthAdjust="spacingAndGlyphs">chrome [open] [&lt;account&gt;]</text>
+<text x="121.4" y="1492.6" textLength="452.4" lengthAdjust="spacingAndGlyphs">open it (no account: the one live in this shell&#x27;s profile)</text>
+<text x="35.6" y="1511.4" textLength="234.0" lengthAdjust="spacingAndGlyphs">chrome list | forget &lt;account&gt;</text>
+<text x="35.6" y="1549.1" textLength="577.2" lengthAdjust="spacingAndGlyphs">Several Claude Code profiles ([[profile]] in the config): use, add, login,</text>
+<text x="35.6" y="1568.0" textLength="592.8" lengthAdjust="spacingAndGlyphs">whoami, status, top, why and plan take --profile NAME. Without it, a command</text>
+<text x="35.6" y="1586.8" textLength="561.6" lengthAdjust="spacingAndGlyphs">acts on the profile this shell&#x27;s CLAUDE_CONFIG_DIR belongs to (use, add,</text>
+<text x="35.6" y="1605.7" textLength="499.2" lengthAdjust="spacingAndGlyphs">login, whoami), or shows every profile (status, top, why, plan).</text>
+<text x="35.6" y="1643.4" textLength="538.2" lengthAdjust="spacingAndGlyphs">For scripts and the menu-bar app: config, profile, account, priority,</text>
+<text x="35.6" y="1662.2" textLength="569.4" lengthAdjust="spacingAndGlyphs">remove, recovery, use, add, login --direct/--code and daemon take --json,</text>
+<text x="35.6" y="1681.1" textLength="491.4" lengthAdjust="spacingAndGlyphs">never prompt, and fail with {&quot;error&quot;:{&quot;code&quot;,&quot;message&quot;,&quot;hint&quot;}}</text>
+<text x="35.6" y="1699.9" textLength="475.8" lengthAdjust="spacingAndGlyphs">(docs/APP_CLI.md). version --json names the contract version.</text>
 </g>
 </svg>

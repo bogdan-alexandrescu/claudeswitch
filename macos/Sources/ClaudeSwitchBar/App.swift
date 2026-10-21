@@ -157,6 +157,12 @@ enum Render {
         fx.chrome = (data("render-chrome-list.json") ?? data("cli-chrome-list-some.json")).flatMap(ChromeList.init(data:))
         fx.chromeProfiles = data("render-chrome-profiles.json").flatMap(ChromeProfiles.init(data:))
         fx.accountList = data("cli-account-list.json").flatMap(AccountList.init(data:))
+        // Shared pools: `pool list --json`, or a binary from before pools
+        // (a set brings a `usage` error object in its place).
+        if let d = data("cli-pool-list.json") {
+            fx.pools = PoolList(data: d)
+            fx.poolsUnsupported = fx.pools == nil && AppError(data: d)?.code == "usage"
+        }
         fx.schema = data("cli-config-schema.json").flatMap(ConfigSchema.init(data:))
         fx.values = data("config.json").flatMap(ConfigValues.init(data:))
         fx.daemon = data("cli-daemon-status.json").flatMap(DaemonStatus.init(data:))
@@ -166,6 +172,7 @@ enum Render {
         // F3: a set may bring audit log lines, for a lifted pin's notice.
         fx.pinLifts = data("render-audit.jsonl").map(PinLift.latest(jsonl:)) ?? [:]
         let store = Store(preview: snap, binaryPath: "~/.local/bin/claudeswitch", fixtures: fx)
+        poolSheets(fx: fx, snap: snap, out: out)
         let missing = Store(preview: nil, problem: .missing)
         let login = LoginItem()
 
@@ -182,6 +189,32 @@ enum Render {
                  size: nil, dark: dark, to: out + "/add-account\(suffix).png")
             save(AddAccountSheet(request: AddAccountRequest(), route: .current, name: "person4").environmentObject(store),
                  size: nil, dark: dark, to: out + "/add-account-current\(suffix).png")
+            // The Organization choice (GROUND_TRUTH §48): one already here,
+            // one pasted by id, one that cannot be asked for, and a sign-in
+            // refused as a duplicate, opened again for another try.
+            let first = profiles?.profiles.first?.name
+            if let org = AddForm.organizations(store.accountList).first {
+                save(AddAccountSheet(request: AddAccountRequest(profile: first), name: "work-4",
+                                     orgPick: .known(org.id)).environmentObject(store),
+                     size: nil, dark: dark, to: out + "/add-account-org-known\(suffix).png")
+            }
+            save(AddAccountSheet(request: AddAccountRequest(profile: first), name: "work-4", orgPick: .other,
+                                 orgTyped: "44444444-4444-4444-4444-444444444444").environmentObject(store),
+                 size: nil, dark: dark, to: out + "/add-account-org-other\(suffix).png")
+            save(AddAccountSheet(request: AddAccountRequest(profile: first), name: "work-4", orgPick: .other,
+                                 orgTyped: "not an id").environmentObject(store),
+                 size: nil, dark: dark, to: out + "/add-account-org-invalid\(suffix).png")
+            save(AddAccountSheet(request: AddAccountRequest(profile: first), name: "work-4",
+                                 error: AppError(code: "already_vaulted", message: """
+                                    this is the same account AND organization already vaulted as "work-1" — \
+                                    person1@example.com in Example.
+                                      Nothing was stored. A quota pool is one person in one organization, so to
+                                      add a different pool you need a different person, a different organization,
+                                      or both.
+                                    """,
+                                                 hint: AddForm.appHint(code: "already_vaulted", asked: nil) ?? ""))
+                                    .environmentObject(store),
+                 size: nil, dark: dark, to: out + "/add-account-duplicate\(suffix).png")
             extras(store: store, snap: snap, login: login, profiles: profiles, dark: dark, out: out)
             save(MoreMenuFacsimile(appearance: store.appearance, usage: store.usageMode, open: "Appearance"),
                  size: nil, dark: dark, to: out + "/menu-more\(suffix).png")
@@ -269,11 +302,75 @@ enum Render {
         }
         if let a = store.accountIDs.first {
             save(RenameSheet(old: a).environmentObject(store), size: nil, dark: dark, to: out + "/sheet-rename\(sfx).png")
-            save(AddAccountSheet(request: AddAccountRequest(account: a, profile: store.pool(of: a))).environmentObject(store),
+            save(AddAccountSheet(request: AddAccountRequest(account: a, profile: store.profile(of: a))).environmentObject(store),
                  size: nil, dark: dark, to: out + "/add-account-relogin\(sfx).png")
         }
         save(AddAccountSheet(request: AddAccountRequest()).environmentObject(store),
              size: nil, dark: dark, to: out + "/add-account-from-accounts-pane\(sfx).png")
+        pools(store: store, snap: snap, profiles: profiles, dark: dark, out: out)
+    }
+
+    /// The pool sheets (D38, D39): Rename for a [[pool]] and for a
+    /// profile's own pool, and Delete for a pool in use with accounts and for
+    /// an empty one.
+    static func poolSheets(fx: PreviewData, snap: Snapshot, out: String) {
+        guard let pools = fx.pools else { return }
+        let store = Store(preview: snap, binaryPath: "~/.local/bin/claudeswitch", fixtures: fx)
+        let used = pools.pools.first { !$0.own && !$0.accounts.isEmpty && !$0.profiles.isEmpty }
+        let empty = pools.pools.first { !$0.own && $0.accounts.isEmpty }
+        let own = pools.pools.first { $0.own && !$0.accounts.isEmpty }
+        for dark in [false, true] {
+            let sfx = dark ? "-dark" : ""
+            if let p = used {
+                save(RenamePoolSheet(name: p.name, newName: "crew").environmentObject(store),
+                     size: nil, dark: dark, to: out + "/sheet-rename-pool\(sfx).png")
+                save(DeletePoolSheet(name: p.name).environmentObject(store),
+                     size: nil, dark: dark, to: out + "/sheet-delete-pool\(sfx).png")
+            }
+            if let p = own {
+                save(RenamePoolSheet(name: p.name, newName: "laptop").environmentObject(store),
+                     size: nil, dark: dark, to: out + "/sheet-rename-own-pool\(sfx).png")
+            }
+            if let p = empty {
+                save(DeletePoolSheet(name: p.name).environmentObject(store),
+                     size: nil, dark: dark, to: out + "/sheet-delete-empty-pool\(sfx).png")
+            }
+        }
+    }
+
+    /// Shared pools: the whole Accounts pane (every section, not only what
+    /// fits), New pool, Change…,
+    /// New profile with pools checked, and the followed card's account menu.
+    static func pools(store: Store, snap: Snapshot, profiles: ProfileList?, dark: Bool, out: String) {
+        let sfx = dark ? "-dark" : ""
+        let pools = store.pools
+        let sections = pools.map { PoolLayout.sections($0, order: store.accountIDs, profiles: profiles) } ?? []
+        let rows = CGFloat(store.accountIDs.count) * 76 + CGFloat(sections.count) * 44
+        save(AccountsPane().environmentObject(store),
+             size: CGSize(width: 680, height: max(640, 300 + rows)), dark: dark,
+             to: out + "/settings-accounts-full\(sfx).png")
+        if let l = pools {
+            // New pool is offered only where the pane groups by pool.
+            if PoolLayout.grouped(l, profiles: profiles) {
+                let movers = store.accountIDs.filter { l.pool(of: $0) != nil }.prefix(1) + l.unlisted.prefix(1)
+                save(NewPoolSheet(name: "lab", picked: Set(movers)).environmentObject(store),
+                     size: nil, dark: dark, to: out + "/sheet-new-pool\(sfx).png")
+            }
+            let names = l.pools.map(\.name)
+            save(NewProfileSheet(name: "lab", choice: PoolChoice(all: names, chosen: Array(names.reversed().prefix(2))),
+                                 own: Set(l.unlisted.suffix(1)))
+                    .environmentObject(store),
+                 size: nil, dark: dark, to: out + "/sheet-new-profile-pools\(sfx).png")
+        }
+        // Change… is offered only with a binary that reports pools.
+        for p in (profiles?.profiles ?? []).filter(\.declared) where ProfilePools.shown(p, pools: pools) != nil {
+            save(ChangePoolsSheet(profile: p).environmentObject(store),
+                 size: nil, dark: dark, to: out + "/sheet-change-pools-\(p.name)\(sfx).png")
+        }
+        for c in snap.cards {
+            save(AccountMenuFacsimile(card: c).environmentObject(store),
+                 size: nil, dark: dark, to: out + "/menu-accounts-\(c.name)\(sfx).png")
+        }
     }
 
     /// The menu-bar glyph in each of its four states (the mockup's STATES)
@@ -332,6 +429,37 @@ enum Render {
         host.cacheDisplay(in: host.bounds, to: rep)
         guard let png = rep.representation(using: .png, properties: [:]) else { return }
         try? png.write(to: URL(fileURLWithPath: path))
+    }
+}
+
+/// A card's account picker, drawn for review: a menu cannot be drawn off
+/// screen, so this lays out the same lines (AccountMenuItems), an account
+/// live in another profile dimmed as the menu disables it. Render only.
+struct AccountMenuFacsimile: View {
+    @EnvironmentObject var store: Store
+    let card: ProfileCard
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(card.name).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                .padding(.horizontal, 6).padding(.bottom, 4)
+            ForEach(card.accounts) { a in
+                let elsewhere = store.snapshot?.liveElsewhere(a.id, notIn: card.name)
+                Text(Format.pickerLine(a, inUseBy: elsewhere, now: store.snapshot?.now ?? Date()))
+                    .font(.system(size: 13))
+                    .foregroundStyle(a.isActive || elsewhere != nil ? Color.secondary : Color.primary)
+                    .padding(.horizontal, 6).frame(height: 22, alignment: .leading)
+            }
+            if card.accounts.isEmpty {
+                Text("No accounts").font(.system(size: 13)).foregroundStyle(.secondary).padding(.horizontal, 6)
+            }
+        }
+        .padding(5)
+        .frame(minWidth: 260, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.15)))
+        .padding(18)
+        .accessibilityHidden(true)
     }
 }
 

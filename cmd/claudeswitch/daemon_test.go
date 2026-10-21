@@ -109,6 +109,15 @@ type fakeVault struct {
 	swapHook func()
 	// refreshErr is what RefreshIn returns per account; absent succeeds.
 	refreshErr map[string]error
+	// onCall, when set, runs at the start of every swap, holds check and
+	// refresh, with the op's name: a test can look at what is held then.
+	onCall func(op string)
+}
+
+func (f *fakeVault) called(op string) {
+	if f.onCall != nil {
+		f.onCall(op)
+	}
 }
 
 func itemKey(item keychain.Live) string {
@@ -129,6 +138,7 @@ func (f *fakeVault) answer(item keychain.Live, id string) (bool, bool) {
 }
 
 func (f *fakeVault) SwapToWith(_ context.Context, item keychain.Live, id, _ string, o vault.SwapOptions) (*vault.SwapResult, error) {
+	f.called("swap")
 	f.calls = append(f.calls, vaultCall{"swap", item, id})
 	f.swapOpts = append(f.swapOpts, o)
 	if f.swapHook != nil {
@@ -149,6 +159,7 @@ func (f *fakeVault) LiveHolds(item keychain.Live, id string) (bool, bool) {
 	return f.answer(item, id)
 }
 func (f *fakeVault) HoldsAccount(_ context.Context, item keychain.Live, id, _ string) (bool, bool) {
+	f.called("holds")
 	f.calls = append(f.calls, vaultCall{"holds", item, id})
 	switch f.seatHolds[itemKey(item)+"/"+id] {
 	case "yes":
@@ -171,6 +182,7 @@ func (f *fakeVault) NeedsRefresh(id string, w time.Duration) bool {
 }
 func (f *fakeVault) VaultedAt(string) time.Time { return time.Now() }
 func (f *fakeVault) RefreshIn(_ context.Context, id, _ string, holder keychain.Live, _ bool) (*vault.Entry, error) {
+	f.called("refresh")
 	f.calls = append(f.calls, vaultCall{"refresh", holder, id})
 	if err := f.refreshErr[id]; err != nil {
 		return nil, err
@@ -449,8 +461,12 @@ func TestDaemonSwapsWithinThePoolIntoTheProfilesOwnItem(t *testing.T) {
 	}
 }
 
-// §3: an account live in another profile is never written, whatever led the
-// policy to choose it. The swap is refused loudly and audited as an error.
+// §3: an account live in another profile is never written. Since D34 the
+// policy is told which accounts state records live elsewhere and never
+// picks one, so there is nothing to refuse: work waits, saying why, with no
+// error. (Before shared pools this was a refusal audited as an error; the
+// item check behind it still refuses what state does not know, see
+// TestDaemonRefusesWhenAnotherProfilesItemHoldsTheTarget.)
 func TestDaemonRefusesToInstallAnAccountLiveElsewhere(t *testing.T) {
 	r := newRig(t, twoProfiles(), true)
 	st := r.d.st
@@ -467,10 +483,12 @@ func TestDaemonRefusesToInstallAnAccountLiveElsewhere(t *testing.T) {
 	if swaps := r.v.ops("swap"); len(swaps) != 0 {
 		t.Fatalf("wrote %+v; w2 is live in the default profile", swaps)
 	}
-	errs := r.aud.kind("error")
-	if len(errs) != 1 || errs[0].Profile != "work" || errs[0].To != "w2" ||
-		!strings.Contains(errs[0].Err, "default") {
-		t.Fatalf("error audit = %+v, want one naming work, w2 and the default profile", errs)
+	if errs := r.aud.kind("error"); len(errs) != 0 {
+		t.Fatalf("error audit = %+v; the policy never chose w2", errs)
+	}
+	dec := r.aud.kind("decision")
+	if len(dec) != 1 || dec[0].Profile != "work" || !strings.Contains(dec[0].Reason, "w2: in use by default") {
+		t.Fatalf("decisions = %+v, want work's naming w2 in use by default", dec)
 	}
 	if st.Profile("work").Active != "w1" {
 		t.Error("work's active account changed although nothing was written")

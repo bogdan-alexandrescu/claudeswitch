@@ -91,7 +91,14 @@ func listedAccounts(cfg *config.Config) []config.Account {
 // accountJSON is one account as `account list --json` reports it.
 func accountJSON(cfg *config.Config, st *state.State, a config.Account, now time.Time) map[string]any {
 	acct := st.Accounts[a.ID]
-	owner, _ := cfg.ProfileOf(a.ID)
+	// D31: every profile that may use it; "profile" stays, the first of
+	// them, for readers older than shared pools.
+	profiles := nonNilList(cfg.ProfilesOf(a.ID))
+	owner := ""
+	if len(profiles) > 0 {
+		owner = profiles[0]
+	}
+	pool, _ := cfg.PoolOf(a.ID)
 	activeIn, pinned, pinHard := "", false, false
 	for _, name := range cfg.ProfileNames() {
 		ps := st.Profiles[name]
@@ -109,7 +116,8 @@ func accountJSON(cfg *config.Config, st *state.State, a config.Account, now time
 	m := map[string]any{
 		"id": a.ID, "email": orNull(st.EmailOf(a.ID)), "plan": orNull(st.PlanOf(a.ID)),
 		"seat": orNull(a.Seat()), "enabled": a.IsEnabled(),
-		"profile": orNull(owner), "active_in": orNull(activeIn), "pinned": pinned, "pin_hard": pinHard,
+		"profile": orNull(owner), "pool": orNull(pool), "profiles": profiles,
+		"active_in": orNull(activeIn), "pinned": pinned, "pin_hard": pinHard,
 		"refresh_expires_at": nil, "access_expires_at": nil,
 		"state": accountState(acct, a.Reserve, now), "reading": readingJSON(acct, now),
 	}

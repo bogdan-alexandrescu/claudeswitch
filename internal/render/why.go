@@ -3,6 +3,7 @@ package render
 import (
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
@@ -15,6 +16,9 @@ type WhyOptions struct {
 	St       *state.State
 	Decision policy.Decision
 	Verdicts []policy.Verdict
+	// Profile is the profile decided about ("" is default). An account
+	// live in another profile is never shown as a candidate here (D34).
+	Profile string
 }
 
 // Why renders the reasoning behind the current decision.
@@ -48,6 +52,7 @@ func Why(out io.Writer, o WhyOptions) {
 	fmt.Fprintf(out, "\n  %s\n", paint(dim, "CONSIDERED, in order"))
 	t := &table{}
 	for _, v := range o.Verdicts {
+		v = InUseVerdict(o.Cfg, o.St, o.Profile, v)
 		mark, name := " ", v.ID
 		switch {
 		case v.Active:
@@ -66,6 +71,22 @@ func Why(out io.Writer, o WhyOptions) {
 	fmt.Fprint(out, t.render("  "))
 	weeklySection(out, o)
 	fmt.Fprintln(out)
+}
+
+// InUseVerdict is v as the profile self shows it: an account state records
+// live in another profile is not a candidate, "in use by" that profile
+// (D34), whatever else the verdict says.
+func InUseVerdict(cfg *config.Config, st *state.State, self string, v policy.Verdict) policy.Verdict {
+	if v.Active {
+		return v
+	}
+	if other := InUseBy(cfg, st, self, v.ID); other != "" {
+		v.Eligible = false
+		if !strings.Contains(v.Why, "in use by") {
+			v.Why, v.ClearsAt = "in use by "+other, time.Time{}
+		}
+	}
+	return v
 }
 
 // weeklySection is each account's weekly pace and per-model weekly limits

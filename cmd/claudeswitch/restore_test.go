@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/keychain"
@@ -16,6 +17,12 @@ type optsRecorder struct{ opts []vault.SwapOptions }
 func (o *optsRecorder) SwapToWith(_ context.Context, _ keychain.Live, id, _ string, opts vault.SwapOptions) (*vault.SwapResult, error) {
 	o.opts = append(o.opts, opts)
 	return &vault.SwapResult{AccountID: id}, nil
+}
+
+// HoldsAccountWhy answers the §3 check switching back makes first (D34):
+// no item holds anything.
+func (o *optsRecorder) HoldsAccountWhy(context.Context, keychain.Live, string, string) (bool, bool, time.Time) {
+	return false, true, time.Time{}
 }
 
 // Lane 7: switching back after a login is a swap like any other, and must

@@ -101,6 +101,8 @@ func main() {
 		err = cmdRecovery(args)
 	case "profile":
 		err = cmdProfile(args)
+	case "pool":
+		err = cmdPool(args)
 	case "run":
 		err = cmdRun(args)
 	case "remove":
@@ -204,13 +206,21 @@ func usageText() {
   profile seed <name> <account>
              sign a profile with no credential in with a vaulted account
   profile list
-             each profile's dir, pool and live account
+             each profile's dir, pools and live account
   profile remove <name> [--to <profile>]
-             remove a profile; its accounts join --to, or default
+             remove a profile; its own accounts join --to, or default
   profile forget <name>
              release the guard on a removed or re-pointed profile's old credential
+  profile pools <name> <pool>...
+             the pools a profile uses, in order; profiles that list one
+             pool share its accounts, one profile at a time
   profile pool <name> add|remove <account> [--to <profile>]
-             change a profile's pool (pools never overlap)
+             change a profile's own pool (an account is in one pool)
+  pool list | create <name> [<account>...] | add <pool> <account> |
+  pool remove <pool> <account> | move <account> --to <pool> |
+  pool rename <pool> <new-name> | delete <name> [--to <pool> | --no-pool]
+             named pools of accounts ([[pool]]); a profile's own pool goes
+             by the profile's name
   profile set <name> <key> <value|inherit>
              a per-profile switch_at, switch_at_weekly, hard_floor,
              landing_margin, prefer or models; or chrome, the Chrome profile
@@ -244,7 +254,7 @@ func usageText() {
   acts on the profile this shell's CLAUDE_CONFIG_DIR belongs to (use, add,
   login, whoami), or shows every profile (status, top, why, plan).
 
-  For scripts and the menu-bar app: config, profile, account, priority,
+  For scripts and the menu-bar app: config, profile, pool, account, priority,
   remove, recovery, use, add, login --direct/--code and daemon take --json,
   never prompt, and fail with {"error":{"code","message","hint"}}
   (docs/APP_CLI.md). version --json names the contract version.
@@ -1051,9 +1061,10 @@ label = "personal"
 reserve = 70        # never auto-used above this utilization
 
 # Several Claude Code profiles (one per CLAUDE_CONFIG_DIR) each rotate within
-# their own pool; pools must not overlap, and accounts in no pool join the
-# profile named "default". Without [[profile]] blocks there is one profile,
-# whichever CLAUDE_CONFIG_DIR the environment names.
+# their own pool, or the [[pool]] blocks they list (pools = ["team"]), which
+# profiles that list them share. An account is in one pool, and accounts in
+# no pool join the profile named "default". Without [[profile]] blocks there
+# is one profile, whichever CLAUDE_CONFIG_DIR the environment names.
 #
 # dir is CLAUDE_CONFIG_DIR exactly as you launch Claude Code with it. Omit it
 # for the profile you run with CLAUDE_CONFIG_DIR unset: that is NOT the same
@@ -1108,11 +1119,21 @@ func cmdAdd(args []string) error {
 	force := fs.Bool("force", false,
 		"re-add even when the live credential looks staler than the one already vaulted under that name")
 	asJSON := fs.Bool("json", false, "machine-readable output; never prompts")
+	poolFlag := fs.String("pool", "", "the pool a new account goes into (a [[pool]], or a profile's own pool "+
+		"by the profile's name); without it, --profile's pool")
+	noPool := fs.Bool("no-pool", false, "put a new account in no pool (default uses it last)")
 	positional := parseInterleaved(fs, args)
 	var out map[string]any
 	err := humanToStderr(*asJSON, func() error {
-		var err error
-		out, err = addAccount(*cfgPath, *profName, *from, *force, positional)
+		cfg, _, err := load(*cfgPath)
+		if err != nil {
+			return err
+		}
+		join, err := resolveJoin(cfg, *poolFlag, *noPool)
+		if err != nil {
+			return err
+		}
+		out, err = addAccountTo(*cfgPath, *profName, *from, *force, positional, join)
 		return err
 	})
 	if err != nil || !*asJSON {
@@ -1129,8 +1150,15 @@ func cmdAdd(args []string) error {
 // both to the profile this shell's CLAUDE_CONFIG_DIR names. A credential
 // read from one profile and filed in another's pool is still live in the
 // first: §3 holds, since no profile swaps in an account live elsewhere, and
-// the first rotates off it (it is outside that pool).
+// the first rotates off it: at once when it is outside the first's pools,
+// at its own next rotation when both use it (D34).
 func addAccount(cfgPathV, profV, fromV string, forceV bool, positional []string) (map[string]any, error) {
+	return addAccountTo(cfgPathV, profV, fromV, forceV, positional, joinTarget{})
+}
+
+// addAccountTo is addAccount with where a new account goes chosen (D37); the
+// zero target is --profile's pool (D20).
+func addAccountTo(cfgPathV, profV, fromV string, forceV bool, positional []string, join joinTarget) (map[string]any, error) {
 	cfgPath, profName, force := &cfgPathV, &profV, &forceV
 	cfg, st, err := load(*cfgPath)
 	if err != nil {
@@ -1164,8 +1192,8 @@ func addAccount(cfgPathV, profV, fromV string, forceV bool, positional []string)
 	if err != nil {
 		return nil, err
 	}
-	// The id must be new or already the target's: one another pool lists is
-	// refused (outside_pool). Filing it in the target while it is live in
+	// The id must be new or one the target may use: one only other
+	// profiles' pools hold is refused (outside_pool). Filing it in the target while it is live in
 	// the source is the owner's choice (lane 16): §3 keeps the target from
 	// swapping it in until the source has moved off it.
 	target, err := profileForAccount(cfg, *profName, id, true)
@@ -1240,8 +1268,17 @@ func addAccount(cfgPathV, profV, fromV string, forceV bool, positional []string)
 	// `accounts` did not list it, and the next command that read the state file
 	// discarded what `add` had just recorded. The seat is only knowable after
 	// signing in, which is why it is written here rather than asked for.
-	reportSeatRecorded(cfg, id, e, poolToJoin(cfg, target))
-	note := crossProfileNote(source.Name, target.Name)
+	if join == (joinTarget{}) {
+		join = joinTarget{Profile: poolToJoin(cfg, target)}
+	}
+	reportSeatRecordedTo(cfg, id, e, join)
+	// The note reads the config as the add left it: a new account is in
+	// the target's pools only now.
+	after := cfg
+	if back, err := config.Load(cfg.Path); err == nil {
+		after = back
+	}
+	note := crossProfileNote(after, source.Name, target.Name, id)
 	if note != "" {
 		fmt.Printf("    from          profile %s: %s\n", source.Name, note)
 	}
@@ -1254,11 +1291,17 @@ func addAccount(cfgPathV, profV, fromV string, forceV bool, positional []string)
 
 // crossProfileNote is what `add --from S --profile T` tells the person when
 // S and T differ (owner decision, lane 16): the account stays signed in in
-// S until S's daemon loop moves off it (it is outside S's accounts now), and
-// T's loop swaps it in only after that (§3). "" when they are the same.
-func crossProfileNote(source, target string) string {
+// S, and T's loop swaps it in only once S is off it (§3). When S may not use
+// it, S's daemon loop moves off it; when S may use it too (D31, a pool both
+// list), S keeps it until its own rotation moves on (D34). "" when they are
+// the same.
+func crossProfileNote(cfg *config.Config, source, target, id string) string {
 	if source == target {
 		return ""
+	}
+	if cfg.InPool(source, id) {
+		return "still signed in in " + source + ", which uses it too — " + target + " can use it once " +
+			source + " rotates off it"
 	}
 	return "still signed in in " + source + " — " + source + " will move off it; " + target + " can use it after"
 }
@@ -1433,14 +1476,15 @@ func appendAccount(path, id, block string) error {
 }
 
 func appendAccountPlaced(path, id, block string) (priorityPlace, error) {
-	return appendAccountInPool(path, id, block, "")
+	return appendAccountInPool(path, id, block, "", "")
 }
 
 // appendAccountInPool is appendAccountPlaced that also names the account in
-// the pool of the declared profile called pool (D20), in the same edit: with
+// a pool the declared profile called pool uses (D20), in the same edit: with
 // no profile named "default", an account in no pool would not load at all.
-// An empty pool edits no pool.
-func appendAccountInPool(path, id, block, pool string) (priorityPlace, error) {
+// into is the [[pool]] it goes into (the first the profile lists, D31), ""
+// for the profile's own pool. An empty pool edits no pool.
+func appendAccountInPool(path, id, block, pool, into string) (priorityPlace, error) {
 	target, err := configTarget(path)
 	if err != nil {
 		return 0, err
@@ -1450,7 +1494,12 @@ func appendAccountInPool(path, id, block, pool string) (priorityPlace, error) {
 		return 0, err
 	}
 	out := strings.TrimRight(string(raw), "\n") + "\n" + block
-	if pool != "" {
+	switch {
+	case into != "":
+		if out, err = addToPoolBlock(out, into, id); err != nil {
+			return 0, err
+		}
+	case pool != "":
 		if out, err = addToPool(out, pool, id); err != nil {
 			return 0, err
 		}
@@ -1476,10 +1525,11 @@ func appendAccountInPool(path, id, block, pool string) (priorityPlace, error) {
 		if !hasAccount(cfg, id) {
 			return fmt.Errorf("the edit parsed but %q was not in it; discarded", id)
 		}
-		if pool != "" {
-			if owner, _ := cfg.ProfileOf(id); owner != pool {
-				return fmt.Errorf("the edit parsed but %q did not land in profile %q's pool; discarded", id, pool)
-			}
+		if pool != "" && !cfg.InPool(pool, id) {
+			return fmt.Errorf("the edit parsed but %q did not land in a pool profile %q uses; discarded", id, pool)
+		}
+		if got, _ := cfg.PoolOf(id); (pool != "" || into != "") && got != nonEmpty(into, pool) {
+			return fmt.Errorf("the edit parsed but %q landed in pool %q, not %q; discarded", id, got, nonEmpty(into, pool))
 		}
 		return nil
 	})
@@ -1591,7 +1641,7 @@ func globEscape(s string) string {
 // out by `cs config` or setup before the default changed — but it is
 // warned about, because it empties an account's burst allowance.
 func pollCadenceLines(cfg *config.Config) []string {
-	used, avail := cfg.CallsPerWindow(), float64(cfg.APIBudget-1)
+	used, avail := cfg.CallsPerWindow(), float64(cfg.WindowAllowance()-1)
 	mark := "ok  "
 	if used > avail {
 		mark = "FAIL"
@@ -1599,7 +1649,7 @@ func pollCadenceLines(cfg *config.Config) []string {
 	out := []string{
 		fmt.Sprintf("  [%s] poll cadence    active %s · hot %s · idle %s", mark,
 			cfg.PollActive.Duration, cfg.PollHot.Duration, cfg.PollIdle.Duration),
-		fmt.Sprintf("         └ %.1f of %.0f usage calls per 5 min (api_budget %d, one held for swaps)",
+		fmt.Sprintf("         └ %.1f of %.0f usage calls per 5 min (api_budget %d per profile in use, one held for swaps)",
 			used, avail, cfg.APIBudget),
 	}
 	// Per account (GROUND_TRUTH §42): each account's own allowance, which the
@@ -1680,6 +1730,18 @@ func cmdUse(args []string) error {
 	live, err := cliLiveFor(target)
 	if err != nil {
 		return fmt.Errorf("profile %q: %w", target.Name, err)
+	}
+	// D34: the switch lock from the §3 check below through the write, its
+	// verify and the state save, as the daemon holds it for a swap; and the
+	// check reads state as it is once the lock is held, not as it was before
+	// the wait. A dry run writes nothing and does not wait.
+	if !*dry {
+		lock, err := takeSwitchLock(fmt.Sprintf("%q was not installed", id))
+		if err != nil {
+			return err
+		}
+		defer lock.Release()
+		st = rereadState(cfg, st)
 	}
 	// §3, as the daemon checks it before every swap: one credential may be
 	// live in at most one profile. Unknown counts as live (D18).
@@ -2849,10 +2911,11 @@ func loadIgnoringBadNames(p string) (*config.Config, error) {
 }
 
 // renameInConfig rewrites oldID as newID in the config's text: the id line of
-// its [[account]] block, the top-level priority list, and every
-// [[profile]]'s pool, however they are laid out. Comments and everything
-// else survive. The result is parsed back (leniently: other ids may still
-// break the name rule) and checked before it replaces the file.
+// its [[account]] block, the top-level priority list, every [[profile]]'s
+// pool and every [[pool]]'s accounts, however they are laid out. Comments and
+// everything else survive. The result is parsed back (leniently: other ids
+// may still break the name rule) and checked before it replaces the file:
+// the account must be in the same pool, usable by the same profiles.
 func renameInConfig(cfg *config.Config, oldID, newID string) error {
 	target, err := configTarget(cfg.Path)
 	if err != nil {
@@ -2863,15 +2926,8 @@ func renameInConfig(cfg *config.Config, oldID, newID string) error {
 		return err
 	}
 	out := renameIDInText(string(raw), oldID, newID)
-	owner, inPool := cfg.ProfileOf(oldID)
-	declaredPool := false
-	for _, in := range cfg.Profiles {
-		for _, id := range in.Pool {
-			if id == oldID {
-				declaredPool = true
-			}
-		}
-	}
+	pool, _ := cfg.PoolOf(oldID)
+	profiles := cfg.ProfilesOf(oldID)
 	prio := slices.Index(cfg.Priority, oldID)
 	return writeConfigFileWith(loadIgnoringBadNames, target, []byte(out), func(c *config.Config) error {
 		if !hasAccount(c, newID) || hasAccount(c, oldID) {
@@ -2880,10 +2936,12 @@ func renameInConfig(cfg *config.Config, oldID, newID string) error {
 		if prio >= 0 && slices.Index(c.Priority, newID) != prio {
 			return fmt.Errorf("the edit did not rename the priority entry; discarded")
 		}
-		if declaredPool || inPool {
-			if got, _ := c.ProfileOf(newID); got != owner {
-				return fmt.Errorf("the edit moved the account from profile %q's pool to %q's; discarded", owner, got)
-			}
+		if got, _ := c.PoolOf(newID); got != pool {
+			return fmt.Errorf("the edit moved the account from pool %q to %q; discarded", pool, got)
+		}
+		if got := c.ProfilesOf(newID); !slices.Equal(got, profiles) {
+			return fmt.Errorf("the edit changed the profiles that may use the account from %v to %v; discarded",
+				profiles, got)
 		}
 		return nil
 	})
@@ -2891,10 +2949,11 @@ func renameInConfig(cfg *config.Config, oldID, newID string) error {
 
 // renameIDInText replaces the string literal oldID with newID where an
 // account id is named: an id line inside [[account]], the top-level priority
-// array and a pool array inside [[profile]].
+// array, a pool array inside [[profile]] and an accounts array inside
+// [[pool]].
 func renameIDInText(text, oldID, newID string) string {
 	lines := strings.Split(text, "\n")
-	section := "" // "" top level, "account", "profile", "other"
+	section := "" // "" top level, "account", "profile", "pool", "other"
 	inArray := false
 	for i, line := range lines {
 		if !inArray && tableHeader.MatchString(line) {
@@ -2903,6 +2962,8 @@ func renameIDInText(text, oldID, newID string) string {
 				section = "account"
 			case profileHdr.MatchString(line):
 				section = "profile"
+			case poolHdr.MatchString(line):
+				section = "pool"
 			default:
 				section = "other"
 			}
@@ -2915,7 +2976,8 @@ func renameIDInText(text, oldID, newID string) string {
 		switch {
 		case section == "account" && idLine.MatchString(line):
 			lines[i], _ = renameLiterals(line, strings.Index(line, "="), oldID, newID)
-		case section == "" && priorityAny.MatchString(line), section == "profile" && poolLine.MatchString(line):
+		case section == "" && priorityAny.MatchString(line), section == "profile" && poolLine.MatchString(line),
+			section == "pool" && accountsKey.MatchString(line):
 			lines[i], inArray = renameLiterals(line, strings.Index(line, "["), oldID, newID)
 		}
 	}
@@ -2984,6 +3046,11 @@ func cmdLogin(args []string) error {
 	prompt := fs.String("prompt", "",
 		"authorize prompt parameter: \"select_account\" to force the account chooser, \"login\" to force re-authentication")
 	email := fs.String("email", "", "login_hint: the address of the account you want")
+	orgFlag := fs.String("org", "", "with --direct: the organization to sign in to, by id (orgUUID, as Claude "+
+		"Code's forceLoginOrgUUID sends it). An account the config pins asks for its own without this")
+	poolFlag := fs.String("pool", "", "with --direct: the pool a new account goes into (a [[pool]], or a "+
+		"profile's own pool by the profile's name); instead of --profile")
+	noPool := fs.Bool("no-pool", false, "with --direct: put a new account in no pool (default uses it last)")
 	browser := fs.String("browser", "",
 		"open the authorize URL in this browser application, e.g. Safari or \"Brave Browser\". "+
 			"A browser you are not normally signed into has its own cookie jar, which is what "+
@@ -3012,11 +3079,26 @@ func cmdLogin(args []string) error {
 
 	wantOrg := ""
 	known := false
+	askOrg := *orgFlag
+	if askOrg != "" && !validOrgID(askOrg) {
+		return appErr(codeUsage, "an organization id looks like 11111111-1111-1111-1111-111111111111",
+			fmt.Sprintf("--org %q is not an organization id", askOrg))
+	}
 	for _, a := range cfg.Accounts {
 		if a.ID == id {
 			known = true
 			// The seat — this person in this organization — is the quota pool.
 			wantOrg = a.Seat()
+			if a.OrgID != "" && askOrg != "" && askOrg != a.OrgID {
+				return appErr(codeUsage, "add the other organization under a new name",
+					fmt.Sprintf("%q is pinned to organization %s; signing it in to %s would file "+
+						"another quota pool under its name", id, a.OrgID, askOrg))
+			}
+			if a.OrgID != "" {
+				// Signing in again asks for the organization it is pinned to,
+				// so the browser's current one does not decide.
+				askOrg = a.OrgID
+			}
 		}
 	}
 	// A name the config has never heard of is how an account gets added: the
@@ -3040,16 +3122,27 @@ func cmdLogin(args []string) error {
 		// --direct never touches a live credential. --profile only says whose
 		// pool a new account joins when the login completes (D20), and is
 		// settled now, before anything is started.
-		pool, err := directPool(cfg, id, *profName)
+		// D37: a pool chosen by name, or none, in place of --profile's D20.
+		join, err := resolveJoin(cfg, *poolFlag, *noPool)
 		if err != nil {
 			return err
+		}
+		if join != (joinTarget{}) && *profName != "" {
+			return appErr(codeUsage, "give one of them", "--profile and --pool both say where the account goes")
+		}
+		pool := ""
+		if join == (joinTarget{}) {
+			if pool, err = directPool(cfg, id, *profName); err != nil {
+				return err
+			}
 		}
 		br := *browser
 		if *noOpen {
 			br = ""
 		}
 		err = humanToStderr(*asJSON, func() error {
-			return loginDirect(cfg, st, v, id, wantOrg, *pinOrg, oauth.Extra{Prompt: *prompt, LoginHint: *email}, br, pool)
+			return loginDirect(cfg, st, v, id, wantOrg, *pinOrg,
+				oauth.Extra{Org: askOrg, Prompt: *prompt, LoginHint: *email}, br, pool, join)
 		})
 		if err != nil || !*asJSON {
 			return err
@@ -3097,10 +3190,10 @@ func cmdLogin(args []string) error {
 		// the label denied was there.
 		fmt.Printf("  That account is seat %s — one person in one organization,\n", usage.ShortSeat(wantOrg))
 		fmt.Printf("  which is what owns a quota pool.\n")
-		fmt.Printf("  The login lands on whichever organization your BROWSER is currently in\n")
-		fmt.Printf("  and cannot be asked for one, so switch claude.ai to that organization\n")
-		fmt.Printf("  first, or nothing will be stored. For an SSO-backed organization,\n")
-		fmt.Printf("  `claudeswitch login %s --sso` is what reaches it.\n\n", id)
+		fmt.Printf("  This login lands on whichever organization your BROWSER is currently in,\n")
+		fmt.Printf("  so switch claude.ai to that organization first, or nothing will be\n")
+		fmt.Printf("  stored. `claudeswitch login %s --direct` asks for it instead. For an\n", id)
+		fmt.Printf("  SSO-backed organization, `claudeswitch login %s --sso` is what reaches it.\n\n", id)
 	}
 	fmt.Printf("  Press enter to run the login, or Ctrl-C to stop: ")
 	_, _ = fmt.Scanln()
@@ -3167,10 +3260,36 @@ func cmdLogin(args []string) error {
 	return nil
 }
 
+// restoreVault is what switching back after a login needs: the swap, and
+// the §3 check it makes first.
+type restoreVault interface {
+	swapperWith
+	holdsChecker
+}
+
 // restoreActive puts the previously-live account back, so signing in to vault a
 // second account does not silently leave the user working on it.
-func restoreActive(v swapperWith, cfg *config.Config, st *state.State, profName string, live keychain.Live, to string) {
+//
+// The login took minutes, and all that time the account to switch back to
+// was live nowhere: a profile sharing its pool may have taken it (D34). So
+// it is checked as `use` checks, under the switch lock and against state
+// read again now, and is not put back if it may be live elsewhere. The swap
+// and the state save that records it happen under the same lock.
+func restoreActive(v restoreVault, cfg *config.Config, st *state.State, profName string, live keychain.Live, to string) {
 	if to == "" {
+		return
+	}
+	lock, err := takeSwitchLock(fmt.Sprintf("%s was not switched back", to))
+	if err != nil {
+		fmt.Printf("    ⚠ could not switch back to %s: %v\n", to, err)
+		fmt.Printf("      run `claudeswitch use %s --profile %s`\n", to, profName)
+		return
+	}
+	defer lock.Release()
+	if other, why, _ := liveConflict(cfg, rereadState(cfg, st), v, profName, to); other != "" {
+		fmt.Printf("    not switching back to %s: it may be live in %s now (%s), and one credential\n",
+			to, whereLiveQ(other), why)
+		fmt.Printf("      live in two profiles is logged out by whichever refreshes first; staying on what was signed in\n")
 		return
 	}
 	ist := st.Profile(profName)
@@ -3187,6 +3306,10 @@ func restoreActive(v swapperWith, cfg *config.Config, st *state.State, profName 
 		return
 	}
 	ist.SetActive(to)
+	// Recorded before the lock goes, so the next writer's §3 check reads it.
+	if err := st.Save(); err != nil {
+		fmt.Fprintf(os.Stderr, "note: %v\n", err)
+	}
 	if from != to {
 		if aud, err := audit.Open(""); err == nil {
 			_ = aud.Write(audit.Event{Kind: "switch", Profile: profName, From: from, To: to,
@@ -3198,12 +3321,11 @@ func restoreActive(v swapperWith, cfg *config.Config, st *state.State, profName 
 
 // loginDirect runs the OAuth flow itself, without touching the live session.
 //
-// It cannot choose the organization. organization_uuid is accepted by the
-// authorize endpoint and then ignored — measured, see docs/GROUND_TRUTH.md —
-// so the credential that comes back belongs to whichever organization the
-// browser session is signed into. The parameter is still sent because it costs
-// nothing, but nothing may be promised on the strength of it, and what comes
-// back is verified against the account's seat before being vaulted.
+// It asks for an organization with orgUUID when one is known (extra.Org): the
+// account's pinned one, or --org. That is the parameter Claude Code's own
+// forceLoginOrgUUID sends; organization_uuid, which GROUND_TRUTH §31 found
+// ignored, is a different one. Whatever comes back is verified against the
+// organization asked for and the account's seat before being vaulted.
 //
 // Originally
 // and vaults the result without ever installing it as the live credential.
@@ -3212,7 +3334,7 @@ func restoreActive(v swapperWith, cfg *config.Config, st *state.State, profName 
 // the live credential as a side effect, and it gives you whichever organization
 // the browser happens to be in — which on this machine was the same one three
 // times running, no matter what the browser was showing.
-func loginDirect(cfg *config.Config, st *state.State, v *vault.Vault, id, wantOrg string, pinOrg bool, extra oauth.Extra, browser, pool string) error {
+func loginDirect(cfg *config.Config, st *state.State, v *vault.Vault, id, wantOrg string, pinOrg bool, extra oauth.Extra, browser, pool string, join joinTarget) error {
 	// An unpinned account is fine here. --direct was originally about pinning the
 	// organization, which turned out not to work at all; what it actually buys is
 	// that the credential is obtained and vaulted WITHOUT the live one ever being
@@ -3225,8 +3347,8 @@ func loginDirect(cfg *config.Config, st *state.State, v *vault.Vault, id, wantOr
 	if err != nil {
 		return err
 	}
-	if err := flow.Save(oauth.Pending{AccountID: id, OrgID: wantOrg, Pinned: pinOrg,
-		Profile: pool}); err != nil {
+	if err := flow.Save(oauth.Pending{AccountID: id, OrgID: wantOrg, Pinned: pinOrg, Org: extra.Org,
+		Profile: pool, JoinPool: join.Pool, NoPool: join.None}); err != nil {
 		return fmt.Errorf("could not remember this login attempt: %w", err)
 	}
 
@@ -3243,24 +3365,28 @@ func loginDirect(cfg *config.Config, st *state.State, v *vault.Vault, id, wantOr
 		fmt.Printf("%s\n\n", flow.URL)
 	}
 	switch {
+	case extra.Org != "":
+		// Asked for as Claude Code's forceLoginOrgUUID asks: orgUUID. The
+		// person is still whoever the browser is signed in as.
+		fmt.Printf("  This asks for organization %s. The person is whoever your browser is\n", extra.Org)
+		fmt.Printf("  signed in as; use --browser to pick a browser signed in as someone else.\n")
+		fmt.Printf("  What comes back is checked, and refused if it is another organization\n")
+		if wantOrg != "" {
+			fmt.Printf("  or another seat than %s,\n", usage.ShortSeat(wantOrg))
+		}
+		fmt.Printf("  so a wrong session cannot be filed under this name.\n")
 	case wantOrg == "":
 		fmt.Printf("  %q has no organization recorded yet, so whichever account your browser\n", id)
 		fmt.Printf("  session is signed into will be vaulted under that name, and its\n")
 		fmt.Printf("  organization recorded. An account already vaulted under another name is\n")
-		fmt.Printf("  refused, so you cannot file the same account twice.\n")
+		fmt.Printf("  refused, so you cannot file the same account twice. To sign in to a\n")
+		fmt.Printf("  particular organization, start again with --org <organization id>.\n")
 	default:
-		// Say this plainly. The help used to promise the organization was
-		// pinned, which it never was: organization_uuid is accepted and then
-		// ignored. Someone trusting that would sign in with whatever session
-		// their browser happened to hold and believe they had captured a
-		// different account.
-		fmt.Printf("  This wants organization %s.\n", wantOrg)
-		fmt.Printf("  The organization CANNOT be requested — the endpoint accepts the parameter\n")
-		fmt.Printf("  and ignores it — so you get whichever account your browser session is\n")
-		fmt.Printf("  signed into. Make sure that is the right one; use --browser to pick a\n")
-		fmt.Printf("  browser signed in as a different account.\n")
-		fmt.Printf("  What comes back is checked against the account's seat, and refused if it\n")
-		fmt.Printf("  does not match, so a wrong session cannot be filed under this name.\n")
+		fmt.Printf("  This wants seat %s.\n", usage.ShortSeat(wantOrg))
+		fmt.Printf("  You get whichever account your browser session is signed into. Make\n")
+		fmt.Printf("  sure that is the right one; use --browser to pick a browser signed in as\n")
+		fmt.Printf("  a different account. What comes back is checked against the seat, and\n")
+		fmt.Printf("  refused if it does not match.\n")
 	}
 	if extra.Prompt != "" || extra.LoginHint != "" {
 		fmt.Printf("  Sending prompt=%s login_hint=%s — if the endpoint honours these you will\n",
@@ -3290,7 +3416,7 @@ func loginComplete(cfg *config.Config, st *state.State, v *vault.Vault, code str
 	if err != nil {
 		return nil, wrapErr(codeNoPendingLogin, "start one: claudeswitch login <id> --direct", err)
 	}
-	id, wantOrg, pinned := pend.AccountID, pend.OrgID, pend.Pinned
+	id, wantOrg, pinned, askedOrg := pend.AccountID, pend.OrgID, pend.Pinned, pend.Org
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -3308,24 +3434,47 @@ func loginComplete(cfg *config.Config, st *state.State, v *vault.Vault, code str
 	}
 	// Including what was vaulted outside the config — see cmdAdd. Without it, a
 	// seat vaulted under a name the config never had could be filed again here.
-	e, err := v.StoreTokens(ctx, id, wantOrg, tok, st.KnownAccounts(others))
+	e, err := v.StoreTokens(ctx, id, wantOrg, askedOrg, tok, st.KnownAccounts(others))
 	if err != nil {
 		var wrong *vault.WrongOrgError
 		var dup *vault.DuplicateSeatError
+		var other *vault.OtherOrgError
 		switch {
+		case errors.As(err, &other):
+			// The evidence on orgUUID: asked for, and not honoured. Logged so
+			// the next look at GROUND_TRUTH has it.
+			log := logger(false)
+			log.Warn("a sign-in came back in another organization than it asked for",
+				"asked", other.Want, "got", other.Got)
+			return nil, &appError{Code: codeWrongAccount, Err: err,
+				Message: err.Error() + "\n  Your session is untouched.",
+				Hint: "The browser is signed in as someone who is not in that organization, or the " +
+					"sign-in page did not take the request. Sign in as the right person (or pick " +
+					"another browser) and start again."}
 		case errors.As(err, &wrong):
 			why := "The browser session decided, as it does when the organization is not pinned. " +
 				"(--pin-org does not help: the parameter is accepted but has no effect.)"
-			if pinned {
+			if askedOrg != "" {
+				// The organization was checked first and matched: the person
+				// is the one that differs.
+				why = "The organization was the one asked for; the person was not. The browser is " +
+					"signed in as someone else."
+			} else if pinned {
 				why = "organization_uuid was sent and the request succeeded, so the parameter is accepted — " +
 					"and ignored. The browser session decides which organization a login returns."
 			}
 			return nil, &appError{Code: codeWrongAccount, Err: err, Hint: why + " Sign in to the right account " +
 				"in the browser (or use --browser with another one) and start again.",
-				Message: fmt.Sprintf("that login came back as organization %s, not %s; nothing was stored, "+
-					"and your session is untouched", wrong.GotOrg, wrong.WantOrg)}
+				Message: fmt.Sprintf("that login came back as seat %s, not %s; nothing was stored, "+
+					"and your session is untouched", usage.ShortSeat(wrong.GotOrg), usage.ShortSeat(wrong.WantOrg))}
 		case errors.As(err, &dup):
-			return nil, wrapErr(codeAlreadyVaulted, "", err)
+			hint := ""
+			if askedOrg == "" {
+				hint = "The sign-in landed in the organization your browser is in. To add this " +
+					"person in another organization, start again with that organization chosen " +
+					"(--org <organization id>; in the app, Organization)."
+			}
+			return nil, wrapErr(codeAlreadyVaulted, hint, err)
 		}
 		return nil, err
 	}
@@ -3346,7 +3495,7 @@ func loginComplete(cfg *config.Config, st *state.State, v *vault.Vault, code str
 		fmt.Printf("    refresh token expires %s\n", humanUntil(e.RefreshExpiry))
 	}
 	isNew := !hasAccount(cfg, id)
-	reportSeatRecorded(cfg, id, e, completionPool(cfg, pend))
+	reportSeatRecordedTo(cfg, id, e, completionJoin(cfg, pend))
 	fmt.Printf("    your live session was never touched\n\n")
 	return vaultedAccountJSON(cfg.Path, id, e, isNew), nil
 }
@@ -3365,7 +3514,13 @@ func hasAccount(cfg *config.Config, id string) bool {
 // did. The credential is already vaulted by now, so a failure here is reported
 // rather than returned: the account works, it just still needs its block.
 func reportSeatRecorded(cfg *config.Config, id string, e *vault.Entry, pool string) {
-	msg, err := recordSeat(cfg, id, e, pool)
+	reportSeatRecordedTo(cfg, id, e, joinTarget{Profile: pool})
+}
+
+// reportSeatRecordedTo is reportSeatRecorded with where a new account goes
+// said in full (D37).
+func reportSeatRecordedTo(cfg *config.Config, id string, e *vault.Entry, j joinTarget) {
+	msg, err := recordSeatTo(cfg, id, e, j)
 	switch {
 	case err != nil:
 		fmt.Printf("    ⚠ the credential is vaulted, but the config was not updated:\n")
@@ -3868,7 +4023,7 @@ func cmdSetup(args []string) error {
 			continue
 		}
 		sctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-		e, serr := v.StoreTokens(sctx, id, "", tok, idsOf(added))
+		e, serr := v.StoreTokens(sctx, id, "", "", tok, idsOf(added))
 		cancel()
 		if serr != nil {
 			fmt.Printf("    ✗ %v\n\n", serr)
@@ -4227,9 +4382,13 @@ func decisionJSON(d policy.Decision) map[string]any {
 // trigger_at (IMPROVEMENTS F2: when it reaches its trigger at this pace, or
 // null) and weekly_resets_at and weekly_unused (F1: its weekly window as
 // prefer = "expiring" weighs it, or null when unknown, never 0).
-func verdictsJSON(vs []policy.Verdict, cfg *config.Config, st *state.State, now time.Time, r policy.Runway) []map[string]any {
+func verdictsJSON(vs []policy.Verdict, cfg *config.Config, st *state.State, now time.Time, r policy.Runway,
+	self string) []map[string]any {
 	out := make([]map[string]any, 0, len(vs))
 	for _, v := range vs {
+		// An account live in another profile is "in use by" it here, never
+		// eligible (D34); active_in names where state records it live.
+		v = render.InUseVerdict(cfg, st, self, v)
 		m := map[string]any{
 			"id": v.ID, "eligible": v.Eligible, "why": v.Why,
 			"utilization": v.Worst, "window": v.Window,
@@ -4241,6 +4400,9 @@ func verdictsJSON(vs []policy.Verdict, cfg *config.Config, st *state.State, now 
 		}
 		if v.Active {
 			m["active"] = true
+		}
+		if in := activeIn(cfg, st, v.ID); in != "" && multiProfile(cfg) {
+			m["active_in"] = in
 		}
 		if !v.ClearsAt.IsZero() {
 			m["clears_at"] = v.ClearsAt
@@ -4367,11 +4529,15 @@ func statusJSON(cfg *config.Config, st *state.State, p *poller.Poller) map[strin
 					m["clears_at"] = *b.ResetsAt
 				}
 			}
-			// "counted" follows the models list of the profile whose pool
-			// holds the account.
+			// "counted" follows the models list of the profile the account
+			// is live in, else of the first that may use it (D31).
 			pcfg := cfg
-			if owner, ok := cfg.ProfileOf(a.ID); ok && len(cfg.Profiles) > 0 {
-				pcfg = cfg.ForProfile(owner)
+			if len(cfg.Profiles) > 0 {
+				if in, _ := m["active_in"].(string); in != "" {
+					pcfg = cfg.ForProfile(in)
+				} else if owner, ok := cfg.ProfileOf(a.ID); ok {
+					pcfg = cfg.ForProfile(owner)
+				}
 			}
 			addWeeklyJSON(m, pcfg, acct, time.Now())
 		} else {

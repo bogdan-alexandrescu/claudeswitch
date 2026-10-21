@@ -7,7 +7,7 @@ stands, and hot-swaps Claude Code onto a fresh account before the current one
 hits its limit: no restart, no lost session. It ships as a Go CLI plus daemon
 (macOS and Linux), a native macOS menu-bar app and a Claude Code plugin.
 
-Latest release: **v0.6.4**
+Latest release: **v0.7.0**
 ([releases](https://github.com/bogdan-alexandrescu/claudeswitch/releases)).
 
 <p align="center"><img src="docs/images/popover.png" width="384" alt="The ClaudeSwitch menu-bar popover: the daemon is live, the default profile is on work-1 and the work profile is on work-team"></p>
@@ -130,7 +130,7 @@ arm64, and a `checksums.txt`. The archives are reproducible: the same tag
 always produces the same bytes.
 
 ```sh
-VERSION=v0.6.4
+VERSION=v0.7.0
 TARGET=darwin_arm64            # darwin_amd64, linux_amd64, linux_arm64
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 curl -LO "$BASE/claudeswitch_${VERSION}_${TARGET}.tar.gz"
@@ -156,7 +156,7 @@ cd claudeswitch
 symlink, and installs the daemon in dry-run (see [Daemon](#daemon)). To build
 the binary alone: `go build -o bin/claudeswitch ./cmd/claudeswitch`.
 
-**Verify it worked:** `cs version` prints `claudeswitch v0.6.4` for the release
+**Verify it worked:** `cs version` prints `claudeswitch v0.7.0` for the release
 binary (a build from source prints `claudeswitch dev`). If the shell cannot
 find `cs`, add `~/.local/bin` to your `PATH`.
 
@@ -225,7 +225,7 @@ Re-run it after pulling to update.
 From a release, as a universal build:
 
 ```sh
-VERSION=v0.6.4
+VERSION=v0.7.0
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 ZIP="ClaudeSwitch-${VERSION#v}-macos.zip"
 curl -LO "$BASE/$ZIP"
@@ -251,7 +251,7 @@ to install it. [macos/README.md](macos/README.md) has the details.
 
 **Verify it worked:** the Twin rings glyph with the live account and its
 utilization appears in the menu bar, and **About ClaudeSwitch** in its ⋯ menu
-shows version 0.6.4. If you see nothing on a MacBook with a notch, see
+shows version 0.7.0. If you see nothing on a MacBook with a notch, see
 [Troubleshooting](#troubleshooting).
 
 ### Claude Code plugin
@@ -667,7 +667,9 @@ command in more depth: [docs/GUIDE.md → Commands](docs/GUIDE.md#commands).
 | `cs profile create <name> [--dir PATH] [--pool a,b] [--seed <id>] [--json]` | make a Claude Code profile: its directory, shared settings and skills linked from `~/.claude`, MCP servers copied, its `[[profile]]` block; `--seed` signs it in |
 | `cs profile seed <name> <id>` | sign a profile with no credential in with a vaulted account |
 | `cs profile list [--json]` | each profile's directory, pool and live account |
-| `cs profile pool <name> add\|remove <id> [--to P]` | change a pool (pools never overlap) |
+| `cs profile pools <name> <pool>...` | the pools a profile uses, in order; profiles that list one pool share it |
+| `cs profile pool <name> add\|remove <id> [--to P]` | change a profile's own pool (an account is in one pool) |
+| `cs pool list\|create\|add\|remove\|move\|delete` | named pools of accounts that profiles list |
 | `cs profile set <name> <key> <value\|inherit>` | per-profile `switch_at`, `switch_at_weekly`, `hard_floor`, `landing_margin` or `models` |
 | `cs profile remove <name> [--to P] [--yes]` | remove a profile; its accounts join `--to`, or `default` |
 | `cs profile forget <name>` | release the guard on a removed or re-pointed profile's old credential |
@@ -797,8 +799,10 @@ pool      = ["work-1", "work-team"]
 switch_at = 75             # this profile only
 ```
 
-Each `[[profile]]` is one Claude Code config directory with its own pool.
-Pools never overlap, and with no `[[profile]]` blocks at all everything is one
+Each `[[profile]]` is one Claude Code config directory with its own pool, or
+the named `[[pool]]` blocks it lists (`pools = ["team"]`): profiles that list
+one pool share its accounts, one profile at a time. An account is in one
+pool, and with no `[[profile]]` blocks at all everything is one
 profile. Accounts are identified by seat (one person in one organization),
 never by email, which is why `setup`, `login` and `add` write the config for
 you.

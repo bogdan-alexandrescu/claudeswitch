@@ -64,7 +64,7 @@ One page per command group, with every subcommand and flag, an example, the
 - [Accounts](cli/accounts.md): `use`, `login`, `add`, `refresh`, `accounts`,
   `account …`, `priority`, `rename`, `remove`, `forget`, `identify`,
   `recovery`.
-- [Profiles](cli/profiles.md): `profile …` and `run`.
+- [Profiles](cli/profiles.md): `profile …`, `pool …` and `run`.
 - [Config](cli/config.md): `config`, and every setting with its default and
   range.
 - [Daemon](cli/daemon.md): `daemon …`, `watch`, `uninstall`.

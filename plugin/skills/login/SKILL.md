@@ -43,6 +43,11 @@ claudeswitch login <id> --direct --browser "<Browser Name>"
 Add `--sso` for an SSO-backed organization. Without `--browser` it prints a URL
 for the user to open themselves.
 
+An account already in the config asks for its own organization by itself. To
+add a person in a second organization (the browser sits in the one already
+vaulted), add `--org <organization id>`; without it the browser's current
+organization decides, and a seat already vaulted under another name is refused.
+
 `--direct` touches no live credential, so it works the same whichever Claude
 Code profile this session belongs to; it needs no `--profile`.
 

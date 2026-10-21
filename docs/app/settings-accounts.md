@@ -1,24 +1,62 @@
 # Settings → Accounts
 
-Every stored account in rotation order, with what you can do to each, and the recovery copies.
+Every stored account, grouped by the pool it is in and in rotation order within each, with what you can do to each, and the recovery copies.
 
-See also: [cs accounts](../cli/accounts.md) · [Add account](add-account.md) · [Claude in Chrome in the app](chrome.md) · [GUIDE → Recovery copies](../GUIDE.md#recovery-copies)
+See also: [cs accounts](../cli/accounts.md) · [cs pool](../cli/profiles.md#pool) · [Settings → Profiles](settings-profiles.md) · [Add account](add-account.md) · [Claude in Chrome in the app](chrome.md) · [GUIDE → Recovery copies](../GUIDE.md#recovery-copies)
 
 <p align="center"><img src="../images/settings-accounts.png" width="880" alt="Settings, Accounts pane: personal, research, work-1 and work-team with small rings, state, plan and login expiry; recovery copies r1 and r2 below"></p>
 
+## Pools
+
+Accounts are grouped into named pools, one pool per account. Each profile
+lists the pools it uses, in order: it takes an account from a later pool
+only when nothing in an earlier one is usable. Profiles that list the same
+pool share its accounts, one profile at a time
+([PROFILES.md §10](../PROFILES.md)). A profile with `pool = [...]` in its
+block has its own pool, named after it. Accounts no pool lists are used by
+the profile named `default`, after its pools.
+
+The pane has one section per pool, in the order `cs pool list` gives them,
+then **In no pool** when some account is in none:
+
+```
+PERSONAL · used by default (1st)
+TEAM · used by default (2nd), work (2nd)
+OPS · used by work (1st)
+SPARE · no profile uses it
+In no pool · default uses them last
+```
+
+A section's header says which profiles use the pool and, when a profile
+uses more than one, where this pool comes in its order. A pool no profile
+lists says so: its accounts rotate nowhere until one does. With no
+`[[profile]]` blocks there is nothing to group, and the pane is one list in
+rotation order; so it is with a `claudeswitch` from before pools, with a line
+saying to update it.
+
+| control | what it does | CLI |
+|---|---|---|
+| drag a row within its pool | changes the rotation order: within a pool, the order rotation tries them | `cs priority <ids...>` |
+| drag a row onto another pool | moves the account there, after a confirmation saying which profiles gain and lose it | `cs pool move <id> --to <pool>` |
+| drag a row onto **In no pool** | takes the account out of its pool: `default` uses it, after its pools | `cs pool remove <pool> <id>` |
+| **New pool** | a name, and accounts to start with. An account already in a pool leaves it (the sheet says which, and asks first). No profile uses a new pool until you add it to one ([Profiles → Change...](settings-profiles.md)) | `cs pool create <name> [<ids>]`, then `cs pool move <id> --to <name>` for each that was in a pool |
+| **Rename…** (a pool's ⋯ menu) | a new name. Profiles that use it keep it, in the same place in their order; a profile's own pool becomes a pool of its own that the profile uses | `cs pool rename <pool> <new>` |
+| **Delete…** (a pool's ⋯ menu) | asks where its accounts go (it starts on a pool the same profiles use, or No pool for default's), says which profiles stop using it and what each is left with, then deletes it | `cs pool delete <name> --to <pool>` or `--no-pool` |
+
 ## The list
 
-One row per account, in the order rotation tries them. Each row has:
+One row per account. Each row has:
 
 - small rings: the account's week (outer) and session (inner);
 - its name, its email when claudeswitch recorded one, and its state:
   `available`, `no headroom`, `refused · 5h · clears in 36m`, `needs login`
-  and so on;
-- a detail line: its profile, its own Chrome profile if it has one, its seat
-  (shortened), its binding figure, and how long its login renews for;
+  and so on. The account live in a profile says `in use: work` in place of
+  `available` (trouble, such as `needs login`, stays beside it): a profile
+  that shares its pool takes another account meanwhile;
+- a detail line: every profile that may use it (`used by default, work`),
+  its binding figure, its own Chrome profile if it has one, its seat
+  (shortened), and how long its login renews for;
 - its plan.
-
-Drag a row by its handle to change the order (`cs priority <ids...>`).
 
 **Add account** at the top right opens [Add account](add-account.md) with no
 profile chosen.
@@ -28,7 +66,7 @@ profile chosen.
 | item | what it does | CLI |
 |---|---|---|
 | **Rename...** | renames the account everywhere: config, vault, state, Chrome mapping. Needs the daemon stopped | `cs account rename <old> <new>` |
-| **Move to profile** → **Move to work...** | moves it to another profile's pool, after a confirmation | `cs profile pool <from> remove <id> --to <p>` |
+| **Move to pool** → **ops...** | moves it to another pool, after a confirmation, as a drag onto that pool does. **In no pool...** takes it out of its pool | `cs pool move <id> --to <pool>`, `cs pool remove <pool> <id>` |
 | **Sign in again...** | opens [Add account](add-account.md) for this account, to replace a dead credential | `cs login <id> --direct` |
 | **Move up** / **Move down** | one step in the rotation order | `cs priority` |
 | **Open Chrome** | opens the Chrome profile this account uses | `cs chrome open <id>` |

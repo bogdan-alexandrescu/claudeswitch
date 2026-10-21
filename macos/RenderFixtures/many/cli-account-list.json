@@ -7,7 +7,11 @@
    "id": "w01",
    "pinned": false,
    "plan": "Max 20x",
+   "pool": "work",
    "profile": "work",
+   "profiles": [
+    "work"
+   ],
    "reading": null,
    "seat": "aaaaaaaa@11111111",
    "state": "available"
@@ -19,7 +23,11 @@
    "id": "w02",
    "pinned": false,
    "plan": "Max 20x",
+   "pool": "work",
    "profile": "work",
+   "profiles": [
+    "work"
+   ],
    "reading": null,
    "seat": "aaaaaaaa@11111111",
    "state": "available"
@@ -31,7 +39,11 @@
    "id": "w03",
    "pinned": false,
    "plan": "Max 20x",
+   "pool": "work",
    "profile": "work",
+   "profiles": [
+    "work"
+   ],
    "reading": null,
    "seat": "aaaaaaaa@11111111",
    "state": "available"
@@ -43,7 +55,11 @@
    "id": "w04",
    "pinned": false,
    "plan": "Max 20x",
+   "pool": "work",
    "profile": "work",
+   "profiles": [
+    "work"
+   ],
    "reading": null,
    "seat": "aaaaaaaa@11111111",
    "state": "available"
@@ -55,7 +71,11 @@
    "id": "w05",
    "pinned": false,
    "plan": "Max 20x",
+   "pool": "work",
    "profile": "work",
+   "profiles": [
+    "work"
+   ],
    "reading": null,
    "seat": "aaaaaaaa@11111111",
    "state": "available"
@@ -67,7 +87,11 @@
    "id": "w06",
    "pinned": false,
    "plan": "Max 20x",
+   "pool": "work",
    "profile": "work",
+   "profiles": [
+    "work"
+   ],
    "reading": null,
    "seat": "aaaaaaaa@11111111",
    "state": "available"
@@ -79,7 +103,11 @@
    "id": "w07",
    "pinned": false,
    "plan": "Max 20x",
+   "pool": "work",
    "profile": "work",
+   "profiles": [
+    "work"
+   ],
    "reading": null,
    "seat": "aaaaaaaa@11111111",
    "state": "available"
@@ -91,7 +119,11 @@
    "id": "w08",
    "pinned": false,
    "plan": "Max 20x",
+   "pool": "work",
    "profile": "work",
+   "profiles": [
+    "work"
+   ],
    "reading": null,
    "seat": "aaaaaaaa@11111111",
    "state": "available"
@@ -103,7 +135,11 @@
    "id": "w09",
    "pinned": false,
    "plan": "Max 20x",
+   "pool": "work",
    "profile": "work",
+   "profiles": [
+    "work"
+   ],
    "reading": null,
    "seat": "aaaaaaaa@11111111",
    "state": "available"
@@ -115,7 +151,11 @@
    "id": "w10",
    "pinned": false,
    "plan": "Max 20x",
+   "pool": "work",
    "profile": "work",
+   "profiles": [
+    "work"
+   ],
    "reading": null,
    "seat": "aaaaaaaa@11111111",
    "state": "available"
@@ -127,7 +167,11 @@
    "id": "w11",
    "pinned": false,
    "plan": "Max 20x",
+   "pool": "work",
    "profile": "work",
+   "profiles": [
+    "work"
+   ],
    "reading": null,
    "seat": "aaaaaaaa@11111111",
    "state": "available"
@@ -139,7 +183,11 @@
    "id": "w12",
    "pinned": false,
    "plan": "Max 20x",
+   "pool": "work",
    "profile": "work",
+   "profiles": [
+    "work"
+   ],
    "reading": null,
    "seat": "aaaaaaaa@11111111",
    "state": "available"
@@ -151,7 +199,11 @@
    "id": "personal",
    "pinned": false,
    "plan": null,
+   "pool": "default",
    "profile": "default",
+   "profiles": [
+    "default"
+   ],
    "reading": null,
    "seat": "aaaaaaaa@11111111",
    "state": "available"
@@ -163,7 +215,11 @@
    "id": "x-unpooled",
    "pinned": false,
    "plan": "Pro",
+   "pool": null,
    "profile": "default",
+   "profiles": [
+    "default"
+   ],
    "reading": null,
    "seat": "aaaaaaaa@11111111",
    "state": "available"
@@ -175,7 +231,11 @@
    "id": "research-team-extremely-long-account-name",
    "pinned": false,
    "plan": "Max 5x (team, enterprise seat)",
+   "pool": "client-example-enterprise-integration",
    "profile": "client-example-enterprise-integration",
+   "profiles": [
+    "client-example-enterprise-integration"
+   ],
    "reading": null,
    "seat": "aaaaaaaa@11111111",
    "state": "available"
@@ -187,7 +247,11 @@
    "id": "old-sso",
    "pinned": false,
    "plan": "Max 20x",
+   "pool": "review",
    "profile": "review",
+   "profiles": [
+    "review"
+   ],
    "reading": null,
    "seat": "aaaaaaaa@11111111",
    "state": "needs_login"

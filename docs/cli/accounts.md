@@ -47,9 +47,11 @@ Claude Code sessions pick it up from their next request, with no restart.
 
 It refuses, and changes nothing, when:
 
-- the account is not in the profile's pool (`outside_pool`), or another
-  profile's pool lists it (`in_other_pool`): a swap across pools is how one
-  credential ends up live in two profiles, so there is no `--force`;
+- the account is not in the pools the profile uses (`outside_pool`; the
+  message names every profile that may use it): a swap outside them is how
+  one credential ends up live in two profiles, so there is no `--force`. An
+  account two profiles share through a pool both list may be used by either,
+  one at a time;
 - the account is not vaulted (`not_vaulted`: "Log in to it, then run
   `claudeswitch add <id>`");
 - the account is, or may be, live in another profile (`live`). If a rate
@@ -117,21 +119,31 @@ another profile; the message suggests `--direct`.
 | `--profile NAME` | this shell's profile | without `--direct`, the profile to sign in through; with `--direct`, the profile whose pool a new account joins |
 | `--keep` | off | without `--direct`: stay on the newly signed-in account instead of switching back |
 | `--sso` | off | use the SSO login flow |
+| `--pool NAME` | `--profile`'s pool | with `--direct`: the pool a new account goes into, a `[[pool]]` or a profile's own pool by its profile's name (D37). Not with `--profile` |
+| `--no-pool` | off | with `--direct`: put a new account in no pool; the profile named `default` uses it last |
+| `--org ID` | the account's pinned organization | with `--direct`: the organization to sign in to, sent as `orgUUID` (the parameter Claude Code's `forceLoginOrgUUID` sends). An account the config pins asks for its own without it, and is refused another |
 | `--email ADDR` | none | sent as `login_hint`: the address of the account you want |
 | `--prompt VALUE` | none | the authorize `prompt` parameter: `select_account` forces the account chooser, `login` forces re-authentication |
 | `--pin-org` | off | send `organization_uuid` in the authorize URL. The endpoint accepts and ignores it; for experiment only |
 | `--json` | off | machine-readable output, with `--direct` or `--code` only; never prompts |
 
-A login returns whichever account the browser is signed in to; nothing in the
-request can choose it. What comes back is checked: a seat that does not match
-the name's recorded seat is refused (`wrong_account`), and so is a credential
+A login is whichever person the browser is signed in as. With `--direct` it
+asks for an organization when one is known: the account's pinned one when it
+is signing in again, or `--org` for a new one, which is how the same person is
+added in a second organization. Without one, the browser's current
+organization decides. What comes back is checked: another organization than
+the one asked for is refused (`wrong_account`), so is a seat that does not
+match the name's recorded seat (`wrong_account`), and so is a credential
 already vaulted under another name (`already_vaulted`). Nothing is stored in
-either case.
+any of these cases.
 
 `--direct --json --no-open` returns `url`, `expires_at` and `pending`
-(`account`, `new_account`, `org_id`, `profile`). `--code --json` returns the
+(`account`, `new_account`, `org_id`, `org`, `profile`, `join_pool`,
+`no_pool`; `org` is the organization asked for, `null` for none;
+`join_pool` the pool chosen with `--pool`). The `--code` answer adds
+`pool_name`, the pool the account is in, `null` for none. `--code --json` returns the
 vaulted account: `account`, `email`, `plan`, `seat`, `org_id`, `profile`,
-`pool`, `configured`, `new_account`, `renewable`, `access_expires_at`,
+`profiles`, `pool`, `configured`, `new_account`, `renewable`, `access_expires_at`,
 `refresh_expires_at` ([APP_CLI.md → Adding an account](../APP_CLI.md#adding-an-account-owner-decision-m4)).
 `--json` without `--direct` or `--code` is a `usage` error. `--code` with no
 attempt pending, or an expired one, is `no_pending_login`.
@@ -142,7 +154,7 @@ The [Add account sheet](../app/add-account.md) runs
 ## cs add
 
 ```
-cs add [<id>] [--profile NAME] [--from PROFILE] [--force] [--json]
+cs add [<id>] [--profile NAME] [--from PROFILE] [--pool NAME | --no-pool] [--force] [--json]
 ```
 
 Vaults the credential that is live right now, typically after `/login` in
@@ -155,6 +167,8 @@ stored credential in place.
 | `<id>` | asks, suggesting a name from the account | the name to file it under |
 | `--profile NAME` | this shell's profile | the profile whose pool the account joins and, without `--from`, whose live credential is read |
 | `--from PROFILE` | `--profile` | the profile whose live credential to vault, when it is not `--profile` (the app's "Save current login") |
+| `--pool NAME` | `--profile`'s pool | the pool a new account goes into: a `[[pool]]`, or a profile's own pool by its profile's name (D37) |
+| `--no-pool` | off | put a new account in no pool; the profile named `default` uses it last |
 | `--force` | off | re-add even when the live credential looks staler than the one already vaulted under that name |
 | `--json` | off | machine-readable output; never prompts |
 
@@ -216,7 +230,8 @@ The account commands the app runs. Each takes `--json` and `--config`.
 
 ### cs account list
 
-Every account, with its profile, the profile it is live in, whether it is
+Every account, with its pool, every profile that may use it (`profiles`;
+`profile` is the first), the profile it is live in, whether it is
 pinned (and whether hard, `pin_hard`), its state (`available`, `needs_login`, `refused`, ...), plan, email,
 seat, login expiry and its last reading (`five_hour`, `seven_day`,
 `binding`, `refused_until`, `error`). This is what Settings → Accounts
@@ -240,7 +255,9 @@ The same as [`cs remove`](#cs-remove).
 
 ### cs account pin, unpin
 
-`pin <id>` stops automatic rotation in the profile `<id>` is live in. Only the
+`pin <id>` stops automatic rotation in the profile `<id>` is live in, or the
+one `--profile` names (an account in a shared pool may be used by several,
+one at a time). Only the
 live account can be pinned (`not_active` otherwise); a pin on another would
 hold the profile on whatever it is using now. The popover's **Pin** runs it.
 

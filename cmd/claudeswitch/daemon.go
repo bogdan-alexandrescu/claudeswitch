@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/audit"
@@ -131,9 +132,11 @@ type profileLoop struct {
 	lastDecisionSig string
 	// lastWaitSig stops the exhausted-everything warning repeating every tick.
 	lastWaitSig string
-	// lastRefusalSig and lastCrossPoolSig do the same for a refused swap and
-	// for holding another pool's account: said once per distinct finding.
-	lastRefusalSig   string
+	// lastRefusals and lastCrossPoolSig do the same for the targets the §3
+	// check passed over on the last tick (one decision may pass over
+	// several, D34) and for holding another pool's account: said once per
+	// distinct finding.
+	lastRefusals     map[string]bool
 	lastCrossPoolSig string
 	// lastUnpinSig says a dry run's pin lift once (IMPROVEMENTS F3);
 	// runwayWarned holds the runway notice to once per approach (F2).
@@ -458,13 +461,20 @@ func (d *daemon) evaluate(ctx context.Context, il *profileLoop, trigger string) 
 		return
 	}
 	ist := d.profState(il)
+	// D34: an account live in another profile is not a candidate here.
+	// State says which, at no cost; the §3 check before a write asks the
+	// live items too, and adds what it finds.
+	unavailable := d.inUseElsewhere(il)
 	input := func() policy.Input {
 		return policy.Input{
 			Cfg: il.cfg, St: d.st, Now: time.Now(), LastSwitch: ist.LastSwitch, Pinned: ist.Pinned,
 			PinHard: ist.PinHard, Lookahead: lookahead(il.cfg), Pool: il.pool, Live: ist,
+			// The profile's pools, in its order (D33).
+			Tiers: il.conf.Tiers,
 			// Whether an expired token explains an unreadable active account
 			// (IMPROVEMENTS A2): on an idle session it does.
 			SessionBusy: !il.det.IdleFor(d.idleGap),
+			Unavailable: unavailable,
 		}
 	}
 	dec := il.hold.gate(policy.Decide(input()), ist.Active, il.cfg)
@@ -525,19 +535,8 @@ func (d *daemon) evaluate(ctx context.Context, il *profileLoop, trigger string) 
 	}
 
 	if dec.Kind != policy.Switch {
-		il.wantSwitchSince = time.Time{}
-		il.lastRefusalSig = ""
-		// Say it once per distinct situation, not every twenty seconds.
-		if dec.Kind == policy.Wait && sig != il.lastWaitSig {
-			il.lastWaitSig = sig
-			il.log.Warn("nowhere to rotate to — every account is out",
-				"reason", dec.Reason, "recovers", dec.RecoversAccount,
-				"at", dec.RecoversAt.Local().Format("15:04"))
-			d.exhausted(il, dec.RecoversAccount, dec.RecoversAt)
-		} else if dec.Kind != policy.Wait {
-			il.lastWaitSig = ""
-		}
-		il.log.Debug("no rotation", "decision", dec.String(), "trigger", trigger)
+		il.lastRefusals = nil
+		d.noRotation(il, dec, sig, trigger, unavailable)
 		return
 	}
 
@@ -582,10 +581,34 @@ func (d *daemon) evaluate(ctx context.Context, il *profileLoop, trigger string) 
 		return
 	}
 
-	// §3: one credential may be live in at most one profile. Pools are
-	// disjoint, so rotation alone cannot get here; a manual login or a config
-	// reload can. Refuse before anything is written.
-	if other, how, at := d.liveElsewhere(ctx, il, dec.Target); other != "" {
+	// D34: one machine-wide switch lock, held from the §3 check through the
+	// write, its verify and the state save, by every writer of a live
+	// credential, so two cannot both pass §3 for one account. A command
+	// holding it is switching an account right now; waiting long would hold
+	// up every profile's loop, so the swap is decided again next tick.
+	lock, lerr := acquireSwitchLock(daemonSwitchWait)
+	if lerr != nil {
+		il.log.Info("swap deferred: another writer holds the switch lock; deciding again next tick",
+			"target", dec.Target, "err", lerr)
+		return
+	}
+	defer lock.Release()
+
+	// §3: one credential may be live in at most one profile. What state
+	// records live elsewhere is already out of the candidates; this asks
+	// every other profile's live item and every ghost, which state may not
+	// have caught up with (a hand login, a `use` not merged yet). A target
+	// found there, or that may be there (D18), is passed over like any
+	// account in use elsewhere (D34) and the profile decides again without
+	// it. With pools shared that is routine, not an alarm: said at INFO and
+	// audited, once per finding, with no notification. Before shared pools
+	// it refused the swap loudly and waited.
+	refusals := map[string]bool{}
+	for {
+		other, how, at := d.liveElsewhere(ctx, il, dec.Target)
+		if other == "" {
+			break
+		}
 		msg := fmt.Sprintf("refusing to install %s in profile %s: %s (%s), "+
 			"and one credential live in two profiles is revoked by whichever refreshes first",
 			dec.Target, il.name, how, whereLive(other))
@@ -593,19 +616,25 @@ func (d *daemon) evaluate(ctx context.Context, il *profileLoop, trigger string) 
 			how = rateLimitedWhy(dec.Target, whereLive(other), at)
 			msg = fmt.Sprintf("refusing to install %s in profile %s: %s", dec.Target, il.name, how)
 		}
-		// A refusal persists until the other profile lets go, and this runs
+		// A finding persists until the other profile lets go, and this runs
 		// every tick: say it once per distinct finding.
-		if sig := dec.Target + "|" + other + "|" + how; sig != il.lastRefusalSig {
-			il.lastRefusalSig = sig
-			il.log.Error("REFUSED A SWAP: account may be live in another profile",
+		sig := dec.Target + "|" + other + "|" + how
+		refusals[sig] = true
+		if !il.lastRefusals[sig] {
+			il.log.Info("swap target is in use in another profile; deciding without it",
 				"target", dec.Target, "live_in", other, "evidence", how, "reason", dec.Reason)
 			_ = d.aud.Write(audit.Event{Kind: "error", Profile: il.name, From: ist.Active, To: dec.Target,
 				Reason: dec.Reason, Err: msg})
-			d.nt.Send("conflict:"+il.name+":"+dec.Target, "claudeswitch refused a swap", msg)
 		}
-		return
+		unavailable[dec.Target] = inUseWhy(other, how)
+		dec = il.hold.gate(policy.Decide(input()), ist.Active, il.cfg)
+		if _, again := unavailable[dec.Target]; dec.Kind != policy.Switch || again {
+			il.lastRefusals = refusals
+			d.noRotation(il, dec, string(dec.Kind)+"|"+dec.Target+"|"+dec.Reason, trigger, unavailable)
+			return
+		}
 	}
-	il.lastRefusalSig = ""
+	il.lastRefusals = refusals
 
 	expectOrg := ""
 	for _, a := range d.cfg.Accounts {
@@ -722,16 +751,91 @@ func (d *daemon) noteRunway(il *profileLoop, in policy.Input) {
 // exhausted announces that a profile has nowhere to rotate to. With more
 // than one profile the throttle key carries the profile, so one profile
 // running dry does not silence another's.
-func (d *daemon) exhausted(il *profileLoop, recovers string, at time.Time) {
+//
+// inUse names the accounts of its pool passed over as live in another
+// profile ("t2: in use by default"). Under shared pools (D34) that is often
+// why nothing is free, and "all accounts are burnt" would send the person
+// looking for a quota problem there is not.
+func (d *daemon) exhausted(il *profileLoop, recovers string, at time.Time, inUse []string) {
 	if !d.multi() {
 		d.nt.Exhausted(recovers, at)
 		return
 	}
-	msg := "no account in its pool has quota left"
-	if recovers != "" {
-		msg = recovers + " recovers at " + at.Local().Format("15:04")
+	title := il.name + ": all accounts are burnt"
+	parts := append([]string(nil), inUse...)
+	if len(inUse) > 0 {
+		title = il.name + ": no account free"
 	}
-	d.nt.Send("exhausted:"+il.name, il.name+": all accounts are burnt", msg)
+	switch {
+	case recovers != "":
+		parts = append(parts, recovers+" recovers at "+at.Local().Format("15:04"))
+	case len(inUse) == 0:
+		parts = append(parts, "no account in its pool has quota left")
+	}
+	d.nt.Send("exhausted:"+il.name, title, strings.Join(parts, "; "))
+}
+
+// noRotation is evaluate's end for a decision that is not a switch: the
+// wanted-switch clock stops, and a wait is said once per distinct
+// situation, not every twenty seconds. unavailable is what the decision
+// passed over as live elsewhere.
+func (d *daemon) noRotation(il *profileLoop, dec policy.Decision, sig, trigger string, unavailable map[string]string) {
+	il.wantSwitchSince = time.Time{}
+	if dec.Kind == policy.Wait && sig != il.lastWaitSig {
+		il.lastWaitSig = sig
+		var inUse []string
+		for _, id := range il.pool {
+			if why, ok := unavailable[id]; ok && id != d.profState(il).Active {
+				inUse = append(inUse, id+": "+why)
+			}
+		}
+		what := "nowhere to rotate to — every account is out"
+		if len(inUse) > 0 {
+			what = "nowhere to rotate to — every other account is out or in use elsewhere"
+		}
+		il.log.Warn(what, "reason", dec.Reason, "recovers", dec.RecoversAccount,
+			"at", dec.RecoversAt.Local().Format("15:04"))
+		d.exhausted(il, dec.RecoversAccount, dec.RecoversAt, inUse)
+	} else if dec.Kind != policy.Wait {
+		il.lastWaitSig = ""
+	}
+	il.log.Debug("no rotation", "decision", dec.String(), "trigger", trigger)
+}
+
+// inUseElsewhere is what state records live in the other profiles (D34):
+// none of it is a candidate in this one, each "in use by <profile>". From
+// state alone, so it costs nothing on every tick; the §3 check before a
+// write asks the live items as well.
+func (d *daemon) inUseElsewhere(il *profileLoop) map[string]string {
+	names := make([]string, 0, len(d.profs))
+	for _, o := range d.profs {
+		names = append(names, o.name)
+	}
+	return inUseElsewhereOf(names, d.st, il.name)
+}
+
+// inUseElsewhereOf is inUseElsewhere for any caller: what state records live
+// in each of the other profiles named. `why` and `status` ask it too, so the
+// decision they show is the daemon's.
+func inUseElsewhereOf(profiles []string, st *state.State, name string) map[string]string {
+	out := map[string]string{}
+	for _, o := range profiles {
+		if o == name {
+			continue
+		}
+		if ps := st.Profiles[o]; ps != nil && ps.Active != "" && ps.Active != state.Unattributed {
+			out[ps.Active] = "in use by " + o
+		}
+	}
+	return out
+}
+
+// inUseWhy is a §3 finding as the reason a candidate is passed over (D34).
+func inUseWhy(other, how string) string {
+	if isGhostName(other) {
+		return "may still be live in " + other
+	}
+	return "in use by " + other + " (" + how + ")"
 }
 
 // rejection is a refusal tagged with the profile whose transcripts showed it.
@@ -851,12 +955,6 @@ func (d *daemon) maintainVault(ctx context.Context) {
 		if d.activeAnywhere(a.ID) || !v.Has(a.ID) {
 			continue
 		}
-		// Belt and braces: never refresh whatever is actually live in any
-		// profile, whatever state believes about which account that is.
-		if d.liveAnywhere(a.ID) {
-			continue
-		}
-
 		why := ""
 		switch {
 		case v.NeedsRefresh(a.ID, cfg.RefreshWindow.Duration):
@@ -870,9 +968,25 @@ func (d *daemon) maintainVault(ctx context.Context) {
 			continue
 		}
 
+		// A refresh revokes the token it replaces, so it holds the switch
+		// lock (D34): otherwise a `cs use` of this account could install the
+		// old token between the check below and the refresh. Busy, it waits
+		// for the next pass.
+		lock, lerr := acquireSwitchLock(daemonSwitchWait)
+		if lerr != nil {
+			log.Debug("idle refresh deferred: the switch lock is held", "account", a.ID, "err", lerr)
+			continue
+		}
+		// Belt and braces: never refresh whatever is actually live in any
+		// profile, whatever state believes about which account that is.
+		if d.liveAnywhere(a.ID) {
+			lock.Release()
+			continue
+		}
 		rctx, cancel := context.WithTimeout(ctx, 40*time.Second)
 		_, err := v.RefreshIn(rctx, a.ID, cfg.SeatOf(a.ID), nil, false)
 		cancel()
+		lock.Release()
 		if err != nil {
 			var needsLogin *oauth.NeedsLoginError
 			if errors.As(err, &needsLogin) {
@@ -1047,9 +1161,14 @@ func whereLiveQ(other string) string {
 // 16) — so finding it in another pool is expected and said at Info; this
 // loop moves off it. A credential that changed from one configured account
 // to another pool's stays an error.
+//
+// Since shared pools (D31) an account may be in several profiles' pools:
+// it is foreign only to a profile none of whose pools hold it, and pool_of
+// names every profile that may use it.
 func (d *daemon) noteCrossPool(il *profileLoop, accountID, was string) {
-	owner, ok := d.cfg.ProfileOf(accountID)
-	foreign := ok && owner != il.name
+	owners := d.cfg.ProfilesOf(accountID)
+	owner := strings.Join(owners, ",")
+	foreign := len(owners) > 0 && !d.cfg.InPool(il.name, accountID)
 	other := d.activeElsewhere(il.name, accountID)
 	if !foreign && other == "" {
 		il.lastCrossPoolSig = ""

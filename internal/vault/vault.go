@@ -88,6 +88,12 @@ func (v *Vault) fetch(ctx context.Context, token string, p usage.Priority) (*usa
 		if til, locked := v.budget.LockedUntil(token); locked {
 			return nil, &usage.RateLimitedError{RetryAfter: time.Until(til), Local: true}
 		}
+		if reason == usage.ReasonAccount {
+			// The account's own allowance is spent: the call would only buy a
+			// 429, so callers treat it as one — a swap stands, unverified.
+			return nil, &usage.RateLimitedError{Local: true,
+				RetryAfter: time.Until(v.budget.AccountReadyAt(token, p))}
+		}
 		return nil, fmt.Errorf("usage API call budget exhausted (%s); try again shortly", reason)
 	}
 	u, err := v.client.Fetch(ctx, token)
@@ -379,9 +385,13 @@ func (v *Vault) FetchLive(ctx context.Context, token string) (*usage.Usage, erro
 // meant logging out of the first and swapping back. Obtaining the credential
 // ourselves leaves the running session completely untouched.
 //
+// expectSeat and expectOrg, when set, are what the sign-in must turn out to
+// be: the seat the config pins the account to, and the organization the
+// authorize URL asked for.
+//
 // expectOrg is checked before anything is written. A credential for the wrong
 // organization is discarded, not stored under the wrong name.
-func (v *Vault) StoreTokens(ctx context.Context, accountID, expectSeat string, tok *oauth.Tokens,
+func (v *Vault) StoreTokens(ctx context.Context, accountID, expectSeat, expectOrg string, tok *oauth.Tokens,
 	conflictCheck []string) (*Entry, error) {
 
 	cred := &keychain.OAuth{
@@ -397,6 +407,9 @@ func (v *Vault) StoreTokens(ctx context.Context, accountID, expectSeat string, t
 	pr, perr := v.identify(ctx, cred.AccessToken, usage.Interactive)
 	if perr != nil {
 		return nil, fmt.Errorf("cannot identify whose credential this is: %w", perr)
+	}
+	if expectOrg != "" && u.OrgID != expectOrg {
+		return nil, &OtherOrgError{Want: expectOrg, Got: u.OrgID, Who: pr.Describe()}
 	}
 	if expectSeat != "" && pr.Seat() != expectSeat {
 		return nil, &WrongOrgError{AccountID: accountID, WantOrg: expectSeat,
@@ -1045,6 +1058,21 @@ func (e *DuplicateSeatError) Error() string {
 			"  add a different pool you need a different person, a different organization,\n"+
 			"  or both.",
 		e.Other, e.Who)
+}
+
+// OtherOrgError means a sign-in asked for one organization (orgUUID) and
+// came back in another. It is checked before the seat and the duplicate, so
+// it reports the request not taking rather than its consequence.
+type OtherOrgError struct {
+	Want, Got string // organization ids
+	Who       string // the person and organization it came back as
+}
+
+func (e *OtherOrgError) Error() string {
+	return fmt.Sprintf(
+		"the sign-in asked for organization %s but came back in %s — %s.\n"+
+			"  Nothing was stored.",
+		e.Want, e.Got, e.Who)
 }
 
 // WrongOrgError means the live credential does not belong to the organization

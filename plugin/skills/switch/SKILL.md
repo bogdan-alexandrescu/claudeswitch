@@ -47,11 +47,12 @@ It verifies the credential belongs to the expected account and rolls back if
 not. Running sessions, this one included, pick up the new account from the next
 request; nothing needs restarting.
 
-`use` refuses an account from another profile's pool, naming the profile that
-owns it, and refuses one that is (or may be) live in another profile. Do not
-try to work around either: report the refusal, and suggest `/cs switch <id>`
-from a session of the owning profile, or `--profile <owner>` if the user
-wants that profile switched instead.
+`use` refuses an account in no pool this profile uses, naming the profiles
+that may use it, and refuses one that is (or may be) live in another
+profile — an account two profiles share through a pool is used by one at a
+time. Do not try to work around either: report the refusal, and suggest
+`/cs switch <id>` from a session of a profile that may use it, or
+`--profile <that profile>` if the user wants that profile switched instead.
 
 ## 3. Report
 

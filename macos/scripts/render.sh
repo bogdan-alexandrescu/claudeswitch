@@ -7,6 +7,9 @@
 #   hero         RenderFixtures/hero over them: two healthy profiles (README)
 #   tutorial     RenderFixtures/tutorial over them: the CLI screenshots' story,
 #                with the Chrome sign-in notice (README app section, TUTORIAL)
+#   pools        RenderFixtures/pools over them: shared pools, an empty pool,
+#                an account in no pool and one in use by another profile
+#   older-cli    RenderFixtures/older-cli over them: a binary from before pools
 #
 #   macos/scripts/render.sh <out-dir> [set...]
 #
@@ -19,7 +22,7 @@ set -eu
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${1:?usage: render.sh <out-dir> [set...]}"
 shift
-SETS="${*:-base many one-profile hero tutorial}"
+SETS="${*:-base many one-profile hero tutorial pools older-cli}"
 FIXED_NOW="2026-10-08T02:46:41Z"
 
 swift build --package-path "$HERE" >/dev/null

@@ -7,8 +7,8 @@ See also: [cs profile](../cli/profiles.md) · [Concepts → profiles and pools](
 <p align="center"><img src="../images/settings-profiles.png" width="880" alt="Settings, Profiles pane: the default profile open with its accounts personal and research as chips, its thresholds, the Claude in Chrome picker, and its buttons; the work profile closed below"></p>
 
 **Settings...** in the popover opens this pane first. One card per profile.
-A closed card shows the directory, pool and thresholds in one line, and
-**Edit** opens it. The rings at the top left of an open card are the live
+A closed card shows the directory, the pools it uses (`pools personal, team,
+then 1 in no pool`) and thresholds in one line, and **Edit** opens it. The rings at the top left of an open card are the live
 account's week and session; the dot and text at the right say whether the
 profile is signed in, and as which account.
 
@@ -16,8 +16,8 @@ profile is signed in, and as which account.
 
 | control | what it does | CLI | default |
 |---|---|---|---|
-| **ACCOUNTS** chips | one chip per account in the pool, with its small rings and binding figure, or its state (`refused`, `needs login`). A chip's menu: **Remove from default...** and **Move to work...** | `cs profile pool <p> remove <id> [--to <other>]` | |
-| **+ Add** | adds an account to this pool: one in no pool, or one moved from another profile's pool after a confirmation that names the move | `cs profile pool <p> add <id>`, or `cs profile pool <other> remove <id> --to <p>` | |
+| **POOLS** | the pools the profile uses, numbered in the order it uses them: an account in a later pool only when nothing in an earlier one is usable. A profile with its own pool shows it under its own name. `default` ends with the accounts in no pool (`then 1 account in no pool`). Hover a pool for its accounts. Which pool each account is in is set in [Accounts](settings-accounts.md) | `cs profile list` (`pools`) | |
+| **Change...** | a sheet listing every pool with a checkbox; ↑ and ↓ order the checked ones. **Save** sets them. Checking another profile's own pool shares it: that profile keeps using it. Unchecking this profile's own pool, when it holds accounts, leaves them in a pool no profile uses (the sheet says so first). A refusal (an account live where it would stop being usable, `live`) shows in the sheet | `cs profile pools <p> <pool>...` (twice when its own pool is dropped: the CLI converts it first and keeps it first unless named) | |
 | **FOLDERS** | the folders that pick this profile: `cs run` with no name in one of them runs this profile, and `cs profile which` says so. Globs, comma-separated (`~/work/**, ~/clients/**`); empty clears them. Hidden with a CLI that does not report `paths` | `cs profile set <p> paths <glob,glob>` | none |
 | **Switch at session** | this profile's `switch_at`. Empty inherits the global value, shown as "90% (global)"; ↺ goes back to inheriting | `cs profile set <p> switch_at <n>` | inherit (85) |
 | **Switch at week** | this profile's `switch_at_weekly` | `cs profile set <p> switch_at_weekly <n>` | inherit (98) |
@@ -29,8 +29,8 @@ profile is signed in, and as which account.
 | **Open Claude Code** | your terminal running Claude Code in this profile | `cs run <p>` | |
 | **Open Chrome** | opens the live account's Chrome profile | `cs chrome open <id>` | |
 | **Shown in menu bar** | the menu bar follows this profile | | `default` |
-| **Remove profile...** | removes the profile, after you choose which profile its accounts move to. The profile's directory is kept | `cs profile remove <p> --to <other>` | |
-| **Sign in with** (only when **Not signed in**) | signs the profile in with one of its pool's stored credentials | `cs profile seed <p> <id>` | |
+| **Remove profile...** | removes the profile. Its own accounts (its own pool, and for `default` the accounts in no pool) move to the profile you choose; the pools it lists stay, for the profiles that share them. The profile's directory is kept | `cs profile remove <p> --to <other>` | |
+| **Sign in with** (only when **Not signed in**) | signs the profile in with one of its accounts. One live in another profile says `in use by work` and cannot be chosen | `cs profile seed <p> <id>` | |
 
 The threshold fields check what you type against the setting's range and show
 the CLI's own message when it refuses. More on what each threshold does:
@@ -38,18 +38,20 @@ the CLI's own message when it refuses. More on what each threshold does:
 
 ## New profile
 
-<p align="center"><img src="../images/sheet-new-profile.png" width="520" alt="The New profile sheet: name, directory, accounts to move into it, and which account to sign in with"></p>
+<p align="center"><img src="../images/sheet-new-profile.png" width="520" alt="The New profile sheet: name, directory, accounts to take as its own, the pools it uses, and which account to sign in with"></p>
 
 | field | what it is | default |
 |---|---|---|
 | **Name** | the profile's name | |
 | **Directory** | its Claude Code config directory; **Choose...** picks one | `~/.claude-<name>` |
-| **Accounts** | the accounts that move into its pool. Each says which profile it leaves | none |
-| **Sign in with** | the account the new profile starts signed in as | None (sign in later) |
+| **Its accounts** (when some account is in no pool) | accounts in no pool, which `default` uses now, to make the new profile's own. With no `[[profile]]` blocks yet, that is every account. One live somewhere says so | none |
+| **Pools** | the pools it uses, checked and ordered as in **Change...**. It shares them with the profiles that use them; nothing moves. Its own accounts come first | none |
+| **Sign in with** | the account the new profile starts signed in as: one of its own, or of the pools checked, but not one live in another profile | None (sign in later) |
 
-**Create** runs `cs profile create <name> [--dir <dir>] --pool <ids>
-[--seed <id>]`. What that does to the directory (links to your settings, a
-copy of your MCP servers):
+**Create** runs `cs profile create <name> [--dir <dir>] [--pool <ids>]`,
+then `cs profile pools <name> <pools...>` and `cs profile seed <name> <id>`
+when chosen; a step that fails says what was done. What creating does to
+the directory (links to your settings, a copy of your MCP servers):
 [GUIDE → Making a profile](../GUIDE.md#making-a-profile-and-starting-claude-code-in-one).
 
 ## Old profiles still holding a credential

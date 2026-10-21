@@ -550,8 +550,9 @@ claude                                   # CLAUDE_CONFIG_DIR unset: ~/.claude
 CLAUDE_CONFIG_DIR=~/.claude-work claude  # a second profile
 ```
 
-Declare each one with an `[[profile]]` block and give it a pool of accounts.
-One daemon drives them all, rotating each profile only within its own pool:
+Declare each one with an `[[profile]]` block and give it a pool of accounts,
+or the shared pools it uses (below). One daemon drives them all, rotating
+each profile only within its own pools:
 
 ```toml
 [[profile]]
@@ -569,8 +570,35 @@ switch_at = 75          # overrides the global 85 for this profile only
   Leaving it out means `CLAUDE_CONFIG_DIR` unset, which is *not* the same as
   `dir = "~/.claude"`: Claude Code keeps a different keychain item for each.
   Only one profile may leave it out.
-- **Pools must not overlap.** Accounts in no pool join the profile named
+- **An account is in one pool.** Accounts in no pool join the profile named
   `default`; with no `default` declared, an unlisted account is a config error.
+- **Profiles share named pools.** A `[[pool]]` block names a group of
+  accounts, and a profile lists the pools it uses, in order, instead of its
+  own `pool`; two profiles that list one pool share its accounts, one
+  profile at a time:
+
+  ```toml
+  [[pool]]
+  name     = "team"
+  accounts = ["work-1", "work-2"]
+
+  [[profile]]
+  name  = "default"
+  pools = ["own", "team"]   # "own" is another [[pool]]; team only when own has nothing usable
+
+  [[profile]]
+  name  = "work"
+  dir   = "~/.claude-work"
+  pools = ["team"]
+  ```
+
+  A profile uses its pools in the order it lists them: an account in a
+  later pool is chosen only when no account in an earlier one is usable. An
+  account live in one profile shows as "in use by" it in the others, and is
+  never chosen there. `pool = [...]` on a profile is still its own pool,
+  used by it alone; a profile sets `pool` or `pools`, not both.
+  `cs pool create|add|remove|move|delete` and `cs profile pools` edit all of
+  this in place ([cs profile → pool](cli/profiles.md#pool)).
 - `switch_at`, `switch_at_weekly`, `hard_floor`, `landing_margin`, `prefer` and `models`
   may be set per profile; anything unset falls back to the global value.
 - No `[[profile]]` blocks at all means one profile holding every account,
@@ -587,9 +615,9 @@ switch_at = 75          # overrides the global 85 for this profile only
   a profile whose credential was never recorded, the account itself stays
   guarded until `cs profile forget <name>`. `status` and `doctor` list what
   is still guarded.
-- A new account signed in (`login <id>`) or added (`add <id>`) through an
-  profile joins that profile's pool: the config edit writes the account and
-  the pool entry together.
+- A new account signed in (`login <id>`) or added (`add <id>`) through a
+  profile joins that profile's pool, or the first pool it lists: the config
+  edit writes the account and the pool entry together.
 - Editing the profiles while the daemon runs needs no restart: a profile
   added is started, one removed is stopped, and one whose `dir` changed is
   stopped and started again, between swaps, never during one.
@@ -598,7 +626,9 @@ switch_at = 75          # overrides the global 85 for this profile only
 own token, and a refresh revokes the previous one, so an account live in two
 profiles is logged out of whichever refreshes second. claudeswitch therefore
 never swaps an account into a profile while it is, or might be, live in
-another; when it cannot tell, it refuses and tries again later.
+another; when it cannot tell, it refuses and tries again later. That holds
+for shared pools too: an account two profiles may use is used by one at a
+time.
 
 ### Making a profile, and starting Claude Code in one
 

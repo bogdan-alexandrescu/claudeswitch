@@ -97,7 +97,8 @@ func pace(a *state.Account, in Input) (rate float64, known bool) {
 //
 // The pool is spent as rotation would spend it: the account in use to its
 // trigger, then the account rotation would take (bestEligible's test and
-// order, the landing margin and prefer included) to its trigger, and so on.
+// order, the landing margin, prefer and the profile's pool order included)
+// to its trigger, and so on.
 // Every account is assumed to burn at the same pace in points: plans differ,
 // and the forecast says "at this pace" because that is all it knows. Accounts
 // in in.Unavailable are out of reach and not counted.
@@ -132,7 +133,7 @@ func Forecast(in Input) Runway {
 			queue = append(queue, c)
 		}
 	}
-	sort.SliceStable(queue, func(i, j int) bool { return better(queue[i], queue[j], in) })
+	sort.SliceStable(queue, func(i, j int) bool { return ahead(queue[i], queue[j], in) })
 
 	// Over its trigger with nowhere to go: dry now, whatever the pace.
 	if (active.over || active.avail == state.Burnt) && len(queue) == 0 {

@@ -11,22 +11,25 @@ its profile).
 
 ## Sign in with browser
 
-<p align="center"><img src="../images/add-account.png" width="520" alt="Sign in with browser: Name, Profile, Browser, then Open the sign-in page and Paste the code it shows"></p>
+<p align="center"><img src="../images/add-account.png" width="520" alt="Sign in with browser: Name, Pool, Organization, Browser, then Open the sign-in page and Paste the code it shows"></p>
 
 | field | what it is | default |
 |---|---|---|
 | **Name** | the account's name in claudeswitch. Any name works; it is pinned to whichever seat signs in | |
-| **Profile** | the profile whose pool it joins | the profile it was opened from |
+| **Pool** | where a new account goes (D37): every pool, named with the profiles that use it, and No pool (default uses it last). It starts on a pool only the profile it was opened from uses, so nothing is shared unless you choose it. An account that already exists stays in its pool. With an older claudeswitch this row is **Profile** | that profile's unshared pool |
+| **Organization** | the organization to sign in to: one an account here is already in, another pasted by id, or whichever the browser is in. Choose one to add a person in a second organization. An account signing in again asks for its own | The one your browser is in |
 | **Browser** | the browser the sign-in page opens in. A browser signs in as the account it already holds, so pick one signed in to this account | Default browser |
 
 **Open sign-in page** runs `cs login <name> --direct --no-open` (with
-`--profile` and `--browser` when set) and opens the page. Sign in, then paste
+`--profile`, `--browser` and `--org` when set) and opens the page. Sign in, then paste
 the code the page shows; the app finishes with `cs login <name> --code
 <code>`. The credential is checked, stored and added to the profile. Your
 current Claude Code session is not touched.
 
-The CLI refuses a mismatch: a name already pinned to another seat, or a seat
-already stored under another name. The sheet shows its message.
+The CLI refuses a mismatch: another organization than the one chosen, a name
+already pinned to another seat, or a seat already stored under another name.
+The sheet shows its message and opens again, so you can choose another
+organization or browser and sign in again.
 
 ## Save current login
 
@@ -36,7 +39,7 @@ already stored under another name. The sheet shows its message.
 |---|---|---|
 | **Save login from** | the profile whose Claude Code login is saved | the followed profile |
 | **Name** | the name to save it under, suggested from the account | suggested |
-| **Add it to profile** | the profile whose pool it joins | the same profile |
+| **Add it to profile** | the profile it is added for, as **Profile** above. When the source profile uses that pool too, it keeps the login until its own rotation moves on, and the sheet says so | the same profile |
 
 **Save** runs `cs add <name> --from <profile> --profile <profile>`. Use it after
 `/login` in Claude Code as the account you want to add. The name in the

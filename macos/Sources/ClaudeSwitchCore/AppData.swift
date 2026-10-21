@@ -10,7 +10,7 @@ import Foundation
 
 /// The parts of the app's data that are read separately.
 public enum DataPart: Hashable, CaseIterable {
-    case state, why, settings, profiles, chrome, accounts
+    case state, why, settings, profiles, chrome, accounts, pools
 }
 
 /// Which reading of each part is the newest applied. Reads and edits are
@@ -51,11 +51,15 @@ public struct ReadRequest: Equatable {
     public var full: Bool
     public var settings: Bool
     public var profiles: Bool
+    /// `pool list` (config only, so every full read asks), unless the
+    /// binary said lately that it has no pools.
+    public var pools: Bool
 
-    public init(full: Bool, settings: Bool = false, profiles: Bool = false) {
+    public init(full: Bool, settings: Bool = false, profiles: Bool = false, pools: Bool = true) {
         self.full = full
         self.settings = settings
         self.profiles = profiles
+        self.pools = pools
     }
 }
 
@@ -78,6 +82,10 @@ public struct Reading {
     public var profilesError: CallError?
     public var chrome: ChromeList?
     public var accountList: AccountList?
+    /// `pool list --json` (shared pools).
+    public var pools: PoolList?
+    /// The binary has no pools (one from before them): the panes fall back.
+    public var poolsUnsupported = false
 
     public init(token: Int) { self.token = token }
 }
@@ -127,6 +135,18 @@ public enum RefreshReader {
                     r.accountList = l
                     r.fetched.insert(.accounts)
                 }
+                if r.problem == nil && request.pools {
+                    switch cli.poolList() {
+                    case .success(let l):
+                        r.pools = l
+                        r.fetched.insert(.pools)
+                    case .failure(let e) where PoolSupport.unsupported(e):
+                        r.poolsUnsupported = true
+                        r.fetched.insert(.pools)
+                    case .failure:
+                        break // kept as it was; the next refresh asks again
+                    }
+                }
             } else {
                 r.problem = .missing
             }
@@ -149,6 +169,11 @@ public struct AppData: Equatable {
     public private(set) var profilesError: CallError?
     public private(set) var chrome: ChromeList?
     public private(set) var accountList: AccountList?
+    /// Every pool and the accounts in no pool (shared pools); nil until
+    /// read, and with a binary that has none.
+    public private(set) var pools: PoolList?
+    /// The binary answered `pool list` as one from before pools.
+    public private(set) var poolsUnsupported = false
     /// The rotation order just asked for, shown until a full refresh reads
     /// the account list again (B6: kept longer, it brought back renamed and
     /// deleted ids).
@@ -157,7 +182,8 @@ public struct AppData: Equatable {
 
     public init(binaryPath: String? = nil, binaryVersion: String? = nil, problem: CLIError? = nil,
                 state: StateFile? = nil, why: WhyReport? = nil, settings: ConfigSettings? = nil,
-                profiles: ProfileList? = nil, chrome: ChromeList? = nil, accountList: AccountList? = nil) {
+                profiles: ProfileList? = nil, chrome: ChromeList? = nil, accountList: AccountList? = nil,
+                pools: PoolList? = nil, poolsUnsupported: Bool = false) {
         self.binaryPath = binaryPath
         self.binaryVersion = binaryVersion
         self.problem = problem
@@ -167,6 +193,8 @@ public struct AppData: Equatable {
         self.profiles = profiles
         self.chrome = chrome
         self.accountList = accountList
+        self.pools = pools
+        self.poolsUnsupported = poolsUnsupported
     }
 
     /// A refresh starting now; its reading carries this token.
@@ -206,42 +234,58 @@ public struct AppData: Equatable {
             priorityOrder = nil
             applied.insert(.accounts)
         }
+        if r.fetched.contains(.pools), fresh.accept(.pools, r.token) {
+            if r.poolsUnsupported {
+                pools = nil
+                poolsUnsupported = true
+            } else if let l = r.pools {
+                pools = l
+                poolsUnsupported = false
+            }
+            applied.insert(.pools)
+        }
         return applied
     }
 
-    /// A pool edit's answer, stamped with the token taken when the edit
-    /// started: edits run concurrently, so an older edit's answer arriving
-    /// after a newer one (or after a read begun later) is dropped, like a
-    /// read (review). Returns whether it was applied.
+    /// A pool edit's answer (the pool list), stamped with the token taken
+    /// when the edit started: edits run concurrently, so an older edit's
+    /// answer arriving after a newer one's is dropped, like a read. Applied
+    /// at once to the pools and to every account's pool and profiles; a
+    /// read begun before now is older than it. Returns whether it was.
     @discardableResult
-    public mutating func applyPools(_ r: PoolResult, token: Int) -> Bool {
-        guard profiles != nil, fresh.accept(.profiles, token) else { return false }
-        applyPools(r)
-        return true
-    }
-
-    /// A pool edit's answer, applied at once: every effective pool, and the
-    /// account listed where it now is.
-    public mutating func applyPools(_ r: PoolResult) {
-        guard var list = profiles else { return }
-        for i in list.profiles.indices {
-            let name = list.profiles[i].name
-            if let pool = r.pools[name] { list.profiles[i].pool = pool }
-            if var listed = list.profiles[i].listed {
-                listed.removeAll { $0 == r.account }
-                // Default holds an account no pool lists by D6 alone; the
-                // next read says whether it is listed there.
-                if name == r.profile && name != StateFile.defaultProfile { listed.append(r.account) }
-                list.profiles[i].listed = listed
+    public mutating func applyPools(_ l: PoolList, token: Int) -> Bool {
+        guard fresh.accept(.pools, token) else { return false }
+        pools = l
+        poolsUnsupported = false
+        fresh.changed(.pools)
+        if var accounts = accountList {
+            let defaultExists = profiles.map { $0.profile(StateFile.defaultProfile) != nil } ?? true
+            for i in accounts.accounts.indices {
+                let id = accounts.accounts[i].id
+                let users = l.profiles(of: id, defaultExists: defaultExists)
+                accounts.accounts[i].pool = l.pool(of: id)?.name
+                accounts.accounts[i].profiles = users
+                accounts.accounts[i].profile = users.first
             }
-        }
-        profiles = list
-        fresh.changed(.profiles)
-        if var accounts = accountList, let i = accounts.accounts.firstIndex(where: { $0.id == r.account }) {
-            accounts.accounts[i].profile = r.profile
             accountList = accounts
             fresh.changed(.accounts)
         }
+        return true
+    }
+
+    /// `profile pools`'s answer: that profile as `profile list` reports it,
+    /// in place of the one read before. Stamped like a pool edit.
+    @discardableResult
+    public mutating func applyProfile(_ p: ProfileInfo, token: Int) -> Bool {
+        guard var list = profiles, fresh.accept(.profiles, token) else { return false }
+        if let i = list.profiles.firstIndex(where: { $0.name == p.name }) {
+            list.profiles[i] = p
+        } else {
+            list.profiles.append(p)
+        }
+        profiles = list
+        fresh.changed(.profiles)
+        return true
     }
 
     /// The order just asked for, shown at once.
@@ -270,9 +314,11 @@ public struct AppData: Equatable {
         return out
     }
 
-    /// The profile whose effective pool holds an account.
-    public func pool(of account: String) -> String? {
-        profiles?.profiles.first { $0.pool.contains(account) }?.name
+    /// The first profile that may use an account (shared pools: several
+    /// may).
+    public func profile(of account: String) -> String? {
+        if let a = accountList?.account(account), a.profiles != nil { return a.profile }
+        return profiles?.profiles.first { $0.pool.contains(account) }?.name ?? accountList?.account(account)?.profile
     }
 
     /// The menu's picture of it all, at `now`.

@@ -7,6 +7,29 @@
       "why": "removed"
     }
   ],
+  "pools": [
+    {
+      "accounts": [
+        "work-1",
+        "work-2"
+      ],
+      "name": "default",
+      "own": true,
+      "profiles": [
+        "default"
+      ]
+    },
+    {
+      "accounts": [
+        "personal"
+      ],
+      "name": "review",
+      "own": true,
+      "profiles": [
+        "review"
+      ]
+    }
+  ],
   "profiles": [
     {
       "chrome": null,
@@ -28,6 +51,9 @@
       "pool": [
         "work-1",
         "work-2"
+      ],
+      "pools": [
+        "default"
       ],
       "signed_in": "yes",
       "thresholds": {
@@ -59,6 +85,9 @@
       "pinned": "personal",
       "pool": [
         "personal"
+      ],
+      "pools": [
+        "review"
       ],
       "signed_in": "unknown",
       "thresholds": {

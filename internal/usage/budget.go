@@ -538,8 +538,9 @@ func (b *Budget) Pace(ctx context.Context) {
 
 // Allow reserves a call with credential cred if one is available. priority
 // marks a call that may spend the reserved slot — used for the pre-switch
-// verification, never for scheduled polling. A lock refuses only calls with the
-// credential it was armed against.
+// verification, never for scheduled polling — and that the machine-wide
+// window never refuses. A lock refuses only calls with the credential it was
+// armed against.
 func (b *Budget) Allow(cred string, p Priority) (bool, Reason) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -580,17 +581,18 @@ func (b *Budget) Allow(cred string, p Priority) (bool, Reason) {
 			return
 		}
 
-		limit := b.allowance
+		// The window holds routine polling back; a swap call is counted in
+		// it but never refused by it. One held-back slot could not cover one
+		// switch — `cs use` makes two swap calls, and the daemon's own
+		// swap-priority reads take the slot too — so with two profiles
+		// polling hot the verify was refused and a good switch rolled back
+		// (2026-10-20). The limit that is real belongs to each account
+		// (§42), checked above, and pacing still spaces every call.
 		routine := p == Scheduled || p == Hot || p == Overdue
-		if routine {
-			limit -= ReservedForSwap
-		}
-		if len(lf.Calls) >= limit {
-			switch {
-			case !routine, len(lf.Calls) >= b.allowance:
-				ok, reason = false, ReasonBudget
-			default:
-				ok, reason = false, ReasonReserved
+		if routine && len(lf.Calls) >= b.allowance-ReservedForSwap {
+			ok, reason = false, ReasonReserved
+			if len(lf.Calls) >= b.allowance {
+				reason = ReasonBudget
 			}
 			return
 		}

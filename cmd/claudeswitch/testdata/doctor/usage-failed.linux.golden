@@ -1,6 +1,6 @@
 
   [FAIL] config          $CFGDIR/config.toml
-         └ $CFGDIR/config.toml: this cadence needs 2.2 calls per 5 minutes but only 1 are available (api_budget 2, one reserved for swaps).
+         └ $CFGDIR/config.toml: this cadence needs 2.2 calls per 5 minutes but only 1 are available (api_budget 2 for each profile in use, one reserved for swaps).
   Slow poll_active (now 3m0s) or poll_idle (now 10m0s), or raise api_budget — the burst ceiling measured around 15 per 5 minutes, and tripping it locks the daemon out for 5 minutes
          └ fix: run `claudeswitch init`
   [ok  ] service qos     not throttled
