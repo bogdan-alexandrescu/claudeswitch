@@ -25,11 +25,13 @@ settings and the daemon (IMPROVEMENTS M1, M3-M7).
   `account unpin --profile`), and what rotation will do next and why. The
   other profiles are compact rows that expand. **+ Add account** and
   **Settings…** at the foot.
-- **Settings window:** Profiles (create with a directory, pool and seed
-  account; add, remove and move pool accounts; the five per-profile
-  overrides; forget old profiles' credentials), Accounts (drag to set the
-  rotation order; rename, sign in again, Chrome, delete after a
-  confirmation naming account and seat; recovery copies), Rotation, Polling
+- **Settings window:** Profiles (create with a directory, accounts of its
+  own, the pools it uses and a seed account; choose and order each
+  profile's pools; the five per-profile overrides; forget old profiles'
+  credentials), Accounts (grouped by pool: drag to set the rotation order
+  within a pool, or onto another pool to move an account there; new and
+  empty pools; rename, sign in again, Chrome, delete after a confirmation
+  naming account and seat; recovery copies), Rotation, Polling
   and Advanced (every `cs config` setting, generated from
   `config schema --json`, with inline validation and the CLI's own errors),
   Daemon (status, live or dry run, restart, start/stop, install/uninstall,

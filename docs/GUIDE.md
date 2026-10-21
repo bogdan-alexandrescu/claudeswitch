@@ -24,6 +24,7 @@ facts behind it in [GROUND_TRUTH.md](GROUND_TRUTH.md).
   - [Advanced](#advanced)
 - [Multiple Claude Code profiles](#multiple-claude-code-profiles)
   - [Making a profile, and starting Claude Code in one](#making-a-profile-and-starting-claude-code-in-one)
+  - [Sharing accounts between profiles](#sharing-accounts-between-profiles)
   - [Which profile a command acts on](#which-profile-a-command-acts-on)
   - [Picking a profile by folder](#picking-a-profile-by-folder)
   - [Upgrading to the multi-profile release](#upgrading-to-the-multi-profile-release)
@@ -80,9 +81,13 @@ claudeswitch forget <id>         # drop an account's recorded observations
 claudeswitch remove <id>         # delete an account everywhere: credential, config block,
                                  # pool and priority entries, observations
 claudeswitch priority <id>...    # set the rotation order
-claudeswitch account pin <id>    # stop automatic rotation in its profile (`unpin` resumes);
-                                 # lifted if the account is refused, runs out or needs a
-                                 # sign-in, unless pinned with --hard
+claudeswitch account pin <id>    # stop automatic rotation in the profile it is live in
+                                 # (--profile names one; `unpin` resumes); lifted if the
+                                 # account is refused, runs out or needs a sign-in, unless
+                                 # pinned with --hard
+claudeswitch pool list           # named pools, their accounts and the profiles that use them
+claudeswitch pool create|add|remove|move|rename|delete ...   # edit them
+claudeswitch profile pools <p> <pool>...   # the pools a profile uses, in order
 claudeswitch profile pool <p> add|remove <id> [--to <other>]
 claudeswitch profile set <p> <key> <value|inherit>   # per-profile thresholds and models
 claudeswitch profile set <p> paths "~/src/work/**"   # the folders that pick the profile
@@ -128,7 +133,9 @@ cs add work-b       # or name it yourself
 That is all: the credential is verified and vaulted, and the account is added
 to your config — pinned to its seat, last in `priority`. With several profiles,
 `--from <profile>` saves the login that profile's Claude Code is signed into,
-and `--profile` names the pool the account joins. A running daemon notices the config change and
+and `--profile` names the profile whose pool the account joins; `--pool NAME`
+names the pool itself, and `--no-pool` puts it in none (the profile named
+`default` uses it last). A running daemon notices the config change and
 starts polling the new account without a restart. Running `add` again for the
 same account refreshes its stored credential in place.
 
@@ -140,13 +147,22 @@ seen; it is written in, pinned to whichever seat actually signed in:
 cs login work-b --direct                     # sign in, verify, vault, add to config
 cs login work-b --direct --browser Safari    # ...in a browser signed into that account
 cs login work-b --code <code>                # finish, with the code the browser shows
+cs login work-c --direct --org 11111111-1111-1111-1111-111111111111
+                                             # ...asking for that organization
+cs login work-b --direct --pool team         # ...a new account goes into the pool team
 cs login work-b --sso                        # an SSO-backed organization
 ```
 
-A login returns a credential for **whichever account your browser is signed
-into**; nothing in the request can override that. So sign in using a browser
-that holds the account you want — separate browser applications keep separate
-cookies, which is what `--browser` is for.
+A login returns a credential for **whichever person your browser is signed
+in as**. So sign in using a browser that holds the account you want —
+separate browser applications keep separate cookies, which is what
+`--browser` is for. The organization is the browser's current one unless the
+sign-in asks for another: `--org <org-id>` asks for that organization (sent as
+`orgUUID`, as Claude Code's `forceLoginOrgUUID` does; GROUND_TRUTH §48), which
+is how one person is added once for each organization they are in. An account
+the config already pins asks for its own organization when it signs in again,
+and is refused another. A sign-in that comes back in another organization than
+the one asked for is refused, and nothing is stored.
 
 `login` and `add` check the part that is easy to get wrong. If your config
 already pins the name to a seat, the credential that came back is verified
@@ -310,6 +326,7 @@ slash command. You can also simply ask, and Claude runs the matching command.
 | `/cs doctor` | "claudeswitch isn't polling" | no |
 | `/cs switch <id>` | "move me to the account with most room" | yes, without asking: a swap is hot and reversible |
 | `/cs login <id>` | "add my work account" | yes, after confirming account and browser |
+| `/cs pool` | "share work-2 with my default profile" | the config, after confirming; listing changes nothing |
 | `/cs setup` | "set up claudeswitch" | settings.json; asks before replacing a status line |
 
 `/status`, `/login` and `/doctor` belong to Claude Code itself, which is why the
@@ -444,12 +461,15 @@ macOS and Linux (`google-chrome` or `chromium` on PATH) only.
 
 ## Notifications
 
-The daemon sends a desktop notification when it switches accounts, when every
-account is burnt (naming which recovers first), and before an idle account's
-refresh token expires — a dead refresh token means that account can no longer
-be swapped to *or* polled. Once you use [Chrome profiles](#claude-in-chrome),
-a switch also says which profile Claude in Chrome needs, that the shared one
-needs signing in as the new account, or that the new account has none yet.
+The daemon sends a desktop notification when it switches accounts, when a
+profile has nowhere to rotate to ("all accounts are burnt", naming which
+recovers first; with several profiles "<profile>: no account free" when
+accounts it shares are in use in another profile, naming them), and before an
+idle account's refresh token expires — a dead refresh token means that
+account can no longer be swapped to *or* polled. Once you use
+[Chrome profiles](#claude-in-chrome), a switch also says which profile Claude
+in Chrome needs, that the shared one needs signing in as the new account, or
+that the new account has none yet.
 It also notifies once when a profile's pool is forecast to run dry within two
 hours at the pace it is being spent (`cs status` shows the same forecast:
 `work pool: runs dry Thu 14:00 at this pace`), and when it lifts a pin
@@ -550,8 +570,9 @@ claude                                   # CLAUDE_CONFIG_DIR unset: ~/.claude
 CLAUDE_CONFIG_DIR=~/.claude-work claude  # a second profile
 ```
 
-Declare each one with an `[[profile]]` block and give it a pool of accounts.
-One daemon drives them all, rotating each profile only within its own pool:
+Declare each one with an `[[profile]]` block and give it a pool of accounts,
+or the shared pools it uses (below). One daemon drives them all, rotating
+each profile only within the pools it uses:
 
 ```toml
 [[profile]]
@@ -569,8 +590,38 @@ switch_at = 75          # overrides the global 85 for this profile only
   Leaving it out means `CLAUDE_CONFIG_DIR` unset, which is *not* the same as
   `dir = "~/.claude"`: Claude Code keeps a different keychain item for each.
   Only one profile may leave it out.
-- **Pools must not overlap.** Accounts in no pool join the profile named
-  `default`; with no `default` declared, an unlisted account is a config error.
+- **An account is in one pool.** An account listed in two is a config error
+  naming both. Accounts in no pool are used by the profile named `default`,
+  after its pools; with no `default` declared, an unlisted account is a
+  config error.
+- **Profiles share named pools.** A `[[pool]]` block names a group of
+  accounts, and a profile lists the pools it uses, in order, instead of its
+  own `pool`; two profiles that list one pool share its accounts, one
+  profile at a time:
+
+  ```toml
+  [[pool]]
+  name     = "team"
+  accounts = ["work-1", "work-2"]
+
+  [[profile]]
+  name  = "default"
+  pools = ["own", "team"]   # "own" is another [[pool]]; team only when own has nothing usable
+
+  [[profile]]
+  name  = "work"
+  dir   = "~/.claude-work"
+  pools = ["team"]
+  ```
+
+  A profile uses its pools in the order it lists them: an account in a
+  later pool is chosen only when no account in an earlier one is usable. An
+  account live in one profile shows as "in use by" it in the others, and is
+  never chosen there. `pool = [...]` on a profile is still its own pool,
+  used by it alone; a profile sets `pool` or `pools`, not both.
+  `cs pool create|add|remove|move|rename|delete` and `cs profile pools` edit
+  all of this in place ([cs profile → pool](cli/profiles.md#pool)); a how-to
+  is in [Sharing accounts between profiles](#sharing-accounts-between-profiles).
 - `switch_at`, `switch_at_weekly`, `hard_floor`, `landing_margin`, `prefer` and `models`
   may be set per profile; anything unset falls back to the global value.
 - No `[[profile]]` blocks at all means one profile holding every account,
@@ -587,9 +638,11 @@ switch_at = 75          # overrides the global 85 for this profile only
   a profile whose credential was never recorded, the account itself stays
   guarded until `cs profile forget <name>`. `status` and `doctor` list what
   is still guarded.
-- A new account signed in (`login <id>`) or added (`add <id>`) through an
-  profile joins that profile's pool: the config edit writes the account and
-  the pool entry together.
+- A new account signed in (`login <id>`) or added (`add <id>`) through a
+  profile joins that profile's pool, or the first pool it lists: the config
+  edit writes the account and the pool entry together. `--pool NAME` puts it
+  in that pool instead, and `--no-pool` in none (the profile named `default`
+  uses it last). An account that already exists keeps its pool.
 - Editing the profiles while the daemon runs needs no restart: a profile
   added is started, one removed is stopped, and one whose `dir` changed is
   stopped and started again, between swaps, never during one.
@@ -598,7 +651,16 @@ switch_at = 75          # overrides the global 85 for this profile only
 own token, and a refresh revokes the previous one, so an account live in two
 profiles is logged out of whichever refreshes second. claudeswitch therefore
 never swaps an account into a profile while it is, or might be, live in
-another; when it cannot tell, it refuses and tries again later.
+another. That holds for shared pools too: an account two profiles may use is
+used by one at a time. Rotation passes over an account live in another
+profile, or that may be, and takes the next one; `use` refuses it (`live`),
+naming the profile. One machine-wide switch lock is held from that check
+through the write and its verify, by the daemon and by every command that
+writes a live credential (`use`, switching back after a `login`,
+`profile create --seed`, `profile seed`), so two of them cannot both pass the
+check for one account. The daemon waits 2 seconds for it and otherwise tries
+again on its next tick; a command waits 30 seconds, then refuses with
+`switch_busy` and changes nothing.
 
 ### Making a profile, and starting Claude Code in one
 
@@ -642,6 +704,67 @@ cs profile list                # each profile's dir, pool and live account
 with a note to use /login. A running daemon picks up the new profile without
 a restart.
 
+### Sharing accounts between profiles
+
+Two profiles can use the same accounts, one profile at a time. Put the
+accounts in a named pool and list that pool in both profiles. Starting from
+the two profiles above, to let `default` use `work-2` too:
+
+```sh
+cs pool list                      # every pool, its accounts and the profiles that use it
+cs pool create team               # a new [[pool]], empty for now
+cs profile pools work team        # work keeps its own pool first, then team
+cs pool move work-2 --to team     # work-2 leaves work's own pool for team; work still uses it
+cs profile pools default team     # default keeps its own pool first, then team
+```
+
+`profile pools` sets the pools a profile uses, in order, and a profile goes
+pool by pool: it takes an account from `team` only when none in its own pool
+is usable. A profile's own pool (`pool = [...]` on its block) goes by the
+profile's name, and leads the list unless you place it:
+`cs profile pools default team default` uses `team` first. Each command
+edits only the lines it is about and checks the result before writing it.
+Doing it in this order means `work` never stops being able to use `work-2`.
+
+The accounts in no pool come after every pool `default` lists. A `default`
+declared by the first `cs profile create` has no `pool` line, so its accounts
+are in no pool, and `cs profile pools default team` would put `team` ahead of
+them. To keep them first, give `default` its own pool before sharing:
+`cs profile pool default add personal`, and so on for each.
+
+**"In use by".** While `work` is on `work-2`, `cs status` and `cs why` in
+`default` show it as `in use by work`, never eligible. Rotation in `default`
+passes over it and takes the next account; `cs use work-2 --profile default`
+is refused (`live`), naming `work`; the app's account picker shows it as
+in use by work and does not offer it. Once `work` rotates off it, `default`
+may take it. When nothing else is free, the daemon's notice is
+"default: no account free", naming what is in use elsewhere.
+
+**Moving accounts, and other edits.**
+
+```sh
+cs pool add team work-3                # an account in no pool joins team
+cs pool remove team work-3             # ...and leaves it: default then uses it last
+cs pool rename team shared             # profiles keep it, in the same place in their order
+cs pool delete shared --to work        # its accounts go to work's pool; profiles stop listing it
+cs pool delete shared --no-pool        # ...or to no pool (the default)
+cs login work-4 --direct --pool team   # a new account straight into team (also: add --pool)
+```
+
+An edit that would leave an account in use in a profile where that profile
+can no longer use it is refused (`live`): switch that profile off it first.
+Sharing an account that is live in a profile with another profile is fine:
+the one it is live in keeps it until its own rotation moves on.
+
+**In the app.** Settings → Accounts lists the accounts by pool, each header
+naming the profiles that use it. **New pool** makes one (a name, and accounts
+to start with); drag a row onto another pool to move it there, after a
+confirmation; a pool's ⋯ menu has **Rename…** and **Delete…** (which asks
+where its accounts go). In Settings → Profiles, **Change…** beside a
+profile's **POOLS** chooses and orders the pools it uses; checking one that
+another profile uses shares it. The Add account sheet's **Pool** row puts a
+new account straight into a pool.
+
 ### Which profile a command acts on
 
 `use`, `add`, `login` and `whoami` act on one profile:
@@ -654,12 +777,13 @@ a restart.
   whose `CLAUDE_CONFIG_DIR` matches no profile gets an error saying so, never a
   guess.
 
-`use` (and `login`, and `add` for a configured id) refuses an account from
-another profile's pool, naming the profile that owns it. There is no
-`--force`: a swap across pools is how one credential ends up live in two
-profiles. `cs use work-1 --profile work` is how to switch the other one.
+`use` (and `login`, and `add` for a configured id) refuses an account in no
+pool the profile uses (`outside_pool`), naming every profile that may use it.
+There is no `--force`: a swap outside a profile's pools is how one credential
+ends up live in two profiles. `cs use work-1 --profile work` is how to switch
+the other one.
 
-`status`, `top`, `why` and `plan` show one block per profile — its pool, its
+`status`, `top`, `why` and `plan` show one block per profile — its pools, its
 active account, its decision and its effective thresholds — and take
 `--profile NAME` to show only one. The status line and the session-start
 context show the profile of the session they run in. `refresh` and `remove`
@@ -684,7 +808,8 @@ starts `default`. `cs profile which` says which profile a folder picks and
 why. Patterns are absolute or from `~/`, with `*`, `?` and `**` (any number
 of folders); a folder counts when a pattern matches it or one of its parents.
 Two profiles whose paths could match the same folder are refused when the
-config loads, like overlapping pools.
+config loads, as an account listed in two pools is. (Two profiles listing the
+same pool is sharing, and is fine.)
 
 To have plain `claude` follow the folder too, add the optional shell hook:
 
@@ -722,9 +847,13 @@ compared at all.
   hits and produced 40–79% spread. See ground truth, Round 2.
 - **Hammer the usage API.** The endpoint refuses an account for 10–15 minutes
   after a burst of about 24 calls. Every claudeswitch process shares one budget
-  of 12 calls per 5 minutes, plus an allowance per account (20 calls, refilling
-  one every 2 minutes, 3 held back to verify a swap); the account in use is
-  read every `poll_hot` only while its usage is moving toward its trigger.
+  of 12 calls per 5 minutes for each profile in use (`api_budget`), plus an
+  allowance per account (20 calls, refilling one every 2 minutes, 3 held back
+  to verify a swap); the account in use is read every `poll_hot` only while
+  its usage is moving toward its trigger. A switch's own calls are counted in
+  the shared budget but never refused by it (GROUND_TRUTH §47): the
+  per-account allowance is the limit the endpoint enforces, and still
+  applies.
 - **Touch your MCP tokens.** The Keychain item holds Notion and Slack OAuth
   alongside the Claude credential; only the `claudeAiOauth` subtree is ever
   swapped.

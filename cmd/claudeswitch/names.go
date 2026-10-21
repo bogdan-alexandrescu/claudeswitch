@@ -18,10 +18,15 @@ func checkNewAccountID(id string) error {
 
 // newAccountNotice is what login says before signing in to an account the
 // config does not have: where its block goes and, with profiles declared,
-// whose pool it joins (D20).
+// which pool it joins (D20): the profile's own, or the first it lists (D31).
 func newAccountNotice(cfg *config.Config, target config.Profile, id string) string {
 	s := fmt.Sprintf("  %q is new. Once signed in, it is vaulted and added to %s,\n", id, cfg.Path)
 	if pool := poolToJoin(cfg, target); pool != "" {
+		if into := joinPool(cfg, pool); into != "" {
+			s += fmt.Sprintf("  pinned to the seat that signed in, in pool %q (the first profile %q uses).\n\n",
+				into, pool)
+			return s
+		}
 		s += fmt.Sprintf("  pinned to the seat that signed in, in profile %q's pool.\n\n", pool)
 		return s
 	}
@@ -89,4 +94,60 @@ func poolToJoin(cfg *config.Config, target config.Profile) string {
 		return ""
 	}
 	return target.Name
+}
+
+// joinTarget is where a new account goes. Profile is D20's: the profile's own
+// pool, or the first pool it lists. Pool is one chosen by name (D37): a
+// [[pool]] block, or a profile's own pool under the profile's name. None is
+// no pool: the profile named default uses it last (D6). The zero value is
+// "nothing to edit": an account the config already has keeps its pool.
+type joinTarget struct {
+	Profile, Pool string
+	None          bool
+}
+
+// resolveJoin checks --pool and --no-pool. Neither is the zero target, for
+// the caller's D20 default.
+func resolveJoin(cfg *config.Config, pool string, none bool) (joinTarget, error) {
+	switch {
+	case pool != "" && none:
+		return joinTarget{}, appErr(codeUsage, "", "--pool and --no-pool say different things; give one")
+	case none:
+		if _, ok := cfg.ProfileNamed(config.DefaultProfile); !ok && len(cfg.Profiles) > 0 {
+			return joinTarget{}, appErr(codeUsage, "choose a pool with --pool",
+				"--no-pool: with no profile named %q, an account in no pool rotates nowhere", config.DefaultProfile)
+		}
+		return joinTarget{None: true}, nil
+	case pool == "":
+		return joinTarget{}, nil
+	}
+	if _, ok := cfg.PoolNamed(pool); ok {
+		return joinTarget{Pool: pool}, nil
+	}
+	for _, in := range cfg.Profiles {
+		if in.Name == pool && len(in.Pools) == 0 {
+			return joinTarget{Pool: pool}, nil // its own pool (D35)
+		}
+	}
+	return joinTarget{}, appErr(codeUsage, "the pools are listed by `claudeswitch pool list`",
+		"no pool named %q", pool)
+}
+
+// completionJoin is where a completed `login --code` puts a new account: the
+// pool chosen when the login started (D37), else the profile recorded then
+// (D20), provided the config still has it.
+func completionJoin(cfg *config.Config, pend oauth.Pending) joinTarget {
+	if hasAccount(cfg, pend.AccountID) {
+		return joinTarget{}
+	}
+	switch {
+	case pend.NoPool:
+		return joinTarget{None: true}
+	case pend.JoinPool != "":
+		if j, err := resolveJoin(cfg, pend.JoinPool, false); err == nil {
+			return j
+		}
+		return joinTarget{}
+	}
+	return joinTarget{Profile: completionPool(cfg, pend)}
 }

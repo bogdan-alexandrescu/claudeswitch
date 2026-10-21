@@ -6,21 +6,6 @@ import Testing
 /// whether the daemon swaps for real is confirmed first, naming what it
 /// touches (lane 14 review).
 @Suite struct ConfirmationTests {
-    @Test func testRemovingFromAPoolNamesTheAccountAndWhereItGoes() {
-        let c = Confirm.poolRemove(account: "work-2", from: "review")
-        #expect(c.title == "Remove work-2 from review?")
-        #expect(c.message.contains("default"), "it returns to the default profile's pool")
-        #expect(c.action == "Remove")
-        #expect(c.destructive)
-    }
-
-    @Test func testMovingNamesBothProfiles() {
-        let c = Confirm.poolMove(account: "work-2", from: "default", to: "review")
-        #expect(c.title == "Move work-2 to review?")
-        #expect(c.message.contains("default") && c.message.contains("review"))
-        #expect(c.action == "Move")
-    }
-
     @Test func testForgettingAGhostSaysItStopsBeingGuarded() {
         let c = Confirm.forgetGhost(profile: "old", account: "work-2")
         #expect(c.title == "Forget old?")

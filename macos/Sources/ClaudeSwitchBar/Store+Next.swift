@@ -68,7 +68,7 @@ extension Store {
         next.fixErrors[check.id] = nil
         next.fixNotes[check.id] = nil
         if case .signin(let a) = fix {
-            addAccount = AddAccountRequest(account: a, profile: pool(of: a))
+            addAccount = AddAccountRequest(account: a, profile: profile(of: a))
             return
         }
         Task {
@@ -145,7 +145,7 @@ extension Store {
 
     /// Signing an account in again, from a reminder or a Health fix.
     func beginSignIn(_ account: String) {
-        addAccount = AddAccountRequest(account: account, profile: pool(of: account))
+        addAccount = AddAccountRequest(account: account, profile: profile(of: account))
         openSettings(.accounts)
     }
 }

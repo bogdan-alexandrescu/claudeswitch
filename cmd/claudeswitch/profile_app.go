@@ -249,11 +249,12 @@ func liveRefusal(id, holder, doing string) error {
 const poolUsage = "usage: claudeswitch profile pool <profile> add <account> | " +
 	"profile pool <profile> remove <account> [--to <profile>]"
 
-// profilePool is `cs profile pool <profile> add|remove <account>`. Pools
-// stay disjoint (D1): add refuses an account another pool lists, so moving
-// one is remove then add, or remove --to in one edit. An account live (or
-// maybe live, D18) in the profile it leaves is refused (§3), and so is one
-// live anywhere but the profile it joins.
+// profilePool is `cs profile pool <profile> add|remove <account>`, on a
+// profile's own pool (D35). An account is in one pool (D32): add refuses
+// one another pool lists, so moving one is remove then add, or remove --to
+// in one edit. An account live (or maybe live, D18) in the profile it leaves
+// is refused (§3), and so is one live anywhere but the profile it joins. A
+// profile that lists pools has no own pool: `cs pool` edits those.
 func profilePool(w io.Writer, cfgPath, name, verb, id, to string, asJSON bool) error {
 	cfg, st, err := load(cfgPath)
 	if err != nil {
@@ -262,12 +263,18 @@ func profilePool(w io.Writer, cfgPath, name, verb, id, to string, asJSON bool) e
 	if !hasAccount(cfg, id) {
 		return appErr(codeNotFound, "", "no account %q in the config", id)
 	}
-	if declaredIndex(cfg, name) < 0 {
+	i := declaredIndex(cfg, name)
+	if i < 0 {
 		if _, ok := cfg.ProfileNamed(name); ok {
 			return appErr(codeNotFound, "declare profiles first: claudeswitch profile create <name>",
 				"profile %q is not declared in the config, so it has no pool to edit", name)
 		}
 		return noSuchProfile(cfg, name)
+	}
+	if lists := cfg.Profiles[i].Pools; len(lists) > 0 {
+		return appErr(codeUsage, fmt.Sprintf("change a pool it lists: claudeswitch pool add %s %s, or what it "+
+			"lists: claudeswitch profile pools %s <pool>...", lists[0], id, name),
+			"profile %q lists pools (%s), so it has no pool of its own to edit", name, strings.Join(lists, ", "))
 	}
 	listedBy := func(c *config.Config, acct string) string {
 		for _, in := range c.Profiles {
@@ -277,6 +284,7 @@ func profilePool(w io.Writer, cfgPath, name, verb, id, to string, asJSON bool) e
 		}
 		return ""
 	}
+	_, listed := cfg.PoolOf(id)
 	src, dst := "", ""
 	implicit := false // remove: src holds the account by D6 only
 	switch verb {
@@ -286,16 +294,24 @@ func profilePool(w io.Writer, cfgPath, name, verb, id, to string, asJSON bool) e
 		} else if owner != "" {
 			return appErr(codeInOtherPool,
 				fmt.Sprintf("move it: claudeswitch profile pool %s remove %s --to %s", owner, id, name),
-				"account %q is in the pool of profile %q; pools must not overlap", id, owner)
+				"account %q is in the pool of profile %q; an account is in one pool", id, owner)
+		}
+		if pool, ok := cfg.PoolOf(id); ok {
+			return appErr(codeInOtherPool,
+				fmt.Sprintf("share that pool: claudeswitch profile pools %s %s; or move the account: "+
+					"claudeswitch pool move %s --to %s", name, pool, id, name),
+				"account %q is in pool %q; an account is in one pool (profiles share a pool by listing it)", id, pool)
 		}
 		dst = name
-		src, _ = cfg.ProfileOf(id) // "default" by D6, or none
+		if declaredIndex(cfg, config.DefaultProfile) >= 0 {
+			src = config.DefaultProfile // it is in no pool: default's by D6
+		}
 	case "remove":
 		if listedBy(cfg, id) != name {
 			// An account no pool lists is default's by D6 alone: moving it
 			// out of default is adding it to the other pool, and default's
 			// pool has nothing to remove.
-			if owner, _ := cfg.ProfileOf(id); owner != name || name != config.DefaultProfile {
+			if listed || name != config.DefaultProfile {
 				return appErr(codeNotFound, "", "the pool of profile %q does not list %q", name, id)
 			}
 			implicit = true
@@ -305,8 +321,14 @@ func profilePool(w io.Writer, cfgPath, name, verb, id, to string, asJSON bool) e
 			if to == name {
 				return appErr(codeUsage, poolUsage, "--to names the profile it is leaving")
 			}
-			if declaredIndex(cfg, to) < 0 {
+			j := declaredIndex(cfg, to)
+			if j < 0 {
 				return noSuchProfile(cfg, to)
+			}
+			if lists := cfg.Profiles[j].Pools; len(lists) > 0 {
+				return appErr(codeUsage, fmt.Sprintf("move it into a pool %s lists: claudeswitch pool move %s --to %s",
+					to, id, lists[0]), "profile %q lists pools (%s), so it has no pool of its own to move %q into",
+					to, strings.Join(lists, ", "), id)
 			}
 		} else if name == config.DefaultProfile {
 			return appErr(codeUsage,
@@ -364,9 +386,14 @@ func profilePool(w io.Writer, cfgPath, name, verb, id, to string, asJSON bool) e
 		}
 		return text, nil
 	}, func(back *config.Config) error {
-		want := nonEmpty(dst, config.DefaultProfile)
-		if got, _ := back.ProfileOf(id); got != want {
-			return fmt.Errorf("the edit parsed but %q landed in the pool of profile %q, not of %q; discarded", id, got, want)
+		// In dst's own pool, which is named after it; or, with no dst, in
+		// no pool, so default's by D6.
+		got, listed := back.PoolOf(id)
+		if dst != "" && got != dst {
+			return fmt.Errorf("the edit parsed but %q landed in pool %q, not profile %q's; discarded", id, got, dst)
+		}
+		if dst == "" && listed {
+			return fmt.Errorf("the edit parsed but %q is still in pool %q; discarded", id, got)
 		}
 		return nil
 	})
@@ -413,13 +440,23 @@ func profileJSON(cfg *config.Config, st *state.State, in config.Profile) map[str
 		"name": in.Name, "dir": orNull(in.Dir), "from_env": in.FromEnv, "pool": append([]string{}, in.Pool...),
 		"declared": declaredIndex(cfg, in.Name) >= 0,
 	}
-	// What the config's pool lists, without the accounts default holds by
-	// D6 alone (lane 15): those move by being added elsewhere.
-	listed := []string{}
+	// What the config's pools list, without the accounts default holds by
+	// D6 alone (lane 15): those move by being added elsewhere. pools names
+	// them, in the order the profile uses them (D33): its own pool under its
+	// name (D35), or the [[pool]] blocks it lists.
+	listed, pools := []string{}, []string{}
 	if i := declaredIndex(cfg, in.Name); i >= 0 {
-		listed = append(listed, cfg.Profiles[i].Pool...)
+		if own := cfg.Profiles[i]; hasOwnPool(cfg, own) && len(own.Pool) == 0 {
+			pools = append(pools, in.Name) // its own pool, empty: no tier
+		}
+		for t, name := range in.PoolNames {
+			if name != "" {
+				listed = append(listed, in.Tiers[t]...)
+				pools = append(pools, name)
+			}
+		}
 	}
-	m["listed"] = listed
+	m["listed"], m["pools"] = listed, pools
 	// IMPROVEMENTS F4: the folders this profile is picked for, as written.
 	m["paths"] = append([]string{}, in.Paths...)
 	live, pinned := "", ""
@@ -473,5 +510,5 @@ func profileListJSON(w io.Writer, cfgPath string) error {
 	if ghosts == nil {
 		ghosts = []map[string]any{}
 	}
-	return emitTo(w, map[string]any{"profiles": list, "ghosts": ghosts})
+	return emitTo(w, map[string]any{"profiles": list, "ghosts": ghosts, "pools": poolListJSON(cfg)["pools"]})
 }

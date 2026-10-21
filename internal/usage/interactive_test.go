@@ -29,7 +29,7 @@ func TestAnInteractiveCallIsNotRefusedByASpentAllowance(t *testing.T) {
 	for i := 0; i < DefaultAllowance; i++ {
 		b.Allow("tok", Swap)
 	}
-	if ok, _ := b.Allow("tok", Swap); ok {
+	if ok, _ := b.Allow("tok", Scheduled); ok {
 		t.Fatal("precondition: the allowance should be spent")
 	}
 	if ok, reason := b.Allow("tok", Interactive); !ok {

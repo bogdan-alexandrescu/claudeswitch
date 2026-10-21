@@ -27,7 +27,8 @@ const (
 	codeConfigInvalid   = "config_invalid"        // the edit would not load; nothing written
 	codeNoConfig        = "no_config"             // there is no config file to edit
 	codeLive            = "live"                  // the account is or may be live (§3, D18); holder named
-	codeInOtherPool     = "in_other_pool"         // D1: another profile's pool lists the account
+	codeInOtherPool     = "in_other_pool"         // D1, D32: another pool lists the account; it is in one pool
+	codePoolInUse       = "pool_in_use"           // pool delete: a profile lists the pool, or it is a profile's own
 	codeOutsidePool     = "outside_pool"          // D5: the account is not in this profile's pool
 	codeWouldOrphan     = "would_orphan"          // removing it from its pool leaves it in none
 	codeNotVaulted      = "not_vaulted"           // no credential stored under that id

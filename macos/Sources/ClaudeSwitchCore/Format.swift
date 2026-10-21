@@ -89,6 +89,17 @@ public enum Format {
 }
 
 public extension Format {
+    /// A card's account picker line: "work-1  41% · available · trigger
+    /// Thu 09:30" (F2: the ETA only when the CLI knows it), or "team-2  12%
+    /// · in use by work" for one live in another profile (D34).
+    static func pickerLine(_ a: AccountView, inUseBy: String?, now: Date) -> String {
+        var s: String = (a.isActive ? "✓ " : "") + a.id + "  " + pct(a.bindingPct)
+        if let p = inUseBy { return s + " · in use by " + p }
+        s += " · " + a.status.label
+        if let eta = Runway.accountETA(a.triggerAt, now: now) { s += " · " + eta }
+        return s
+    }
+
     /// A collapsed card's line: "work-1 · session 3% · week 41%"; trouble
     /// first, "needs login · work-1", since figures mean nothing then.
     static func cardSummary(_ c: ProfileCard) -> String {

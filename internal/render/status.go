@@ -80,6 +80,30 @@ func (o Options) active() string {
 	return ""
 }
 
+// inUseBy names the other profile an account is live in, "" when none. A
+// shared account (D31) is used by one profile at a time (D34), so every other
+// profile that may use it shows it as in use there, never as ready.
+func (o Options) inUseBy(id string) string {
+	return InUseBy(o.Cfg, o.St, o.Profile, id)
+}
+
+// InUseBy names the profile other than self (default when "") that state
+// records id live in, "" when none.
+func InUseBy(cfg *config.Config, st *state.State, self, id string) string {
+	if self == "" {
+		self = state.DefaultProfile
+	}
+	if st == nil || id == "" {
+		return ""
+	}
+	for _, name := range cfg.ProfileNames() {
+		if ps := st.Profiles[name]; name != self && ps != nil && ps.Active == id {
+			return name
+		}
+	}
+	return ""
+}
+
 // accounts are the configured accounts this view shows, in priority order.
 func (o Options) accounts() []config.Account {
 	all := o.Cfg.Ordered()
@@ -319,6 +343,7 @@ func statusCompact(out io.Writer, o Options) {
 			nameCell = paint(bold, nameCell)
 		}
 
+		elsewhere := o.inUseBy(a.ID)
 		if acct == nil || acct.Last == nil {
 			why := "not set up — run `cs login " + a.ID + "`"
 			if o.Vaulted[a.ID] {
@@ -328,6 +353,9 @@ func statusCompact(out io.Writer, o Options) {
 					warnings = append(warnings,
 						fmt.Sprintf("%s could not be read: %s", a.ID, truncate(acct.LastErr, 60)))
 				}
+			}
+			if elsewhere != "" {
+				why = "in use by " + elsewhere
 			}
 			row := []string{marker, nameCell}
 			if lay.plan {
@@ -377,6 +405,9 @@ func statusCompact(out io.Writer, o Options) {
 		state := stateOf(acct, a, cfg, proj, which, lay.burn && projects)
 		if bill := acct.Last.Billing(); bill != "" {
 			state += " · " + paint(amber, bill)
+		}
+		if elsewhere != "" {
+			state = "in use by " + elsewhere
 		}
 
 		// Figures for an account that cannot be read again are leftovers. They
@@ -804,10 +835,14 @@ func statusDetailed(out io.Writer, o Options) {
 	}
 	for _, a := range accounts {
 		acct := st.Accounts[a.ID]
+		elsewhere := o.inUseBy(a.ID)
 		if acct == nil {
 			why := "not set up — run `claudeswitch login " + a.ID + "`"
 			if o.Vaulted[a.ID] {
 				why = "vaulted, not polled yet"
+			}
+			if elsewhere != "" {
+				why = "in use by " + elsewhere
 			}
 			fmt.Fprintf(out, "  %s %-31s %-31s %-9s %s\n", pad(a.Name()), "", "", "-", why)
 			continue
@@ -833,6 +868,9 @@ func statusDetailed(out io.Writer, o Options) {
 		if avail == state.Burnt {
 			stateStr = fmt.Sprintf("burnt %s, clears %s", acct.BurntWin, until(&acct.BurntTil))
 		}
+		if elsewhere != "" {
+			stateStr = "in use by " + elsewhere
+		}
 		if acct.Last == nil {
 			// An account that was never set up is not an error to report at the
 			// user; say what to do about it instead of surfacing a raw keychain
@@ -847,6 +885,9 @@ func statusDetailed(out io.Writer, o Options) {
 			label := detail
 			if o.Vaulted[a.ID] {
 				label = "unknown (" + truncate(detail, 40) + ")"
+			}
+			if elsewhere != "" {
+				label = stateStr
 			}
 			fmt.Fprintf(out, "  %s %-31s %-31s %-9s %s\n", pad(a.Name()), "", "", "-", label)
 			continue

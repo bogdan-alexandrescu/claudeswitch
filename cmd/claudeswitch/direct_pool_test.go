@@ -55,7 +55,7 @@ func TestDirectLoginCarriesTheProfileToItsCompletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = oauth.ClearPending() })
-	if err := loginDirect(cfg, st, nil, "w2", "", false, oauth.Extra{}, "", "work"); err != nil {
+	if err := loginDirect(cfg, st, nil, "w2", "", false, oauth.Extra{}, "", "work", joinTarget{}); err != nil {
 		t.Fatal(err)
 	}
 	_, pend, err := oauth.LoadPending()

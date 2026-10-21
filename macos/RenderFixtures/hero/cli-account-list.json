@@ -7,7 +7,11 @@
    "id": "work-1",
    "pinned": false,
    "plan": "Max 20x",
+   "pool": "default",
    "profile": "default",
+   "profiles": [
+    "default"
+   ],
    "reading": null,
    "seat": "aaaaaaaa@11111111",
    "state": "available"
@@ -19,7 +23,11 @@
    "id": "personal",
    "pinned": false,
    "plan": "Pro",
+   "pool": "default",
    "profile": "default",
+   "profiles": [
+    "default"
+   ],
    "reading": null,
    "seat": "aaaaaaaa@11111111",
    "state": "available"
@@ -31,7 +39,11 @@
    "id": "work-team",
    "pinned": false,
    "plan": "Team",
+   "pool": "work",
    "profile": "work",
+   "profiles": [
+    "work"
+   ],
    "reading": null,
    "seat": "aaaaaaaa@11111111",
    "state": "available"
@@ -43,7 +55,11 @@
    "id": "work-2",
    "pinned": false,
    "plan": "Max 5x",
+   "pool": "work",
    "profile": "work",
+   "profiles": [
+    "work"
+   ],
    "reading": null,
    "seat": "aaaaaaaa@11111111",
    "state": "available"

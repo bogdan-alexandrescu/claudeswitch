@@ -65,9 +65,11 @@ this document's contract. Plain `claudeswitch version` still prints
 | `config_invalid` | the config does not load, or an edit would not; nothing was written |
 | `no_config` | there is no config file to edit (`claudeswitch setup` first) |
 | `live` | the account is, or may be (D18: unknown counts as live), live in a profile or a removed profile's old item; the message names it; `retry_at` when a rate-limit lock is why it could not be confirmed |
-| `in_other_pool` | D1: another profile's pool lists the account |
-| `outside_pool` | D5: the account is not in this profile's pool |
+| `in_other_pool` | D1, D32: another pool lists the account (an account is in one pool); the message names that pool |
+| `outside_pool` | D5: the account is not in this profile's pools; the message names every profile that may use it |
 | `would_orphan` | removing it from its pool would leave it in no pool |
+| `switch_busy` | D34: another command or the daemon held the switch lock for the whole wait (30 s); nothing was changed, and the same command works again shortly |
+| `pool_in_use` | `pool delete` from a binary before D38: a profile lists the pool, or it is a profile's own pool. Current binaries delete it (D38) |
 | `not_vaulted` | no credential is stored under that id |
 | `daemon_running` | the command needs the daemon stopped (`daemon stop`); `account rename` only |
 | `confirmation_required` | a prompt would be needed: pass `--yes` |
@@ -77,7 +79,7 @@ this document's contract. Plain `claudeswitch version` still prints
 | `service_failed` | launchctl or systemctl failed; `hint` is its output |
 | `not_active` | `pin`: the account is not the one live in its profile |
 | `no_pending_login` | `login --code` with no `--direct` login started, or it expired |
-| `wrong_account` | the login (or the live credential, for `add`) is another seat; nothing stored |
+| `wrong_account` | the login (or the live credential, for `add`) is another seat, or another organization than the one asked for (`--org`); nothing stored |
 | `already_vaulted` | that credential is already vaulted under another name |
 | `daemon_not_loaded` | a seed, or an account delete, timed out waiting for the running daemon to load the edited config |
 | `config_changed` | a command could not undo its own config edit because something else changed the config meanwhile; that change is kept (and so is the credential) |
@@ -193,22 +195,32 @@ saying what would go. Errors also: `no_config`, `config_invalid`.
 ```json
 {"profiles": [
   {"name": "work", "dir": "~/.claude-work", "from_env": false, "declared": true,
-   "pool": ["w1", "w2"], "listed": ["w1", "w2"], "paths": ["~/src/work/**"],
+   "pool": ["w1", "w2"], "pools": ["team"], "listed": ["w1", "w2"], "paths": ["~/src/work/**"],
    "live": "w1", "pinned": null, "signed_in": "yes",
    "overrides": {"switch_at": "75"},
    "thresholds": {"switch_at": 75, "switch_at_weekly": 98, "hard_floor": 99, "landing_margin": 10},
    "chrome": "Profile 1", "chrome_name": "Work",
    "chrome_resolved": {"account": "w1", "profile": "work", "profile_dir": "Profile 1", "name": "Work",
                        "rule": "profile"}}],
- "ghosts": [{"profile": "old", "account": "a3", "why": "removed", "since": "…"}]}
+ "ghosts": [{"profile": "old", "account": "a3", "why": "removed", "since": "…"}],
+ "pools": [{"name": "team", "accounts": ["w1", "w2"], "profiles": ["default", "work"], "own": false}]}
 ```
 
 `dir` is as written (`null`: Claude Code's default, `CLAUDE_CONFIG_DIR`
 unset). `paths` (contract 2, additive, IMPROVEMENTS F4) are the folders the
-profile is picked for, as written (globs; `[]` when none; below). `pool` is the effective pool (D6 included); `listed` is what the
-config's `pool` lists (lane 15), so an account in `pool` but not `listed`
-is `default`'s by D6 alone and moves with `pool add`. `signed_in` is `yes`,
+profile is picked for, as written (globs; `[]` when none; below). `pool` is
+every account the profile may use, in the order it uses them (its pools in
+order, then for `default` the accounts no pool lists, D6); `listed` is what
+its pools list (lane 15), so an account in `pool` but not `listed` is
+`default`'s by D6 alone and moves with `pool add`. `signed_in` is `yes`,
 `no` or `unknown` (the lookup failed). `live` is what state records.
+
+Shared pools (additive, docs/PROFILES.md §10): `pools` on each profile names
+the pools it uses, in order: its own pool under its own name (D35; a declared
+profile that lists no pools always has one, empty or not), or the `[[pool]]`
+blocks it lists. `[]` for the implicit profile of a config with no
+`[[profile]]` blocks. The top-level `pools` is every pool, as `pool list
+--json` gives them (below).
 
 C2 (additive): `chrome` is the Chrome profile folder the profile names
 (`null`: Chrome's last used), `chrome_name` Chrome's name for it (`null` when
@@ -220,8 +232,8 @@ no live account. `chrome` is not in `overrides`.
 answers with the new profile as `list` reports it, plus `"seeded": "a1"`
 or `null`. Errors: `invalid_value` (bad or taken name, dir clash),
 `in_other_pool`, `not_found`, `outside_pool` (seed not in the pool), `live`
-(seed live elsewhere), `daemon_not_loaded` (the profile is made, not
-seeded: retry with `profile seed`), `no_config`.
+(seed live elsewhere), `daemon_not_loaded` and `switch_busy` (the profile
+is made, not seeded: retry with `profile seed`), `no_config`.
 
 `claudeswitch profile seed <name> <account> --json` → `{"profile": "work", "seeded": "w1"}`.
 Errors as for `create --seed`.
@@ -241,8 +253,11 @@ lines directly above it go with it):
  "pools": {"default": ["work-1", "work-2", "personal"]}}
 ```
 
-- `moved` is the profile's effective pool; every account in it joins `to`'s
-  pool in the same edit. `to` is `--to`, else `default` (D6). With no
+- `moved` is the profile's own accounts: its own pool (D35) and, for
+  `default`, the accounts no pool lists (D6); every one joins `to`'s pool in
+  the same edit, or the first pool `to` lists when it lists pools. The
+  `[[pool]]` blocks the removed profile listed stay as they are (shared
+  pools), so their accounts are not in `moved`. `to` is `--to`, else `default` (D6). With no
   `default` and no `--to`, an enabled account would be in no pool:
   `would_orphan` (disabled ones are left in none, `to` `null`). Removing
   `default` itself while other profiles exist needs `--to` (`usage`): its
@@ -274,10 +289,13 @@ lines directly above it go with it):
 {"account": "a2", "profile": "work", "changed": true, "pools": {"default": ["a1"], "work": ["w1", "a2"]}}
 ```
 
-`profile` is where the account is now; `pools` every effective pool.
-Pools never overlap (D1): `add` of an account another pool lists is
-`in_other_pool`, and the hint is the move: `remove … --to <profile>`, one
-edit. An account in no pool joins `default` (D6), so `add` may take one
+`profile` is where the account is now (the first profile that may use it);
+`pools` every profile's effective pool. This edits a profile's own pool
+(D35). An account is in one pool (D32): `add` of an account another
+profile's own pool lists is `in_other_pool`, and the hint is the move:
+`remove … --to <profile>`, one edit; of one in a `[[pool]]`, the hint names
+`pool move` and `profile pools`. On a profile that lists pools, and with
+`--to` naming one, it is `usage`, pointing to `pool`. An account in no pool joins `default` (D6), so `add` may take one
 from there, and `remove` (without `--to`) returns one there; with no
 `default` profile that is `would_orphan`, and removing from `default`
 itself without `--to` is `usage`. `remove default <id> --to <q>` of an
@@ -285,6 +303,75 @@ account no pool lists (default's by D6 alone) is the same edit as
 `add <q> <id>` (lane 15): nothing is removed from default's pool. An account live — or maybe live (D18) —
 in the profile it leaves, or anywhere but the profile it joins, is `live`
 (§3). Errors also: `not_found`, `config_invalid`.
+
+`claudeswitch profile pools <profile> <pool>... --json` (additive, shared
+pools, D31, D33) sets the pools a profile uses, in order, and answers with
+the profile as `profile list` reports it (`pools` the new order). Each name
+is a `[[pool]]`, or a profile's own pool, which goes by its profile's name.
+A profile with its own pool (`pool = [...]`) has it converted first: a
+`[[pool]]` named after the profile holds its accounts and leads the list
+unless the list names it elsewhere. Naming another profile's own pool
+converts that one the same way, and that profile then lists it (`pools =
+["<its name>"]`), so both share it. Errors: `not_found` (the profile, an
+undeclared implicit one, or a pool), `invalid_value` (a pool named twice),
+`usage` (no pools), `live` (an account a profile stops using while it is or
+may be live there, or one a profile starts using while it is live in a
+profile that cannot use it), `config_invalid`. Sharing an account with the
+profile it is live in is not refused: one profile uses it at a time (D34).
+
+## pool
+
+Named pools (additive, shared pools, docs/PROFILES.md §10). A `[[pool]]`
+holds accounts; profiles list the pools they use; an account is in one pool
+(D32). A profile's own pool (D35) is addressed by its profile's name.
+
+`claudeswitch pool list --json`, and the answer of every pool edit below:
+
+```json
+{"pools": [
+  {"name": "team", "accounts": ["w1", "w2"], "profiles": ["default", "work"], "own": false},
+  {"name": "mine", "accounts": ["personal"], "profiles": ["default"], "own": false},
+  {"name": "solo", "accounts": ["s1"], "profiles": ["solo"], "own": true}],
+ "unlisted": ["spare"]}
+```
+
+`pools` are the `[[pool]]` blocks in config order (`profiles`: the ones
+that list it, `[]` when none, and then its accounts rotate nowhere), then
+each declared profile's own pool in profile order (`"own": true`, under the
+profile's name, `profiles` that profile alone; one exists for every declared
+profile that lists no pools, `accounts` `[]` when it is empty). `unlisted`
+is every account no pool lists, in config order: the profile named
+`default` uses them after its pools (D6).
+
+- `claudeswitch pool create <name> [<account>...] --json` appends a
+  `[[pool]]`. Errors: `invalid_value` (a bad name, or one a pool or a
+  profile's own pool has), `not_found` (an account), `in_other_pool` (an
+  account already in a pool, named in the message).
+- `claudeswitch pool add <pool> <account> --json`: an account in no pool
+  joins one; already there is no change. `in_other_pool` when another pool
+  lists it (the hint is `pool move`).
+- `claudeswitch pool remove <pool> <account> --json`: the account is then in
+  no pool (D6). `not_found` when the pool does not list it; `would_orphan`
+  with no `default` profile (the hint is `pool move`).
+- `claudeswitch pool move <account> --to <pool> --json`: out of its pool, if
+  any, and into another, in one edit. `--to` is required (`usage`).
+- `claudeswitch pool delete <name> [--to <pool> | --no-pool] --json` (D38):
+  removes any pool, a profile's own included (a `[[pool]]` with the comment
+  lines directly above it). Its accounts go to `--to`, or to no pool (the
+  default), and every profile that listed it stops listing it. `live` when an
+  account in use in a profile would land where that profile cannot use it;
+  `would_orphan` for no pool with no `default` profile; `usage` for `--to`
+  itself. A binary from before D38 answers `pool_in_use` for a pool in use.
+- `claudeswitch pool rename <pool> <new-name> --json` (D39): a `[[pool]]` is
+  renamed in place with every profile's listing of it; a profile's own pool
+  becomes a `[[pool]]` of the new name which that profile lists.
+  `invalid_value` for a name another pool has, or not a name.
+
+Every pool edit is §3-checked account by account: an account a profile
+stops using while it is or may be live there (D18) is `live`, and so is one
+a profile starts using while it is live in a profile that cannot use it, or
+guarded by a ghost. Errors also: `not_found` (a pool or account),
+`config_invalid`, `no_config`.
 
 `claudeswitch profile set <profile> <key> <value> --json` — a per-profile
 override (D4) of `switch_at`, `switch_at_weekly`, `hard_floor`,
@@ -360,7 +447,8 @@ test fails if it runs `security`), so the app may run it on every refresh:
 ```json
 {"accounts": [
   {"id": "work-1", "email": "person1@example.com", "plan": "Max 20x",
-   "seat": "aaaaaaaa-…@11111111-…", "enabled": true, "profile": "default", "active_in": "default",
+   "seat": "aaaaaaaa-…@11111111-…", "enabled": true, "profile": "default", "pool": "team",
+   "profiles": ["default", "work"], "active_in": "default",
    "pinned": false, "pin_hard": false, "refresh_expires_at": "…", "access_expires_at": "…", "state": "available",
    "reading": {"five_hour": 3, "seven_day": 41, "binding": "seven_day", "at": "…", "error": null,
                "refused_until": null, "refused_window": null}}]}
@@ -373,7 +461,11 @@ test fails if it runs `security`), so the app may run it on every refresh:
   (`identify`) an account, and the daemon records the plan a vault entry
   names whenever it reads one to poll. `null` until then.
 - `seat` is the config's `account_uuid@org_id` (`null` when unpinned);
-  `profile` the pool owner (D6 included); `active_in` the profile state
+  `profiles` (additive, shared pools) every profile that may use it, in
+  config order (D6 included; several when they list one pool, D31);
+  `profile` the first of them, as before for older readers; `pool`
+  (additive) the pool that lists it, a `[[pool]]` or a profile's own under
+  the profile's name, `null` when none does (D6); `active_in` the profile state
   records it live in; `pinned` whether a profile is pinned to it;
   `pin_hard` (contract 2, additive, F3) whether such a pin is hard
   (`account pin --hard`), `false` when it is not pinned.
@@ -403,6 +495,10 @@ it), its `priority` entry, its pool entry and its state records:
  "removed": {"credential": true, "config": true, "priority": true, "pool": "work", "state": true},
  "twin": null, "daemon_running": false}
 ```
+
+`removed.pool` is the pool whose entry went: a profile's own pool, named
+after the profile (as before), or a `[[pool]]` (shared pools); `null` when
+no pool listed it.
 
 Refused, with nothing changed: `live` while the account is or may be live
 in any profile or ghost (holder named), unless another vaulted name holds
@@ -437,10 +533,13 @@ kept, and the error is `config_changed`.
 `profile create --seed` and `profile seed` wait the same way, for the hash
 of the config they wrote as well as for the profile.
 
-`claudeswitch account pin <id> [--hard] --json` → `{"profile": "work", "pinned": "w1", "pin_hard": false}`.
-Suspends automatic rotation in the profile the account belongs to. Only the
-account live there can be pinned (`not_active` otherwise, and for a disabled
-account no profile's pool holds).
+`claudeswitch account pin <id> [--hard] [--profile P] --json` → `{"profile": "work", "pinned": "w1", "pin_hard": false}`.
+Suspends automatic rotation in the profile the account is live in: of the
+profiles that may use it (several, with shared pools), the one state
+records it live in, or `--profile` (additive). Only the
+account live there can be pinned (`not_active` otherwise, for a `--profile`
+that does not use it, and for a disabled account no profile's pool holds;
+`not_found` for an unknown `--profile`).
 
 The pin safety valve (contract 2, additive, IMPROVEMENTS F3): when the
 pinned account is refused (a 429 in the transcripts), out of quota (a
@@ -502,20 +601,33 @@ without `--yes`: `confirmation_required`.
 ```
 
 `verified` is false when the usage read that confirms the swap was rate
-limited (the swap itself succeeded). With `--dry-run`:
-`{"account", "profile", "dry_run": true, "from", "expect_org"}`. Errors:
-`outside_pool`, `not_vaulted`, `live`, `failed`.
+limited, refused by the incoming account's own call allowance, or not sent
+for an expired access token (the swap itself succeeded and stays installed;
+the machine-wide budget never refuses that read, GROUND_TRUTH §47). With
+`--dry-run`: `{"account", "profile", "dry_run": true, "from", "expect_org"}`.
+Errors: `outside_pool`, `not_vaulted`, `live`, `switch_busy`, `failed`.
 
 ## Adding an account (owner decision M4)
 
 Browser route, the live session untouched:
 
-1. `claudeswitch login <id> --direct --json --no-open [--profile P] [--browser APP]`
+1. `claudeswitch login <id> --direct --json --no-open [--profile P | --pool NAME | --no-pool] [--browser APP] [--org ORG]`
 
    ```json
    {"url": "https://…", "expires_at": "…",
-    "pending": {"account": "new-one", "profile": "work", "org_id": null, "new_account": true}}
+    "pending": {"account": "new-one", "profile": null, "org_id": null, "org": "org-2", "new_account": true,
+                "join_pool": "team", "no_pool": false}}
    ```
+
+   `join_pool` is the pool a new account goes into when the login
+   completes (`--pool`, D37), `no_pool` true for `--no-pool`; both are
+   absent from older binaries. The `--code` answer (and `add`'s) carries
+   `pool_name`, the pool the account ended up in, `null` for none.
+
+   `org` is the organization the sign-in asks for (`orgUUID`): `--org`, or
+   the account's pinned one when it signs in again; `null` lets the
+   browser's current organization decide. `--org` naming another
+   organization than an existing account's pinned one is a `usage` error.
 
    The app opens `url` itself (`--no-open`; without it `--browser APP`
    opens it in that browser). `--profile` is the pool a new account joins
@@ -526,12 +638,19 @@ Browser route, the live session untouched:
 
    ```json
    {"account": "new-one", "seat": "person-4@org-4", "org_id": "org-4", "email": "…", "plan": "…",
-    "profile": "work", "pool": ["w1", "new-one"], "configured": true,
-    "new_account": true, "renewable": true, "access_expires_at": "…", "refresh_expires_at": "…"}
+    "profile": "work", "pool": ["w1", "new-one"], "profiles": ["work"], "pool_name": "team",
+    "configured": true, "new_account": true, "renewable": true, "access_expires_at": "…",
+    "refresh_expires_at": "…"}
    ```
 
-   Errors: `no_pending_login`, `wrong_account` (pinned seat mismatch; the
-   message names both organizations), `already_vaulted`, `failed` (the
+   `profiles` (additive, shared pools) is every profile that may use the
+   account, `profile` the first. Here `pool` is, as it has been since lane
+   12, the accounts of that profile (a list, not the pool's name: the
+   contract only adds). A new account joins the `--profile`'s own pool, or,
+   when that profile lists pools, the first one it lists (D20 with D31).
+
+   Errors: `no_pending_login`, `wrong_account` (another organization than
+   the one asked for, or a pinned seat mismatch; the message names both), `already_vaulted`, `failed` (the
    code did not exchange: it must come from the most recent URL). On both
    steps, an id the config would not load is `invalid_value` and a missing
    or extra id `usage`.
@@ -540,18 +659,24 @@ Browser route, the live session untouched:
 has no JSON form (`usage`).
 
 Saving the login Claude Code is signed into now:
-`claudeswitch add [<id>] [--from P] [--profile Q] [--force] --json` answers
-with the same object as `login --code`, plus `"from"`: the profile whose
-live credential was saved. `--from` (lane 16) is that source profile;
+`claudeswitch add [<id>] [--from P] [--profile Q | --pool NAME | --no-pool] [--force] --json`
+answers with the same object as `login --code`, plus `"from"`: the profile
+whose live credential was saved. `--from` (lane 16) is that source profile;
 `--profile` is the pool a new account joins. Each defaults to the other,
-and both to the profile of the caller's `CLAUDE_CONFIG_DIR`. With a source
+and both to the profile of the caller's `CLAUDE_CONFIG_DIR`. `--pool NAME`
+(a `[[pool]]`, or a profile's own pool by its profile's name) or `--no-pool`
+names where a new account goes instead (D37); an account that already exists
+keeps its pool. With a source
 other than the target (owner decision: allowed) the credential stays signed
-in where it was: no profile swaps in an account live in another (§3), and
-the source's daemon moves off it, since it is outside that pool. The answer
-then carries `"note": "still signed in in S — S will move off it; T can use
-it after"` (`null` otherwise), and the human output prints the same line;
-the app shows it. An account another pool
-lists is `outside_pool` for the target; an unknown `--from` is
+in where it was: no profile swaps in an account live in another (§3). When
+the source may not use the account, its daemon moves off it, and the answer
+carries `"note": "still signed in in S — S will move off it; T can use it
+after"`; when the source may use it too (a pool both list, D31), the source
+keeps it until its own rotation moves on (D34), and the note is `"still
+signed in in S, which uses it too — T can use it once S rotates off it"`.
+`null` otherwise, and the human output prints the same line;
+the app shows it. An account only other profiles' pools
+hold is `outside_pool` for the target; an unknown `--from` is
 `not_found`. With no id it refuses with `name_required`, the suggested
 name (from the source profile's live account) as the whole `hint`; ask the
 person, then run `add <name>` — and ask again when the source changes. Errors also:
@@ -628,10 +753,18 @@ read from config and state alone. With one profile:
 "best", "best_why", "on_best", "active_room", "best_room", "current"?}]}`. (Before contract 2 both shapes also
 carried `dir`, the working directory project rules were judged against.)
 
+**Shared pools** (additive, D34). In a profile's `accounts`, an account
+state records live in another profile is never a candidate: `eligible`
+`false`, `why` `"in use by <profile>"`. With several profiles each account
+entry also carries `active_in`, the profile state records it live in, when
+there is one. `best_why` gives such an account as `"<id>: in use by
+<profile>"` (it read `"live in <profile>"` before).
+
 `best` (lane 16, owner decision) is the account the app's "Switch to best"
-moves the profile to now: of the profile's pool, the account other than the
+moves the profile to now: of the profile's pools, the account other than the
 live one that automatic rotation would pick — readable, not refused, not
-over its `reserve`, clear of the landing margin, ranked by room — whatever a
+over its `reserve`, clear of the landing margin, pool by pool and ranked by
+room within each (D33) — whatever a
 pin or the cooldown says (the person asked). It is never an account live in
 another profile, guarded as maybe live there (a ghost), or needing a
 sign-in. When no account clears the landing margin, `best` is still the
@@ -639,7 +772,7 @@ best one inside it, and `best_why` warns:
 `"w2 is only 5 points below its 85% session trigger, short of the 10-point
 landing margin"`. When there is none, `best` is `null` and `best_why` says
 why (`"work has no other account"`, `"no other account in work has room
-(…)"`, `"no other account in work can be switched to (w2: live in
+(…)"`, `"no other account in work can be switched to (w2: in use by
 default)"`; accounts left out for those reasons are listed after `not
 offered:`). `best_why` is `null` when `best` is set with room to spare.
 
@@ -712,8 +845,11 @@ live at 40% and rising a point a minute, `work-team` at 5%:
 ```
 
 `status --json` carries the same: `trigger_at` on each account (from the
-runway of the profile whose pool holds it) and the three pool keys at the
-top level with one profile, in each `profiles` entry with several. The
+runway of the profile it is live in, else of the first that may use it) and the three pool keys at the
+top level with one profile, in each `profiles` entry with several. With
+several profiles each account in `status --json` also carries `pool` and
+`profiles` (additive, shared pools), as `account list --json` gives them,
+beside `profile` (the first of `profiles`) and `active_in`. The
 daemon notifies once when `pool_dry_at` falls within 2 hours, and again only
 after the forecast has moved beyond that or to `refills`.
 
@@ -860,9 +996,9 @@ config; never the keychain or the API:
 ```json
 {"days": 30, "from": "2026-09-09T12:00:00Z", "to": "2026-10-09T12:00:00Z",
  "accounts": [
-  {"id": "w1", "profile": "work", "configured": true,
+  {"id": "w1", "profile": "work", "pool": "work", "profiles": ["work"], "configured": true,
    "series": [{"at": "2026-10-09T11:58:02Z", "five_hour": 42, "seven_day": 61.5}]},
-  {"id": "w2", "profile": "work", "configured": true, "series": []}],
+  {"id": "w2", "profile": "work", "pool": "work", "profiles": ["work"], "configured": true, "series": []}],
  "switches": [
   {"at": "2026-10-09T10:01:00Z", "profile": "work", "from": "w1", "to": "w2",
    "reason": "active account at 86%, over the 85% session trigger", "forced": false}]}
@@ -870,7 +1006,9 @@ config; never the keychain or the API:
 
 - `accounts`: the configured accounts in `account list`'s order, then any
   the log names that the config does not (`configured` false, `profile`
-  null). `profile` is the pool owner.
+  and `pool` null, `profiles` `[]`). `profiles` (additive, shared pools) is
+  every profile that may use the account, `profile` the first of them, and
+  `pool` the pool that lists it (`null` in none), as in `account list`.
 - `series`: oldest first; `at` UTC; `five_hour` / `seven_day` percentages,
   `null` when that window was not reported (never 0). The daemon writes one
   point per new reading; points older than a day are thinned to one per

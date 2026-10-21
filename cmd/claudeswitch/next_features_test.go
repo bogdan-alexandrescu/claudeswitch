@@ -225,7 +225,7 @@ func TestAccountPinHard(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if err := accountPin(&buf, path, "a1", true, true); err != nil {
+	if err := accountPin(&buf, path, "a1", "", true, true); err != nil {
 		t.Fatal(err)
 	}
 	if m := decodeJSON(t, buf.Bytes()); m["pinned"] != "a1" || m["pin_hard"] != true {
@@ -246,7 +246,7 @@ func TestAccountPinHard(t *testing.T) {
 	}
 	// A plain pin replaces a hard one; unpin clears both.
 	buf.Reset()
-	if err := accountPin(&buf, path, "a1", false, true); err != nil {
+	if err := accountPin(&buf, path, "a1", "", false, true); err != nil {
 		t.Fatal(err)
 	}
 	if m := decodeJSON(t, buf.Bytes()); m["pin_hard"] != false {
@@ -255,7 +255,7 @@ func TestAccountPinHard(t *testing.T) {
 	if st, _ := state.Load(""); st.Default().PinHard {
 		t.Fatal("a plain pin kept pin_hard")
 	}
-	_ = accountPin(&buf, path, "a1", true, true)
+	_ = accountPin(&buf, path, "a1", "", true, true)
 	if err := accountUnpin(&buf, path, "", "", true); err != nil {
 		t.Fatal(err)
 	}

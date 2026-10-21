@@ -215,9 +215,10 @@ writes nothing; no keychain, no API.
 ```json
 {"days": 30, "from": "2026-09-09T12:00:00Z", "to": "2026-10-09T12:00:00Z",
  "accounts": [
-  {"id": "work-1", "profile": "work", "configured": true,
+  {"id": "work-1", "profile": "work", "pool": "work", "profiles": ["work"], "configured": true,
    "series": [{"at": "2026-10-09T11:58:02Z", "five_hour": 42, "seven_day": 61.5}, …]},
-  {"id": "work-2", "profile": "work", "configured": true, "series": []}],
+  {"id": "work-2", "profile": "work", "pool": "work", "profiles": ["work"], "configured": true,
+   "series": []}],
  "switches": [
   {"at": "2026-10-09T10:01:00Z", "profile": "work", "from": "work-1", "to": "work-2",
    "reason": "active account at 86%, over the 85% session trigger", "forced": false}]}
@@ -225,7 +226,9 @@ writes nothing; no keychain, no API.
 
 - `accounts`: the configured ones in rotation order (disabled ones after),
   then any the log names that the config no longer does (`configured`
-  `false`, `profile` `null`), by name. `profile` is the pool owner.
+  `false`, `profile` and `pool` `null`, `profiles` empty), by name. `pool`
+  is the pool the account is in (`null` for none), `profiles` every profile
+  that may use it, and `profile` the first of them.
 - `series`: oldest first. `five_hour` / `seven_day` are percentages, `null`
   when the reading did not report that window (never `0`).
 - `switches`: every `switch` in the audit log in the span, oldest first —
@@ -304,6 +307,7 @@ Claude picks the matching skill.
 | `/cs doctor` | `cs:doctor` | `cs doctor` | no |
 | `/cs switch <id>`, `/cs use <id>` | `cs:switch` | `cs why --json`, then `cs use <id>` | yes, without asking: a swap is hot and reversible |
 | `/cs login <id>`, `/cs add <id>` | `cs:login` | `cs login <id> --direct` | yes, after confirming the account and browser |
+| `/cs pool` | `cs:pool` | `cs pool list`, then `cs pool …` or `cs profile pools` | the config, after confirming; listing changes nothing |
 | `/cs setup` | `cs:setup` | checks the binary, `cs statusline install`, `cs doctor` | `settings.json`; asks before replacing a status line |
 
 The commands live under `/cs` because `/status`, `/login` and `/doctor` belong

@@ -58,6 +58,11 @@ final class Store: ObservableObject {
     /// `account list --json`: plan and the rest per account, from config
     /// and state alone (lane 15).
     var accountList: AccountList? { data.accountList }
+    /// `pool list --json`: every pool and the accounts in no pool (shared
+    /// pools); nil until read, and with a binary from before pools.
+    var pools: PoolList? { data.pools }
+    /// The binary has no pools: the panes say so and show what they can.
+    var poolsUnsupported: Bool { data.poolsUnsupported }
 
     @Published private(set) var schema: ConfigSchema?
     @Published private(set) var values: ConfigValues?
@@ -180,6 +185,8 @@ final class Store: ObservableObject {
     nonisolated(unsafe) private var versions = VersionCache()
     private var settingsAt = Date.distantPast
     private var profilesAt = Date.distantPast
+    /// When a binary last said it has no pools: asked again only this often.
+    private var poolsRefusedAt = Date.distantPast
     private var inFlight = 0
     /// --render: the clock the fixtures were written at.
     private var fixedNow: Date?
@@ -217,7 +224,8 @@ final class Store: ObservableObject {
         fixedNow = preview?.now
         data = AppData(binaryPath: binaryPath, binaryVersion: binaryPath == nil ? nil : CLI.minimumVersion,
                        problem: problem, state: fixtures.state, why: fixtures.why, settings: nil,
-                       profiles: fixtures.profiles, chrome: fixtures.chrome, accountList: fixtures.accountList)
+                       profiles: fixtures.profiles, chrome: fixtures.chrome, accountList: fixtures.accountList,
+                       pools: fixtures.pools, poolsUnsupported: fixtures.poolsUnsupported)
         schema = fixtures.schema
         values = fixtures.values
         daemon = fixtures.daemon
@@ -288,7 +296,9 @@ final class Store: ObservableObject {
         let stateFile = paths.stateFile
         let request = ReadRequest(full: full,
                                   settings: Date().timeIntervalSince(settingsAt) > 60 || data.settings == nil,
-                                  profiles: wantProfiles || Date().timeIntervalSince(profilesAt) > Self.profilesEvery)
+                                  profiles: wantProfiles || Date().timeIntervalSince(profilesAt) > Self.profilesEvery,
+                                  pools: !data.poolsUnsupported || wantProfiles
+                                    || Date().timeIntervalSince(poolsRefusedAt) > Self.profilesEvery)
         work.async {
             let path = full ? BinaryLocator(configured: configured).locate() : nil
             let reading = RefreshReader.read(path: path, request: request, token: token, stateFile: stateFile) {
@@ -298,6 +308,7 @@ final class Store: ObservableObject {
                 let applied = self.data.apply(reading)
                 if applied.contains(.settings) { self.settingsAt = Date() }
                 if applied.contains(.profiles) && reading.profilesError == nil { self.profilesAt = Date() }
+                if applied.contains(.pools) && reading.poolsUnsupported { self.poolsRefusedAt = Date() }
                 self.rebuild()
                 if full { self.refreshedNext() }
                 self.inFlight -= 1
@@ -387,41 +398,66 @@ final class Store: ObservableObject {
         }
     }
 
-    /// Puts an account into a profile (`profile pool`), applying the CLI's
-    /// pools as soon as it answers and saying where the account is now.
-    func movePool(_ step: PoolStep, key: String) {
-        let run: (CLI) -> Result<PoolResult, CallError>
-        let account: String
-        switch step {
-        case .already: return
-        case .add(let a, let to):
-            account = a
-            run = { $0.profilePool(to, .add, account: a, to: nil) }
-        case .move(let a, let from, let to):
-            account = a
-            run = { $0.profilePool(from, .remove, account: a, to: to) }
-        }
-        // Edits run concurrently: the answer is stamped like a read begun
-        // now, so an older edit's answer never lands over a newer one.
+    // MARK: pools (shared pools)
+
+    /// Runs a pool edit, applying the pool list it answers as soon as it
+    /// does (stamped when it started: edits run concurrently, and an older
+    /// answer never lands over a newer one), then the note.
+    func poolEdit(_ key: String, title: String, note: String?, _ op: @escaping (CLI) -> Result<PoolList, CallError>) {
         let token = data.begin()
-        act(key, title: "Could not move \(account)", profiles: true, run) { [weak self] r in
-            self?.applyPools(r, token: token)
+        act(key, title: title, profiles: true, op) { [weak self] l in
+            guard let self else { return }
+            self.data.applyPools(l, token: token)
+            self.rebuild()
+            if let n = note { self.note = n }
         }
     }
 
-    /// Takes an account out of a profile, back to default (D6).
-    func removeFromPool(_ account: String, profile: String, key: String) {
-        let token = data.begin()
-        act(key, title: "Could not remove \(account) from \(profile)", profiles: true,
-            { $0.profilePool(profile, .remove, account: account, to: nil) }) { [weak self] r in
-            self?.applyPools(r, token: token)
+    /// A drop on another pool's section, or "Move to pool".
+    func runDrop(_ d: PoolDrop) {
+        switch d {
+        case .move(let a, _, let to):
+            poolEdit("move:\(a)", title: "Could not move \(a) to \(to)", note: Notes.poolDrop(d)) { $0.poolMove(a, to: to) }
+        case .remove(let a, let from):
+            poolEdit("move:\(a)", title: "Could not take \(a) out of \(from)", note: Notes.poolDrop(d)) {
+                $0.poolRemove(from, account: a)
+            }
         }
     }
 
-    private func applyPools(_ r: PoolResult, token: Int) {
-        data.applyPools(r, token: token)
-        rebuild()
-        note = Notes.pool(r)
+    /// A pool edit whose refusal the caller shows itself (a sheet, a
+    /// section): applied on success; the refusal returned. A refresh follows
+    /// either way.
+    func poolCall(_ key: String, _ op: @escaping (CLI) -> Result<PoolList, CallError>) async -> CallError? {
+        let token = data.begin()
+        defer { refresh(full: true, profiles: true) }
+        switch await call(key, op) {
+        case .success(let l):
+            data.applyPools(l, token: token)
+            rebuild()
+            return nil
+        case .failure(let e):
+            return e
+        }
+    }
+
+    /// `profile pools`, step by step (ProfilePools.steps); the answer of the
+    /// last applied at once. Returns the refusal, if any.
+    func setProfilePools(_ profile: String, steps: [[String]]) async -> CallError? {
+        let token = data.begin()
+        defer { refresh(full: true, profiles: true) }
+        var last: ProfileInfo?
+        for step in steps {
+            switch await call("pools:\(profile)", { $0.profilePools(profile, step) }) {
+            case .success(let p): last = p
+            case .failure(let e): return e
+            }
+        }
+        if let p = last {
+            data.applyProfile(p, token: token)
+            rebuild()
+        }
+        return nil
     }
 
     // MARK: actions
@@ -608,8 +644,14 @@ final class Store: ObservableObject {
     /// The configured accounts, in rotation order as far as it is known.
     var accountIDs: [String] { data.accountIDs(snapshot: snapshot) }
 
-    /// The profile whose pool holds an account.
-    func pool(of account: String) -> String? { data.pool(of: account) }
+    /// The first profile that may use an account.
+    func profile(of account: String) -> String? { data.profile(of: account) }
+
+    /// The profile an account is live in: state.json's record, else the
+    /// account list's.
+    func liveIn(_ account: String) -> String? {
+        snapshot?.liveIn(account) ?? accountList?.account(account)?.activeIn
+    }
 
     /// Switches a profile to its best account now (why's `best`).
     func switchToBest(_ card: ProfileCard) {
@@ -634,6 +676,8 @@ struct PreviewData {
     /// `chrome profiles --json`, for the pickers' names.
     var chromeProfiles: ChromeProfiles?
     var accountList: AccountList?
+    var pools: PoolList?
+    var poolsUnsupported = false
     var schema: ConfigSchema?
     var values: ConfigValues?
     var daemon: DaemonStatus?

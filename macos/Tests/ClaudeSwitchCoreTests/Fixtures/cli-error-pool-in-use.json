@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "pool_in_use",
+    "hint": "drop it from their pools first: claudeswitch profile pools <profile> <pool>...",
+    "message": "pool \"team\" is in use: profiles \"default\", \"work\" list it",
+    "retry_at": null
+  }
+}

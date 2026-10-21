@@ -41,7 +41,7 @@ func realAcctDeps() acctDeps {
 var acctSeams = realAcctDeps()
 
 const accountUsage = "usage: claudeswitch account list | rename <old> <new> | delete <id> [--yes] | " +
-	"pin <id> [--hard] | unpin [<id>] [--profile P] | priority <id>...   (each takes --json)"
+	"pin <id> [--hard] [--profile P] | unpin [<id>] [--profile P] | priority <id>...   (each takes --json)"
 
 // cmdAccount dispatches `cs account <verb>`.
 func cmdAccount(args []string) error {
@@ -53,7 +53,8 @@ func cmdAccount(args []string) error {
 	cfgPath := fs.String("config", "", "path to config.toml")
 	asJSON := fs.Bool("json", false, "machine-readable output")
 	yes := fs.Bool("yes", false, "do not ask for confirmation")
-	profName := fs.String("profile", "", "unpin: the profile to unpin")
+	profName := fs.String("profile", "", "pin, unpin: the profile to pin or unpin (pin's default: the "+
+		"profile the account is live in)")
 	hard := fs.Bool("hard", false, "pin: stay even when the account is refused, out of quota or needs a sign-in")
 	p, err := parseApp(fs, rest, accountUsage)
 	if err != nil {
@@ -80,7 +81,7 @@ func cmdAccount(args []string) error {
 		if len(p) != 1 {
 			return appErr(codeUsage, accountUsage, "pin takes one account id")
 		}
-		return accountPin(w, *cfgPath, p[0], *hard, *asJSON)
+		return accountPin(w, *cfgPath, p[0], *profName, *hard, *asJSON)
 	case "unpin":
 		if len(p) > 1 {
 			return appErr(codeUsage, accountUsage, "unpin takes at most one account id")
@@ -141,7 +142,7 @@ func accountRename(w io.Writer, cfgPath, oldID, newID string, asJSON bool) error
 }
 
 // dropAccountText removes id's [[account]] block and every list entry
-// naming it: priority, and each profile's pool.
+// naming it: priority, each profile's pool and each [[pool]]'s accounts.
 func dropAccountText(text string, cfg *config.Config, id string) (string, error) {
 	out, err := deleteBlock(text, blockRef{"account", id})
 	if err != nil {
@@ -160,17 +161,26 @@ func dropAccountText(text string, cfg *config.Config, id string) (string, error)
 			}
 		}
 	}
+	for _, p := range cfg.Pools {
+		if slices.Contains(p.Accounts, id) {
+			if out, _, err = mapArray(out, blockRef{"pool", p.Name}, "accounts", drop); err != nil {
+				return "", err
+			}
+		}
+	}
 	return out, nil
 }
 
 // accountPin suspends automatic rotation in the profile id is live in
-// (policy: "pinned to X"). Only the live account can be pinned: a pin on
-// another would hold the profile on whatever it is using now.
+// (policy: "pinned to X"): profName, or with none the profile that may use id
+// and records it live (D31: several may use it, one at a time). Only the
+// live account can be pinned: a pin on another would hold the profile on
+// whatever it is using now.
 //
 // The daemon lifts a pin on an account that is refused, out of quota or
 // needs a sign-in (IMPROVEMENTS F3, policy.PinLifted); hard keeps it even
 // then, as every pin did before.
-func accountPin(w io.Writer, cfgPath, id string, hard, asJSON bool) error {
+func accountPin(w io.Writer, cfgPath, id, profName string, hard, asJSON bool) error {
 	cfg, st, err := load(cfgPath)
 	if err != nil {
 		return wrapErr(codeConfigInvalid, "", err)
@@ -178,11 +188,29 @@ func accountPin(w io.Writer, cfgPath, id string, hard, asJSON bool) error {
 	if !hasAccount(cfg, id) {
 		return appErr(codeNotFound, "", "no account %q in the config", id)
 	}
-	prof, ok := cfg.ProfileOf(id)
-	if !ok {
+	if profName != "" {
+		if _, ok := cfg.ProfileNamed(profName); !ok {
+			return noSuchProfile(cfg, profName)
+		}
+	}
+	profiles := cfg.ProfilesOf(id)
+	if len(profiles) == 0 {
 		// Profiles declared, no default, a disabled account no pool lists:
 		// it can be live in no profile, so there is nothing to pin.
 		return appErr(codeNotActive, "", "%q is in no profile's pool, so it is live in no profile", id)
+	}
+	prof := profName
+	if prof == "" {
+		prof = profiles[0]
+		for _, name := range profiles {
+			if st.Profile(name).Active == id {
+				prof = name
+				break
+			}
+		}
+	} else if !slices.Contains(profiles, prof) {
+		return appErr(codeNotActive, "", "profile %s does not use %q (%s may), so it is live in none of its pools",
+			prof, id, strings.Join(profiles, ", "))
 	}
 	ps := st.Profile(prof)
 	if ps.Active != id {

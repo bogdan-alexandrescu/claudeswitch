@@ -1,0 +1,27 @@
+{
+ "pools": [
+  {
+   "accounts": [
+    "work-1",
+    "personal"
+   ],
+   "name": "default",
+   "own": true,
+   "profiles": [
+    "default"
+   ]
+  },
+  {
+   "accounts": [
+    "work-team",
+    "work-2"
+   ],
+   "name": "work",
+   "own": true,
+   "profiles": [
+    "work"
+   ]
+  }
+ ],
+ "unlisted": []
+}

@@ -251,6 +251,18 @@ public struct Snapshot: Equatable {
 
     public func card(_ name: String) -> ProfileCard? { cards.first { $0.name == name } }
 
+    /// The profile an account is live in, as state.json records it.
+    public func liveIn(_ account: String) -> String? {
+        profiles.first { $0.active == account }?.name
+    }
+
+    /// The profile other than `profile` an account is live in: profiles
+    /// that share a pool use its accounts one at a time (D34), so there it
+    /// is "in use by" that one, never offered.
+    public func liveElsewhere(_ account: String, notIn profile: String) -> String? {
+        profiles.first { $0.active == account && $0.name != profile }?.name
+    }
+
     /// The profile the menu-bar title follows: the one chosen while it
     /// exists, else default, else the first.
     public func followed(_ chosen: String?) -> String {

@@ -225,7 +225,8 @@ func colorState(s string) string {
 		return paint(amber, s)
 	case strings.Contains(s, "no headroom"), strings.Contains(s, "refused"):
 		return paint(red, s)
-	case strings.Contains(s, "reserved"):
+	case strings.Contains(s, "reserved"), strings.HasPrefix(s, "in use by"):
+		// Another profile's for now (D34): nothing to act on here.
 		return paint(grey, s)
 	case strings.Contains(s, "not set up"), strings.Contains(s, "unknown"):
 		return paint(dim, s)

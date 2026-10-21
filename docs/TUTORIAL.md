@@ -46,7 +46,7 @@ Pick the archive for your machine (`darwin_arm64` for Apple silicon,
 put the binary in `~/.local/bin` with `cs` as a short name for it:
 
 ```sh
-VERSION=v0.6.4
+VERSION=v0.7.2
 TARGET=darwin_arm64
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 curl -LO "$BASE/claudeswitch_${VERSION}_${TARGET}.tar.gz"
@@ -65,7 +65,7 @@ cs version
 ```
 
 ```
-claudeswitch v0.6.4
+claudeswitch v0.7.2
 ```
 
 If your shell says `cs: command not found`, add `~/.local/bin` to your `PATH`
@@ -155,10 +155,18 @@ default browser holds `personal`, use a different browser application for
 cs login research --direct --browser Safari
 ```
 
+The browser decides the person; the organization is the one it is in, unless
+you ask for another. If the same person belongs to a second organization, add
+that one under its own name with `--org` and the organization's id:
+
+```sh
+cs login research-2 --direct --org 11111111-1111-1111-1111-111111111111
+```
+
 Or do it from the app: **+ Add account** at the foot of the popover opens
 this sheet.
 
-<p align="center"><img src="images/add-account.png" width="520" alt="The Add account sheet: Sign in with browser or Save current login; a name, the profile it joins, the browser, then open the sign-in page and paste the code"></p>
+<p align="center"><img src="images/add-account.png" width="520" alt="The Add account sheet: Sign in with browser or Save current login; a name, the pool it joins, the organization, the browser, then open the sign-in page and paste the code"></p>
 
 Type the name, pick the browser, click **Open sign-in page**, sign in, and
 paste the code into the sheet. The app runs both `cs login` steps for you. **Save current login** is the other route: run `/login` in
@@ -278,9 +286,9 @@ same switch is in **Settings → Daemon**.
 
 ## 4. A second profile for work
 
-A **profile** is one Claude Code config directory with its own pool of
-accounts. Keeping work separate means work's sessions only ever rotate
-between work accounts.
+A **profile** is one Claude Code config directory that rotates over the
+accounts of the pools it uses. Keeping work separate means work's sessions
+only ever rotate between work accounts, until you choose to share some.
 
 Sign in to the work accounts first:
 
@@ -324,6 +332,26 @@ cs use work-team --profile work
 
 <p align="center"><img src="images/cli-use.svg" width="720" alt="Output of cs use work-team --profile work: now using work-team in profile work, with its 5-hour and 7-day usage, MCP logins untouched, no restart needed"></p>
 
+### Share a pool with another profile
+
+Pools can be shared. Say you want a third profile, `review`, that runs on the
+work accounts too. Give it work's pool instead of accounts of its own:
+
+```sh
+cs profile create review           # a profile with no accounts of its own
+cs profile pools review work       # it uses work's pool: review and work share it
+cs profile seed review work-team   # sign it in with the account work is not on
+```
+
+The two profiles take those accounts one at a time. While `work` is on
+`work-1`, the `review` blocks of `cs status` and `cs why` show `work-1` as
+`in use by work`, rotation in `review` passes over it, and the account picker
+on the `review` card shows it without offering it. In the app, **New profile**
+in **Settings → Profiles** does the same: check `work` under **Pools** and
+choose `work-team` under **Sign in with**. Named pools of any accounts you
+choose, and a profile that uses several pools in order:
+[GUIDE → Sharing accounts between profiles](GUIDE.md#sharing-accounts-between-profiles).
+
 ### Follow a profile in the menu bar
 
 The menu bar follows one profile at a time. Open the `work` row's chevron in
@@ -354,7 +382,7 @@ cs profile set work chrome "Work"
 In the app: **Settings → Profiles**, open the profile, and pick it under
 **Claude in Chrome → Chrome profile**. The default is Chrome's last used.
 
-<p align="center"><img src="images/settings-profiles.png" width="880" alt="Settings, Profiles pane: the default profile open, with its accounts personal and research, its thresholds, and the Claude in Chrome section with the Chrome profile picker set to Chrome's last used (Person 1)"></p>
+<p align="center"><img src="images/settings-profiles.png" width="880" alt="Settings, Profiles pane: the default profile open, with the pool it uses, its thresholds, and the Claude in Chrome section with the Chrome profile picker set to Chrome's last used (Person 1)"></p>
 
 **One Chrome profile per account.** Each account has a Chrome profile of its
 own, and browser tasks follow every rotation by themselves, with no sign-in
@@ -372,7 +400,7 @@ In the app, the same choice is **Chrome profile** in an account's ⋯ menu in
 **Settings → Accounts**: the same as its profile's, one of your Chrome
 profiles, or a new one.
 
-<p align="center"><img src="images/settings-accounts.png" width="880" alt="Settings, Accounts pane: personal, research, work-1 and work-team in rotation order with small rings, state, plan and login expiry, and the recovery copies"></p>
+<p align="center"><img src="images/settings-accounts.png" width="880" alt="Settings, Accounts pane: personal, research, work-1 and work-team grouped by pool, with small rings, state, who uses each, plan and login expiry, and the recovery copies"></p>
 
 An account uses its own Chrome profile if it has one, else its profile's,
 else Chrome's last used.
@@ -506,9 +534,13 @@ Run `cs why`. It says, account by account, why it stayed. The usual reasons:
 - **The account is under its threshold.** Rotation waits for 85% of the
   session or 98% of the week. A profile can have its own thresholds
   (Settings → Profiles).
-- **No other account has room.** Every other account in the pool is refused,
-  over its threshold, or would land too close to it (the landing margin).
-  `cs status` shows when each one clears.
+- **No other account has room.** Every other account in the profile's pools
+  is refused, over its threshold, or would land too close to it (the landing
+  margin). `cs status` shows when each one clears.
+- **The account it would move to is in use by another profile.** An account
+  in a pool two profiles share is used by one at a time; `cs why` shows
+  `in use by work` for it, and rotation takes another, or waits when none is
+  left.
 - **The profile is pinned.** **Pin** on the card, or `cs use`, holds the
   profile on one account until you unpin it.
 - **It is waiting for a pause.** Below the hard floor it swaps between turns,

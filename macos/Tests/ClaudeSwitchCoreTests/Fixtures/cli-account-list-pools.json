@@ -1,0 +1,121 @@
+{
+  "accounts": [
+    {
+      "access_expires_at": null,
+      "active_in": "default",
+      "email": null,
+      "enabled": true,
+      "id": "personal",
+      "pin_hard": false,
+      "pinned": false,
+      "plan": "Max 20x",
+      "pool": "personal",
+      "profile": "default",
+      "profiles": [
+        "default"
+      ],
+      "reading": null,
+      "refresh_expires_at": null,
+      "seat": null,
+      "state": "available"
+    },
+    {
+      "access_expires_at": null,
+      "active_in": null,
+      "email": null,
+      "enabled": true,
+      "id": "team-1",
+      "pin_hard": false,
+      "pinned": false,
+      "plan": "Team",
+      "pool": "team",
+      "profile": "default",
+      "profiles": [
+        "default",
+        "work"
+      ],
+      "reading": null,
+      "refresh_expires_at": null,
+      "seat": null,
+      "state": "needs_login"
+    },
+    {
+      "access_expires_at": null,
+      "active_in": "work",
+      "email": null,
+      "enabled": true,
+      "id": "team-2",
+      "pin_hard": false,
+      "pinned": false,
+      "plan": "Team",
+      "pool": "team",
+      "profile": "default",
+      "profiles": [
+        "default",
+        "work"
+      ],
+      "reading": null,
+      "refresh_expires_at": null,
+      "seat": null,
+      "state": "available"
+    },
+    {
+      "access_expires_at": null,
+      "active_in": null,
+      "email": null,
+      "enabled": true,
+      "id": "team-3",
+      "pin_hard": false,
+      "pinned": false,
+      "plan": "Team",
+      "pool": "team",
+      "profile": "default",
+      "profiles": [
+        "default",
+        "work"
+      ],
+      "reading": null,
+      "refresh_expires_at": null,
+      "seat": null,
+      "state": "available"
+    },
+    {
+      "access_expires_at": null,
+      "active_in": null,
+      "email": null,
+      "enabled": true,
+      "id": "ops-1",
+      "pin_hard": false,
+      "pinned": false,
+      "plan": "Max 20x",
+      "pool": "ops",
+      "profile": "work",
+      "profiles": [
+        "work"
+      ],
+      "reading": null,
+      "refresh_expires_at": null,
+      "seat": null,
+      "state": "available"
+    },
+    {
+      "access_expires_at": null,
+      "active_in": null,
+      "email": null,
+      "enabled": true,
+      "id": "loose-1",
+      "pin_hard": false,
+      "pinned": false,
+      "plan": "Pro",
+      "pool": null,
+      "profile": "default",
+      "profiles": [
+        "default"
+      ],
+      "reading": null,
+      "refresh_expires_at": null,
+      "seat": null,
+      "state": "available"
+    }
+  ]
+}

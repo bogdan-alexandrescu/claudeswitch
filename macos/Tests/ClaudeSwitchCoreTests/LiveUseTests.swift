@@ -2,8 +2,7 @@ import Foundation
 import Testing
 @testable import ClaudeSwitchCore
 
-/// Lane 15, the owner's live use: moving an account default holds only by
-/// D6, and alerts shown twice.
+/// Lane 15, the owner's live use: what a pool lists, and alerts shown twice.
 @Suite struct LiveUseTests {
     func list() throws -> ProfileList {
         try #require(ProfileList(data: try encode([
@@ -18,23 +17,6 @@ import Testing
         #expect(l.profile("default")?.listed == ["a1"])
         let old = try #require(ProfileList(data: try encode(["profiles": [["name": "default", "pool": ["a1"]]]])))
         #expect(old.profile("default")?.listed == nil, "an older CLI does not say")
-    }
-
-    @Test func testAnAccountDefaultHoldsOnlyByD6IsAddedNotMoved() throws {
-        let l = try list()
-        #expect(l.step(adding: "lab-1", to: "work") == .add(account: "lab-1", to: "work"),
-                "no pool lists it: add it to work; never remove it from default")
-        #expect(l.step(adding: "a1", to: "work") == .move(account: "a1", from: "default", to: "work"))
-        #expect(l.step(adding: "w1", to: "lab") == .move(account: "w1", from: "work", to: "lab"))
-        #expect(l.step(adding: "w1", to: "work") == .already)
-        #expect(l.step(adding: "lab-1", to: "default") == .already)
-        #expect(l.step(adding: "nobody", to: "lab") == .add(account: "nobody", to: "lab"))
-    }
-
-    @Test func testAnOlderCLIFallsBackToTheEffectivePool() throws {
-        let l = try #require(ProfileList(data: try encode([
-            "profiles": [["name": "default", "pool": ["a1"]], ["name": "work", "pool": [String]()]]])))
-        #expect(l.step(adding: "a1", to: "work") == .move(account: "a1", from: "default", to: "work"))
     }
 
     // MARK: one action, one alert

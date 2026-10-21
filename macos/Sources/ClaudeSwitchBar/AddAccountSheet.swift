@@ -7,7 +7,8 @@ import SwiftUI
 /// or save the login Claude Code is using in one profile and add it to
 /// another (`add --from S --profile T`, owner decision B2). Signing an
 /// existing account in again is the browser route with its name fixed and
-/// its profile shown, not chosen: signing in never moves an account (B3).
+/// where it is shown, not chosen: signing in never moves an account (B3). An
+/// account is in one pool, which several profiles may use (shared pools).
 struct AddAccountSheet: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) private var dismiss
@@ -23,6 +24,11 @@ struct AddAccountSheet: View {
     @State var source = StateFile.defaultProfile
     @State var browser: Browser?
     @State var browsers: [Browser] = []
+    /// The pool a new account goes into (D37); nil until the pools are known.
+    @State var poolPick: PoolPick?
+    /// The organization a new account signs in to (GROUND_TRUTH §48).
+    @State var orgPick: OrgPick = .browser
+    @State var orgTyped = ""
     @State var started: LoginStart?
     @State var code = ""
     @State var error: AppError?
@@ -70,8 +76,48 @@ struct AddAccountSheet: View {
         return AddForm.lockedProfile(account: id, accounts: store.accountList, list: store.profiles)
     }
 
-    /// The profile the account will join: its own when it exists.
-    var target: String { locked ?? profile }
+    /// `account list`'s entry for an existing account: its pool and the
+    /// profiles that may use it.
+    var info: AccountInfo? { store.accountList?.account(request.account ?? name) }
+
+    /// The profile `add` names: for an existing account the source when it
+    /// may use it, else the first that may; for a new one, the one chosen.
+    var target: String {
+        guard let l = locked else { return profile }
+        return AddForm.existingTarget(info: info, source: source, fallback: l)
+    }
+
+    /// Whether the source profile may use the account too (a pool both
+    /// use): then it keeps it until its own rotation moves on (D34).
+    var sourceUsesIt: Bool {
+        if locked != nil { return info?.profiles?.contains(source) ?? false }
+        return AddForm.newAccountShared(source: source, target: profile, list: store.profiles, pools: store.pools)
+    }
+
+    /// Where a new account goes: the profile's own pool, or the first it
+    /// lists.
+    func destination(_ p: String) -> String {
+        AddForm.destination(target: p, list: store.profiles, pools: store.pools)
+    }
+
+    /// Whether a new account's pool is chosen here (D37): the CLI lists
+    /// pools. An older one, or no [[profile]] blocks, keeps the Profile row.
+    var choosesPool: Bool { locked == nil && store.pools != nil && !(store.profiles?.profiles.isEmpty ?? true) }
+
+    /// Where a new account goes, in the sheet's words.
+    var whereItGoes: String {
+        if choosesPool, let p = poolPick { return NewAccountPool.describe(p, pools: store.pools) }
+        return destination(route == .current ? target : (started?.profile ?? profile))
+    }
+
+    /// The profiles that may use a new account where it goes.
+    var newUsers: [String] {
+        guard let p = poolPick else { return [target] }
+        switch p {
+        case .none: return [StateFile.defaultProfile]
+        case .pool(let n): return store.pools?.pool(n)?.profiles ?? []
+        }
+    }
 
     func label(_ s: String) -> some View {
         Text(s).frame(width: Self.labelWidth, alignment: .leading)
@@ -98,12 +144,24 @@ struct AddAccountSheet: View {
                     .disabled(request.relogin || started != nil)
             }
             GridRow {
-                label(route == .current ? "Add it to profile" : "Profile")
+                label(locked != nil ? "Used by" : choosesPool ? (route == .current ? "Add it to pool" : "Pool")
+                      : route == .current ? "Add it to profile" : "Profile")
                 VStack(alignment: .leading, spacing: 4) {
                     if let l = locked {
-                        profilePicker("Profile", .constant(l)).disabled(true)
-                        Text(AddForm.lockedNote(account: request.account ?? name, profile: l))
+                        // Shown, not chosen: an existing account stays in its pool.
+                        Text(AddForm.usedBy(info: info, profile: l))
+                        Text(AddForm.lockedNote(account: request.account ?? name, info: info, profile: l,
+                                                grouped: PoolLayout.grouped(store.pools, profiles: store.profiles)))
                             .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else if choosesPool {
+                        Picker("Pool", selection: $poolPick) {
+                            ForEach(NewAccountPool.options(pools: store.pools, profiles: store.profiles), id: \.self) {
+                                Text($0.label).tag(Optional($0.pick))
+                            }
+                        }
+                        .labelsHidden()
+                        .disabled(started != nil)
                     } else {
                         profilePicker(route == .current ? "Add it to profile" : "Profile", $profile)
                             .disabled(started != nil)
@@ -111,6 +169,10 @@ struct AddAccountSheet: View {
                 }
             }
             if route == .browser {
+                GridRow {
+                    label("Organization")
+                    organization
+                }
                 GridRow {
                     label("Browser")
                     Picker("Browser", selection: $browser) {
@@ -123,6 +185,49 @@ struct AddAccountSheet: View {
             }
         }
     }
+
+    /// A new account picks one; an existing one asks for its own, which
+    /// the CLI does by itself.
+    @ViewBuilder var organization: some View {
+        if locked != nil {
+            Text(existingSeat ? "Its own — the sign-in asks for it" : "The one your browser is in")
+                .foregroundStyle(.secondary)
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                Picker("Organization", selection: $orgPick) {
+                    Text("The one your browser is in").tag(OrgPick.browser)
+                    ForEach(AddForm.organizations(store.accountList), id: \.self) {
+                        Text($0.label).tag(OrgPick.known($0.id))
+                    }
+                    Text("Another organization…").tag(OrgPick.other)
+                }
+                .labelsHidden()
+                .disabled(started != nil)
+                if orgPick == .other {
+                    TextField("Organization id", text: $orgTyped, prompt: Text("organization id"))
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(started != nil)
+                }
+                if let problem = AddForm.orgProblem(orgPick, typed: orgTyped) {
+                    Text(problem).font(.caption)
+                        .foregroundStyle(orgTyped.isEmpty ? Color.secondary : Color.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text(orgPick == .browser
+                         ? "To add someone in a second organization, choose it here."
+                         : "The sign-in asks for this organization, and is refused if it comes back in another.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            // The cell takes the column's width: measured narrower, a
+            // one-line caption reserved a second line above the row.
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    var existingSeat: Bool { store.accountList?.account(request.account ?? name)?.seat != nil }
 
     func profilePicker(_ title: String, _ selection: Binding<String>) -> some View {
         Picker(title, selection: selection) {
@@ -149,8 +254,8 @@ struct AddAccountSheet: View {
                 Label(m, systemImage: "info.circle").font(.caption).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Text("Your current Claude Code session is not touched. The account is checked, stored and added to "
-                 + (started?.profile ?? locked ?? profile) + ".")
+            Text("Your current Claude Code session is not touched. The account is checked and stored"
+                 + (locked != nil ? "; it stays in its pool." : ", and added to " + whereItGoes + "."))
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             if let s = started {
@@ -163,15 +268,26 @@ struct AddAccountSheet: View {
 
     var currentNote: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Saves the account Claude Code is signed into in \(source), under this name, and adds it to \(target).")
+            Text("Saves the account Claude Code is signed into in \(source) under this name"
+                 + (locked != nil ? "; it stays in its pool." : ", and adds it to \(whereItGoes)."))
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            if let n = AddForm.crossProfileNote(source: source, target: target) {
+            if let n = crossNote {
                 Label(n.prefix(1).uppercased() + n.dropFirst() + ".", systemImage: "info.circle")
                     .font(.caption).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    /// Saving one profile's login where another may use it: what happens to
+    /// the source's session. With a pool chosen, the profiles that use it.
+    var crossNote: String? {
+        guard choosesPool else { return AddForm.crossProfileNote(source: source, target: target, sourceUsesIt: sourceUsesIt) }
+        let others = newUsers.filter { $0 != source }
+        guard !others.isEmpty else { return nil }
+        return AddForm.crossProfileNote(source: source, target: others.joined(separator: ", "),
+                                        sourceUsesIt: newUsers.contains(source))
     }
 
     var buttons: some View {
@@ -185,7 +301,8 @@ struct AddAccountSheet: View {
                 if route == .browser {
                     if started == nil {
                         Button("Open sign-in page", action: start).keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
-                            .disabled(name.isEmpty || busy)
+                            .disabled(name.isEmpty || busy
+                                      || (locked == nil && AddForm.orgProblem(orgPick, typed: orgTyped) != nil))
                     } else {
                         Button("Finish", action: finish).keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
                             .disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy)
@@ -209,19 +326,26 @@ struct AddAccountSheet: View {
         // The login to save: the profile asked about, else the followed one.
         source = AddForm.initialTarget(requested: request.profile ?? store.snapshot?.followed(store.menuProfile),
                                        list: store.profiles)
+        poolPick = NewAccountPool.initial(profile: request.profile ?? profile, pools: store.pools, profiles: store.profiles)
         if route == .current { askName() }
     }
 
     func fail(_ e: CallError) {
         if case .app(let a) = e { error = a } else { error = AppError(code: "failed", message: e.message, hint: e.hint) }
+        if let h = AddForm.appHint(code: error?.code ?? "", asked: started?.org) { error?.hint = h }
     }
 
     func start() {
         error = nil
-        // An existing account keeps its profile: never ask for another.
+        // An existing account keeps its profile and asks for its own
+        // organization: never ask for another.
         let (n, p, b) = (name, locked == nil ? profile : nil, browser?.name)
+        let o = locked == nil ? AddForm.org(orgPick, typed: orgTyped) : nil
+        // D37: the pool chosen, in place of the profile.
+        let pool = choosesPool ? poolPick : nil
+        let prof = pool == nil ? p : nil
         Task {
-            switch await store.call("login", { $0.loginStart(account: n, profile: p, browser: b) }) {
+            switch await store.call("login", { $0.loginStart(account: n, profile: prof, browser: b, org: o, pool: pool) }) {
             case .success(let st):
                 started = st
                 Launcher.open(st.url, in: browser)
@@ -241,7 +365,9 @@ struct AddAccountSheet: View {
                 store.refresh(full: true, profiles: true)
             case .failure(let e):
                 fail(e)
-                if e.code == "no_pending_login" { started = nil; code = "" }
+                // A refusal spent the attempt: open the form again, to pick
+                // another organization or browser and sign in again.
+                if let c = e.code, AddForm.startsOver(after: c) { started = nil; code = "" }
             }
         }
     }
@@ -269,8 +395,11 @@ struct AddAccountSheet: View {
     func save() {
         error = nil
         let (n, f, p) = (name.isEmpty ? suggestion.suggested : name, source, target)
+        // D37: the pool chosen; the source alone is then the profile named.
+        let pool = choosesPool ? poolPick : nil
+        let prof = pool == nil ? p : nil
         Task {
-            switch await store.call("add", { $0.add(account: n, from: f, profile: p) }) {
+            switch await store.call("add", { $0.add(account: n, from: f, profile: prof, pool: pool) }) {
             case .success(let r):
                 added = r
                 store.refresh(full: true, profiles: true)
@@ -314,7 +443,14 @@ struct AddedView: View {
                 row("Email", added.email)
                 row("Plan", added.plan)
                 row("Seat", added.seat)
-                row("Profile", added.profile.map { p in p + (added.pool.isEmpty ? "" : " (" + added.pool.joined(separator: ", ") + ")") })
+                if let pool = added.poolName {
+                    row("Pool", pool)
+                }
+                if let users = added.profiles {
+                    row("Used by", users.isEmpty ? "no profile" : users.joined(separator: ", "))
+                } else {
+                    row("Profile", added.profile.map { p in p + (added.pool.isEmpty ? "" : " (" + added.pool.joined(separator: ", ") + ")") })
+                }
                 row("Login", added.renewable ? "renews by itself" : "will need signing in again")
             }
             .font(.callout)

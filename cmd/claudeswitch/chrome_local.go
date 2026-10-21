@@ -223,15 +223,20 @@ type chromeResolved struct {
 }
 
 // chromeProfileFor is the claudeswitch profile an account is judged in when
-// none is named: where it is live, else the profile whose pool holds it.
+// none is named: where it is live, else this shell's profile if it may use
+// the account, else the first that may (D31: several can).
 func chromeProfileFor(cfg *config.Config, st *state.State, account string) string {
 	for _, in := range cfg.EffectiveProfiles() {
 		if ps := st.Profiles[in.Name]; ps != nil && ps.Active == account {
 			return in.Name
 		}
 	}
-	if p, ok := cfg.ProfileOf(account); ok {
-		return p
+	profiles := cfg.ProfilesOf(account)
+	if here, err := pickProfile(cfg, ""); err == nil && slices.Contains(profiles, here.Name) {
+		return here.Name
+	}
+	if len(profiles) > 0 {
+		return profiles[0]
 	}
 	return ""
 }

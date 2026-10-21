@@ -145,7 +145,7 @@ func settings() []setting {
 		{name: "api_budget", kind: "int", min: num(2),
 			get:  func(c *config.Config) string { return strconv.Itoa(c.APIBudget) },
 			set:  intSetter(func(c *config.Config) *int { return &c.APIBudget }),
-			help: "usage calls per 5 minutes, across every process"},
+			help: "usage calls per 5 minutes, across every process, for each profile in use"},
 		{name: "landing_margin", kind: "number", min: num(0), max: num(config.MaxLandingMargin), profile: true,
 			get: func(c *config.Config) string { return fmtPct(c.Margin()) },
 			set: func(c *config.Config, v string) error {

@@ -169,8 +169,7 @@ func (v *Vault) SwapToWith(ctx context.Context, item keychain.Live, accountID, e
 		if _, ok := usage.IsRateLimited(verr); ok {
 			// The credential is installed and may well be fine; we simply cannot
 			// prove it right now. Say so rather than roll back a good swap.
-			v.log.Warn("swap installed but could not be verified: usage API rate limited",
-				"account", accountID)
+			v.log.Warn("swap installed but could not be verified", "account", accountID, "why", verr)
 			return &SwapResult{AccountID: accountID}, nil
 		}
 		return v.rollback(ctx, item, &snapshot, merged, accountID, o.LockWait,

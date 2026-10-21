@@ -162,6 +162,9 @@ verification, `--direct`, `--browser` and `--sso`; remove the busywork.
 - **M4. Adding an account offers both routes**: browser sign-in with the code
   pasted back into the app (`login --direct`, live session untouched), and
   saving the login Claude Code is signed into now (`add`).
+  *2026-10-20:* the sheet's Profile row is now Pool (PROFILES D37: `--pool` /
+  `--no-pool`), and the browser route gains Organization (`--org`,
+  GROUND_TRUTH §48).
 - **M5. Deleting an account removes everything**: vault credential, the
   `[[account]]` block, its pool and priority entries and its state record,
   after the one-credential check and a confirmation naming the account and
@@ -435,6 +438,8 @@ As built (lane 16, app):
   answer is dropped. B3/B10: an existing account's profile is shown
   locked ("already in X. Move it in Profiles."), `--profile` is not sent
   for it, and a `pending.profile` that differs is said, never hidden.
+  (*Since shared pools, 2026-10-20:* the row reads "Used by", every profile
+  that may use it, and the account stays in its pool.)
   B4: accounts another profile lists are moved in after create, confirmed
   first; D6-only ones join at create. B5: a refresh follows failures too;
   pool edits say "X is now in Y" / "already in Y"; a `profile list` error
@@ -446,7 +451,9 @@ As built (lane 16, app):
 - C: cards keep the picker; the second button is "Switch to best" with the
   id and figure on a second line, disabled with `best_why`. Accounts rows
   get "Move to profile ▸", confirmed like the Profiles pane; one verb,
-  "Move to X", for listed and D6 accounts.
+  "Move to X", for listed and D6 accounts. (*Superseded 2026-10-20:* rows
+  move between pools, "Move to pool" or a drag onto another pool; PROFILES
+  §10.)
 - D: QA's V1–V22 (status-first summaries, status chips with D6 members
   dashed, coloured model rows with a bar, popover capped to the screen's
   visible height, truncation with tooltips, setting labels and durations,
@@ -460,11 +467,15 @@ As built (lane 16, app):
 
 - **M8. "Save current login" takes two profiles**: whose live login to save
   ("the login Claude Code is using in [profile]") and which profile's accounts
-  it joins. The suggested name follows the source.
+  it joins. The suggested name follows the source. (*Superseded in part
+  2026-10-20:* the second picker is the pool it goes into, "Add it to pool",
+  PROFILES D37.)
 - **M9. A card's second button is "Switch to best"** (the account with most
   room in that profile); the account picker stays for choosing a specific one.
 - **M10. Accounts rows get "Move to profile"**, with the same confirmation and
   checks as the Profiles pane; one verb, "Move to X", for every move.
+  (*Superseded 2026-10-20:* accounts move between pools, "Move to pool" or a
+  drag onto another pool's header, confirmed first; PROFILES §10.)
 
 ## Later lanes — experience
 
@@ -679,7 +690,8 @@ exact key names may grow, but these keys must exist.
 ### Convenience
 
 - **F4. Profile picked by folder.** `[[profile]] paths = ["~/work/**", …]`
-  (globs; overlapping matches are refused at load, like overlapping pools).
+  (globs; overlapping matches are refused at load, like an account in two
+  pools).
   `cs run` with no name picks the profile for the current directory, else
   `default`. `cs profile which [--json]` says which profile a directory maps
   to. `cs profile hook zsh|bash|fish` prints an optional shell hook that sets
@@ -912,3 +924,14 @@ First strikes of 20m mean the server sent a long Retry-After, which our
   live token is the recorded `live_key`, unexpired, and its account was read
   within `poll_active`.
 - **poll_active back to 3m** on this machine (owner, 2026-10-09).
+
+## Shared pools and choosing the organization (shipped in 0.7.0, 2026-10-20)
+
+- **Shared pools.** Named `[[pool]]` blocks that profiles list, in order;
+  profiles that list one pool share its accounts, one profile at a time.
+  Supersedes the fixed pool per profile. Decisions D31–D39 and how each was
+  built: PROFILES §10.
+- **Sign in to a chosen organization.** `login --direct --org <id>` sends
+  `orgUUID`, which the authorize endpoint honours; an account signing in
+  again asks for its own. The app's Add account sheet has an Organization
+  row. GROUND_TRUTH §48; seat attribution within one organization, §49.

@@ -56,13 +56,19 @@ Each profile block shows:
 
 - the profile, its thresholds (`switch ≥85% / ≥98%`), and its
   `CLAUDE_CONFIG_DIR`;
-- its pool and hard floor;
+- its pool and hard floor: `pool personal, research` for a profile with its
+  own pool, or, for one that lists pools, each pool with its accounts in the
+  order the profile uses them, `pools mine (personal), then team (work-1,
+  work-2)` (`default` ends with `in no pool (…)` when some account is in
+  none);
 - the live account, its binding window, and how many points are left before
   it rotates, or what happens next (`rotating to work-team`);
 - one row per account. `▸` marks the live one. **5H** and **7D** are the two
   windows, with a dot bar and a larger dot at the threshold. **CLEARS** is
   when the binding window resets. **STATE** is the account's state
-  (`available`, `refused · five_hour`, `no headroom · 5h`, and so on);
+  (`available`, `refused · five_hour`, `no headroom · 5h`, and so on). An
+  account live in another profile that shares its pool reads
+  `in use by <profile>` there, never available;
 - the pool's runway, when there is a forecast (IMPROVEMENTS F2):
   `work pool: runs dry Thu 14:00 at this pace`, or, when a window resets
   first and gives the pool room back (an account rotation cannot use, or
@@ -90,7 +96,10 @@ daemon, last poll); piped, it does not. `NO_COLOR` turns colour off and
 With `--json` the output is one object: the default profile's `active`
 account, `accounts` (each with `id`, `vaulted`, `active`, `state`,
 `five_hour`, `seven_day`, `binding_window`, `clears_at`, `read_at`,
-`burn_per_min`, `trigger_at` and more), the `thresholds`, `daemon_running`,
+`burn_per_min`, `trigger_at` and more; with several profiles also `pool`,
+the pool it is in or `null`, `profiles`, every profile that may use it,
+`profile`, the first of them, and `active_in`, the profile it is live in),
+the `thresholds`, `daemon_running`,
 `api_calls_spare`, `degraded` and the runway: `pool_dry_at` (RFC 3339, or
 `null` when not forecast), `pool_forecast` (`dry`, `refills`, `idle` or
 `unknown`) and `pool_refills_at`, at the top level with one profile and in
@@ -142,10 +151,12 @@ Each profile block gives:
 
 - the decision (`staying put`, `rotating to work-team`, waiting) and its
   reason;
-- **CONSIDERED, in order**: every account in the pool in rotation order,
-  `▸` for the live one, `✓` for an eligible target, `✗` for one that cannot
-  be used, with why (`refused on its five_hour window · clears in 37m`,
-  `at 88%, over the 85% session trigger`);
+- **CONSIDERED, in order**: every account in the profile's pools, pool by
+  pool in the order the profile lists them and in rotation order within
+  each, `▸` for the live one, `✓` for an eligible target, `✗` for one that
+  cannot be used, with why (`refused on its five_hour window · clears in
+  37m`, `at 88%, over the 85% session trigger`, or `in use by work` for one
+  live in another profile that shares its pool);
 - **WEEKLY, at the pace so far**: each account's weekly use against how much
   of the week has gone, and whether it is on pace to use it all or how much
   would expire unused.
@@ -153,7 +164,8 @@ Each profile block gives:
 `--json` gives one object per profile, with `decision` (`kind`, `reason`,
 `target` for a switch, and `unpin` when it lifts a pin), `accounts` (each
 with `eligible`, `utilization`, `window`, `why`, `clears_at`, `weekly_pace`,
-`model_limits`, `trigger_at`, `weekly_resets_at` and `weekly_unused`), the
+`model_limits`, `trigger_at`, `weekly_resets_at` and `weekly_unused`, and
+`active_in`, the profile it is live in, when state records one), the
 runway (`pool_dry_at`, `pool_forecast`, `pool_refills_at`, as in `status
 --json`), `best`,
 `thresholds`, and `on_best` with `active_room` and `best_room`: the points

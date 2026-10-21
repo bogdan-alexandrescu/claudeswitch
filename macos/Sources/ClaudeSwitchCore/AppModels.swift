@@ -246,6 +246,10 @@ public struct ProfileInfo: Equatable, Identifiable {
     /// F4: the folders that pick this profile (globs); nil from a CLI that
     /// predates them, and the Folders field is hidden.
     public var paths: [String]?
+    /// The pools it uses, in order (shared pools, D31, D33): its own pool
+    /// under its name, or the [[pool]] blocks it lists; `[]` for the
+    /// implicit profile. Nil from a CLI that predates shared pools.
+    public var pools: [String]?
 
     init?(_ j: JSON) {
         guard let name = j["name"].string else { return nil }
@@ -269,6 +273,7 @@ public struct ProfileInfo: Equatable, Identifiable {
         // Go writes an empty list as null, so the key alone says it is known.
         let keys = (j.raw as? [String: Any])?.keys
         paths = keys?.contains("paths") == true ? j["paths"].array.compactMap(\.string) : nil
+        pools = keys?.contains("pools") == true ? j["pools"].array.compactMap(\.string) : nil
     }
 }
 
@@ -293,12 +298,16 @@ public struct Ghost: Equatable, Identifiable {
 public struct ProfileList: Equatable {
     public var profiles: [ProfileInfo]
     public var ghosts: [Ghost]
+    /// Every pool, as `pool list --json` gives them (shared pools); nil
+    /// from a CLI that predates them.
+    public var pools: [PoolInfo]?
 
     init?(_ j: JSON) {
         // Go writes a nil list as null, so either key identifies the answer.
         guard j["profiles"].raw is [Any] || j["ghosts"].raw is [Any] else { return nil }
         profiles = j["profiles"].array.compactMap(ProfileInfo.init)
         ghosts = j["ghosts"].array.compactMap(Ghost.init)
+        pools = (j.raw as? [String: Any])?.keys.contains("pools") == true ? j["pools"].array.compactMap(PoolInfo.init) : nil
     }
 
     public init?(data: Data) {
@@ -340,22 +349,6 @@ public struct ForgetResult: Equatable {
         guard let p = j["profile"].string else { return nil }
         profile = p
         released = Int(j["released"].double ?? 0)
-    }
-}
-
-public struct PoolResult: Equatable {
-    public var account: String
-    /// Where the account is now.
-    public var profile: String
-    public var changed: Bool
-    public var pools: [String: [String]]
-
-    init?(_ j: JSON) {
-        guard let a = j["account"].string else { return nil }
-        account = a
-        profile = j["profile"].string ?? ""
-        changed = j["changed"].bool ?? false
-        pools = j["pools"].object.mapValues { $0.array.compactMap(\.string) }
     }
 }
 
@@ -527,6 +520,12 @@ public struct LoginStart: Equatable {
     /// new, its own when it exists.
     public var profile: String?
     public var newAccount: Bool
+    /// The organization the sign-in asks for: the one chosen, or an
+    /// existing account's own; nil lets the browser's current one decide.
+    public var org: String?
+    /// The pool a new account goes into when the login completes (D37);
+    /// nil: none was chosen (an older CLI, or --profile's pool).
+    public var joinPool: String?
 
     /// Only an https URL is ever opened.
     init?(_ j: JSON) {
@@ -539,6 +538,8 @@ public struct LoginStart: Equatable {
         account = p["account"].string ?? ""
         profile = nonEmpty(p["profile"])
         newAccount = p["new_account"].bool ?? false
+        org = nonEmpty(p["org"])
+        joinPool = nonEmpty(p["join_pool"])
     }
 }
 
@@ -550,7 +551,12 @@ public struct AccountAdded: Equatable {
     public var email: String?
     public var plan: String?
     public var profile: String?
+    /// The accounts of that profile (since lane 12: not the pool's name).
     public var pool: [String]
+    /// Every profile that may use it (shared pools); nil from an older CLI.
+    public var profiles: [String]?
+    /// The pool it is in (D37); nil for none, or from an older CLI.
+    public var poolName: String?
     public var configured: Bool
     public var newAccount: Bool
     public var renewable: Bool
@@ -572,6 +578,9 @@ public struct AccountAdded: Equatable {
         plan = nonEmpty(j["plan"])
         profile = nonEmpty(j["profile"])
         pool = j["pool"].array.compactMap(\.string)
+        profiles = (j.raw as? [String: Any])?.keys.contains("profiles") == true
+            ? j["profiles"].array.compactMap(\.string) : nil
+        poolName = nonEmpty(j["pool_name"])
         configured = j["configured"].bool ?? false
         newAccount = j["new_account"].bool ?? false
         renewable = j["renewable"].bool ?? false

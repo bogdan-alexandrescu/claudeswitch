@@ -8,7 +8,11 @@
       "id": "personal",
       "pinned": true,
       "plan": null,
+      "pool": "review",
       "profile": "review",
+      "profiles": [
+        "review"
+      ],
       "reading": {
         "at": "2026-10-08T06:07:07Z",
         "binding": "five_hour",
@@ -30,7 +34,11 @@
       "id": "work-1",
       "pinned": false,
       "plan": "Max 20x",
+      "pool": "default",
       "profile": "default",
+      "profiles": [
+        "default"
+      ],
       "reading": {
         "at": "2026-10-08T06:09:07Z",
         "binding": "seven_day",
@@ -52,7 +60,11 @@
       "id": "work-2",
       "pinned": false,
       "plan": null,
+      "pool": "default",
       "profile": "default",
+      "profiles": [
+        "default"
+      ],
       "reading": {
         "at": "2026-10-08T06:09:07Z",
         "binding": "five_hour",

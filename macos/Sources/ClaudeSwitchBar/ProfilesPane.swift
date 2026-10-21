@@ -2,8 +2,8 @@ import AppKit
 import ClaudeSwitchCore
 import SwiftUI
 
-/// Profiles: each is a Claude Code setup with its own login and its own
-/// accounts (docs/PROFILES.md).
+/// Profiles: each is a Claude Code setup with its own login and the pools
+/// of accounts it uses, which profiles can share (docs/PROFILES.md §10).
 struct ProfilesPane: View {
     @EnvironmentObject var store: Store
     @State private var creating = false
@@ -13,7 +13,7 @@ struct ProfilesPane: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 PaneHeader(title: "Profiles",
-                           subtitle: "Each profile is a Claude Code setup with its own login and its own accounts.") {
+                           subtitle: "Each profile is a Claude Code setup with its own login and pools it can share.") {
                     Button("New profile") { creating = true }
                         .disabled(store.binaryPath == nil)
                 }
@@ -44,7 +44,7 @@ struct ProfilesPane: View {
     }
 }
 
-/// A collapsed profile: name, directory, accounts and thresholds, and Edit.
+/// A collapsed profile: name, directory, pools and thresholds, and Edit.
 struct ProfileRow: View {
     @EnvironmentObject var store: Store
     let profile: ProfileInfo
@@ -66,7 +66,8 @@ struct ProfileRow: View {
 
     var summary: String {
         var parts = [profile.dir ?? "~/.claude"]
-        parts.append(profile.pool.isEmpty ? "no accounts" : profile.pool.joined(separator: ", "))
+        parts.append(ProfilePools.summary(profile, pools: store.poolsUnsupported ? nil : store.pools)
+                     ?? (profile.pool.isEmpty ? "no accounts" : profile.pool.joined(separator: ", ")))
         let t = profile.thresholds
         if let a = t.switchAt, let w = t.switchAtWeekly {
             parts.append(String(format: "switch at %g%% session, %g%% week", a, w))
@@ -75,7 +76,7 @@ struct ProfileRow: View {
     }
 }
 
-/// An expanded profile: sign-in, accounts (add, remove, move), per-profile
+/// An expanded profile: sign-in, the pools it uses (Change…), per-profile
 /// thresholds, and its actions in one row.
 struct ProfileEditor: View {
     @EnvironmentObject var store: Store
@@ -118,7 +119,7 @@ struct ProfileEditor: View {
                 }
             } else {
                 if profile.signedIn == "no" { SignInRow(profile: profile) }
-                PoolEditor(profile: profile)
+                PoolsRow(profile: profile)
                 if let paths = profile.paths { FoldersField(profile: profile, paths: paths) }
                 OverridesEditor(profile: profile)
                 ProfileChromePicker(profile: profile)
@@ -168,13 +169,17 @@ struct SignInRow: View {
             Menu("Sign in with") {
                 if profile.pool.isEmpty { Text("Add an account to \(profile.name) first") }
                 ForEach(profile.pool, id: \.self) { id in
-                    Button(id) {
+                    // Shared pools: one live in another profile cannot sign
+                    // this one in (§3, one profile at a time).
+                    let elsewhere = store.snapshot?.liveElsewhere(id, notIn: profile.name)
+                    Button(id + (elsewhere.map { " — in use by \($0)" } ?? "")) {
                         let p = profile.name
                         store.act("seed:\(p)", title: "Could not sign \(p) in", profiles: true,
                                   { $0.profileSeed(p, account: id) }) { r in
                             store.note = "\(r.profile) is signed in with \(r.seeded)"
                         }
                     }
+                    .disabled(elsewhere != nil)
                 }
             }
             .fixedSize()
@@ -200,10 +205,11 @@ struct RemoveProfileSheet: View {
     var destinations: [String] {
         store.profiles.map { ProfileRemoval.destinations($0, removing: profile.name) } ?? []
     }
-    /// Asked only when there are accounts to place; default always asks,
-    /// since every account no profile lists is its own (the CLI needs --to).
+    /// Asked only when it has accounts of its own to place (the pools it
+    /// lists stay); default always asks, since every account no pool lists
+    /// is its own (the CLI needs --to).
     var needsDestination: Bool {
-        ProfileRemoval.needsDestination(profile) || profile.name == StateFile.defaultProfile
+        ProfileRemoval.needsDestination(profile, pools: store.pools) || profile.name == StateFile.defaultProfile
     }
 
     var body: some View {
@@ -217,7 +223,7 @@ struct RemoveProfileSheet: View {
                     }
                 }
             }
-            Text(ProfileRemoval.summary(profile, to: to.isEmpty ? "the profile you choose" : to))
+            Text(ProfileRemoval.summary(profile, to: to.isEmpty ? "the profile you choose" : to, pools: store.pools))
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
             if let e = error { InlineError(message: e.message, hint: e.hint) }
@@ -311,107 +317,200 @@ struct SignInBadge: View {
     var color: Color { signedIn == "yes" ? .green : signedIn == "no" ? .red : .gray }
 }
 
-/// The profile's accounts as chips, each with its status. A chip's menu
-/// removes it (to default) or moves it; "+ Add" brings an account in. Every
-/// way in is "Move to X", confirmed, whether a pool lists the account or
-/// default holds it by D6 alone (owner decision).
-struct PoolEditor: View {
+/// The pools a profile uses, numbered in the order it uses them (D33: an
+/// account in a later pool only when nothing in an earlier one is usable),
+/// and Change…. Default uses the accounts in no pool after them (D6). With a
+/// binary from before pools, its accounts, read-only.
+struct PoolsRow: View {
     @EnvironmentObject var store: Store
     let profile: ProfileInfo
-    @State private var pending: PendingAction?
-
-    var key: String { "pool:\(profile.name)" }
+    @State private var changing = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("ACCOUNTS").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            FlowRow {
-                ForEach(profile.pool, id: \.self) { id in
-                    let implicit = profile.isImplicitMember(id)
-                    Menu {
-                        if profile.name != StateFile.defaultProfile {
-                            Button("Remove from \(profile.name)…") {
-                                ask(Confirm.poolRemove(account: id, from: profile.name)) {
-                                    store.removeFromPool(id, profile: profile.name, key: key)
-                                }
-                            }
+            Text(shown == nil ? "ACCOUNTS" : "POOLS").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            if let shown {
+                HStack(alignment: .center, spacing: 8) {
+                    FlowRow {
+                        ForEach(Array(shown.enumerated()), id: \.element) { i, name in
+                            PoolChip(n: i + 1, name: name, accounts: store.pools?.pool(name)?.accounts ?? [])
                         }
-                        ForEach(store.profiles?.moveTargets(for: id) ?? [], id: \.self) { o in
-                            stepButton(id, to: o, label: "Move to \(o)…")
+                        if unlisted > 0 {
+                            Text((shown.isEmpty ? "" : "then ") + "\(unlisted) \(unlisted == 1 ? "account" : "accounts") in no pool")
+                                .foregroundStyle(.secondary)
+                                .padding(.vertical, 5)
+                                .help(store.pools?.unlisted.joined(separator: ", ") ?? "")
                         }
-                    } label: {
-                        Text(chip(id)).lineLimit(1)
+                        if shown.isEmpty && unlisted == 0 {
+                            Text("No pools yet").foregroundStyle(.secondary).padding(.vertical, 5)
+                        }
                     }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
-                    // The account's week and session beside its name.
-                    .padding(.leading, 24)
-                    .overlay(alignment: .leading) {
-                        MiniRings(account: store.snapshot?.accounts.first { $0.id == id }, size: 19, dotRadius: 3)
-                            .allowsHitTesting(false)
-                    }
-                    .padding(.leading, 6).padding(.trailing, 8).padding(.vertical, 5)
-                    .background(PillShape().fill(id == profile.live ? Color.csAccent.opacity(0.12) : Color.clear))
-                    .overlay(PillShape().strokeBorder(border(id),
-                                                    style: StrokeStyle(lineWidth: 1, dash: implicit ? [3] : [])))
-                    .help(implicit ? "\(id) is here because no profile lists it" : id)
-                    .accessibilityLabel("\(chip(id)), \(id == profile.live ? "live, " : "")"
-                                        + (implicit ? "here by default, " : "") + "account in \(profile.name)")
+                    Spacer()
+                    if store.isBusy("pools:\(profile.name)") { ProgressView().controlSize(.small) }
+                    Button("Change…") { changing = true }
+                        .disabled(store.binaryPath == nil)
+                        .help("Choose the pools \(profile.name) uses, and their order")
                 }
-                Menu {
-                    let candidates = store.accountIDs.filter { !profile.pool.contains($0) }
-                    if candidates.isEmpty { Text("Every account is in this profile") }
-                    ForEach(candidates, id: \.self) { id in
-                        stepButton(id, to: profile.name, label: nil)
-                    }
-                } label: {
-                    Label("Add", systemImage: "plus")
+            } else {
+                Text(profile.pool.isEmpty ? "No accounts" : profile.pool.joined(separator: ", "))
+                    .lineLimit(2).truncationMode(.tail)
+                if store.poolsUnsupported {
+                    Text("Update claudeswitch to group accounts into pools and share them between profiles.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .padding(.horizontal, 8).padding(.vertical, 4)
-                .overlay(PillShape().strokeBorder(Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [3])))
-                .accessibilityLabel("Add an account to \(profile.name)")
+            }
+        }
+        .sheet(isPresented: $changing) { ChangePoolsSheet(profile: profile).environmentObject(store) }
+    }
+
+    var shown: [String]? { store.poolsUnsupported ? nil : ProfilePools.shown(profile, pools: store.pools) }
+
+    /// Default's accounts in no pool, used after its pools.
+    var unlisted: Int {
+        ProfilePools.usesUnlisted(profile, pools: store.pools) ? store.pools?.unlisted.count ?? 0 : 0
+    }
+}
+
+/// "1 personal": a pool's place in a profile's order, and its name; its
+/// accounts on hover.
+struct PoolChip: View {
+    let n: Int
+    let name: String
+    let accounts: [String]
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("\(n)")
+                .font(.caption.weight(.semibold)).monospacedDigit()
+                .foregroundStyle(Color.csAccent)
+                .frame(width: 18, height: 18)
+                .background(Circle().fill(Color.csAccent.opacity(0.15)))
+            Text(name).lineLimit(1).truncationMode(.middle)
+        }
+        .padding(.leading, 4).padding(.trailing, 10).padding(.vertical, 4)
+        .overlay(PillShape().strokeBorder(Color.secondary.opacity(0.3)))
+        .help(name + ": " + (accounts.isEmpty ? "no accounts" : accounts.joined(separator: ", ")))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Pool \(n): \(name), \(accounts.count) \(accounts.count == 1 ? "account" : "accounts")")
+    }
+}
+
+/// The pools a profile may use: each with a checkbox, the checked ones
+/// numbered in order with ↑ and ↓. Change… and New profile both use it.
+struct PoolChooser: View {
+    @Binding var choice: PoolChoice
+    let pools: PoolList?
+    /// The profile being edited: its own pool reads as such.
+    var owner: String?
+
+    var body: some View {
+        let names = choice.order + choice.unchecked
+        let rows = VStack(alignment: .leading, spacing: 6) {
+            if names.isEmpty { Text("No pools yet: make one in Accounts.").foregroundStyle(.secondary) }
+            ForEach(names, id: \.self) { name in
+                HStack(spacing: 8) {
+                    Toggle(name, isOn: Binding(get: { choice.isChecked(name) }, set: { _ in choice.toggle(name) }))
+                        .toggleStyle(.checkbox).labelsHidden()
+                    Text(choice.position(of: name).map(String.init) ?? "")
+                        .font(.callout.weight(.semibold)).monospacedDigit().foregroundStyle(Color.csAccent)
+                        .frame(width: 14, alignment: .trailing)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(name).lineLimit(1).truncationMode(.middle)
+                        Text(caption(name)).font(.caption).foregroundStyle(.secondary)
+                            .lineLimit(1).truncationMode(.tail).help(caption(name))
+                    }
+                    Spacer(minLength: 8)
+                    if choice.isChecked(name) {
+                        IconButton(symbol: "chevron.up", label: "Use \(name) earlier") { choice.move(name, by: -1) }
+                            .disabled(choice.order.first == name)
+                        IconButton(symbol: "chevron.down", label: "Use \(name) later") { choice.move(name, by: 1) }
+                            .disabled(choice.order.last == name)
+                    }
+                }
+                .accessibilityElement(children: .contain)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        if names.count > 5 {
+            ScrollView { rows.padding(8) }
+                .frame(height: 220)
+                .background(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.secondary.opacity(0.25)))
+        } else {
+            rows
+        }
+    }
+
+    /// "team-1, team-2 · used by default, work", or "work's own · w1".
+    func caption(_ name: String) -> String {
+        guard let p = pools?.pool(name) else { return "" }
+        let accounts = p.accounts.isEmpty ? "no accounts" : p.accounts.joined(separator: ", ")
+        if p.own { return (name == owner ? "its own" : "\(name)'s own") + " · " + accounts }
+        let users = p.profiles.isEmpty ? "used by no profile" : "used by " + p.profiles.joined(separator: ", ")
+        return accounts + " · " + users
+    }
+}
+
+/// Change…: the pools a profile uses, in order (`profile pools`).
+struct ChangePoolsSheet: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.dismiss) private var dismiss
+    let profile: ProfileInfo
+    @State var choice = PoolChoice(all: [], chosen: [])
+    @State var error: AppError?
+    @State private var ready = false
+
+    var key: String { "pools:\(profile.name)" }
+    var current: [String] { ProfilePools.shown(profile, pools: store.pools) ?? [] }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Pools \(profile.name) uses").font(.title3.bold())
+            Text("\(profile.name) uses the checked pools in this order: an account in a later pool only when "
+                 + "nothing in an earlier one is usable. Profiles that use the same pool share its accounts, "
+                 + "one profile at a time.")
+                .font(.callout).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            PoolChooser(choice: $choice, pools: store.pools, owner: profile.name)
+            if ProfilePools.usesUnlisted(profile, pools: store.pools), let n = store.pools?.unlisted.count {
+                Text("Then the \(n == 1 ? "account" : "\(n) accounts") in no pool (\(store.pools?.unlisted.joined(separator: ", ") ?? "")), as always for \(profile.name).")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let n = ProfilePools.note(profile: profile.name, pools: store.pools, chosen: choice.order) {
+                Label(n, systemImage: "info.circle").font(.caption).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let e = error { InlineError(message: e.message, hint: e.hint) }
+            HStack(spacing: 8) {
                 if store.isBusy(key) { ProgressView().controlSize(.small) }
+                if choice.order.isEmpty { Text("Check at least one pool.").font(.caption).foregroundStyle(.secondary) }
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Save", action: save).keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
+                    .disabled(choice.order.isEmpty || choice.order == current || store.isBusy(key))
             }
         }
-        .confirming($pending)
+        .padding(24)
+        .frame(width: 520)
+        .onAppear {
+            guard !ready else { return }
+            ready = true
+            choice = PoolChoice(all: store.pools?.pools.map(\.name) ?? [], chosen: current)
+        }
     }
 
-    /// "Move to X…" for any account not there yet, confirmed, then the
-    /// edit the CLI needs (a move from the pool that lists it, or an add of
-    /// one no pool lists).
-    @ViewBuilder func stepButton(_ id: String, to target: String, label: String?) -> some View {
-        let step = store.profiles?.step(adding: id, to: target) ?? .add(account: id, to: target)
-        if let c = Confirm.poolStep(step) {
-            Button(label ?? addLabel(id, step)) {
-                ask(c) { store.movePool(step, key: key) }
+    func save() {
+        error = nil
+        let (name, chosen) = (profile.name, choice.order)
+        let steps = ProfilePools.steps(profile: name, pools: store.pools, chosen: chosen)
+        Task {
+            if let e = await store.setProfilePools(name, steps: steps) {
+                error = AppError(code: e.code ?? "failed", message: e.message, hint: e.hint)
+            } else {
+                store.note = "\(name) uses " + chosen.joined(separator: ", ")
+                dismiss()
             }
         }
-    }
-
-    func addLabel(_ id: String, _ step: PoolStep) -> String {
-        if case .move(_, let from, _) = step { return "\(id) (in \(from))…" }
-        return "\(id)…"
-    }
-
-    func ask(_ c: Confirmation, _ run: @escaping () -> Void) {
-        pending = PendingAction(confirmation: c, run: run)
-    }
-
-    func chip(_ id: String) -> String {
-        let v = store.snapshot?.accounts.first { $0.id == id }
-        return Chip.text(id, status: v?.status, pct: v?.bindingPct, error: v?.lastError)
-    }
-
-    func border(_ id: String) -> Color {
-        let v = store.snapshot?.accounts.first { $0.id == id }
-        switch v?.status {
-        case .needsLogin?, .refused?: return .red.opacity(0.7)
-        default: break
-        }
-        if v?.lastError != nil { return .orange.opacity(0.7) }
-        return id == profile.live ? Color.csAccent.opacity(0.5) : Color.secondary.opacity(0.3)
     }
 }
 
@@ -585,27 +684,42 @@ struct GhostsSection: View {
 }
 
 /// `profile create`: name, directory (default ~/.claude-<name>), accounts
-/// and an optional account to sign in with. Accounts another profile lists
-/// are moved in after it is created, confirmed first (B4).
+/// in no pool to take as its own (`--pool`; with no [[profile]] blocks yet,
+/// every account), the pools it uses, in order (`profile pools` once it
+/// exists: it shares them, and nothing moves), and an optional account of
+/// those to sign in with (`profile seed`).
 struct NewProfileSheet: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) private var dismiss
-    @State private var name = ""
+    @State var name = ""
     @State private var dir = ""
-    @State private var pool: Set<String> = []
+    @State var choice = PoolChoice(all: [], chosen: [])
+    @State var own: Set<String> = []
     @State private var seed: String = ""
     @State private var error: AppError?
-    @State private var pending: PendingAction?
+    @State private var ready = false
 
     static let labelWidth: CGFloat = 96
 
     var defaultDir: String { "~/.claude-" + (name.isEmpty ? "<name>" : name) }
-    var selected: [String] { store.accountIDs.filter(pool.contains) }
+    /// Pools need a binary that has them; without, the profile starts with none.
+    var poolsKnown: Bool { store.pools != nil && !store.poolsUnsupported }
+    /// The accounts in no pool, in rotation order: default's now (D6).
+    var unlisted: [String] {
+        guard poolsKnown, let l = store.pools?.unlisted else { return [] }
+        return store.accountIDs.filter(l.contains) + l.filter { !store.accountIDs.contains($0) }
+    }
+    var ownChosen: [String] { unlisted.filter(own.contains) }
+    /// No [[profile]] blocks yet: this is the first split.
+    var firstSplit: Bool { !(store.profiles?.profiles.contains(where: \.declared) ?? true) }
+    var candidates: [String] {
+        NewProfilePlan.seedCandidates(pools: choice.order, own: ownChosen, list: store.pools) { store.liveIn($0) }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("New profile").font(.title3.bold())
-            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 8) {
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 12) {
                 GridRow {
                     Text("Name").frame(width: Self.labelWidth, alignment: .leading)
                     TextField("Name", text: $name, prompt: Text("e.g. review")).labelsHidden()
@@ -619,17 +733,51 @@ struct NewProfileSheet: View {
                         Button("Choose…", action: choose)
                     }
                 }
-                GridRow(alignment: .top) {
-                    Text("Accounts").frame(width: Self.labelWidth, alignment: .leading)
-                    accountList
+                if !unlisted.isEmpty {
+                    GridRow(alignment: .top) {
+                        Text("Its accounts").frame(width: Self.labelWidth, alignment: .leading)
+                        VStack(alignment: .leading, spacing: 4) {
+                            ownAccounts
+                            Text("Accounts in no pool, which \(StateFile.defaultProfile) uses now: the ones checked "
+                                 + "become this profile's own.")
+                                .font(.caption).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                // With no [[profile]] blocks yet there is nothing to share.
+                if !(firstSplit && (store.pools?.pools.isEmpty ?? true)) {
+                    GridRow(alignment: .top) {
+                        Text("Pools").frame(width: Self.labelWidth, alignment: .leading)
+                        if poolsKnown && !(store.pools?.pools.isEmpty ?? true) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                PoolChooser(choice: $choice, pools: store.pools)
+                                Text("It shares the pools checked with the profiles that use them, one profile at a time; "
+                                     + "nothing moves." + (ownChosen.isEmpty ? "" : " Its own accounts come first."))
+                                    .font(.caption).foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                // Another profile's own pool becomes a shared one.
+                                if let n = ProfilePools.note(profile: name, pools: store.pools, chosen: choice.order) {
+                                    Label(n, systemImage: "info.circle").font(.caption).foregroundStyle(.orange)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        } else {
+                            Text(store.poolsUnsupported ? "Update claudeswitch to choose its pools here."
+                                 : "No pools yet. To share accounts between profiles, make one in Accounts (New pool).")
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                 }
                 GridRow {
                     Text("Sign in with").frame(width: Self.labelWidth, alignment: .leading)
                     Picker("Sign in with", selection: $seed) {
                         Text("None (sign in later)").tag("")
-                        ForEach(selected, id: \.self) { Text($0).tag($0) }
+                        ForEach(candidates, id: \.self) { Text($0).tag($0) }
                     }
                     .labelsHidden()
+                    .fixedSize()
                 }
             }
             if let e = error { InlineError(message: e.message, hint: e.hint) }
@@ -637,29 +785,33 @@ struct NewProfileSheet: View {
                 if store.isBusy("create") { ProgressView().controlSize(.small) }
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Create") { ask() }
+                Button("Create", action: create)
                     .keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
                     .disabled(name.isEmpty || store.isBusy("create"))
             }
         }
         .padding(24)
-        .frame(width: 520)
-        .confirming($pending)
+        .frame(width: 560)
+        .onAppear {
+            guard !ready else { return }
+            ready = true
+            choice = PoolChoice(all: store.pools?.pools.map(\.name) ?? [], chosen: choice.order)
+        }
+        .onChange(of: choice) { _ in if !candidates.contains(seed) { seed = "" } }
+        .onChange(of: own) { _ in if !candidates.contains(seed) { seed = "" } }
     }
 
-    /// Every account, with where it is when it has to move; capped in
-    /// height, scrolling past it.
-    var accountList: some View {
-        let ids = store.accountIDs
+    /// The accounts in no pool, each with a checkbox; capped in height.
+    var ownAccounts: some View {
+        let ids = unlisted
         let rows = VStack(alignment: .leading, spacing: 4) {
-            if ids.isEmpty { Text("No accounts yet").foregroundStyle(.secondary) }
             ForEach(ids, id: \.self) { id in
-                Toggle(isOn: Binding(get: { pool.contains(id) },
-                                     set: { on in if on { pool.insert(id) } else { pool.remove(id); if seed == id { seed = "" } } })) {
+                Toggle(isOn: Binding(get: { own.contains(id) },
+                                     set: { on in if on { own.insert(id) } else { own.remove(id) } })) {
                     HStack(spacing: 4) {
                         Text(id).lineLimit(1).truncationMode(.middle)
-                        if let n = NewProfilePlan.note(for: id, list: store.profiles) {
-                            Text(n).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
+                        if let p = store.liveIn(id) {
+                            Text("in use by \(p)").foregroundStyle(.secondary).lineLimit(1)
                         }
                     }
                     .help(id)
@@ -668,9 +820,9 @@ struct NewProfileSheet: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         return Group {
-            if ids.count > 6 {
+            if ids.count > 5 {
                 ScrollView { rows.padding(8) }
-                    .frame(height: 168)
+                    .frame(height: 140)
                     .background(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.secondary.opacity(0.25)))
             } else {
                 rows
@@ -688,43 +840,35 @@ struct NewProfileSheet: View {
         if panel.runModal() == .OK, let u = panel.url { dir = u.path }
     }
 
-    /// Moving accounts out of another profile is confirmed first.
-    func ask() {
-        let plan = NewProfilePlan.make(name: name, selected: selected, seed: seed.isEmpty ? nil : seed,
-                                       list: store.profiles)
-        if let c = plan.confirmation {
-            pending = PendingAction(confirmation: c) { create(plan) }
-        } else {
-            create(plan)
-        }
-    }
-
-    func create(_ plan: NewProfilePlan) {
+    func create() {
         error = nil
+        let plan = NewProfilePlan.make(name: name, pools: poolsKnown ? choice.order : [], own: ownChosen,
+                                       seed: seed.isEmpty ? nil : seed, candidates: candidates, unlisted: unlisted)
         let d = dir.isEmpty ? nil : dir
         Task {
-            switch await store.call("create", { $0.profileCreate(name: plan.name, dir: d, pool: plan.pool, seed: plan.seedAtCreate) }) {
+            switch await store.call("create", { $0.profileCreate(name: plan.name, dir: d, pool: plan.own, seed: nil) }) {
             case .success:
-                for step in plan.moves {
-                    guard case .move(let a, let from, let to) = step else { continue }
-                    if case .failure(let e) = await store.call("create", { $0.profilePool(from, .remove, account: a, to: to) }) {
-                        fail("\(plan.name) was created, but \(a) could not be moved in: ", e)
+                if !plan.pools.isEmpty,
+                   case .failure(let e) = await store.call("create", { $0.profilePools(plan.name, plan.pools) }) {
+                    fail("\(plan.name) was created, but not given its pools: ", e,
+                         hint: e.hint.isEmpty ? "Choose them from its card in Profiles (Change…)." : e.hint)
+                    return
+                }
+                if let s = plan.seed {
+                    switch await store.call("create", { $0.profileSeed(plan.name, account: s) }) {
+                    case .success: break
+                    case .failure(.app(let e)) where e.code == "daemon_not_loaded":
+                        fail("", .app(AppError(code: e.code, message: plan.notLoadedMessage(e.message))),
+                             hint: "Sign it in from its card in Profiles, or try again once the daemon runs.")
+                        return
+                    case .failure(let e):
+                        fail("\(plan.name) was created, but not signed in: ", e)
                         return
                     }
                 }
-                if let s = plan.seedAfter,
-                   case .failure(let e) = await store.call("create", { $0.profileSeed(plan.name, account: s) }) {
-                    fail("\(plan.name) was created, but not signed in: ", e)
-                    return
-                }
-                store.note = "Created \(plan.name)"
+                store.note = "Created \(plan.name)" + (plan.pools.isEmpty ? "" : "; it uses " + plan.pools.joined(separator: ", "))
                 store.refresh(full: true, profiles: true)
                 dismiss()
-            case .failure(.app(let e)) where e.code == "daemon_not_loaded":
-                // The profile is made, not seeded, and nothing after it ran.
-                store.refresh(full: true, profiles: true)
-                error = AppError(code: e.code, message: plan.notLoadedMessage(e.message),
-                                 hint: "Sign it in from its row in Profiles, or try again once the daemon runs.")
             case .failure(let e):
                 error = AppError(code: e.code ?? "failed", message: e.message, hint: e.hint)
             }

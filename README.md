@@ -7,7 +7,7 @@ stands, and hot-swaps Claude Code onto a fresh account before the current one
 hits its limit: no restart, no lost session. It ships as a Go CLI plus daemon
 (macOS and Linux), a native macOS menu-bar app and a Claude Code plugin.
 
-Latest release: **v0.6.4**
+Latest release: **v0.7.2**
 ([releases](https://github.com/bogdan-alexandrescu/claudeswitch/releases)).
 
 <p align="center"><img src="docs/images/popover.png" width="384" alt="The ClaudeSwitch menu-bar popover: the daemon is live, the default profile is on work-1 and the work profile is on work-team"></p>
@@ -60,8 +60,14 @@ the full manual. This README covers installing it and finding your way around.
 - **Hot swaps.** Only the live credential changes. Running sessions pick it up
   from their next request. Your MCP logins are left alone.
 - **Several Claude Code profiles.** Each config directory (`~/.claude`,
-  `~/.claude-work`, ...) has its own pool of accounts, and one daemon drives
-  them all.
+  `~/.claude-work`, ...) rotates over the pools of accounts it uses, in the
+  order it lists them, and one daemon drives them all.
+- **Shared pools.** Two profiles that use one pool share its accounts, one
+  profile at a time: an account live in one shows as "in use by" it in the
+  other, which takes another account.
+- **Sign in to the organization you choose.** `cs login <id> --direct --org
+  <org-id>` asks for that organization, so one person in two organizations
+  can be added once for each. An account signing in again asks for its own.
 - **Credentials kept alive.** Stored credentials are renewed before they
   expire, and dead refresh tokens are found within a day rather than when you
   need the account ([→ how](docs/GUIDE.md#keeping-credentials-alive)).
@@ -100,9 +106,9 @@ Each account's credential is stored in a vault: the macOS Keychain, or `0600`
 files on Linux. The daemon polls each account's usage within a strict call
 budget and records the readings in `~/.local/state/claudeswitch/state.json`.
 When the account a profile is using crosses its trigger, the daemon picks the
-next eligible account from that profile's pool and writes its credential into
-the profile's live slot. Claude Code reads the new credential on its next
-request.
+next eligible account from that profile's pools, pool by pool, and writes its
+credential into the profile's live slot. Claude Code reads the new credential
+on its next request.
 
 Everything else reads that state file: `cs status`, the status line, the
 session-start hook and the menu-bar app. None of them spend API calls or touch
@@ -130,7 +136,7 @@ arm64, and a `checksums.txt`. The archives are reproducible: the same tag
 always produces the same bytes.
 
 ```sh
-VERSION=v0.6.4
+VERSION=v0.7.2
 TARGET=darwin_arm64            # darwin_amd64, linux_amd64, linux_arm64
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 curl -LO "$BASE/claudeswitch_${VERSION}_${TARGET}.tar.gz"
@@ -156,7 +162,7 @@ cd claudeswitch
 symlink, and installs the daemon in dry-run (see [Daemon](#daemon)). To build
 the binary alone: `go build -o bin/claudeswitch ./cmd/claudeswitch`.
 
-**Verify it worked:** `cs version` prints `claudeswitch v0.6.4` for the release
+**Verify it worked:** `cs version` prints `claudeswitch v0.7.2` for the release
 binary (a build from source prints `claudeswitch dev`). If the shell cannot
 find `cs`, add `~/.local/bin` to your `PATH`.
 
@@ -227,7 +233,7 @@ Re-run it after pulling to update.
 From a release, as a universal build:
 
 ```sh
-VERSION=v0.6.4
+VERSION=v0.7.2
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 ZIP="ClaudeSwitch-${VERSION#v}-macos.zip"
 curl -LO "$BASE/$ZIP"
@@ -253,7 +259,7 @@ to install it. [macos/README.md](macos/README.md) has the details.
 
 **Verify it worked:** the Twin rings glyph with the live account and its
 utilization appears in the menu bar, and **About ClaudeSwitch** in its ⋯ menu
-shows version 0.6.4. If you see nothing on a MacBook with a notch, see
+shows version 0.7.2. If you see nothing on a MacBook with a notch, see
 [Troubleshooting](#troubleshooting).
 
 ### Claude Code plugin
@@ -318,13 +324,16 @@ To add more accounts later:
 cs login work-1 --direct                    # sign in through a browser; your live session is untouched
 cs login work-1 --code <the-code>           # ...then finish with the code the page shows
 cs login work-1 --direct --browser Safari   # ...in a browser that is signed in to that account
+cs login work-2 --direct --org 11111111-1111-1111-1111-111111111111   # ...in that organization
 cs add research                             # or: /login in Claude Code, then save that login as "research"
 ```
 
-A login returns a credential for whichever account your browser is signed in
-to. Separate browser applications keep separate cookies, which is what
-`--browser` is for. `login` and `add` verify the seat that came back and
-refuse a mismatch.
+A login returns a credential for whichever person your browser is signed in
+as. Separate browser applications keep separate cookies, which is what
+`--browser` is for. Without `--org`, the organization the browser is in
+decides; with it, the sign-in asks for that one, which is how the same person
+is added in a second organization. An account signing in again asks for its
+own. `login` and `add` verify the seat that came back and refuse a mismatch.
 
 To run a second Claude Code profile with its own pool:
 
@@ -332,6 +341,21 @@ To run a second Claude Code profile with its own pool:
 cs profile create work --pool work-1,work-team --seed work-1
 cs run work                                                     # claude, with CLAUDE_CONFIG_DIR set for "work"
 ```
+
+Profiles can share a pool. A third profile that uses work's accounts:
+
+```sh
+cs profile create review           # a profile with no accounts of its own
+cs profile pools review work       # it uses work's pool: review and work share it
+cs profile seed review work-team   # sign it in with the account work is not on
+```
+
+The two profiles take those accounts one at a time: while work is on work-1,
+review shows it as "in use by work" and does not take it. `cs pool create`
+and `cs pool move` make named pools of any accounts you choose
+([→ Sharing accounts between profiles](docs/GUIDE.md#sharing-accounts-between-profiles)).
+In the app, **New profile** in Settings → Profiles does the same: check work
+under **Pools** and choose work-team under **Sign in with**.
 
 Then check on it, and make it act when you trust its decisions:
 
@@ -402,7 +426,9 @@ is a card per profile. The followed profile's card (marked **Menu bar**) is
 open and shows:
 
 - its directory;
-- the live account and its plan, as a picker of the profile's pool;
+- the live account and its plan, as a picker of the accounts in the
+  profile's pools. One live in another profile that shares its pool reads
+  "in use by" that profile and cannot be picked;
 - the session (5-hour) and week as **dials**: dots lit up to the reading, the
   figure in the middle, and when the window resets. The larger dark dot is
   the profile's switch threshold (85% for the session and 98% for the week by
@@ -479,27 +505,33 @@ its own never needs this: see [Claude in Chrome](#claude-in-chrome).
 
 <table>
   <tr>
-    <td width="440"><img src="docs/images/settings-profiles.png" width="440" alt="Settings, Profiles pane: the default profile open, with its accounts as chips with small rings, its thresholds, and its Chrome profile picker set to Chrome's last used"></td>
-    <td><b>Profiles.</b> Create a profile with a directory, a pool and a seed
-    account. Add, remove and move accounts between pools; each account is a
-    chip with its own small rings. Set the five per-profile overrides
-    (<code>switch_at</code>, <code>switch_at_weekly</code>,
-    <code>hard_floor</code>, <code>landing_margin</code>, <code>models</code>).
+    <td width="440"><img src="docs/images/settings-profiles.png" width="440" alt="Settings, Profiles pane: the default profile open, with the pools it uses in order and Change…, its thresholds, and its Chrome profile picker set to Chrome's last used"></td>
+    <td><b>Profiles.</b> Create a profile with a directory, the pools it uses
+    and an account to sign in with. Each profile shows its <b>POOLS</b>,
+    numbered in the order it uses them; <b>Change…</b> chooses and orders
+    them, and checking a pool another profile uses shares it. Set the six
+    per-profile overrides (<code>switch_at</code>,
+    <code>switch_at_weekly</code>, <code>hard_floor</code>,
+    <code>landing_margin</code>, <code>prefer</code>, <code>models</code>).
     Choose the profile's <b>Chrome profile</b>, from the profiles your Chrome
     has, or Chrome's last used. Open Claude Code or Chrome for it, show it in
     the menu bar, or remove it. Forget a removed profile's old credential.</td>
   </tr>
   <tr>
-    <td width="440"><img src="docs/images/settings-accounts.png" width="440" alt="Settings, Accounts pane: personal, research, work-1 and work-team in rotation order, each with small rings, its state, plan and login expiry, and the recovery copies"></td>
-    <td><b>Accounts.</b> Every account in rotation order, with small rings for
-    its week and session, its state (available, no headroom, refused and when
-    it clears), plan and login expiry. Drag to set the rotation order. From an
-    account's ⋯ menu: rename it, move it to another profile or up and down the
-    order, sign in to it again, open Chrome, choose its
-    <b>Chrome profile</b> (the same as its profile's, one of yours, or a new
-    one), or delete it after a confirmation that names the account and seat.
-    Recovery copies (logins a swap kept aside) are listed here to restore or
-    clear.</td>
+    <td width="440"><img src="docs/images/settings-accounts.png" width="440" alt="Settings, Accounts pane: the accounts grouped by pool (default's personal and research, work's work-1 and work-team), each with small rings, its state, who uses it, plan and login expiry, and the recovery copies"></td>
+    <td><b>Accounts.</b> Every account in one list, grouped by the pool it is
+    in, each pool's header saying which profiles use it. Each row has small
+    rings for its week and session, its state (available, in use by a
+    profile, no headroom, refused and when it clears), who uses it, plan and
+    login expiry. Drag within a pool to set the rotation order; drag onto
+    another pool to move it there, after a confirmation. <b>New pool</b>
+    makes a pool, and a pool's ⋯ menu has <b>Rename…</b> and
+    <b>Delete…</b>, which asks where its accounts go. From an account's ⋯
+    menu: rename it, move it to another pool or up and down the order, sign
+    in to it again, open Chrome, choose its <b>Chrome profile</b> (the same
+    as its profile's, one of yours, or a new one), or delete it after a
+    confirmation that names the account and seat. Recovery copies (logins a
+    swap kept aside) are listed here to restore or clear.</td>
   </tr>
   <tr>
     <td width="440"><img src="docs/images/settings-rotation.png" width="440" alt="Settings, Rotation pane: the rotation settings, with inline validation"></td>
@@ -525,12 +557,16 @@ its own never needs this: see [Claude in Chrome](#claude-in-chrome).
 **+ Add account** in the popover, or **Add account** in Settings → Accounts,
 offers two ways:
 
-- **Sign in with browser.** Name the account, pick the profile whose pool it
-  joins and the browser to sign in with. The app opens the sign-in page, and
-  you paste back the code it shows. Your live session is not touched
-  (`cs login <id> --direct --no-open`).
+- **Sign in with browser.** Name the account, then pick its **Pool** (every
+  pool, named with the profiles that use it, or No pool; it starts on a pool
+  only the profile you opened it from uses, so nothing is shared unless you
+  choose), the **Organization** to sign in to (the one your browser is in,
+  one an account here is in, or another by id) and the **Browser**. The app
+  opens the sign-in page, and you paste back the code it shows. Your live
+  session is not touched (`cs login <id> --direct --no-open`, with `--pool`
+  or `--no-pool`, and `--org`).
 - **Save current login.** After `/login` in Claude Code, save that credential
-  under the name it suggests (`cs add`).
+  under the name it suggests, into the pool you pick (`cs add`).
 
 ## The cs CLI
 
@@ -563,10 +599,12 @@ With no command, `cs` lists every command.
 
 ### cs status
 
-Every profile, its pool and the utilization of each account in both windows.
-`▸` marks the live account. Each window has a dot bar: lit dots are what has
-been used, and the bold dot is where the profile rotates away (`◉` without
-colour). Amber means climbing and red means refused or over the trigger.
+Every profile, its pools and the utilization of each account in both windows.
+`▸` marks the live account, and an account live in another profile that shares
+its pool reads `in use by <profile>`. Each window has a dot bar: lit dots are
+what has been used, and the bold dot is where the profile rotates away (`◉`
+without colour). Amber means climbing and red means refused or over the
+trigger.
 `--detail` adds reading age, burn rate and the binding limit. `cs top` is the
 same view, redrawn in place.
 
@@ -600,7 +638,8 @@ do.
 
 ### cs profile list
 
-Each Claude Code profile: its directory, its pool and the account live in it.
+Each Claude Code profile: its directory, its pool or pools and the account
+live in it.
 
 <p align="center"><img src="docs/images/cli-profile-list.svg" width="720" alt="Output of cs profile list: default in ~/.claude with pool personal and research, live personal; work in ~/.claude-work with pool work-1 and work-team, live work-1"></p>
 
@@ -640,10 +679,10 @@ command in more depth: [docs/GUIDE.md → Commands](docs/GUIDE.md#commands).
 | command | what it does |
 |---|---|
 | `cs use <id> [--profile P] [--dry-run] [--json]` | swap a profile onto a vaulted account (hot, no restart) |
-| `cs login <id> --direct [--browser APP] [--no-open]` | sign in through a browser, verify the seat, vault it and add it to the config, without touching the live session |
+| `cs login <id> --direct [--browser APP] [--no-open] [--org ID] [--pool NAME\|--no-pool]` | sign in through a browser, verify the seat, vault it and add it to the config, without touching the live session; `--org` asks for that organization, `--pool` or `--no-pool` says where a new account goes |
 | `cs login <id> --code CODE` | finish a `--direct` login with the code the browser shows |
 | `cs login <id> [--sso] [--email ADDR] [--prompt select_account\|login] [--keep]` | other sign-in options; without `--direct` it signs in through Claude Code and puts your previous account back unless `--keep` |
-| `cs add [<id>] [--from P] [--profile P] [--force] [--json]` | vault the credential that is live now (after `/login`) and add it to the config |
+| `cs add [<id>] [--from P] [--profile P] [--pool NAME\|--no-pool] [--force] [--json]` | vault the credential that is live now (after `/login`) and add it to the config |
 | `cs refresh <id> [--allow-active]` | renew a vaulted credential; never the live one unless you insist |
 | `cs run <profile> [-- claude args]` | start Claude Code in a profile |
 
@@ -653,7 +692,7 @@ command in more depth: [docs/GUIDE.md → Commands](docs/GUIDE.md#commands).
 |---|---|
 | `cs priority <id>... [--json]` | set the rotation order (also `cs account priority`) |
 | `cs account list [--json]` | accounts with email and plan |
-| `cs account pin <id>` / `cs account unpin [<id>] [--profile P]` | stop and resume automatic rotation in that account's profile |
+| `cs account pin <id> [--profile P]` / `cs account unpin [<id>] [--profile P]` | stop and resume automatic rotation in the profile the account is live in, or `--profile` |
 | `cs rename <old> <new>` | re-file an account under another id, in config, state and vault (also `cs account rename`) |
 | `cs remove <id> [--yes] [--json]` | delete an account everywhere: credential, config block, pool and priority entries, observations (also `cs account delete`) |
 | `cs forget <id>` / `cs forget --stale` | drop an account's recorded observations (not its credential), or those of every account no longer in the config |
@@ -668,10 +707,13 @@ command in more depth: [docs/GUIDE.md → Commands](docs/GUIDE.md#commands).
 |---|---|
 | `cs profile create <name> [--dir PATH] [--pool a,b] [--seed <id>] [--json]` | make a Claude Code profile: its directory, shared settings and skills linked from `~/.claude`, MCP servers copied, its `[[profile]]` block; `--seed` signs it in |
 | `cs profile seed <name> <id>` | sign a profile with no credential in with a vaulted account |
-| `cs profile list [--json]` | each profile's directory, pool and live account |
-| `cs profile pool <name> add\|remove <id> [--to P]` | change a pool (pools never overlap) |
-| `cs profile set <name> <key> <value\|inherit>` | per-profile `switch_at`, `switch_at_weekly`, `hard_floor`, `landing_margin` or `models` |
-| `cs profile remove <name> [--to P] [--yes]` | remove a profile; its accounts join `--to`, or `default` |
+| `cs profile list [--json]` | each profile's directory, pools and live account |
+| `cs profile pools <name> <pool>...` | the pools a profile uses, in order; profiles that list one pool share it |
+| `cs profile pool <name> add\|remove <id> [--to P]` | change a profile's own pool (an account is in one pool) |
+| `cs pool list\|create\|add\|remove\|move\|rename` | named pools of accounts that profiles list |
+| `cs pool delete <name> [--to <pool>\|--no-pool]` | delete any pool; its accounts go to `--to`, or to no pool, and the profiles that listed it stop listing it |
+| `cs profile set <name> <key> <value\|inherit>` | per-profile `switch_at`, `switch_at_weekly`, `hard_floor`, `landing_margin`, `prefer` or `models` |
+| `cs profile remove <name> [--to P] [--yes]` | remove a profile; its own accounts join `--to`, or `default` |
 | `cs profile forget <name>` | release the guard on a removed or re-pointed profile's old credential |
 
 **Settings and service**
@@ -728,6 +770,7 @@ also just ask, and Claude runs the matching command.
 | `/cs doctor` | "claudeswitch isn't polling" | no |
 | `/cs switch <id>` | "move me to the account with most room" | yes, without asking: a swap is hot and reversible |
 | `/cs login <id>` | "add my work account" | yes, after confirming account and browser |
+| `/cs pool` | "share work-2 with my default profile" | the config, after confirming; listing changes nothing |
 | `/cs setup` | "set up claudeswitch" | settings.json; asks before replacing a status line |
 
 The commands live under `/cs` because `/status`, `/login` and `/doctor` belong
@@ -799,8 +842,10 @@ pool      = ["work-1", "work-team"]
 switch_at = 75             # this profile only
 ```
 
-Each `[[profile]]` is one Claude Code config directory with its own pool.
-Pools never overlap, and with no `[[profile]]` blocks at all everything is one
+Each `[[profile]]` is one Claude Code config directory with its own pool, or
+the named `[[pool]]` blocks it lists (`pools = ["team"]`): profiles that list
+one pool share its accounts, one profile at a time. An account is in one
+pool, and with no `[[profile]]` blocks at all everything is one
 profile. Accounts are identified by seat (one person in one organization),
 never by email, which is why `setup`, `login` and `add` write the config for
 you.
@@ -878,7 +923,8 @@ credential alone.
 - **One account is live in at most one profile.** Refreshing a token revokes
   the previous one, so an account live in two profiles would be logged out of
   whichever refreshed second. claudeswitch never swaps an account into a
-  profile while it is, or might be, live in another.
+  profile while it is, or might be, live in another; profiles that share a
+  pool take its accounts in turn.
 - **A swap never destroys a login.** Before overwriting the live credential it
   saves it to its account's vault entry, or to a recovery slot when it cannot
   tell whose it is (`cs recovery`).

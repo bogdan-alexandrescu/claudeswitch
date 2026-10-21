@@ -191,7 +191,8 @@ final class Notifier: NSObject, ObservableObject, UNUserNotificationCenterDelega
         case let .use(account, profile):
             store.use(account, profile: profile)
         case .pin(let account):
-            store.setPinned(true, profile: store.pool(of: account) ?? StateFile.defaultProfile, account: account)
+            store.setPinned(true, profile: store.liveIn(account) ?? store.profile(of: account) ?? StateFile.defaultProfile,
+                            account: account)
         case let .signIn(account, _):
             // Add account → sign in again, on Settings (SettingsOpener).
             store.beginSignIn(account)

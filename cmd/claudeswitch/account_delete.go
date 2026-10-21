@@ -129,12 +129,9 @@ func accountDelete(w io.Writer, cfgPath, id string, yes, asJSON bool) error {
 		}
 	}
 
-	pool := ""
-	for _, in := range cfg.Profiles {
-		if slices.Contains(in.Pool, id) {
-			pool = in.Name
-		}
-	}
+	// The pool that lists it: a [[pool]], or a profile's own, which is
+	// named after its profile (D35).
+	pool, _ := cfg.PoolOf(id)
 	inPriority := slices.Contains(cfg.Priority, id)
 
 	putBack := func(err error) error { return err }
@@ -170,10 +167,8 @@ func accountDelete(w io.Writer, cfgPath, id string, yes, asJSON bool) error {
 			if hasAccount(back, id) || slices.Contains(back.Priority, id) {
 				return fmt.Errorf("the edit parsed but still names %q; discarded", id)
 			}
-			for _, in := range back.Profiles {
-				if slices.Contains(in.Pool, id) {
-					return fmt.Errorf("the edit parsed but profile %q's pool still names %q; discarded", in.Name, id)
-				}
+			if p, ok := back.PoolOf(id); ok {
+				return fmt.Errorf("the edit parsed but pool %q still names %q; discarded", p, id)
 			}
 			return nil
 		})
@@ -250,7 +245,7 @@ func accountDelete(w io.Writer, cfgPath, id string, yes, asJSON bool) error {
 			fmt.Fprintf(w, ", priority entry")
 		}
 		if pool != "" {
-			fmt.Fprintf(w, " and profile %s's pool entry", pool)
+			fmt.Fprintf(w, " and its entry in pool %s", pool)
 		}
 		fmt.Fprintf(w, " are gone from %s\n", cfg.Path)
 	}

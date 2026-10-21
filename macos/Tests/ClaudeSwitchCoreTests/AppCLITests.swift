@@ -205,7 +205,7 @@ enum FakeAppCLI {
         #expect(lastCall() == ["profile", "create", "lab", "--json"])
     }
 
-    @Test func testProfileSeedForgetPoolAndSet() throws {
+    @Test func testProfileSeedForgetAndSet() throws {
         try FakeAppCLI.reply(dir, fixture: "cli-profile-seed")
         #expect(try cli.profileSeed("lab", account: "work-2").get().seeded == "work-2")
         #expect(lastCall() == ["profile", "seed", "lab", "work-2", "--json"])
@@ -213,19 +213,6 @@ enum FakeAppCLI {
         try FakeAppCLI.reply(dir, fixture: "cli-profile-forget")
         #expect(try cli.profileForget("old").get().released == 1)
         #expect(lastCall() == ["profile", "forget", "old", "--json"])
-
-        try FakeAppCLI.reply(dir, fixture: "cli-profile-pool")
-        let p = try cli.profilePool("default", .remove, account: "work-2", to: "review").get()
-        #expect(lastCall() == ["profile", "pool", "default", "remove", "work-2", "--to=review", "--json"])
-        #expect(p.profile == "review" && p.changed)
-        #expect(p.pools["review"] == ["personal", "work-2"])
-        _ = cli.profilePool("review", .add, account: "work-2", to: nil)
-        #expect(lastCall() == ["profile", "pool", "review", "add", "work-2", "--json"])
-
-        try FakeAppCLI.reply(dir, fixture: "cli-error-in-other-pool", exit: 1)
-        let refused = cli.profilePool("review", .add, account: "work-2", to: nil)
-        #expect(refused.failureCode == "in_other_pool")
-        #expect(refused.failureHint == "move it with: claudeswitch profile pool default remove work-2 --to review")
 
         try FakeAppCLI.reply(dir, fixture: "cli-profile-set")
         let s = try cli.profileSet("review", "switch_at", "70").get()

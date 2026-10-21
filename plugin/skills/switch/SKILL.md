@@ -26,10 +26,13 @@ claudeswitch why --json
 With several Claude Code profiles configured, the output is a `profiles`
 list instead, one entry per profile; read only the entry with
 `"current": true` — this session's profile, the one `use` acts on — and
-ignore the others. Each profile rotates only within its own pool.
+ignore the others. Each profile rotates only within the pools it uses, pool
+by pool in the order it lists them.
 
 Use `decision.target` if the decision is `switch`. If not, pick the eligible
 account (`"eligible": true`, not `"active"`) with the lowest `utilization`.
+An account with `active_in` naming another profile, or `why` reading
+`in use by <profile>`, is live there and is never eligible: skip it.
 If none is eligible, do not switch: report which account recovers first
 (`decision.recovers_account`, `decision.recovers_at`) and stop.
 
@@ -44,14 +47,21 @@ one its `CLAUDE_CONFIG_DIR` belongs to). Pass `--profile <name>` only when the
 user asks to switch a different profile by name.
 
 It verifies the credential belongs to the expected account and rolls back if
-not. Running sessions, this one included, pick up the new account from the next
-request; nothing needs restarting.
+not. If the usage read that confirms it cannot be made (rate limited), the
+switch stays installed and the output says it could not be confirmed; that
+is not a failure. Running sessions, this one included, pick up the new
+account from the next request; nothing needs restarting.
 
-`use` refuses an account from another profile's pool, naming the profile that
-owns it, and refuses one that is (or may be) live in another profile. Do not
-try to work around either: report the refusal, and suggest `/cs switch <id>`
-from a session of the owning profile, or `--profile <owner>` if the user
-wants that profile switched instead.
+`use` refuses an account in no pool this profile uses, naming the profiles
+that may use it, and refuses one that is (or may be) live in another
+profile — an account two profiles share through a pool is used by one at a
+time. Do not try to work around either: report the refusal, and suggest
+`/cs switch <id>` from a session of a profile that may use it, or
+`--profile <that profile>` if the user wants that profile switched instead.
+
+If it refuses because another command or the daemon is switching an account
+(`switch_busy`), nothing changed: run the same command once more after a few
+seconds.
 
 ## 3. Report
 

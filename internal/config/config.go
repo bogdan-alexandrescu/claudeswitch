@@ -89,6 +89,34 @@ func (a Account) IsEnabled() bool { return a.Enabled == nil || *a.Enabled }
 // A profile counts only when its pool holds an enabled account: an empty
 // pool (D13) never has anything active to poll. Hot polling is not counted;
 // the shared budget throttles it (docs/PROFILES.md §5 Budget).
+// WindowAllowance is the machine-wide window's size (D36): api_budget for
+// each profile with an enabled account to use, at least one profile's worth.
+// Each account's own allowance, the limit the endpoint enforces (GROUND_TRUTH
+// §42), does not grow with it.
+func (c *Config) WindowAllowance() int {
+	return c.APIBudget * max(1, c.profilesInUse())
+}
+
+// profilesInUse counts the profiles whose pool holds an enabled account.
+func (c *Config) profilesInUse() int {
+	enabled := map[string]bool{}
+	for _, a := range c.Accounts {
+		if a.IsEnabled() {
+			enabled[a.ID] = true
+		}
+	}
+	n := 0
+	for _, in := range c.EffectiveProfiles() {
+		for _, id := range in.Pool {
+			if enabled[id] {
+				n++
+				break
+			}
+		}
+	}
+	return n
+}
+
 func (c *Config) CallsPerWindow() float64 {
 	const window = 5 * time.Minute
 	enabled := map[string]bool{}
@@ -469,6 +497,8 @@ type Config struct {
 	// callers want EffectiveProfiles, which adds the implicit default and the
 	// unlisted accounts that join it.
 	Profiles []Profile `toml:"profile"`
+	// Pools are the named pools profiles list (D31).
+	Pools []Pool `toml:"pool"`
 
 	Path string `toml:"-"`
 	// Hash is ContentHash of the bytes this config was decoded from, ""
@@ -820,10 +850,10 @@ func (c *Config) validateRest() error {
 	// poll_idle under MinPoll was raised to it on load (floorPolls) and is
 	// warned about, and a fast poll_hot is kept and warned about too (owner
 	// decisions); the per-account allowance defers any excess.
-	if used, avail := c.CallsPerWindow(), float64(c.APIBudget-1); used > avail {
+	if used, avail := c.CallsPerWindow(), float64(c.WindowAllowance()-1); used > avail {
 		return fmt.Errorf(
 			"this cadence needs %.1f calls per 5 minutes but only %.0f are available "+
-				"(api_budget %d, one reserved for swaps).\n"+
+				"(api_budget %d for each profile in use, one reserved for swaps).\n"+
 				"  Slow poll_active (now %s) or poll_idle (now %s), or raise api_budget — "+
 				"the burst ceiling measured around 15 per 5 minutes, and tripping it locks the daemon out for 5 minutes",
 			used, avail, c.APIBudget, c.PollActive.Duration, c.PollIdle.Duration)

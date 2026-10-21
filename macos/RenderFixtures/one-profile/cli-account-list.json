@@ -7,7 +7,11 @@
    "id": "personal",
    "pinned": false,
    "plan": "Max 20x",
+   "pool": null,
    "profile": "default",
+   "profiles": [
+    "default"
+   ],
    "reading": null,
    "seat": "aaaaaaaa@11111111",
    "state": "available"
@@ -19,7 +23,11 @@
    "id": "x-unpooled",
    "pinned": false,
    "plan": "Max 20x",
+   "pool": null,
    "profile": "default",
+   "profiles": [
+    "default"
+   ],
    "reading": null,
    "seat": "aaaaaaaa@11111111",
    "state": "available"
@@ -31,7 +39,11 @@
    "id": "w01",
    "pinned": false,
    "plan": "Max 20x",
+   "pool": null,
    "profile": "default",
+   "profiles": [
+    "default"
+   ],
    "reading": null,
    "seat": "aaaaaaaa@11111111",
    "state": "available"

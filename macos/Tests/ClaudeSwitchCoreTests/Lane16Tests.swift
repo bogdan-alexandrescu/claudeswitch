@@ -28,12 +28,16 @@ enum StatefulCLI {
                 else DP='["a","x"]'; DL='["a"]'; WP='["w1"]'; WL='["w1"]'; fi
                 printf '{"profiles":[{"name":"default","declared":true,"pool":%s,"listed":%s,"signed_in":"yes"},{"name":"work","declared":true,"dir":"~/.claude-work","pool":%s,"listed":%s,"signed_in":"yes"}],"ghosts":[]}\\n' "$DP" "$DL" "$WP" "$WL"
                 exit 0;;
-              "profile pool")
+              "pool list")
                 if [ "$(cat "$POOLS")" = work ]; then
-                  echo '{"account":"x","profile":"work","changed":false,"pools":{"default":["a"],"work":["w1","x"]}}'; exit 0
+                  echo '{"pools":[{"name":"default","accounts":["a"],"profiles":["default"],"own":true},{"name":"work","accounts":["w1","x"],"profiles":["work"],"own":true}],"unlisted":[]}'
+                else
+                  echo '{"pools":[{"name":"default","accounts":["a"],"profiles":["default"],"own":true},{"name":"work","accounts":["w1"],"profiles":["work"],"own":true}],"unlisted":["x"]}'
                 fi
+                exit 0;;
+              "pool move")
                 echo work > "$POOLS"
-                echo '{"account":"x","profile":"work","changed":true,"pools":{"default":["a"],"work":["w1","x"]}}'; exit 0;;
+                echo '{"pools":[{"name":"default","accounts":["a"],"profiles":["default"],"own":true},{"name":"work","accounts":["w1","x"],"profiles":["work"],"own":true}],"unlisted":[]}'; exit 0;;
             esac
             echo '{"error":{"code":"failed","message":"fake: unhandled"}}'; exit 1
             """)
@@ -69,7 +73,7 @@ final class Box<T>: @unchecked Sendable {
         var data = AppData()
         data.apply(read(&data))
         #expect(pool(data, "work") == ["w1"])
-        #expect(data.profiles?.step(adding: "x", to: "work") == .add(account: "x", to: "work"))
+        #expect(data.pools?.pool(of: "x") == nil)
 
         // A refresh starts (the directory watcher, the timer) and reads the
         // pools from before the edit…
@@ -86,17 +90,16 @@ final class Box<T>: @unchecked Sendable {
         Thread.sleep(forTimeInterval: 0.5)
 
         // …the edit succeeds and its answer is applied at once…
-        let r = try CLI(path: path).profilePool("work", .add, account: "x", to: nil).get()
-        data.applyPools(r)
-        #expect(pool(data, "work") == ["w1", "x"], "the edit shows as soon as the CLI answers")
-        #expect(pool(data, "default") == ["a"])
-        #expect(data.profiles?.step(adding: "x", to: "work") == .already)
+        let editToken = data.begin()
+        let r = try CLI(path: path).poolMove("x", to: "work").get()
+        data.applyPools(r, token: editToken)
+        #expect(data.pools?.pool(of: "x")?.name == "work", "the edit shows as soon as the CLI answers")
 
         // …and the older read, answering last, does not put it back.
         done.wait()
         let applied = data.apply(try #require(slow.value))
-        #expect(!applied.contains(.profiles))
-        #expect(pool(data, "work") == ["w1", "x"], "a read begun before the edit is never applied over it")
+        #expect(!applied.contains(.pools))
+        #expect(data.pools?.pool(of: "x")?.name == "work", "a read begun before the edit is never applied over it")
 
         // A read begun after the edit is.
         try FileManager.default.removeItem(at: dir.appendingPathComponent("slow"))
@@ -281,8 +284,8 @@ final class Box<T>: @unchecked Sendable {
         #expect(AddForm.lockedProfile(account: "work-2", accounts: nil, list: profiles) == "default",
                 "from the pools when the account list is not read yet")
         #expect(AddForm.lockedProfile(account: "brand-new", accounts: accounts, list: profiles) == nil)
-        #expect(AddForm.lockedNote(account: "personal", profile: "review")
-                == "personal is already in review. Move it in Profiles.")
+        #expect(AddForm.lockedNote(account: "personal", info: accounts.account("personal"), profile: "review")
+                == "personal is in the pool review, which review uses. To change that, move it to another pool in Accounts.")
     }
 
     @Test func testAProfileTheCLIDidNotApplyIsNeverReported() throws {
@@ -291,74 +294,19 @@ final class Box<T>: @unchecked Sendable {
             """#, exit: 0)
         let st = try cli.loginStart(account: "personal", profile: "default", browser: nil).get()
         #expect(AddForm.mismatch(chosen: "default", start: st)
-                == "personal stays in review: an account that exists keeps its profile. Move it in Profiles.")
+                == "personal already exists: it stays in its pool, which review uses. Move it to another pool in Accounts.")
         #expect(AddForm.mismatch(chosen: "review", start: st) == nil)
         #expect(!FakeAppCLI.calls(dir).joined().joined().contains("scope"), "S1: no --scope")
     }
 }
 
-/// B4: the new-profile sheet's accounts.
-@Suite struct NewProfileTests {
-    let list = ProfileList(data: Data(#"""
-        {"profiles": [
-          {"name": "default", "declared": true, "pool": ["a", "d6"], "listed": ["a"]},
-          {"name": "work", "declared": true, "pool": ["w1", "w2"], "listed": ["w1", "w2"]}]}
-        """#.utf8))!
-
-    @Test func testListedAccountsMoveAfterCreatingAndD6OnesJoinAtOnce() {
-        let p = NewProfilePlan.make(name: "review", selected: ["d6", "w1"], seed: "w1", list: list)
-        #expect(p.pool == ["d6"], "an account no pool lists can be taken at create")
-        #expect(p.moves == [.move(account: "w1", from: "work", to: "review")])
-        #expect(p.seedAtCreate == nil)
-        #expect(p.seedAfter == "w1", "seeded once it has moved in")
-        let c = p.confirmation
-        #expect(c?.title == "Create review and move w1?")
-        #expect(c?.message.contains("w1 leaves work") == true)
-
-        let q = NewProfilePlan.make(name: "review", selected: ["d6"], seed: "d6", list: list)
-        #expect(q.moves.isEmpty && q.confirmation == nil)
-        #expect(q.seedAtCreate == "d6")
-    }
-
-    @Test func testWhereEachAccountIs() {
-        #expect(NewProfilePlan.note(for: "w1", list: list) == "in work — moves here when created")
-        #expect(NewProfilePlan.note(for: "a", list: list) == "in default — moves here when created")
-        #expect(NewProfilePlan.note(for: "d6", list: list) == nil, "in default by D6 alone: free to take")
-    }
-}
-
-/// B5, B7, C: pool edits and profiles.
+/// B7: no profiles yet.
 @Suite struct PoolEditTests {
     let list = ProfileList(data: Data(#"""
         {"profiles": [
           {"name": "default", "declared": true, "pool": ["a", "d6"], "listed": ["a"]},
           {"name": "work", "declared": true, "pool": ["w1"], "listed": ["w1"]}]}
         """#.utf8))!
-
-    @Test func testSuccessNotes() throws {
-        let moved = try #require(PoolResult(JSON(data: Data(#"{"account":"lab-1","profile":"work","changed":true,"pools":{}}"#.utf8))!))
-        #expect(Notes.pool(moved) == "lab-1 is now in work")
-        let same = try #require(PoolResult(JSON(data: Data(#"{"account":"lab-1","profile":"work","changed":false,"pools":{}}"#.utf8))!))
-        #expect(Notes.pool(same) == "lab-1 is already in work")
-    }
-
-    @Test func testOneVerbForListedAndD6Accounts() throws {
-        let move = try #require(Confirm.poolStep(list.step(adding: "a", to: "work")))
-        #expect(move.title == "Move a to work?" && move.action == "Move")
-        let add = try #require(Confirm.poolStep(list.step(adding: "d6", to: "work")))
-        #expect(add.title == "Move d6 to work?", "a D6 account is moved too, and confirmed")
-        #expect(add.action == "Move")
-        #expect(add.message.contains("default"))
-        #expect(Confirm.poolStep(list.step(adding: "w1", to: "work")) == nil)
-        #expect(list.moveTargets(for: "d6") == ["work"])
-        #expect(list.moveTargets(for: "w1") == ["default"])
-    }
-
-    @Test func testImplicitMembers() {
-        let d = list.profile("default")!
-        #expect(d.isImplicitMember("d6"))
-        #expect(!d.isImplicitMember("a"))
-    }
 
     @Test func testNoProfilesYet() throws {
         let one = try #require(ProfileList(data: Data(#"""
@@ -373,51 +321,6 @@ final class Box<T>: @unchecked Sendable {
             """#.utf8)))
         #expect(ProfileText.badge(declared.profiles[0]) == "from CLAUDE_CONFIG_DIR")
         #expect(ProfileText.badge(list.profiles[0]) == nil)
-    }
-
-    /// Review: pool edits run on a concurrent queue, so an older edit's
-    /// answer can arrive after a newer one's; it is stamped like a read and
-    /// dropped.
-    @Test func testAnOlderPoolEditAnswerIsDropped() throws {
-        var data = AppData()
-        var r = Reading(token: data.begin())
-        r.fetched = [.profiles]
-        r.profiles = list
-        data.apply(r)
-        let first = data.begin()
-        let second = data.begin()
-        let toWork = try #require(PoolResult(JSON(data: Data(#"{"account":"d6","profile":"work","changed":true,"pools":{"default":["a"],"work":["w1","d6"]}}"#.utf8))!))
-        let back = try #require(PoolResult(JSON(data: Data(#"{"account":"d6","profile":"default","changed":true,"pools":{"default":["a","d6"],"work":["w1"]}}"#.utf8))!))
-        let newer = data.applyPools(back, token: second)
-        let older = data.applyPools(toWork, token: first)
-        #expect(newer)
-        #expect(!older, "the older edit's answer is not applied over the newer")
-        #expect(data.profiles?.profile("work")?.pool == ["w1"])
-    }
-
-    /// Review: with accounts to move, a create that timed out waiting for
-    /// the daemon says the moves did not run.
-    @Test func testACreateThatTimedOutSaysTheMovesDidNotRun() {
-        let p = NewProfilePlan.make(name: "review", selected: ["d6", "w1"], seed: "d6", list: list)
-        let m = p.notLoadedMessage("the daemon did not load the config in 10s")
-        #expect(m.contains("review was created but not signed in"))
-        #expect(m.contains("w1 was not moved in"))
-        let q = NewProfilePlan.make(name: "review", selected: ["d6"], seed: "d6", list: list)
-        #expect(!q.notLoadedMessage("x").contains("moved"))
-    }
-
-    @Test func testAppliedPoolsUpdateTheList() throws {
-        var data = AppData()
-        var r = Reading(token: data.begin())
-        r.fetched = [.profiles]
-        r.profiles = list
-        data.apply(r)
-        let res = try #require(PoolResult(JSON(data: Data(#"{"account":"d6","profile":"work","changed":true,"pools":{"default":["a"],"work":["w1","d6"]}}"#.utf8))!))
-        data.applyPools(res)
-        #expect(data.profiles?.profile("work")?.pool == ["w1", "d6"])
-        #expect(data.profiles?.profile("work")?.listed == ["w1", "d6"])
-        #expect(data.profiles?.profile("default")?.pool == ["a"])
-        #expect(data.pool(of: "d6") == "work")
     }
 }
 
@@ -564,14 +467,6 @@ final class Box<T>: @unchecked Sendable {
         #expect(d.level(of: hot) == nil)
     }
 
-    @Test func testChipsShowStatus() {
-        #expect(Chip.text("w03", status: .refused(window: nil, until: nil), pct: 100, error: nil) == "w03 · refused")
-        #expect(Chip.text("w04", status: .needsLogin, pct: 3, error: "401") == "w04 · needs login")
-        #expect(Chip.text("w05", status: .available, pct: 12, error: "usage API: timeout") == "w05 · error")
-        #expect(Chip.text("w06", status: .available, pct: 12, error: nil) == "w06 · 12%")
-        #expect(Chip.text("w07", status: nil, pct: nil, error: nil) == "w07")
-    }
-
     @Test func testThePopoverFitsTheScreen() {
         #expect(PopoverLayout.maxHeight(visible: 900) == 860)
         #expect(PopoverLayout.maxHeight(visible: 300) == 320, "never below a usable height")
@@ -614,7 +509,5 @@ final class Box<T>: @unchecked Sendable {
         #expect(ProfileRemoval.summary(empty, to: "default").hasPrefix("It has no accounts."))
         #expect(!ProfileRemoval.needsDestination(empty))
         #expect(ProfileRemoval.needsDestination(p))
-        #expect(!Confirm.poolRemove(account: "a", from: "work").message.contains("pool"))
-        #expect(!Confirm.poolMove(account: "a", from: "work", to: "review").message.contains("pool"))
     }
 }
