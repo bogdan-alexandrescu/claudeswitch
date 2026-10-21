@@ -5,13 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"os/signal"
 	"runtime"
 	"strings"
 	"time"
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/oauth"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/state"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/vault"
 )
 
 // Signing in at a terminal, start to finish in one process.
@@ -129,4 +133,69 @@ func openBrowser(w io.Writer, browser string) func(string) error {
 			nonEmpty(browser, "your default browser"))
 		return nil
 	}
+}
+
+// loginHere is `login --direct` at a terminal, finished in this process: the
+// browser comes back here with the code, which is exchanged and vaulted with
+// the same checks as a pasted one (finishDirectLogin). Nothing touches the
+// live session. errNoListener means it could not start, and nothing did.
+func loginHere(cfg *config.Config, st *state.State, v *vault.Vault, id, wantOrg string, extra oauth.Extra,
+	browser, pool string, join joinTarget) error {
+	fmt.Println()
+	explainDirect(cfg, id, wantOrg, extra, pool)
+	fmt.Println()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, loginWait)
+	defer cancel()
+	tok, err := browserLogin(ctx, os.Stdout, extra, openBrowser(os.Stdout, browser))
+	switch {
+	case errors.Is(err, errNoListener):
+		return err
+	case errors.Is(err, context.DeadlineExceeded):
+		return fmt.Errorf("the browser did not come back within %s; nothing was stored, "+
+			"and your session is untouched", loginWait)
+	case errors.Is(err, context.Canceled):
+		return errors.New("stopped; nothing was stored, and your session is untouched")
+	case err != nil:
+		return fmt.Errorf("%w\n  (nothing was stored; your session is untouched)", err)
+	}
+	_, err = finishDirectLogin(cfg, st, v, oauth.Pending{AccountID: id, OrgID: wantOrg, Org: extra.Org,
+		Profile: pool, JoinPool: join.Pool, NoPool: join.None}, tok)
+	return err
+}
+
+// signInHere is setup's sign-in for one more account: the browser comes back
+// with the code, or, when nothing can listen here, the code is pasted as it
+// always was. Ctrl-C skips the account; nothing is stored either way.
+func signInHere(ctx context.Context, extra oauth.Extra, browser string) (*oauth.Tokens, error) {
+	sctx, stop := signal.NotifyContext(ctx, os.Interrupt)
+	defer stop()
+	sctx, cancel := context.WithTimeout(sctx, loginWait)
+	defer cancel()
+	tok, err := browserLogin(sctx, os.Stdout, extra, openBrowser(os.Stdout, browser))
+	switch {
+	case errors.Is(err, context.Canceled):
+		return nil, errors.New("skipped; nothing stored")
+	case !errors.Is(err, errNoListener):
+		return tok, err
+	}
+
+	fmt.Printf("    %v — paste the code instead\n", err)
+	flow, err := oauth.BeginAuthWith("", extra)
+	if err != nil {
+		return nil, err
+	}
+	if browser != "" && exec.Command("open", "-a", browser, flow.URL).Run() == nil {
+		fmt.Printf("    opened in %s — sign in as the account you want, approve it\n", browser)
+	} else {
+		fmt.Printf("\n%s\n\n", flow.URL)
+	}
+	code := ask("  Paste the code", "")
+	if code == "" {
+		return nil, errors.New("skipped; nothing stored")
+	}
+	xctx, xcancel := context.WithTimeout(ctx, 60*time.Second)
+	defer xcancel()
+	return exchangeCode(xctx, flow, code)
 }

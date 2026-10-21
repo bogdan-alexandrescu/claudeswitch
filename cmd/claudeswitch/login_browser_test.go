@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -135,4 +136,20 @@ func queryOf(t *testing.T, raw string) url.Values {
 		t.Fatal(err)
 	}
 	return u.Query()
+}
+
+// Nobody at the terminal (the app, a script): nothing may prompt, so a login
+// with no name stays the usage error it was, and says how to get the prompt.
+func TestALoginWithNoNameAndNobodyToAskIsAUsageError(t *testing.T) {
+	restore := promptsOff
+	promptsOff = true
+	t.Cleanup(func() { promptsOff = restore })
+	err := cmdLogin(nil)
+	var ae *appError
+	if !errors.As(err, &ae) || ae.Code != codeUsage {
+		t.Fatalf("got %v, want a usage error", err)
+	}
+	if !strings.Contains(ae.Hint, "at a terminal") {
+		t.Errorf("hint %q; want it to say a terminal asks for the name", ae.Hint)
+	}
 }

@@ -3066,9 +3066,20 @@ func cmdLogin(args []string) error {
 	asJSON := fs.Bool("json", false, "machine-readable output (with --direct or --code); never prompts")
 	noOpen := fs.Bool("no-open", false, "with --direct: do not open a browser, only print the URL")
 	positional := parseInterleaved(fs, args)
+	// At a terminal, `login` with no name adds an account the way setup does:
+	// it asks for what it needs, and the browser hands the code back itself.
+	atTerminal := !*asJSON && *code == "" && isTerminal()
+	if len(positional) == 0 && atTerminal {
+		name, err := chooseLoginName(ask)
+		if err != nil {
+			return err
+		}
+		positional, *direct = []string{name}, true
+	}
 	if len(positional) != 1 {
-		return appErr(codeUsage, "", "usage: claudeswitch login <account-id> [--direct] [--org <org-id>] "+
-			"[--pool <pool> | --no-pool] [--browser <app>] [--sso] [--keep] [--profile NAME]")
+		return appErr(codeUsage, "at a terminal, `claudeswitch login` with no name asks for one",
+			"usage: claudeswitch login <account-id> [--direct] [--org <org-id>] "+
+				"[--pool <pool> | --no-pool] [--browser <app>] [--sso] [--keep] [--profile NAME]")
 	}
 	id := positional[0]
 	if err := checkNewAccountID(id); err != nil {
@@ -3127,8 +3138,15 @@ func cmdLogin(args []string) error {
 		// --direct never touches a live credential. --profile only says whose
 		// pool a new account joins when the login completes (D20), and is
 		// settled now, before anything is started.
+		// At a terminal the login finishes here, and asks what the command
+		// line left out; --no-open and --pin-org keep the two-step flow.
+		here := atTerminal && !*noOpen && !*pinOrg
+		poolName := *poolFlag
+		if here && poolName == "" && !*noPool && *profName == "" {
+			poolName = chooseLoginPool(cfg, id, ask)
+		}
 		// D37: a pool chosen by name, or none, in place of --profile's D20.
-		join, err := resolveJoin(cfg, *poolFlag, *noPool)
+		join, err := resolveJoin(cfg, poolName, *noPool)
 		if err != nil {
 			return err
 		}
@@ -3145,9 +3163,24 @@ func cmdLogin(args []string) error {
 		if *noOpen {
 			br = ""
 		}
+		extra := oauth.Extra{Org: askOrg, Prompt: *prompt, LoginHint: *email}
+		if here {
+			if br == "" {
+				if bl := browsers(); len(bl) > 0 {
+					fmt.Printf("\n  A login returns whichever person your BROWSER is signed in as, so pick\n")
+					fmt.Printf("  one signed in as the account you are adding — separate browser\n")
+					fmt.Printf("  applications keep separate sign-ins.\n")
+					br = chooseLoginBrowser(bl, ask)
+				}
+			}
+			err := loginHere(cfg, st, v, id, wantOrg, extra, br, pool, join)
+			if !errors.Is(err, errNoListener) {
+				return err
+			}
+			fmt.Printf("\n  %v — finishing with a pasted code instead.\n", err)
+		}
 		err = humanToStderr(*asJSON, func() error {
-			return loginDirect(cfg, st, v, id, wantOrg, *pinOrg,
-				oauth.Extra{Org: askOrg, Prompt: *prompt, LoginHint: *email}, br, pool, join)
+			return loginDirect(cfg, st, v, id, wantOrg, *pinOrg, extra, br, pool, join)
 		})
 		if err != nil || !*asJSON {
 			return err
@@ -4019,31 +4052,10 @@ func cmdSetup(args []string) error {
 			fmt.Printf("  add the same person in another organization, run\n")
 			fmt.Printf("  `claudeswitch login <name> --direct --org <org-id>` once setup is done.\n")
 			fmt.Printf("  Installed: %s\n", strings.Join(bl, ", "))
-			browser = ask("  Open in which browser (blank to print the URL)", bl[0])
+			browser = ask("  Open in which browser", bl[0])
 		}
 
-		flow, ferr := oauth.BeginAuthWith("", oauth.Extra{Prompt: "login"})
-		if ferr != nil {
-			return ferr
-		}
-		if browser != "" {
-			if err := exec.Command("open", "-a", browser, flow.URL).Run(); err != nil {
-				fmt.Printf("    could not open %s: %v\n    %s\n", browser, err, flow.URL)
-			} else {
-				fmt.Printf("    opened in %s — sign in as the account you want, approve it\n", browser)
-			}
-		} else {
-			fmt.Printf("\n%s\n\n", flow.URL)
-		}
-
-		code := ask("  Paste the code", "")
-		if code == "" {
-			fmt.Printf("    skipped; nothing stored\n\n")
-			continue
-		}
-		xctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-		tok, xerr := oauth.NewClient().Exchange(xctx, flow, code)
-		cancel()
+		tok, xerr := signInHere(ctx, oauth.Extra{Prompt: "login"}, browser)
 		if xerr != nil {
 			fmt.Printf("    ✗ %v\n\n", xerr)
 			continue
