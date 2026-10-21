@@ -226,9 +226,10 @@ It works even when the config does not load.
 | `--profile NAME` | this shell's profile | the profile whose live credential to check |
 | `--config PATH` | the default config | the config to read |
 
-It reads the live credential, so on macOS it is also the command to run once
-after installing a new binary: it raises the Keychain prompt while you are
-there to click **Always Allow** ([README → Daemon](../../README.md#daemon)).
+It reads the live credential, so on macOS it raises the Keychain prompt for
+this one profile. After installing a new binary, run `cs daemon check`
+instead: it reads every profile's credential, as the daemon will, while you
+are there to click **Always Allow** ([README → Daemon](../../README.md#daemon)).
 
 The output's lines, as the source prints them:
 
