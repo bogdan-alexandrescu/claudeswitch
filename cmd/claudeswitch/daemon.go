@@ -87,6 +87,8 @@ type activity interface {
 	IdleFor(time.Duration) bool
 	LastActivity() time.Time
 	WorstLatency() time.Duration
+	// Seeded is false until the startup walk of the transcripts is done.
+	Seeded() bool
 }
 
 type auditor interface{ Write(audit.Event) error }
@@ -312,6 +314,9 @@ func (quietDetector) IdleFor(time.Duration) bool            { return true }
 func (quietDetector) LastActivity() time.Time               { return time.Time{} }
 func (quietDetector) WorstLatency() time.Duration           { return 0 }
 
+// Seeded: there is nothing to walk, so nothing is pending.
+func (quietDetector) Seeded() bool { return true }
+
 // multi reports whether more than one profile is configured. Notifications
 // name the profile only then: with one, the name says nothing.
 func (d *daemon) multi() bool { return len(d.profs) > 1 }
@@ -365,6 +370,12 @@ func (d *daemon) busy(name string) bool {
 	}
 	for _, il := range d.profs {
 		if il.name == name {
+			// Still on its startup walk, the profile has not been seen
+			// idle: unknown counts as busy (R4), so its account in use keeps
+			// poll_active's cadence rather than a quiet profile's poll_idle.
+			if !il.det.Seeded() {
+				return true
+			}
 			last := il.det.LastActivity()
 			return !last.IsZero() && time.Since(last) < window
 		}

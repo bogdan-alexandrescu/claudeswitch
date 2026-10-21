@@ -204,7 +204,9 @@ type fakeDet struct {
 	root string
 	idle bool
 	last time.Time
-	out  chan detector.Rejection
+	// unseeded is a detector still on its startup walk.
+	unseeded bool
+	out      chan detector.Rejection
 	// runs and exits count Run's starts and returns.
 	runs, exits atomic.Int32
 }
@@ -219,6 +221,7 @@ func (f *fakeDet) Rejections() <-chan detector.Rejection { return f.out }
 func (f *fakeDet) IdleFor(time.Duration) bool            { return f.idle }
 func (f *fakeDet) LastActivity() time.Time               { return f.last }
 func (f *fakeDet) WorstLatency() time.Duration           { return 0 }
+func (f *fakeDet) Seeded() bool                          { return !f.unseeded }
 
 type fakeAudit struct {
 	mu     sync.Mutex

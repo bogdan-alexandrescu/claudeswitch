@@ -1453,3 +1453,20 @@ kept the false points.
 Since then, among seats sharing the live organization, the one whose stored access
 token is the live token wins, then the profile's current account, then priority order
 as before. No call is spent.
+
+## 50. A restart waited on a walk of every transcript (observed 2026-10-20)
+
+After each daemon restart the default profile's first step came 33s, 67s, 77s,
+and once 3m47s after "watching"; the work profile's came 0.1s later. Nothing was
+read or rotated in between. Not the keychain: each `security` read took about
+20ms. The transcript detector's startup walked the whole projects tree three
+times (to seed read offsets, the newest write, and the newest session's
+directory), and the first walk held the detector's lock. The daemon's first
+"is this profile busy?" takes that lock, so it waited for the walk. The default
+profile's tree was 13,756 transcripts in 12 GB; the work profile's, 27. One walk
+takes 1.6-2.9s with a warm cache; three, and a cold cache or a machine busy
+compiling, made the rest. A clean restart reproduced it at 24s.
+
+Since then the detector seeds in one walk and takes its lock only to store the
+result. A profile whose walk is not done counts as busy, as an unknown profile
+always has (R4), so its account in use keeps the poll_active cadence.

@@ -207,3 +207,17 @@ func TestDaemonIdleRefreshHoldsTheSwitchLock(t *testing.T) {
 		t.Fatal("refreshed b without the switch lock")
 	}
 }
+
+// A profile whose detector is still on its startup walk has not been seen
+// idle: it counts as busy, so its account in use keeps poll_active's cadence
+// (R4: unknown is busy) rather than the quiet profile's poll_idle.
+func TestAProfileStillSeedingCountsAsBusy(t *testing.T) {
+	r := newRig(t, twoProfiles(), true)
+	r.dets["work"].unseeded = true
+	if !r.d.busy("work") {
+		t.Error("work is still seeding: busy() must say busy")
+	}
+	if r.d.busy("default") {
+		t.Error("default is seeded and has seen nothing: busy() must say idle")
+	}
+}
