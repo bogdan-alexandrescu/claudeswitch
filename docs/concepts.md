@@ -12,6 +12,19 @@ one person in one organization. One email can belong to several organizations,
 each with its own quota, so claudeswitch never identifies an account by email.
 `setup`, `login` and `add` write each account into the config pinned to its
 seat, and refuse a credential whose seat does not match.
+
+A sign-in returns whoever the browser is signed in as. Which organization it
+lands in is the browser's choice unless the sign-in asks for one:
+`cs login <id> --direct --org <org-id>` asks for that organization, which is
+how one person is added once for each organization they are in, and an
+account already in the config asks for its own when it signs in again. A
+sign-in that comes back in another organization than the one asked for is
+refused.
+
+The usage API names only the organization of the credential it is given. When
+several seats of one organization are in a profile's pools, the reading of the
+live credential goes to the seat whose stored token is that credential, then
+to the profile's current account, and only then to the first by `priority`.
 [GUIDE → Adding an account](GUIDE.md#adding-an-account).
 
 ## Profiles and pools
@@ -23,8 +36,8 @@ of accounts, and an account is in one pool. A profile rotates over the
 pools it uses, in order: its own (`pool = [...]` on the profile) or the
 named `[[pool]]` blocks it lists (`pools = [...]`). Two profiles that list
 the same pool share its accounts, one profile at a time: an account live in
-one is "in use by" it in the other. Accounts in no pool join the profile
-named `default`. One daemon drives every profile.
+one is "in use by" it in the other. Accounts in no pool are used by the
+profile named `default`, after its pools. One daemon drives every profile.
 
 With no `[[profile]]` blocks in the config, everything is one implicit
 `default` profile. `cs profile create` declares the first real one,
@@ -64,21 +77,24 @@ Each time the daemon reads the live account, it decides for each profile:
 
 - **stay**: the live account is under its thresholds;
 - **switch** to an account: the live account is over a threshold and another
-  account in the pool is eligible;
+  account in the profile's pools is eligible;
 - **wait**: it should move, but no account is eligible; it says which one
   recovers first.
 
 An account is **eligible** when it can be read, is not refused, is under its
-own `reserve` if it has one, and has at least **`landing_margin`** points (10)
-of room below the session threshold, so the profile does not leave it again
-at once. Of the eligible accounts, the switch takes the one with the most
-room; **`priority`** order (Settings → Accounts, drag to reorder) breaks
-ties. With **`prefer = "expiring"`** (Settings → Rotation; per profile with
-`cs profile set`) it takes instead the one whose weekly window resets
-soonest while it still has quota unused, so quota that would expire is
-spent first, and room breaks ties; `why` says so (`work-team resets in 9h
-with 40% unused, so it goes first`). The default, `prefer = "room"`, is the
-most-room rule.
+own `reserve` if it has one, is not live in another profile that shares its
+pool (it reads "in use by" that profile), and has at least
+**`landing_margin`** points (10) of room below the session threshold, so the
+profile does not leave it again at once. A profile goes **pool by pool**, in
+the order it lists them: it takes an account from a later pool only when no
+account in an earlier one is eligible. Within a pool, the switch takes the
+eligible account with the most room; **`priority`** order (Settings →
+Accounts, drag to reorder) breaks ties. With **`prefer = "expiring"`**
+(Settings → Rotation; per profile with `cs profile set`) it takes instead
+the one whose weekly window resets soonest while it still has quota unused,
+so quota that would expire is spent first, and room breaks ties; `why` says
+so (`work-team resets in 9h with 40% unused, so it goes first`). The
+default, `prefer = "room"`, is the most-room rule.
 
 A **pinned** profile does not rotate, with one exception, the pin safety
 valve: if the pinned account is refused, out of quota (100%) or needs a
@@ -145,16 +161,19 @@ restores and clears them.
 ## The call budget and 429s
 
 The usage API locks an account out for 10 to 15 minutes after a burst of
-about 24 calls, answering **429**. claudeswitch therefore spends calls from a
-budget: **`api_budget`** (12) calls per 5 minutes across every process, with
-one held back for swaps. The live account is read every **`poll_active`**
-(3 minutes), or every **`poll_hot`** (1 minute) once it is above
-**`hot_threshold`** (60%) and climbing; the others every **`poll_idle`**
-(10 minutes). So is the live account of a profile where no session is
-working: nothing there is spending it, and it is read again as soon as one
-starts. A restarted daemon picks up from its last readings rather than
-reading everything again. While the daemon runs, it is the only reader:
-`cs status`, the status line and the app show its readings and spend nothing.
+about 24 calls, answering **429**. claudeswitch therefore spends calls from
+a budget: **`api_budget`** (12) calls per 5 minutes for each profile in use,
+across every process, with one held back for swaps. The calls a switch makes
+to check the incoming account are counted there but never refused by it: the
+limit the API enforces is each account's own, which still applies. The live
+account is read every **`poll_active`** (3 minutes), or every **`poll_hot`**
+(1 minute) once it is above **`hot_threshold`** (60%) and climbing; the
+others every **`poll_idle`** (10 minutes). So is the live account of a
+profile where no session is working: nothing there is spending it, and it is
+read again as soon as one starts. A restarted daemon picks up from its last
+readings rather than reading everything again. While the daemon runs, it is
+the only reader: `cs status`, the status line and the app show its readings
+and spend nothing.
 
 A 429 clears by itself. The daemon backs off 5 minutes, doubling; when the
 API asks for a longer wait it waits longer each time it is refused again (up

@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="820" height="1721" viewBox="0 0 820 1721" role="img" aria-label="cs">
-<rect x="0.5" y="0.5" width="819" height="1720" rx="9" fill="#17181b" stroke="#2c2f35"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="2154" viewBox="0 0 820 2154" role="img" aria-label="cs">
+<rect x="0.5" y="0.5" width="819" height="2153" rx="9" fill="#17181b" stroke="#2c2f35"/>
 <path d="M0.5 32 V9.5 a9 9 0 0 1 9 -9 H810.5 a9 9 0 0 1 9 9 V32 Z" fill="#1f2125" stroke="#2c2f35"/>
 <circle cx="18" cy="16" r="5.5" fill="#3a3d43"/>
 <circle cx="36" cy="16" r="5.5" fill="#3a3d43"/>
@@ -8,114 +8,137 @@
 <g font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="13.0" fill="#dfe4ea" style="font-variant-ligatures:none;font-feature-settings:'liga' 0,'calt' 0" xml:space="preserve">
 <text x="20.0" y="60.0" fill="#5f6670" textLength="7.8" lengthAdjust="spacingAndGlyphs">$</text>
 <text x="35.6" y="60.0" fill="#f4f7fa" font-weight="700" textLength="15.6" lengthAdjust="spacingAndGlyphs">cs</text>
-<text x="20.0" y="78.8" textLength="577.2" lengthAdjust="spacingAndGlyphs">claudeswitch v0.5.3 — keeps Claude Code on an account that still has quota</text>
+<text x="20.0" y="78.8" textLength="577.2" lengthAdjust="spacingAndGlyphs">claudeswitch v0.7.0 — keeps Claude Code on an account that still has quota</text>
 <text x="35.6" y="116.5" textLength="46.8" lengthAdjust="spacingAndGlyphs">status</text>
 <text x="121.4" y="116.5" textLength="452.4" lengthAdjust="spacingAndGlyphs">what every configured account&#x27;s quota looks like right now</text>
-<text x="35.6" y="135.4" textLength="39.0" lengthAdjust="spacingAndGlyphs">watch</text>
-<text x="121.4" y="135.4" textLength="390.0" lengthAdjust="spacingAndGlyphs">run the daemon (dry-run by default; --live to act)</text>
+<text x="35.6" y="135.3" textLength="39.0" lengthAdjust="spacingAndGlyphs">watch</text>
+<text x="121.4" y="135.3" textLength="390.0" lengthAdjust="spacingAndGlyphs">run the daemon (dry-run by default; --live to act)</text>
 <text x="35.6" y="154.2" textLength="54.6" lengthAdjust="spacingAndGlyphs">history</text>
-<text x="121.4" y="154.2" textLength="358.8" lengthAdjust="spacingAndGlyphs">deduped rejection history from the transcripts</text>
-<text x="35.6" y="173.1" textLength="54.6" lengthAdjust="spacingAndGlyphs">session</text>
-<text x="121.4" y="173.1" textLength="429.0" lengthAdjust="spacingAndGlyphs">token usage across every account used in a span of work</text>
-<text x="35.6" y="191.9" textLength="46.8" lengthAdjust="spacingAndGlyphs">doctor</text>
-<text x="121.4" y="191.9" textLength="421.2" lengthAdjust="spacingAndGlyphs">check the things that have to be true for this to work</text>
-<text x="35.6" y="210.8" textLength="39.0" lengthAdjust="spacingAndGlyphs">setup</text>
-<text x="121.4" y="210.8" textLength="499.2" lengthAdjust="spacingAndGlyphs">guided first run: vault your accounts, write the config, install</text>
-<text x="35.6" y="229.6" textLength="46.8" lengthAdjust="spacingAndGlyphs">config</text>
-<text x="121.4" y="229.6" textLength="507.0" lengthAdjust="spacingAndGlyphs">show the settings in force, or change one: config &lt;name&gt; &lt;value&gt;,</text>
-<text x="121.4" y="248.5" textLength="460.2" lengthAdjust="spacingAndGlyphs">or config get | set &lt;name&gt; [&lt;value&gt;] (get --profile P for a</text>
-<text x="121.4" y="267.3" textLength="436.8" lengthAdjust="spacingAndGlyphs">profile&#x27;s value); config schema describes every setting;</text>
-<text x="121.4" y="286.2" textLength="491.4" lengthAdjust="spacingAndGlyphs">config clean removes the scope lines and [project] tables older</text>
-<text x="121.4" y="305.0" textLength="101.4" lengthAdjust="spacingAndGlyphs">configs carry</text>
-<text x="35.6" y="323.9" textLength="31.2" lengthAdjust="spacingAndGlyphs">init</text>
-<text x="121.4" y="323.9" textLength="296.4" lengthAdjust="spacingAndGlyphs">write a starter config by hand instead</text>
-<text x="35.6" y="342.7" textLength="70.2" lengthAdjust="spacingAndGlyphs">uninstall</text>
-<text x="121.4" y="342.7" textLength="421.2" lengthAdjust="spacingAndGlyphs">stop the daemon and remove what claudeswitch installed</text>
-<text x="35.6" y="380.4" textLength="592.8" lengthAdjust="spacingAndGlyphs">login &lt;id&gt; sign in to an account and vault it, verifying it is the right one</text>
-<text x="121.4" y="399.3" textLength="483.6" lengthAdjust="spacingAndGlyphs">--direct leaves your live session untouched, whatever happens;</text>
-<text x="121.4" y="418.1" textLength="312.0" lengthAdjust="spacingAndGlyphs">finish it with: login &lt;id&gt; --code &lt;code&gt;</text>
-<text x="35.6" y="437.0" textLength="62.4" lengthAdjust="spacingAndGlyphs">add &lt;id&gt;</text>
-<text x="121.4" y="437.0" textLength="405.6" lengthAdjust="spacingAndGlyphs">vault the credential that is live right now, as &lt;id&gt;</text>
-<text x="121.4" y="455.8" textLength="374.4" lengthAdjust="spacingAndGlyphs">(--from &lt;profile&gt;: the one live in that profile)</text>
-<text x="35.6" y="474.7" textLength="62.4" lengthAdjust="spacingAndGlyphs">use &lt;id&gt;</text>
-<text x="121.4" y="474.7" textLength="499.2" lengthAdjust="spacingAndGlyphs">swap Claude Code onto a vaulted account (hot; no restart needed)</text>
-<text x="35.6" y="493.5" textLength="62.4" lengthAdjust="spacingAndGlyphs">accounts</text>
-<text x="121.4" y="493.5" textLength="156.0" lengthAdjust="spacingAndGlyphs">what is in the vault</text>
-<text x="35.6" y="512.4" textLength="31.2" lengthAdjust="spacingAndGlyphs">plan</text>
-<text x="121.4" y="512.4" textLength="382.2" lengthAdjust="spacingAndGlyphs">the rotation decision right now (changes nothing)</text>
-<text x="35.6" y="531.2" textLength="23.4" lengthAdjust="spacingAndGlyphs">why</text>
-<text x="121.4" y="531.2" textLength="444.6" lengthAdjust="spacingAndGlyphs">the same decision, account by account, with the reasoning</text>
-<text x="35.6" y="550.1" textLength="23.4" lengthAdjust="spacingAndGlyphs">top</text>
-<text x="121.4" y="550.1" textLength="413.4" lengthAdjust="spacingAndGlyphs">a live view that refreshes in place (ctrl-c to leave)</text>
-<text x="35.6" y="568.9" textLength="39.0" lengthAdjust="spacingAndGlyphs">audit</text>
-<text x="121.4" y="568.9" textLength="358.8" lengthAdjust="spacingAndGlyphs">what the daemon has observed, decided and done</text>
-<text x="35.6" y="587.8" textLength="46.8" lengthAdjust="spacingAndGlyphs">forget</text>
-<text x="121.4" y="587.8" textLength="475.8" lengthAdjust="spacingAndGlyphs">drop an account&#x27;s recorded observations (not its vault entry)</text>
-<text x="35.6" y="606.6" textLength="46.8" lengthAdjust="spacingAndGlyphs">remove</text>
-<text x="121.4" y="606.6" textLength="499.2" lengthAdjust="spacingAndGlyphs">delete an account everywhere: credential, config block, pool and</text>
-<text x="121.4" y="625.5" textLength="460.2" lengthAdjust="spacingAndGlyphs">priority entries, observations (--yes to skip the question)</text>
-<text x="35.6" y="644.3" textLength="46.8" lengthAdjust="spacingAndGlyphs">rename</text>
-<text x="121.4" y="644.3" textLength="475.8" lengthAdjust="spacingAndGlyphs">give a vaulted account a different id, keeping its credential</text>
-<text x="35.6" y="663.2" textLength="54.6" lengthAdjust="spacingAndGlyphs">account</text>
-<text x="121.4" y="663.2" textLength="366.6" lengthAdjust="spacingAndGlyphs">list | rename | delete | pin | unpin | priority</text>
-<text x="35.6" y="682.0" textLength="124.8" lengthAdjust="spacingAndGlyphs">priority &lt;id&gt;...</text>
-<text x="121.4" y="700.9" textLength="171.6" lengthAdjust="spacingAndGlyphs">set the rotation order</text>
-<text x="35.6" y="719.7" textLength="46.8" lengthAdjust="spacingAndGlyphs">daemon</text>
-<text x="121.4" y="719.7" textLength="546.0" lengthAdjust="spacingAndGlyphs">status | start | stop | restart | live | dry-run | install | uninstall</text>
-<text x="121.4" y="738.6" textLength="374.4" lengthAdjust="spacingAndGlyphs">the background service, as install.sh sets it up</text>
-<text x="35.6" y="757.4" textLength="538.2" lengthAdjust="spacingAndGlyphs">statusline one compact line for Claude Code&#x27;s status line (read-only)</text>
-<text x="121.4" y="776.3" textLength="413.4" lengthAdjust="spacingAndGlyphs">install / uninstall set it in ~/.claude/settings.json</text>
-<text x="35.6" y="795.1" textLength="54.6" lengthAdjust="spacingAndGlyphs">context</text>
-<text x="121.4" y="795.1" textLength="444.6" lengthAdjust="spacingAndGlyphs">quota context for a Claude Code session start (read-only)</text>
-<text x="35.6" y="814.0" textLength="46.8" lengthAdjust="spacingAndGlyphs">whoami</text>
-<text x="121.4" y="814.0" textLength="296.4" lengthAdjust="spacingAndGlyphs">which Claude account is live right now</text>
-<text x="35.6" y="832.8" textLength="62.4" lengthAdjust="spacingAndGlyphs">identify</text>
-<text x="121.4" y="832.8" textLength="405.6" lengthAdjust="spacingAndGlyphs">record which seat each vaulted credential belongs to</text>
-<text x="35.6" y="851.7" textLength="54.6" lengthAdjust="spacingAndGlyphs">refresh</text>
-<text x="121.4" y="851.7" textLength="444.6" lengthAdjust="spacingAndGlyphs">renew a vaulted account&#x27;s credential (never the live one)</text>
-<text x="35.6" y="870.5" textLength="62.4" lengthAdjust="spacingAndGlyphs">recovery</text>
-<text x="121.4" y="870.5" textLength="514.8" lengthAdjust="spacingAndGlyphs">credentials a swap kept because it could not tell whose they were;</text>
-<text x="121.4" y="889.4" textLength="475.8" lengthAdjust="spacingAndGlyphs">restore &lt;slot&gt; &lt;account&gt; vaults one, clear &lt;slot&gt; deletes one</text>
-<text x="35.6" y="908.2" textLength="514.8" lengthAdjust="spacingAndGlyphs">profile create &lt;name&gt; [--dir PATH] [--pool a,b] [--seed &lt;account&gt;]</text>
-<text x="121.4" y="927.1" textLength="483.6" lengthAdjust="spacingAndGlyphs">make a Claude Code profile: its dir, your settings, CLAUDE.md,</text>
-<text x="121.4" y="945.9" textLength="460.2" lengthAdjust="spacingAndGlyphs">skills, commands and agents linked from ~/.claude, your MCP</text>
-<text x="121.4" y="964.8" textLength="499.2" lengthAdjust="spacingAndGlyphs">servers copied, its [[profile]] block; --seed signs it in with a</text>
-<text x="121.4" y="983.6" textLength="257.4" lengthAdjust="spacingAndGlyphs">vaulted account live nowhere else</text>
-<text x="35.6" y="1002.5" textLength="226.2" lengthAdjust="spacingAndGlyphs">profile seed &lt;name&gt; &lt;account&gt;</text>
-<text x="121.4" y="1021.3" textLength="460.2" lengthAdjust="spacingAndGlyphs">sign a profile with no credential in with a vaulted account</text>
-<text x="35.6" y="1040.2" textLength="93.6" lengthAdjust="spacingAndGlyphs">profile list</text>
-<text x="121.4" y="1059.0" textLength="319.8" lengthAdjust="spacingAndGlyphs">each profile&#x27;s dir, pool and live account</text>
-<text x="35.6" y="1077.9" textLength="296.4" lengthAdjust="spacingAndGlyphs">profile remove &lt;name&gt; [--to &lt;profile&gt;]</text>
-<text x="121.4" y="1096.7" textLength="405.6" lengthAdjust="spacingAndGlyphs">remove a profile; its accounts join --to, or default</text>
-<text x="35.6" y="1115.6" textLength="163.8" lengthAdjust="spacingAndGlyphs">profile forget &lt;name&gt;</text>
-<text x="121.4" y="1134.4" textLength="538.2" lengthAdjust="spacingAndGlyphs">release the guard on a removed or re-pointed profile&#x27;s old credential</text>
-<text x="35.6" y="1153.3" textLength="234.0" lengthAdjust="spacingAndGlyphs">profile pools &lt;name&gt; &lt;pool&gt;...</text>
-<text x="121.4" y="1172.1" textLength="452.4" lengthAdjust="spacingAndGlyphs">the pools a profile uses, in order; profiles that list one</text>
-<text x="121.4" y="1191.0" textLength="358.8" lengthAdjust="spacingAndGlyphs">pool share its accounts, one profile at a time</text>
-<text x="35.6" y="1209.8" textLength="444.6" lengthAdjust="spacingAndGlyphs">profile pool &lt;name&gt; add|remove &lt;account&gt; [--to &lt;profile&gt;]</text>
-<text x="121.4" y="1228.7" textLength="429.0" lengthAdjust="spacingAndGlyphs">change a profile&#x27;s own pool (an account is in one pool)</text>
-<text x="35.6" y="1247.5" textLength="507.0" lengthAdjust="spacingAndGlyphs">pool list | create &lt;name&gt; [&lt;account&gt;...] | add &lt;pool&gt; &lt;account&gt; |</text>
-<text x="35.6" y="1266.4" textLength="460.2" lengthAdjust="spacingAndGlyphs">pool remove &lt;pool&gt; &lt;account&gt; | move &lt;account&gt; --to &lt;pool&gt; |</text>
-<text x="35.6" y="1285.2" textLength="553.8" lengthAdjust="spacingAndGlyphs">pool rename &lt;pool&gt; &lt;new-name&gt; | delete &lt;name&gt; [--to &lt;pool&gt; | --no-pool]</text>
-<text x="121.4" y="1304.1" textLength="475.8" lengthAdjust="spacingAndGlyphs">named pools of accounts ([[pool]]); a profile&#x27;s own pool goes</text>
-<text x="121.4" y="1322.9" textLength="163.8" lengthAdjust="spacingAndGlyphs">by the profile&#x27;s name</text>
-<text x="35.6" y="1341.8" textLength="312.0" lengthAdjust="spacingAndGlyphs">profile set &lt;name&gt; &lt;key&gt; &lt;value|inherit&gt;</text>
-<text x="121.4" y="1360.6" textLength="421.2" lengthAdjust="spacingAndGlyphs">a per-profile switch_at, switch_at_weekly, hard_floor,</text>
-<text x="121.4" y="1379.5" textLength="187.2" lengthAdjust="spacingAndGlyphs">landing_margin or models</text>
-<text x="35.6" y="1398.3" textLength="234.0" lengthAdjust="spacingAndGlyphs">run &lt;profile&gt; [-- claude args]</text>
-<text x="121.4" y="1417.2" textLength="475.8" lengthAdjust="spacingAndGlyphs">start Claude Code in a profile (CLAUDE_CONFIG_DIR set for it)</text>
-<text x="35.6" y="1436.0" textLength="156.0" lengthAdjust="spacingAndGlyphs">chrome add &lt;account&gt;</text>
-<text x="121.4" y="1454.9" textLength="468.0" lengthAdjust="spacingAndGlyphs">open a Chrome profile for that account, for Claude in Chrome</text>
-<text x="35.6" y="1473.7" textLength="195.0" lengthAdjust="spacingAndGlyphs">chrome [open] [&lt;account&gt;]</text>
-<text x="121.4" y="1492.6" textLength="452.4" lengthAdjust="spacingAndGlyphs">open it (no account: the one live in this shell&#x27;s profile)</text>
-<text x="35.6" y="1511.4" textLength="234.0" lengthAdjust="spacingAndGlyphs">chrome list | forget &lt;account&gt;</text>
-<text x="35.6" y="1549.1" textLength="577.2" lengthAdjust="spacingAndGlyphs">Several Claude Code profiles ([[profile]] in the config): use, add, login,</text>
-<text x="35.6" y="1568.0" textLength="592.8" lengthAdjust="spacingAndGlyphs">whoami, status, top, why and plan take --profile NAME. Without it, a command</text>
-<text x="35.6" y="1586.8" textLength="561.6" lengthAdjust="spacingAndGlyphs">acts on the profile this shell&#x27;s CLAUDE_CONFIG_DIR belongs to (use, add,</text>
-<text x="35.6" y="1605.7" textLength="499.2" lengthAdjust="spacingAndGlyphs">login, whoami), or shows every profile (status, top, why, plan).</text>
-<text x="35.6" y="1643.4" textLength="538.2" lengthAdjust="spacingAndGlyphs">For scripts and the menu-bar app: config, profile, account, priority,</text>
-<text x="35.6" y="1662.2" textLength="569.4" lengthAdjust="spacingAndGlyphs">remove, recovery, use, add, login --direct/--code and daemon take --json,</text>
-<text x="35.6" y="1681.1" textLength="491.4" lengthAdjust="spacingAndGlyphs">never prompt, and fail with {&quot;error&quot;:{&quot;code&quot;,&quot;message&quot;,&quot;hint&quot;}}</text>
-<text x="35.6" y="1699.9" textLength="475.8" lengthAdjust="spacingAndGlyphs">(docs/APP_CLI.md). version --json names the contract version.</text>
+<text x="121.4" y="154.2" textLength="366.6" lengthAdjust="spacingAndGlyphs">deduped rejection history from the transcripts;</text>
+<text x="121.4" y="173.0" textLength="452.4" lengthAdjust="spacingAndGlyphs">--usage [--days 30]: each account&#x27;s utilization over time,</text>
+<text x="121.4" y="191.9" textLength="124.8" lengthAdjust="spacingAndGlyphs">and the switches</text>
+<text x="35.6" y="210.7" textLength="54.6" lengthAdjust="spacingAndGlyphs">session</text>
+<text x="121.4" y="210.7" textLength="429.0" lengthAdjust="spacingAndGlyphs">token usage across every account used in a span of work</text>
+<text x="35.6" y="229.6" textLength="46.8" lengthAdjust="spacingAndGlyphs">doctor</text>
+<text x="121.4" y="229.6" textLength="421.2" lengthAdjust="spacingAndGlyphs">check the things that have to be true for this to work</text>
+<text x="35.6" y="248.4" textLength="39.0" lengthAdjust="spacingAndGlyphs">setup</text>
+<text x="121.4" y="248.4" textLength="499.2" lengthAdjust="spacingAndGlyphs">guided first run: vault your accounts, write the config, install</text>
+<text x="35.6" y="267.3" textLength="46.8" lengthAdjust="spacingAndGlyphs">config</text>
+<text x="121.4" y="267.3" textLength="507.0" lengthAdjust="spacingAndGlyphs">show the settings in force, or change one: config &lt;name&gt; &lt;value&gt;,</text>
+<text x="121.4" y="286.1" textLength="460.2" lengthAdjust="spacingAndGlyphs">or config get | set &lt;name&gt; [&lt;value&gt;] (get --profile P for a</text>
+<text x="121.4" y="305.0" textLength="436.8" lengthAdjust="spacingAndGlyphs">profile&#x27;s value); config schema describes every setting;</text>
+<text x="121.4" y="323.8" textLength="491.4" lengthAdjust="spacingAndGlyphs">config clean removes the scope lines and [project] tables older</text>
+<text x="121.4" y="342.7" textLength="101.4" lengthAdjust="spacingAndGlyphs">configs carry</text>
+<text x="35.6" y="361.5" textLength="31.2" lengthAdjust="spacingAndGlyphs">init</text>
+<text x="121.4" y="361.5" textLength="296.4" lengthAdjust="spacingAndGlyphs">write a starter config by hand instead</text>
+<text x="35.6" y="380.4" textLength="70.2" lengthAdjust="spacingAndGlyphs">uninstall</text>
+<text x="121.4" y="380.4" textLength="421.2" lengthAdjust="spacingAndGlyphs">stop the daemon and remove what claudeswitch installed</text>
+<text x="35.6" y="418.1" textLength="592.8" lengthAdjust="spacingAndGlyphs">login &lt;id&gt; sign in to an account and vault it, verifying it is the right one</text>
+<text x="121.4" y="436.9" textLength="483.6" lengthAdjust="spacingAndGlyphs">--direct leaves your live session untouched, whatever happens;</text>
+<text x="121.4" y="455.8" textLength="312.0" lengthAdjust="spacingAndGlyphs">finish it with: login &lt;id&gt; --code &lt;code&gt;</text>
+<text x="121.4" y="474.6" textLength="483.6" lengthAdjust="spacingAndGlyphs">--org &lt;org-id&gt;: sign in to that organization; --pool &lt;pool&gt; or</text>
+<text x="121.4" y="493.5" textLength="273.0" lengthAdjust="spacingAndGlyphs">--no-pool: where a new account goes</text>
+<text x="35.6" y="512.3" textLength="62.4" lengthAdjust="spacingAndGlyphs">add &lt;id&gt;</text>
+<text x="121.4" y="512.3" textLength="405.6" lengthAdjust="spacingAndGlyphs">vault the credential that is live right now, as &lt;id&gt;</text>
+<text x="121.4" y="531.2" textLength="483.6" lengthAdjust="spacingAndGlyphs">(--from &lt;profile&gt;: the one live in that profile; --pool &lt;pool&gt;</text>
+<text x="121.4" y="550.0" textLength="304.2" lengthAdjust="spacingAndGlyphs">or --no-pool: where a new account goes)</text>
+<text x="35.6" y="568.8" textLength="62.4" lengthAdjust="spacingAndGlyphs">use &lt;id&gt;</text>
+<text x="121.4" y="568.8" textLength="499.2" lengthAdjust="spacingAndGlyphs">swap Claude Code onto a vaulted account (hot; no restart needed)</text>
+<text x="35.6" y="587.7" textLength="62.4" lengthAdjust="spacingAndGlyphs">accounts</text>
+<text x="121.4" y="587.7" textLength="156.0" lengthAdjust="spacingAndGlyphs">what is in the vault</text>
+<text x="35.6" y="606.5" textLength="31.2" lengthAdjust="spacingAndGlyphs">plan</text>
+<text x="121.4" y="606.5" textLength="382.2" lengthAdjust="spacingAndGlyphs">the rotation decision right now (changes nothing)</text>
+<text x="35.6" y="625.4" textLength="23.4" lengthAdjust="spacingAndGlyphs">why</text>
+<text x="121.4" y="625.4" textLength="444.6" lengthAdjust="spacingAndGlyphs">the same decision, account by account, with the reasoning</text>
+<text x="35.6" y="644.2" textLength="23.4" lengthAdjust="spacingAndGlyphs">top</text>
+<text x="121.4" y="644.2" textLength="413.4" lengthAdjust="spacingAndGlyphs">a live view that refreshes in place (ctrl-c to leave)</text>
+<text x="35.6" y="663.1" textLength="39.0" lengthAdjust="spacingAndGlyphs">audit</text>
+<text x="121.4" y="663.1" textLength="358.8" lengthAdjust="spacingAndGlyphs">what the daemon has observed, decided and done</text>
+<text x="35.6" y="681.9" textLength="46.8" lengthAdjust="spacingAndGlyphs">forget</text>
+<text x="121.4" y="681.9" textLength="475.8" lengthAdjust="spacingAndGlyphs">drop an account&#x27;s recorded observations (not its vault entry)</text>
+<text x="35.6" y="700.8" textLength="46.8" lengthAdjust="spacingAndGlyphs">remove</text>
+<text x="121.4" y="700.8" textLength="499.2" lengthAdjust="spacingAndGlyphs">delete an account everywhere: credential, config block, pool and</text>
+<text x="121.4" y="719.6" textLength="460.2" lengthAdjust="spacingAndGlyphs">priority entries, observations (--yes to skip the question)</text>
+<text x="35.6" y="738.5" textLength="46.8" lengthAdjust="spacingAndGlyphs">rename</text>
+<text x="121.4" y="738.5" textLength="475.8" lengthAdjust="spacingAndGlyphs">give a vaulted account a different id, keeping its credential</text>
+<text x="35.6" y="757.3" textLength="54.6" lengthAdjust="spacingAndGlyphs">account</text>
+<text x="121.4" y="757.3" textLength="366.6" lengthAdjust="spacingAndGlyphs">list | rename | delete | pin | unpin | priority</text>
+<text x="121.4" y="776.2" textLength="436.8" lengthAdjust="spacingAndGlyphs">pin &lt;id&gt; [--profile &lt;p&gt;]: stop rotation where it is live</text>
+<text x="35.6" y="795.0" textLength="124.8" lengthAdjust="spacingAndGlyphs">priority &lt;id&gt;...</text>
+<text x="121.4" y="813.9" textLength="171.6" lengthAdjust="spacingAndGlyphs">set the rotation order</text>
+<text x="35.6" y="832.7" textLength="46.8" lengthAdjust="spacingAndGlyphs">daemon</text>
+<text x="121.4" y="832.7" textLength="546.0" lengthAdjust="spacingAndGlyphs">status | start | stop | restart | live | dry-run | install | uninstall</text>
+<text x="121.4" y="851.6" textLength="374.4" lengthAdjust="spacingAndGlyphs">the background service, as install.sh sets it up</text>
+<text x="35.6" y="870.4" textLength="538.2" lengthAdjust="spacingAndGlyphs">statusline one compact line for Claude Code&#x27;s status line (read-only)</text>
+<text x="121.4" y="889.3" textLength="413.4" lengthAdjust="spacingAndGlyphs">install / uninstall set it in ~/.claude/settings.json</text>
+<text x="35.6" y="908.1" textLength="54.6" lengthAdjust="spacingAndGlyphs">context</text>
+<text x="121.4" y="908.1" textLength="444.6" lengthAdjust="spacingAndGlyphs">quota context for a Claude Code session start (read-only)</text>
+<text x="35.6" y="927.0" textLength="46.8" lengthAdjust="spacingAndGlyphs">whoami</text>
+<text x="121.4" y="927.0" textLength="296.4" lengthAdjust="spacingAndGlyphs">which Claude account is live right now</text>
+<text x="35.6" y="945.8" textLength="62.4" lengthAdjust="spacingAndGlyphs">identify</text>
+<text x="121.4" y="945.8" textLength="405.6" lengthAdjust="spacingAndGlyphs">record which seat each vaulted credential belongs to</text>
+<text x="35.6" y="964.7" textLength="54.6" lengthAdjust="spacingAndGlyphs">refresh</text>
+<text x="121.4" y="964.7" textLength="444.6" lengthAdjust="spacingAndGlyphs">renew a vaulted account&#x27;s credential (never the live one)</text>
+<text x="35.6" y="983.5" textLength="62.4" lengthAdjust="spacingAndGlyphs">recovery</text>
+<text x="121.4" y="983.5" textLength="514.8" lengthAdjust="spacingAndGlyphs">credentials a swap kept because it could not tell whose they were;</text>
+<text x="121.4" y="1002.4" textLength="475.8" lengthAdjust="spacingAndGlyphs">restore &lt;slot&gt; &lt;account&gt; vaults one, clear &lt;slot&gt; deletes one</text>
+<text x="35.6" y="1021.2" textLength="514.8" lengthAdjust="spacingAndGlyphs">profile create &lt;name&gt; [--dir PATH] [--pool a,b] [--seed &lt;account&gt;]</text>
+<text x="121.4" y="1040.0" textLength="483.6" lengthAdjust="spacingAndGlyphs">make a Claude Code profile: its dir, your settings, CLAUDE.md,</text>
+<text x="121.4" y="1058.9" textLength="460.2" lengthAdjust="spacingAndGlyphs">skills, commands and agents linked from ~/.claude, your MCP</text>
+<text x="121.4" y="1077.7" textLength="499.2" lengthAdjust="spacingAndGlyphs">servers copied, its [[profile]] block; --seed signs it in with a</text>
+<text x="121.4" y="1096.6" textLength="257.4" lengthAdjust="spacingAndGlyphs">vaulted account live nowhere else</text>
+<text x="35.6" y="1115.4" textLength="226.2" lengthAdjust="spacingAndGlyphs">profile seed &lt;name&gt; &lt;account&gt;</text>
+<text x="121.4" y="1134.3" textLength="460.2" lengthAdjust="spacingAndGlyphs">sign a profile with no credential in with a vaulted account</text>
+<text x="35.6" y="1153.1" textLength="93.6" lengthAdjust="spacingAndGlyphs">profile list</text>
+<text x="121.4" y="1172.0" textLength="327.6" lengthAdjust="spacingAndGlyphs">each profile&#x27;s dir, pools and live account</text>
+<text x="35.6" y="1190.8" textLength="296.4" lengthAdjust="spacingAndGlyphs">profile remove &lt;name&gt; [--to &lt;profile&gt;]</text>
+<text x="121.4" y="1209.7" textLength="436.8" lengthAdjust="spacingAndGlyphs">remove a profile; its own accounts join --to, or default</text>
+<text x="35.6" y="1228.5" textLength="163.8" lengthAdjust="spacingAndGlyphs">profile forget &lt;name&gt;</text>
+<text x="121.4" y="1247.4" textLength="538.2" lengthAdjust="spacingAndGlyphs">release the guard on a removed or re-pointed profile&#x27;s old credential</text>
+<text x="35.6" y="1266.2" textLength="234.0" lengthAdjust="spacingAndGlyphs">profile pools &lt;name&gt; &lt;pool&gt;...</text>
+<text x="121.4" y="1285.1" textLength="452.4" lengthAdjust="spacingAndGlyphs">the pools a profile uses, in order; profiles that list one</text>
+<text x="121.4" y="1303.9" textLength="358.8" lengthAdjust="spacingAndGlyphs">pool share its accounts, one profile at a time</text>
+<text x="35.6" y="1322.8" textLength="444.6" lengthAdjust="spacingAndGlyphs">profile pool &lt;name&gt; add|remove &lt;account&gt; [--to &lt;profile&gt;]</text>
+<text x="121.4" y="1341.6" textLength="429.0" lengthAdjust="spacingAndGlyphs">change a profile&#x27;s own pool (an account is in one pool)</text>
+<text x="35.6" y="1360.5" textLength="507.0" lengthAdjust="spacingAndGlyphs">pool list | create &lt;name&gt; [&lt;account&gt;...] | add &lt;pool&gt; &lt;account&gt; |</text>
+<text x="35.6" y="1379.3" textLength="460.2" lengthAdjust="spacingAndGlyphs">pool remove &lt;pool&gt; &lt;account&gt; | move &lt;account&gt; --to &lt;pool&gt; |</text>
+<text x="35.6" y="1398.2" textLength="553.8" lengthAdjust="spacingAndGlyphs">pool rename &lt;pool&gt; &lt;new-name&gt; | delete &lt;name&gt; [--to &lt;pool&gt; | --no-pool]</text>
+<text x="121.4" y="1417.0" textLength="475.8" lengthAdjust="spacingAndGlyphs">named pools of accounts ([[pool]]); a profile&#x27;s own pool goes</text>
+<text x="121.4" y="1435.9" textLength="163.8" lengthAdjust="spacingAndGlyphs">by the profile&#x27;s name</text>
+<text x="35.6" y="1454.7" textLength="312.0" lengthAdjust="spacingAndGlyphs">profile set &lt;name&gt; &lt;key&gt; &lt;value|inherit&gt;</text>
+<text x="121.4" y="1473.6" textLength="421.2" lengthAdjust="spacingAndGlyphs">a per-profile switch_at, switch_at_weekly, hard_floor,</text>
+<text x="121.4" y="1492.4" textLength="491.4" lengthAdjust="spacingAndGlyphs">landing_margin, prefer or models; or chrome, the Chrome profile</text>
+<text x="121.4" y="1511.2" textLength="444.6" lengthAdjust="spacingAndGlyphs">(name or folder) Claude in Chrome is used from; or paths,</text>
+<text x="121.4" y="1530.1" textLength="390.0" lengthAdjust="spacingAndGlyphs">the folders (globs, a,b) the profile is picked for</text>
+<text x="35.6" y="1548.9" textLength="202.8" lengthAdjust="spacingAndGlyphs">profile which [--dir PATH]</text>
+<text x="121.4" y="1567.8" textLength="468.0" lengthAdjust="spacingAndGlyphs">the profile a folder picks: the one whose paths it is under,</text>
+<text x="121.4" y="1586.6" textLength="93.6" lengthAdjust="spacingAndGlyphs">else default</text>
+<text x="35.6" y="1605.5" textLength="202.8" lengthAdjust="spacingAndGlyphs">profile hook zsh|bash|fish</text>
+<text x="121.4" y="1624.3" textLength="436.8" lengthAdjust="spacingAndGlyphs">a shell hook that sets CLAUDE_CONFIG_DIR to the folder&#x27;s</text>
+<text x="121.4" y="1643.2" textLength="101.4" lengthAdjust="spacingAndGlyphs">profile on cd</text>
+<text x="35.6" y="1662.0" textLength="249.6" lengthAdjust="spacingAndGlyphs">run [&lt;profile&gt;] [-- claude args]</text>
+<text x="121.4" y="1680.9" textLength="483.6" lengthAdjust="spacingAndGlyphs">start Claude Code in a profile (CLAUDE_CONFIG_DIR set for it);</text>
+<text x="121.4" y="1699.7" textLength="273.0" lengthAdjust="spacingAndGlyphs">with no name, this folder&#x27;s profile</text>
+<text x="35.6" y="1718.6" textLength="366.6" lengthAdjust="spacingAndGlyphs">chrome add &lt;account&gt; [--existing &lt;name|folder&gt;]</text>
+<text x="121.4" y="1737.4" textLength="507.0" lengthAdjust="spacingAndGlyphs">open a new Chrome profile for that account, for Claude in Chrome;</text>
+<text x="121.4" y="1756.3" textLength="397.8" lengthAdjust="spacingAndGlyphs">--existing uses one of your Chrome profiles instead</text>
+<text x="35.6" y="1775.1" textLength="195.0" lengthAdjust="spacingAndGlyphs">chrome [open] [&lt;account&gt;]</text>
+<text x="121.4" y="1794.0" textLength="444.6" lengthAdjust="spacingAndGlyphs">open its Chrome profile (no account: the one live in this</text>
+<text x="121.4" y="1812.8" textLength="452.4" lengthAdjust="spacingAndGlyphs">shell&#x27;s profile): its own, else its profile&#x27;s chrome, else</text>
+<text x="121.4" y="1831.7" textLength="140.4" lengthAdjust="spacingAndGlyphs">Chrome&#x27;s last used</text>
+<text x="35.6" y="1850.5" textLength="195.0" lengthAdjust="spacingAndGlyphs">chrome signin [&lt;account&gt;]</text>
+<text x="121.4" y="1869.4" textLength="475.8" lengthAdjust="spacingAndGlyphs">open that Chrome profile at the sign-in pages, to sign Claude</text>
+<text x="121.4" y="1888.2" textLength="210.6" lengthAdjust="spacingAndGlyphs">in Chrome in as the account</text>
+<text x="35.6" y="1907.1" textLength="117.0" lengthAdjust="spacingAndGlyphs">chrome profiles</text>
+<text x="121.4" y="1925.9" textLength="483.6" lengthAdjust="spacingAndGlyphs">your Chrome profiles, and which profiles and accounts use each</text>
+<text x="35.6" y="1944.8" textLength="234.0" lengthAdjust="spacingAndGlyphs">chrome list | forget &lt;account&gt;</text>
+<text x="35.6" y="1982.4" textLength="577.2" lengthAdjust="spacingAndGlyphs">Several Claude Code profiles ([[profile]] in the config): use, add, login,</text>
+<text x="35.6" y="2001.3" textLength="592.8" lengthAdjust="spacingAndGlyphs">whoami, status, top, why and plan take --profile NAME. Without it, a command</text>
+<text x="35.6" y="2020.1" textLength="561.6" lengthAdjust="spacingAndGlyphs">acts on the profile this shell&#x27;s CLAUDE_CONFIG_DIR belongs to (use, add,</text>
+<text x="35.6" y="2039.0" textLength="499.2" lengthAdjust="spacingAndGlyphs">login, whoami), or shows every profile (status, top, why, plan).</text>
+<text x="35.6" y="2076.7" textLength="585.0" lengthAdjust="spacingAndGlyphs">For scripts and the menu-bar app: config, profile, pool, account, priority,</text>
+<text x="35.6" y="2095.5" textLength="569.4" lengthAdjust="spacingAndGlyphs">remove, recovery, use, add, login --direct/--code and daemon take --json,</text>
+<text x="35.6" y="2114.4" textLength="491.4" lengthAdjust="spacingAndGlyphs">never prompt, and fail with {&quot;error&quot;:{&quot;code&quot;,&quot;message&quot;,&quot;hint&quot;}}</text>
+<text x="35.6" y="2133.2" textLength="475.8" lengthAdjust="spacingAndGlyphs">(docs/APP_CLI.md). version --json names the contract version.</text>
 </g>
 </svg>

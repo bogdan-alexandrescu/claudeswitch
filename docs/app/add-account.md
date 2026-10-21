@@ -20,11 +20,14 @@ its profile).
 | **Organization** | the organization to sign in to: one an account here is already in, another pasted by id, or whichever the browser is in. Choose one to add a person in a second organization. An account signing in again asks for its own | The one your browser is in |
 | **Browser** | the browser the sign-in page opens in. A browser signs in as the account it already holds, so pick one signed in to this account | Default browser |
 
-**Open sign-in page** runs `cs login <name> --direct --no-open` (with
-`--profile`, `--browser` and `--org` when set) and opens the page. Sign in, then paste
-the code the page shows; the app finishes with `cs login <name> --code
-<code>`. The credential is checked, stored and added to the profile. Your
-current Claude Code session is not touched.
+**Open sign-in page** runs `cs login <name> --direct --no-open`, with
+`--pool <pool>` or `--no-pool` for the pool chosen (`--profile <profile>`
+with an older claudeswitch), and `--browser` and `--org` when set, then
+opens the page. An account signing in again sends neither a pool nor an
+organization: it stays in its pool and asks for its own organization. Sign
+in, then paste the code the page shows; the app finishes with
+`cs login <name> --code <code>`. The credential is checked, stored and added
+to the pool. Your current Claude Code session is not touched.
 
 The CLI refuses a mismatch: another organization than the one chosen, a name
 already pinned to another seat, or a seat already stored under another name.
@@ -33,16 +36,17 @@ organization or browser and sign in again.
 
 ## Save current login
 
-<p align="center"><img src="../images/add-account-current.png" width="520" alt="Save current login: Save login from a profile, Name, and Add it to profile"></p>
+<p align="center"><img src="../images/add-account-current.png" width="520" alt="Save current login: Save login from a profile, Name, and Add it to pool"></p>
 
 | field | what it is | default |
 |---|---|---|
 | **Save login from** | the profile whose Claude Code login is saved | the followed profile |
 | **Name** | the name to save it under, suggested from the account | suggested |
-| **Add it to profile** | the profile it is added for, as **Profile** above. When the source profile uses that pool too, it keeps the login until its own rotation moves on, and the sheet says so | the same profile |
+| **Add it to pool** | the pool it goes into, as **Pool** above. When the source profile uses that pool too, it keeps the login until its own rotation moves on; when it does not, it moves off it. The sheet says which. For an account that already exists this row is **Used by** and is not chosen; with an older claudeswitch it is **Add it to profile** | that profile's unshared pool |
 
-**Save** runs `cs add <name> --from <profile> --profile <profile>`. Use it after
-`/login` in Claude Code as the account you want to add. The name in the
-screenshot is a placeholder.
+**Save** runs `cs add <name> --from <profile> --pool <pool>` (or `--no-pool`;
+`--profile <profile>` for an account that already exists, or with an older
+claudeswitch). Use it after `/login` in Claude Code as the account you want
+to add. The name in the screenshot is a placeholder.
 
 [← Documentation index](../README.md)

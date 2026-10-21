@@ -173,8 +173,11 @@ func usageText() {
   login <id> sign in to an account and vault it, verifying it is the right one
              --direct leaves your live session untouched, whatever happens;
              finish it with: login <id> --code <code>
+             --org <org-id>: sign in to that organization; --pool <pool> or
+             --no-pool: where a new account goes
   add <id>   vault the credential that is live right now, as <id>
-             (--from <profile>: the one live in that profile)
+             (--from <profile>: the one live in that profile; --pool <pool>
+             or --no-pool: where a new account goes)
   use <id>   swap Claude Code onto a vaulted account (hot; no restart needed)
   accounts   what is in the vault
   plan       the rotation decision right now (changes nothing)
@@ -186,6 +189,7 @@ func usageText() {
              priority entries, observations (--yes to skip the question)
   rename     give a vaulted account a different id, keeping its credential
   account    list | rename | delete | pin | unpin | priority
+             pin <id> [--profile <p>]: stop rotation where it is live
   priority <id>...
              set the rotation order
   daemon     status | start | stop | restart | live | dry-run | install | uninstall
@@ -3037,8 +3041,8 @@ func cmdLogin(args []string) error {
 	cfgPath := fs.String("config", "", "path to config.toml")
 	sso := fs.Bool("sso", false, "use the SSO login flow")
 	direct := fs.Bool("direct", false,
-		"obtain the credential ourselves, without touching the live session. Which "+
-			"organization comes back is decided by the browser session, not by this flag")
+		"obtain the credential ourselves, without touching the live session. The person is "+
+			"whoever the browser is signed in as; the organization is the browser's unless --org asks for one")
 	code := fs.String("code", "",
 		"complete a --direct login started earlier, with the code from the callback page")
 	pinOrg := fs.Bool("pin-org", false,
@@ -3063,7 +3067,8 @@ func cmdLogin(args []string) error {
 	noOpen := fs.Bool("no-open", false, "with --direct: do not open a browser, only print the URL")
 	positional := parseInterleaved(fs, args)
 	if len(positional) != 1 {
-		return appErr(codeUsage, "", "usage: claudeswitch login <account-id> [--direct] [--browser <app>] [--sso] [--keep] [--profile NAME]")
+		return appErr(codeUsage, "", "usage: claudeswitch login <account-id> [--direct] [--org <org-id>] "+
+			"[--pool <pool> | --no-pool] [--browser <app>] [--sso] [--keep] [--profile NAME]")
 	}
 	id := positional[0]
 	if err := checkNewAccountID(id); err != nil {
@@ -3841,7 +3846,9 @@ func durOrNever(d time.Duration) string {
 // Onboarding is the hardest part of this tool by a distance. Vaulting four
 // accounts took roughly ten attempts the first time, almost all of them lost to
 // one fact: a login returns whichever account the BROWSER SESSION holds, and
-// nothing in the request can steer it. Someone meeting this cold would give up.
+// nothing in the request can steer which person that is (the organization can
+// be asked for since GROUND_TRUTH §48: login --org). Someone meeting this cold
+// would give up.
 //
 // So setup does the whole thing: finds what is already signed in, walks each
 // additional account through a browser that will actually produce a different
@@ -3989,9 +3996,11 @@ func cmdSetup(args []string) error {
 
 		browser := ""
 		if len(bl) > 0 {
-			fmt.Printf("\n  A login returns whichever account your BROWSER is signed into, and\n")
-			fmt.Printf("  nothing in the request can override that. So use a browser you are NOT\n")
-			fmt.Printf("  normally signed into — separate applications keep separate cookies.\n")
+			fmt.Printf("\n  A login returns whichever person your BROWSER is signed in as. So use a\n")
+			fmt.Printf("  browser you are NOT normally signed into — separate applications keep\n")
+			fmt.Printf("  separate cookies. It lands in the organization that browser is in; to\n")
+			fmt.Printf("  add the same person in another organization, run\n")
+			fmt.Printf("  `claudeswitch login <name> --direct --org <org-id>` once setup is done.\n")
 			fmt.Printf("  Installed: %s\n", strings.Join(bl, ", "))
 			browser = ask("  Open in which browser (blank to print the URL)", bl[0])
 		}

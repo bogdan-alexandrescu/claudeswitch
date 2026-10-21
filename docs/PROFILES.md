@@ -675,7 +675,9 @@ decision depends on it. A pool no profile lists is a warning, not an error.
 - `cs pool add <pool> <account>`, `cs pool remove <pool> <account>` (the
   account is then in no pool: D6), `cs pool move <account> --to <pool>`,
   `cs pool delete <name>` (refused while a profile lists it, naming them:
-  `pool_in_use`). Each `--json` answer is the `pool list` object.
+  `pool_in_use`; *superseded by D38 the same day: any pool can be deleted,
+  its accounts going to `--to <pool>` or to no pool*). Each `--json` answer
+  is the `pool list` object.
 - `cs profile pools <profile> <pool>...` sets the pools a profile uses, in
   order. A profile with its own pool has it converted first: a `[[pool]]`
   named after the profile holds its accounts and leads the list unless the

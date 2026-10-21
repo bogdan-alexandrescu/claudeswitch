@@ -4,7 +4,7 @@ Create, edit and remove Claude Code profiles: their pools, their own thresholds 
 
 See also: [cs profile](../cli/profiles.md) · [Concepts → profiles and pools](../concepts.md#profiles-and-pools) · [GUIDE → Multiple Claude Code profiles](../GUIDE.md#multiple-claude-code-profiles) · [PROFILES.md](../PROFILES.md)
 
-<p align="center"><img src="../images/settings-profiles.png" width="880" alt="Settings, Profiles pane: the default profile open with its accounts personal and research as chips, its thresholds, the Claude in Chrome picker, and its buttons; the work profile closed below"></p>
+<p align="center"><img src="../images/settings-profiles-pools.png" width="880" alt="Settings, Profiles pane: the default profile open with its pools, personal then team, then the account in no pool, and Change…; its thresholds, the Claude in Chrome picker and its buttons; the work profile closed below, using ops then team"></p>
 
 **Settings...** in the popover opens this pane first. One card per profile.
 A closed card shows the directory, the pools it uses (`pools personal, team,
@@ -38,7 +38,7 @@ the CLI's own message when it refuses. More on what each threshold does:
 
 ## New profile
 
-<p align="center"><img src="../images/sheet-new-profile.png" width="520" alt="The New profile sheet: name, directory, accounts to take as its own, the pools it uses, and which account to sign in with"></p>
+<p align="center"><img src="../images/sheet-new-profile.png" width="520" alt="The New profile sheet: name, directory, the pools it uses, and which account to sign in with"></p>
 
 | field | what it is | default |
 |---|---|---|

@@ -84,8 +84,8 @@ cs profile seed work work-1
 ```
 
 Signs a profile that has no credential yet in with an account's vaulted
-credential. The account must be in the profile's pool and live in no other
-profile. A profile with no `dir` (`default`) cannot be seeded: only a
+credential. The account must be in one of the profile's pools and live in
+no other profile. A profile with no `dir` (`default`) cannot be seeded: only a
 profile's own credential is ever written, never the one Claude Code uses with
 `CLAUDE_CONFIG_DIR` unset.
 
@@ -211,7 +211,8 @@ cs profile pools default mine team
 cs profile pools work team
 cs pool move work-3 --to team
 cs pool remove team work-2
-cs pool delete old
+cs pool rename team shared
+cs pool delete old --to shared
 ```
 
 Named pools of accounts, the `[[pool]]` blocks in the config:
@@ -245,9 +246,12 @@ pools = ["team"]
   config refuses: `would_orphan`.
 - `move <account> --to <pool>`: out of its pool and into another, in one
   edit.
-- `delete <name>`: a pool no profile lists. One a profile lists, or a
-  profile's own, is `pool_in_use`, naming the profiles. Its accounts are then
-  in no pool.
+- `rename <pool> <new-name>`: the pool takes the new name, and every profile
+  that lists it keeps it in the same place (below).
+- `delete <name> [--to <pool> | --no-pool]`: any pool, a profile's own
+  included. Its accounts go to `--to`'s pool, or to no pool, and the profiles
+  that listed it stop listing it (below). A binary from before D38 answered
+  `pool_in_use` for a pool a profile lists.
 
 A pool name is a profile's own pool when no `[[pool]]` has it, so
 `cs pool add solo s2` edits `pool = [...]` on the profile `solo`.
@@ -265,6 +269,20 @@ is the `pool list` object:
   {"name": "solo", "accounts": ["s1"], "profiles": ["solo"], "own": true}],
  "unlisted": ["spare"]}
 ```
+
+### pool rename and pool delete
+
+`cs pool rename <pool> <new-name>` (D39) renames a `[[pool]]` where it is
+written, with every profile's listing of it, so its comments and its place in
+each profile's order stay. A profile's own pool, renamed, becomes a `[[pool]]`
+of the new name that the profile lists instead. A name another pool has is
+refused (`invalid_value`).
+
+`cs pool delete <name>` (D38) deletes any pool, a profile's own included. Its
+accounts go to `--to <pool>`, or to no pool (`--no-pool`, the default), and
+every profile that listed it stops listing it. It is refused when an account
+in use in a profile would land where that profile cannot use it (`live`), or
+in no pool with no profile named `default` to use it (`would_orphan`).
 
 ## profile set
 
@@ -421,18 +439,3 @@ else the one your shell's `CLAUDE_CONFIG_DIR` belongs to:
 - `2`: `run` with a flag it does not know.
 
 [← Documentation index](../README.md)
-
-## pool rename and pool delete
-
-`cs pool rename <pool> <new-name>` (D39) renames a `[[pool]]` where it is
-written, with every profile's listing of it, so its comments and its place in
-each profile's order stay. A profile's own pool, renamed, becomes a `[[pool]]`
-of the new name that the profile lists instead. A name another pool has is
-refused (`invalid_value`).
-
-`cs pool delete <name>` (D38) deletes any pool, a profile's own included. Its
-accounts go to `--to <pool>`, or to no pool (`--no-pool`, the default), and
-every profile that listed it stops listing it. It is refused when an account
-in use in a profile would land where that profile cannot use it (`live`), or
-in no pool with no profile named `default` to use it (`would_orphan`).
-

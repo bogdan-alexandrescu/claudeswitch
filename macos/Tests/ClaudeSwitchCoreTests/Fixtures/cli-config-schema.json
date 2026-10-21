@@ -138,7 +138,7 @@
     },
     {
       "default": "12",
-      "description": "usage calls per 5 minutes, across every process",
+      "description": "usage calls per 5 minutes, across every process, for each profile in use",
       "enum": [],
       "key": "api_budget",
       "max": null,

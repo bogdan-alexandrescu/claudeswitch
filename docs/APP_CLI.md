@@ -232,8 +232,8 @@ no live account. `chrome` is not in `overrides`.
 answers with the new profile as `list` reports it, plus `"seeded": "a1"`
 or `null`. Errors: `invalid_value` (bad or taken name, dir clash),
 `in_other_pool`, `not_found`, `outside_pool` (seed not in the pool), `live`
-(seed live elsewhere), `daemon_not_loaded` (the profile is made, not
-seeded: retry with `profile seed`), `no_config`.
+(seed live elsewhere), `daemon_not_loaded` and `switch_busy` (the profile
+is made, not seeded: retry with `profile seed`), `no_config`.
 
 `claudeswitch profile seed <name> <account> --json` → `{"profile": "work", "seeded": "w1"}`.
 Errors as for `create --seed`.
@@ -601,19 +601,22 @@ without `--yes`: `confirmation_required`.
 ```
 
 `verified` is false when the usage read that confirms the swap was rate
-limited (the swap itself succeeded). With `--dry-run`:
-`{"account", "profile", "dry_run": true, "from", "expect_org"}`. Errors:
-`outside_pool`, `not_vaulted`, `live`, `failed`.
+limited, refused by the incoming account's own call allowance, or not sent
+for an expired access token (the swap itself succeeded and stays installed;
+the machine-wide budget never refuses that read, GROUND_TRUTH §47). With
+`--dry-run`: `{"account", "profile", "dry_run": true, "from", "expect_org"}`.
+Errors: `outside_pool`, `not_vaulted`, `live`, `switch_busy`, `failed`.
 
 ## Adding an account (owner decision M4)
 
 Browser route, the live session untouched:
 
-1. `claudeswitch login <id> --direct --json --no-open [--profile P] [--browser APP] [--org ORG]`
+1. `claudeswitch login <id> --direct --json --no-open [--profile P | --pool NAME | --no-pool] [--browser APP] [--org ORG]`
 
    ```json
    {"url": "https://…", "expires_at": "…",
-    "pending": {"account": "new-one", "profile": "work", "org_id": null, "org": "org-2", "new_account": true}}
+    "pending": {"account": "new-one", "profile": null, "org_id": null, "org": "org-2", "new_account": true,
+                "join_pool": "team", "no_pool": false}}
    ```
 
    `join_pool` is the pool a new account goes into when the login
@@ -635,8 +638,9 @@ Browser route, the live session untouched:
 
    ```json
    {"account": "new-one", "seat": "person-4@org-4", "org_id": "org-4", "email": "…", "plan": "…",
-    "profile": "work", "pool": ["w1", "new-one"], "profiles": ["work"], "configured": true,
-    "new_account": true, "renewable": true, "access_expires_at": "…", "refresh_expires_at": "…"}
+    "profile": "work", "pool": ["w1", "new-one"], "profiles": ["work"], "pool_name": "team",
+    "configured": true, "new_account": true, "renewable": true, "access_expires_at": "…",
+    "refresh_expires_at": "…"}
    ```
 
    `profiles` (additive, shared pools) is every profile that may use the
@@ -655,11 +659,14 @@ Browser route, the live session untouched:
 has no JSON form (`usage`).
 
 Saving the login Claude Code is signed into now:
-`claudeswitch add [<id>] [--from P] [--profile Q] [--force] --json` answers
-with the same object as `login --code`, plus `"from"`: the profile whose
-live credential was saved. `--from` (lane 16) is that source profile;
+`claudeswitch add [<id>] [--from P] [--profile Q | --pool NAME | --no-pool] [--force] --json`
+answers with the same object as `login --code`, plus `"from"`: the profile
+whose live credential was saved. `--from` (lane 16) is that source profile;
 `--profile` is the pool a new account joins. Each defaults to the other,
-and both to the profile of the caller's `CLAUDE_CONFIG_DIR`. With a source
+and both to the profile of the caller's `CLAUDE_CONFIG_DIR`. `--pool NAME`
+(a `[[pool]]`, or a profile's own pool by its profile's name) or `--no-pool`
+names where a new account goes instead (D37); an account that already exists
+keeps its pool. With a source
 other than the target (owner decision: allowed) the credential stays signed
 in where it was: no profile swaps in an account live in another (§3). When
 the source may not use the account, its daemon moves off it, and the answer
@@ -737,9 +744,10 @@ there is one. `best_why` gives such an account as `"<id>: in use by
 <profile>"` (it read `"live in <profile>"` before).
 
 `best` (lane 16, owner decision) is the account the app's "Switch to best"
-moves the profile to now: of the profile's pool, the account other than the
+moves the profile to now: of the profile's pools, the account other than the
 live one that automatic rotation would pick — readable, not refused, not
-over its `reserve`, clear of the landing margin, ranked by room — whatever a
+over its `reserve`, clear of the landing margin, pool by pool and ranked by
+room within each (D33) — whatever a
 pin or the cooldown says (the person asked). It is never an account live in
 another profile, guarded as maybe live there (a ghost), or needing a
 sign-in. When no account clears the landing margin, `best` is still the

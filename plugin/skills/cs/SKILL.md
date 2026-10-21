@@ -1,7 +1,7 @@
 ---
 name: cs
 description: The claudeswitch command, like `cs` in a terminal. `/cs status`, `/cs why`, `/cs switch <id>`.
-argument-hint: "[status|why|session|doctor|switch|login|setup] [args]"
+argument-hint: "[status|why|session|doctor|switch|login|pool|setup] [args]"
 disable-model-invocation: true
 allowed-tools:
   - Skill
@@ -22,6 +22,7 @@ arguments. With no command, use `status`.
 | `doctor` | `cs:doctor` |
 | `switch`, `use` | `cs:switch` |
 | `login`, `add` | `cs:login` |
+| `pool`, `pools` | `cs:pool` |
 | `setup` | `cs:setup` |
 
 Invoke that skill with the Skill tool, passing the remaining arguments as its

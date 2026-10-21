@@ -2,8 +2,8 @@ import AppKit
 import ClaudeSwitchCore
 import SwiftUI
 
-/// Profiles: each is a Claude Code setup with its own login and its own
-/// accounts (docs/PROFILES.md).
+/// Profiles: each is a Claude Code setup with its own login and the pools
+/// of accounts it uses, which profiles can share (docs/PROFILES.md §10).
 struct ProfilesPane: View {
     @EnvironmentObject var store: Store
     @State private var creating = false
@@ -13,7 +13,7 @@ struct ProfilesPane: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 PaneHeader(title: "Profiles",
-                           subtitle: "Each profile is a Claude Code setup with its own login and its own accounts.") {
+                           subtitle: "Each profile is a Claude Code setup with its own login and pools it can share.") {
                     Button("New profile") { creating = true }
                         .disabled(store.binaryPath == nil)
                 }

@@ -4,7 +4,7 @@ Every stored account, grouped by the pool it is in and in rotation order within 
 
 See also: [cs accounts](../cli/accounts.md) · [cs pool](../cli/profiles.md#pool) · [Settings → Profiles](settings-profiles.md) · [Add account](add-account.md) · [Claude in Chrome in the app](chrome.md) · [GUIDE → Recovery copies](../GUIDE.md#recovery-copies)
 
-<p align="center"><img src="../images/settings-accounts.png" width="880" alt="Settings, Accounts pane: personal, research, work-1 and work-team with small rings, state, plan and login expiry; recovery copies r1 and r2 below"></p>
+<p align="center"><img src="../images/settings-accounts-pools.png" width="880" alt="Settings, Accounts pane grouped by pool: PERSONAL used by default first; TEAM used by default and work second, with team-2 in use by work; OPS used by work first; SPARE, which no profile uses, empty; and loose-1 in no pool, which default uses last. Each pool header has a ⋯ menu"></p>
 
 ## Pools
 

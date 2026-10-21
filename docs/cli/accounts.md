@@ -55,10 +55,21 @@ It refuses, and changes nothing, when:
 - the account is not vaulted (`not_vaulted`: "Log in to it, then run
   `claudeswitch add <id>`");
 - the account is, or may be, live in another profile (`live`). If a rate
-  limit is why it could not be confirmed, the message says when to retry.
+  limit is why it could not be confirmed, the message says when to retry;
+- another command or the daemon is switching an account and did not finish
+  within 30 seconds (`switch_busy`). One switch lock covers every writer of
+  a live credential, so two cannot both pass the check above for one
+  account; run the same command again in a moment.
 
 After a swap it reads the new account's usage to confirm it, and prints the
 Claude in Chrome line when you use Chrome profiles ([chrome](chrome.md)).
+When that read cannot be made (the incoming account is rate limited, its
+own call allowance is spent, or its access token has expired and Claude Code
+renews it on first use), the switch stays installed, unconfirmed: it says
+`installed, but usage could not be read to confirm it`, and `--json` has
+`"verified": false`. The machine-wide call budget never refuses this read
+([GROUND_TRUTH §47](../GROUND_TRUTH.md)). A credential the usage API rejects,
+or one that turns out to be another organization's, is rolled back.
 
 `--json` (fixture `cli-use.json`):
 
@@ -81,7 +92,7 @@ written.
 ## cs login
 
 ```
-cs login <id> --direct [--browser APP] [--no-open] [--profile NAME] [--sso] [--email ADDR] [--prompt select_account|login] [--json]
+cs login <id> --direct [--browser APP] [--no-open] [--org ID] [--profile NAME | --pool NAME | --no-pool] [--sso] [--email ADDR] [--prompt select_account|login] [--json]
 cs login <id> --code <code> [--json]
 cs login <id> [--profile NAME] [--keep] [--sso] [--browser APP]
 ```
@@ -106,7 +117,7 @@ Approve the page in the browser, copy the code it shows, and run the
 `--code` command it printed. The pending attempt lasts six hours.
 
 **Without `--direct`**, `login` signs in through Claude Code in a profile
-whose pool holds the account, then puts that profile's previous account
+whose pools hold the account, then puts that profile's previous account
 back (unless `--keep`). It is refused when the account may be live in
 another profile; the message suggests `--direct`.
 
@@ -116,7 +127,7 @@ another profile; the message suggests `--direct`.
 | `--code CODE` | none | finish a `--direct` login started earlier, with the code from the callback page |
 | `--browser APP` | your default browser | open the authorize URL in this browser application, such as `Safari` or `"Brave Browser"`. A browser you do not normally use has its own cookies, which is how you get a different account |
 | `--no-open` | off | with `--direct`: print the URL, open nothing |
-| `--profile NAME` | this shell's profile | without `--direct`, the profile to sign in through; with `--direct`, the profile whose pool a new account joins |
+| `--profile NAME` | this shell's profile; with `--direct`, none | without `--direct`, the profile to sign in through; with `--direct`, the profile whose pool a new account joins (its own pool, or the first it lists). With `--direct` and none of `--profile`, `--pool` and `--no-pool`, a new account is in no pool, which the profile named `default` uses last |
 | `--keep` | off | without `--direct`: stay on the newly signed-in account instead of switching back |
 | `--sso` | off | use the SSO login flow |
 | `--pool NAME` | `--profile`'s pool | with `--direct`: the pool a new account goes into, a `[[pool]]` or a profile's own pool by its profile's name (D37). Not with `--profile` |
@@ -221,7 +232,7 @@ profile keys, and `seat`, `org_id`, `email` and `plan` when known.
 cs account list [--json]
 cs account rename <old> <new> [--json]
 cs account delete <id> [--yes] [--json]        (also: account remove)
-cs account pin <id> [--hard] [--json]
+cs account pin <id> [--profile NAME] [--hard] [--json]
 cs account unpin [<id>] [--profile NAME] [--json]
 cs account priority <id>... [--json]
 ```
@@ -303,8 +314,10 @@ cs priority <id>... [--json]
 ```
 
 Sets the rotation order: the accounts named, in that order. Accounts left out
-follow in config order. Rotation tries a profile's pool in this order.
-Settings → Accounts runs it when you drag a row.
+follow in config order. A profile goes pool by pool, in the order it lists
+its pools; within a pool, rotation takes the eligible account with the most
+room, and this order breaks ties. Settings → Accounts runs it when you drag a
+row within a pool.
 
 `--json` returns `priority` (the list as written) and `order` (the full order
 it gives). With no ids it is a `usage` error.

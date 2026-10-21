@@ -87,6 +87,11 @@ success — the budget can only be discovered by exhausting it. So it is held by
 construction: a token bucket of 4 per 5 minutes, with one slot reserved for the
 pre-switch verification, which is the call that actually matters.
 
+*2026-10-20:* the machine-wide window is now `api_budget` (12 by default) per
+five minutes for each profile whose pools hold an enabled account (PROFILES
+D36): two busy profiles had held routine reads 14 minutes stale under one
+profile's window. The per-account allowance (4.3c) is unchanged.
+
 Scheduling exploits one fact: **an idle account's utilization can only go down.** Nothing
 is spending it. So the active account is polled every 60–90s (tighter near the trigger),
 inactive accounts every 10–15 minutes staggered, and a switch target immediately before
@@ -106,6 +111,13 @@ five unbudgeted vault calls plus the poller's four per five minutes produced a 4
 that starved the poller and corrupted the daemon's idea of which account was live.
 `usage.Shared()` is the single instance every caller must use, and a 429 always yields at
 least a 60-second backoff however small the `Retry-After` header is.
+
+*2026-10-20 (GROUND_TRUTH §47):* a swap-priority call (a switch's verify, the read of
+the credential it overwrites, the daemon's re-attribution of a live credential) is
+counted in this window but never refused by it. `cs use` had failed and rolled back on
+our own bookkeeping, with 11 of 12 calls spent, not on the API. The per-account allowance
+(4.3c), a 429's lock and the pacing still apply; a verify the incoming account's own
+allowance refuses leaves the switch installed and unverified, as a 429 does.
 
 ### 4.3c Each account has its own allowance, and the cadence follows movement
 
@@ -407,6 +419,13 @@ The first implementation adopted "the first configured account without an org id
 promptly filed a personal credential under `work-a`. Guessing an identity is worse than
 admitting ignorance, especially when the guess decides which account gets spent.
 
+*2026-10-20 (GROUND_TRUTH §49):* the usage endpoint names only the organization, so
+with several seats of one organization in a profile's pools the first by priority got
+the live seat's reading, and a seat at 86% read 12% until its own next poll. Among
+seats sharing the live organization, the one whose stored access token is the live
+token now wins, then the profile's current account, then priority order. No call is
+spent.
+
 ### 4.9 The audit log records changes, not ticks
 
 Evaluating every 20 seconds and logging "stay" each time produced 377 rows in one evening
@@ -502,6 +521,14 @@ itself — authorize, exchange, verify — and vaults the result only if the org
 matches what the config pins. The live credential is never installed, replaced, or touched,
 whether the attempt succeeds or fails. So a wrong account costs nothing but a retry, which
 is the most the tool can offer given the constraint above.
+
+*2026-10-20 (GROUND_TRUTH §48): half of this no longer holds.* The organization can be
+chosen: Claude Code's own authorize URL sends `orgUUID` (its `forceLoginOrgUUID`
+setting), and the endpoint honours it where it ignored `organization_uuid`. `login
+--direct` sends it with `--org <id>` for a new account, and with the pinned organization
+when an existing account signs in again; the completion checks the organization that
+came back before anything else and refuses another. The person is still whoever the
+browser is signed in as.
 
 ## 7. Known gaps
 
