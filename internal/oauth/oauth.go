@@ -54,6 +54,17 @@ type AuthFlow struct {
 	URL      string
 	verifier string
 	state    string
+	// redirect is the redirect_uri the URL was built with, which the
+	// exchange must repeat; "" is the code page (RedirectURI).
+	redirect string
+}
+
+// redirectURI is the redirect_uri this flow's code was issued for.
+func (f *AuthFlow) redirectURI() string {
+	if f.redirect == "" {
+		return RedirectURI
+	}
+	return f.redirect
 }
 
 // pendingFlow is AuthFlow on disk, so the code can be pasted in a second
@@ -227,6 +238,11 @@ func BeginAuthWith(orgID string, e Extra) (*AuthFlow, error) { return beginAuth(
 func BeginAuthPinned(orgID string) (*AuthFlow, error) { return beginAuth(orgID, true, Extra{}) }
 
 func beginAuth(orgID string, pinOrg bool, e Extra) (*AuthFlow, error) {
+	return beginAuthTo(RedirectURI, orgID, pinOrg, e)
+}
+
+// beginAuthTo is beginAuth returning the browser to redirect.
+func beginAuthTo(redirect, orgID string, pinOrg bool, e Extra) (*AuthFlow, error) {
 	verifier, err := randomB64(32)
 	if err != nil {
 		return nil, err
@@ -246,7 +262,7 @@ func beginAuth(orgID string, pinOrg bool, e Extra) (*AuthFlow, error) {
 		{"code", "true"},
 		{"client_id", ClientID},
 		{"response_type", "code"},
-		{"redirect_uri", RedirectURI},
+		{"redirect_uri", redirect},
 		{"scope", strings.Join(Scopes, " ")},
 		{"code_challenge", challenge},
 		{"code_challenge_method", "S256"},
@@ -276,7 +292,7 @@ func beginAuth(orgID string, pinOrg bool, e Extra) (*AuthFlow, error) {
 		b.WriteByte('=')
 		b.WriteString(url.QueryEscape(kv[1]))
 	}
-	return &AuthFlow{URL: b.String(), verifier: verifier, state: st}, nil
+	return &AuthFlow{URL: b.String(), verifier: verifier, state: st, redirect: redirect}, nil
 }
 
 // Exchange trades an authorization code for tokens.
@@ -303,7 +319,7 @@ func (c *Client) Exchange(ctx context.Context, f *AuthFlow, pasted string) (*Tok
 	form := url.Values{
 		"grant_type":    {"authorization_code"},
 		"code":          {code},
-		"redirect_uri":  {RedirectURI},
+		"redirect_uri":  {f.redirectURI()},
 		"client_id":     {ClientID},
 		"code_verifier": {f.verifier},
 		"state":         {f.state},

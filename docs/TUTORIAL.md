@@ -132,28 +132,28 @@ rotate to. Sign in to the second one without touching the session you are
 working in:
 
 ```sh
-cs login research --direct
+cs login
 ```
 
-This opens the sign-in page in your browser and prints how to finish. Sign
-in **as the account you want to add**. The page shows a code; finish with it:
-
-```sh
-cs login research --code <the-code>
-```
-
-claudeswitch checks the credential, stores it in the Keychain, and adds
-`research` to your config. Your current Claude Code session is not touched.
-The attempt expires if you leave it too long; run `cs login research --direct`
-again to start over.
+It asks what to call the account (`research`), which browser to use and, if
+your config does not say, which pool it joins. Then it opens the sign-in
+page. Sign in **as the account you want to add** and approve; the browser
+hands the result back to claudeswitch by itself. claudeswitch checks the
+credential, stores it in the Keychain, and adds `research` to your config.
+Your current Claude Code session is not touched. Ctrl-C stops it, with
+nothing stored.
 
 A browser signs in as whichever account it is already signed in to. If your
-default browser holds `personal`, use a different browser application for
-`research`:
+default browser holds `personal`, pick a different browser application for
+`research`. The same, without the questions:
 
 ```sh
 cs login research --direct --browser Safari
 ```
+
+Over SSH, or from a script, `cs login research --direct --no-open` prints the
+sign-in page's address instead; the page then shows a code, and
+`cs login research --code <the-code>` finishes.
 
 The browser decides the person; the organization is the one it is in, unless
 you ask for another. If the same person belongs to a second organization, add
@@ -293,8 +293,8 @@ only ever rotate between work accounts, until you choose to share some.
 Sign in to the work accounts first:
 
 ```sh
-cs login work-1 --direct      # then: cs login work-1 --code <the-code>
-cs login work-team --direct   # then: cs login work-team --code <the-code>
+cs login work-1 --direct
+cs login work-team --direct
 ```
 
 Then make the profile, with those two as its pool, signed in as work-1:
@@ -565,7 +565,6 @@ live one, and `cs doctor` names it. Sign in again:
 
 ```sh
 cs login work-1 --direct
-cs login work-1 --code <the-code>
 ```
 
 or **Sign in again** in the account's ⋯ menu in **Settings → Accounts**. The

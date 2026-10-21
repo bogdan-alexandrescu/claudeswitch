@@ -321,8 +321,8 @@ status line.
 To add more accounts later:
 
 ```sh
-cs login work-1 --direct                    # sign in through a browser; your live session is untouched
-cs login work-1 --code <the-code>           # ...then finish with the code the page shows
+cs login                                   # asks for a name, a pool and a browser, then signs in; nothing to paste
+cs login work-1 --direct                    # the same for a name you give; your live session is untouched
 cs login work-1 --direct --browser Safari   # ...in a browser that is signed in to that account
 cs login work-2 --direct --org 11111111-1111-1111-1111-111111111111   # ...in that organization
 cs add research                             # or: /login in Claude Code, then save that login as "research"
@@ -681,7 +681,8 @@ command in more depth: [docs/GUIDE.md → Commands](docs/GUIDE.md#commands).
 |---|---|
 | `cs use <id> [--profile P] [--dry-run] [--json]` | swap a profile onto a vaulted account (hot, no restart) |
 | `cs login <id> --direct [--browser APP] [--no-open] [--org ID] [--pool NAME\|--no-pool]` | sign in through a browser, verify the seat, vault it and add it to the config, without touching the live session; `--org` asks for that organization, `--pool` or `--no-pool` says where a new account goes |
-| `cs login <id> --code CODE` | finish a `--direct` login with the code the browser shows |
+| `cs login` | at a terminal: ask for the name, the pool and the browser, then sign in as `--direct` does |
+| `cs login <id> --code CODE` | finish a `--direct --no-open` login (or one started with no terminal) with the code the browser shows |
 | `cs login <id> [--sso] [--email ADDR] [--prompt select_account\|login] [--keep]` | other sign-in options; without `--direct` it signs in through Claude Code and puts your previous account back unless `--keep` |
 | `cs add [<id>] [--from P] [--profile P] [--pool NAME\|--no-pool] [--force] [--json]` | vault the credential that is live now (after `/login`) and add it to the config |
 | `cs refresh <id> [--allow-active]` | renew a vaulted credential; never the live one unless you insist |
