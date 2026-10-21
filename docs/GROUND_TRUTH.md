@@ -1513,3 +1513,12 @@ stays for `--no-open`, `--json` and no terminal.
 `redirect_uri`, the browser came back to the listener on its own, and the token
 endpoint accepted the code with the same `redirect_uri`. The vaulted access token
 then had 7h59m left.
+
+**Hardened before release (review of the contribution, same day).** `localhost`
+resolves to `::1` first here, and `127.0.0.1:<port>` and `[::1]:<port>` are separate
+sockets: a probe bound the second while the first was held. So claudeswitch holds
+both, and picks another port if `::1` is taken, or another process could receive
+the redirect. Only a request with this login's `state`, addressed to `localhost`,
+`127.0.0.1` or `[::1]` on the port, ends the wait, a refusal as much as a code.
+Anything else gets a 400 while the wait goes on. A refusal's text is cut to
+printable ASCII before it reaches the terminal.

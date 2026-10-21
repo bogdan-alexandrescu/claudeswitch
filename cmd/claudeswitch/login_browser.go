@@ -102,7 +102,10 @@ func browserLogin(ctx context.Context, w io.Writer, extra oauth.Extra, open func
 	if err := open(flow.URL); err != nil {
 		fmt.Fprintf(w, "    %v\n", err)
 	}
-	fmt.Fprintf(w, "    If no browser opened, or the wrong one did, open this in the right one:\n\n%s\n\n", flow.URL)
+	// The URL carries this login's state: with it and the port, anyone
+	// could hand the listener a code of their own, so it is not for sharing.
+	fmt.Fprintf(w, "    If no browser opened, or the wrong one did, open this in the right one\n"+
+		"    (it is this login's alone: do not share it or show it on a screen share):\n\n%s\n\n", flow.URL)
 	fmt.Fprintf(w, "    waiting for the browser to come back… (Ctrl-C to stop)\n")
 	code, err := cb.Wait(ctx, flow)
 	if err != nil {

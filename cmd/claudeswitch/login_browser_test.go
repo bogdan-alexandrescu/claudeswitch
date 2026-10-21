@@ -17,9 +17,9 @@ import (
 // adding an account after setup should be as easy as setup's own loop.
 func TestALoginWithoutANameAsksForOne(t *testing.T) {
 	var asked string
-	got, err := chooseLoginName(func(q, def string) string { asked = q; return "  aieng-4  " })
-	if err != nil || got != "aieng-4" {
-		t.Fatalf("got %q, %v; want aieng-4", got, err)
+	got, err := chooseLoginName(func(q, def string) string { asked = q; return "  lab-4  " })
+	if err != nil || got != "lab-4" {
+		t.Fatalf("got %q, %v; want lab-4", got, err)
 	}
 	if !strings.Contains(asked, "Name") {
 		t.Errorf("asked %q; want it to ask for a name", asked)

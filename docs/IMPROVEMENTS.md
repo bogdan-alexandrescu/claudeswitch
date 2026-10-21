@@ -1049,3 +1049,10 @@ approval page, which a person clicks.
 - **P6. A home account for claude.ai objects: warn only.** Where an Artifact
   is published is Claude Code's choice, made at the time, so claudeswitch
   could only show the live account's organization (P3).
+
+**Decided 2026-10-21 (owner):** build P1 (keep the recorded login in step
+with each swap, after testing that a running Claude Code does not write its
+own copy back), P3 and P5 (show and record the mismatch), P2 (a Chrome
+profile per account as the recommended setup) and P4 (hold a rotation while
+a browser task runs), with P4 a setting that can be turned off. P6 is not
+being built.
