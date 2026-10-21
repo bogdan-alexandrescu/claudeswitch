@@ -50,13 +50,15 @@ if [ "$OS" = "Darwin" ]; then
   # has no GUI session to answer that prompt, and security(1) waits for an answer
   # forever — leaving the daemon alive, silent, polling nothing. Asking here
   # turns an invisible hang into one click.
+  #
+  # `daemon check` reads every profile's credential, as the daemon will: not
+  # through this shell's CLAUDE_CONFIG_DIR, which need not match any profile.
   echo
   echo "checking Keychain access (macOS may ask — click Always Allow)…"
-  if "$BIN_DIR/claudeswitch" whoami >/dev/null 2>&1; then
-    echo "  ok"
-  else
-    echo "  could not read the credential. Run this once and approve the prompt:"
-    echo "      claudeswitch whoami"
+  if ! "$BIN_DIR/claudeswitch" daemon check; then
+    echo "  could not read every credential the daemon needs (above). If macOS"
+    echo "  asked and it was denied, run this once and click Always Allow:"
+    echo "      claudeswitch daemon check"
     echo "  then re-run ./install.sh"
     exit 1
   fi

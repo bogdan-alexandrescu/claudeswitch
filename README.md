@@ -195,6 +195,7 @@ installed, switch modes and manage it without reinstalling:
 cs daemon live          # start acting
 cs daemon dry-run       # back to reporting only
 cs daemon status|start|stop|restart
+cs daemon check         # read every profile's credential once (see below)
 ```
 
 Re-running `./install.sh` without `--live` puts a live daemon back into
@@ -202,8 +203,9 @@ dry-run.
 
 On macOS a newly built binary is a stranger to the Keychain, and a daemon
 cannot answer the access prompt. `install.sh` triggers that prompt while you
-are at the keyboard. With a release binary, run `cs whoami` once before
-`daemon install` and click **Always Allow**.
+are at the keyboard. With a release binary, run `cs daemon check` once before
+`daemon install` and click **Always Allow**. It reads every profile's
+credential, as the daemon will, whatever your shell's `CLAUDE_CONFIG_DIR`.
 
 The log is `~/.local/state/claudeswitch/daemon.log` (on Linux also
 `journalctl --user -u claudeswitch`). More in
@@ -892,7 +894,7 @@ Run `cs doctor` first. It checks everything below and says what to fix.
 | symptom | fix |
 |---|---|
 | The menu-bar item does not appear (MacBook with a notch) | It is probably hidden under the notch. Quit or hide other menu-bar apps, or ⌘-drag it to the right of the notch. Or run `defaults write xyz.claudeswitch.menubar "NSStatusItem Preferred Position Item-0" -float 300` and reopen ClaudeSwitch. |
-| Keychain prompts, or a daemon that never polls (macOS) | A rebuilt binary is new to the Keychain. Run `cs whoami` once and click **Always Allow**. |
+| Keychain prompts, or a daemon that never polls (macOS) | A rebuilt binary is new to the Keychain. Run `cs daemon check` once and click **Always Allow**. |
 | Readings stop updating, or the usage API answers 429 | The usage API locks an account out for 10–15 minutes after a burst of about 24 calls. claudeswitch budgets its calls to avoid this. Wait it out, and do not lower `poll_hot` below the default. |
 | "the running daemon ... is older than this cs" | Restart it: `cs daemon restart`. |
 | It did not switch, or switched somewhere unexpected | `cs why` explains the current decision; `cs audit --kind decision` shows past ones. |

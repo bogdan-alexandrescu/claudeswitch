@@ -686,7 +686,7 @@ live credential is staler than the vaulted one: `--force`).
 
 ## daemon
 
-`claudeswitch daemon status|start|stop|restart|live|dry-run|install|uninstall [--live|--dry-run] --json`
+`claudeswitch daemon status|start|stop|restart|live|dry-run|install|uninstall|check [--live|--dry-run] --json`
 manages the service the way `install.sh` does — a launchd agent
 (`~/Library/LaunchAgents/xyz.claudeswitch.daemon.plist`) or a systemd user
 unit (`~/.config/systemd/user/claudeswitch.service`) — and answers every
@@ -721,6 +721,23 @@ verb with the status after it:
 - `mode` is the installed file's; `daemon_live`/`daemon_version`/`since`
   are what the running daemon recorded (present only while one runs).
   `binary_is_this` false means the service runs another build.
+- `check` (additive) answers with its own shape, not the status: it reads
+  every profile's live credential once, as the daemon will, so macOS asks
+  for Keychain access now. Each profile is read through its own item, never
+  this process's `CLAUDE_CONFIG_DIR`. With no config, the one profile is the
+  environment's. Failures are counted, not an error (as `doctor --json`);
+  without `--json` a failure exits non-zero, which is what `install.sh`
+  stops on:
+
+  ```json
+  {"profiles": [
+    {"profile": "work", "item": "Claude Code-credentials-0ac30e20", "status": "ok", "error": null},
+    {"profile": "side", "item": null, "status": "skip", "error": "no Claude Code credential found for …"}],
+   "failed": 0}
+  ```
+
+  `status` is `ok`, `skip` (not signed in yet: nothing to approve) or
+  `fail` (`error` says what happened).
 
 Errors: `not_installed` (start/stop/restart/live/dry-run), `service_failed`,
 `unsupported_platform`, `binary_not_durable`, `invalid_value`, `usage`. `install.sh` keeps working and writes the
