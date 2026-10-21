@@ -3369,6 +3369,19 @@ func loginDirect(cfg *config.Config, st *state.State, v *vault.Vault, id, wantOr
 		fmt.Printf("\n  Open this, approve it, and copy the code it gives you:\n\n")
 		fmt.Printf("%s\n\n", flow.URL)
 	}
+	explainDirect(cfg, id, wantOrg, extra, pool)
+	fmt.Printf("  Then finish with:\n\n")
+	fmt.Printf("    claudeswitch login %s --code <the-code>\n\n", id)
+	fmt.Printf("  Your live session is not affected by any of this, whatever happens.\n")
+	fmt.Printf("  The attempt expires at %s (in %s).\n\n",
+		time.Now().Add(oauth.PendingTTL).Format("15:04"), oauth.PendingTTL)
+	return nil
+}
+
+// explainDirect says what a --direct login will vault and check: whoever the
+// browser is signed in as, held to the seat or organization asked for, and
+// where a new account goes.
+func explainDirect(cfg *config.Config, id, wantOrg string, extra oauth.Extra, pool string) {
 	switch {
 	case extra.Org != "":
 		// Asked for as Claude Code's forceLoginOrgUUID asks: orgUUID. The
@@ -3405,12 +3418,6 @@ func loginDirect(cfg *config.Config, st *state.State, v *vault.Vault, id, wantOr
 			fmt.Printf("  It joins profile %q's pool.\n", pool)
 		}
 	}
-	fmt.Printf("  Then finish with:\n\n")
-	fmt.Printf("    claudeswitch login %s --code <the-code>\n\n", id)
-	fmt.Printf("  Your live session is not affected by any of this, whatever happens.\n")
-	fmt.Printf("  The attempt expires at %s (in %s).\n\n",
-		time.Now().Add(oauth.PendingTTL).Format("15:04"), oauth.PendingTTL)
-	return nil
 }
 
 // loginComplete finishes a --direct login with the pasted code. It is a
@@ -3421,17 +3428,27 @@ func loginComplete(cfg *config.Config, st *state.State, v *vault.Vault, code str
 	if err != nil {
 		return nil, wrapErr(codeNoPendingLogin, "start one: claudeswitch login <id> --direct", err)
 	}
-	id, wantOrg, pinned, askedOrg := pend.AccountID, pend.OrgID, pend.Pinned, pend.Org
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	tok, err := oauth.NewClient().Exchange(ctx, flow, code)
+	tok, err := exchangeCode(ctx, flow, code)
 	if err != nil {
 		return nil, fmt.Errorf("%w\n  (nothing was stored; your session is untouched)\n"+
 			"  Note: the code must come from the most recent URL — an older one will not match.", err)
 	}
 	// The code is single-use, so the attempt is spent either way.
 	_ = oauth.ClearPending()
+	return finishDirectLogin(cfg, st, v, pend, tok)
+}
+
+// finishDirectLogin vaults the tokens a --direct login obtained, held to what
+// pend says it was started for, and records the account in the config.
+// Shared by the pasted code (`login --code`) and the browser coming back here.
+func finishDirectLogin(cfg *config.Config, st *state.State, v *vault.Vault, pend oauth.Pending,
+	tok *oauth.Tokens) (map[string]any, error) {
+	id, wantOrg, pinned, askedOrg := pend.AccountID, pend.OrgID, pend.Pinned, pend.Org
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 
 	var others []string
 	for _, a := range cfg.Accounts {
