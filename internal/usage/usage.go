@@ -644,6 +644,24 @@ func (p *Profile) Plan() string {
 	return name
 }
 
+// SubscriptionType is what Claude Code stores as claudeAiOauth.subscriptionType
+// for this profile, and reads to name the session's plan ("Claude Team"): the
+// organization_type mapped the way Claude Code maps it at sign-in. A type it
+// does not map is "", which Claude Code leaves unset too.
+func (p *Profile) SubscriptionType() string {
+	switch p.Organization.Type {
+	case "claude_max":
+		return "max"
+	case "claude_pro":
+		return "pro"
+	case "claude_team":
+		return "team"
+	case "claude_enterprise":
+		return "enterprise"
+	}
+	return ""
+}
+
 // Seat is the quota pool a profile belongs to: this person, in this
 // organization. The same person in a different organization is a different pool.
 func (p *Profile) Seat() string {

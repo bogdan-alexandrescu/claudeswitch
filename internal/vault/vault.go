@@ -402,6 +402,11 @@ func (v *Vault) StoreTokens(ctx context.Context, accountID, expectSeat string, t
 		return nil, &WrongOrgError{AccountID: accountID, WantOrg: expectSeat,
 			GotOrg: pr.Seat(), GotEmail: pr.Describe()}
 	}
+	// What a sign-in through Claude Code would have stored alongside the
+	// tokens. Without it, a session this credential is swapped into names no
+	// plan ("Claude API").
+	cred.SubscriptionType = pr.SubscriptionType()
+	cred.RateLimitTier = pr.Organization.RateLimitTier
 	// The duplicate check stops the same seat being filed under two names, which
 	// is the realistic mistake.
 	for _, other := range conflictCheck {
@@ -419,7 +424,7 @@ func (v *Vault) StoreTokens(ctx context.Context, accountID, expectSeat string, t
 			Email: pr.Account.Email, Plan: pr.Plan(), OrgName: pr.Organization.Name,
 			AccountID: accountID, VaultedAt: time.Now().Format(time.RFC3339)},
 	}
-	if err := keychain.Write(keychain.VaultService(accountID), entry); err != nil {
+	if err := writeEntry(accountID, entry); err != nil {
 		return nil, err
 	}
 	v.log.Info("vaulted a credential obtained directly", "account", accountID,

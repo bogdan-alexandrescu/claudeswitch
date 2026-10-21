@@ -59,6 +59,9 @@ type fakeEndpoints struct {
 	during func(*http.Request)
 	// limited is the tokens the profile endpoint answers with a 429.
 	limited map[string]bool
+	// orgType and tier are the profile endpoint's organization_type and
+	// rate_limit_tier, by token; absent from the answer when unset.
+	orgType, tier map[string]string
 }
 
 func (f *fakeEndpoints) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -78,7 +81,14 @@ func (f *fakeEndpoints) RoundTrip(r *http.Request) (*http.Response, error) {
 				Body: io.NopCloser(strings.NewReader("{}")), Request: r}, nil
 		}
 		acct, org, _ := strings.Cut(seat, "@")
-		body := `{"account":{"uuid":"` + acct + `"},"organization":{"uuid":"` + org + `"}}`
+		orgFields := `"uuid":"` + org + `"`
+		if t := f.orgType[tok]; t != "" {
+			orgFields += `,"organization_type":"` + t + `"`
+		}
+		if t := f.tier[tok]; t != "" {
+			orgFields += `,"rate_limit_tier":"` + t + `"`
+		}
+		body := `{"account":{"uuid":"` + acct + `"},"organization":{` + orgFields + `}}`
 		return &http.Response{StatusCode: 200, Header: http.Header{},
 			Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 	}
