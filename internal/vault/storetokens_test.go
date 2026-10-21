@@ -39,7 +39,7 @@ func TestStoreTokensRecordsThePlanClaudeCodeReads(t *testing.T) {
 				func(d time.Duration) { clock = clock.Add(d) })
 
 			tok := &oauth.Tokens{AccessToken: "new-token", RefreshToken: "new-refresh", ExpiresIn: 28800}
-			if _, err := v.StoreTokens(context.Background(), "work", "", tok, nil); err != nil {
+			if _, err := v.StoreTokens(context.Background(), "work", "", "", tok, nil); err != nil {
 				t.Fatal(err)
 			}
 			b := entries["work"]
