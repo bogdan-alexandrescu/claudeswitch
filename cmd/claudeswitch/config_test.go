@@ -18,6 +18,7 @@ func TestEveryConfigSettingIsWritten(t *testing.T) {
 		"api_budget": "10", "refresh_window": "2h0m0s", "refresh_probe": "12h0m0s",
 		"landing_margin": "5", "blind_failover_polls": "4", "models": "Modelname,Othermodel",
 		"hot_reserve": "6", "unseen_calls_per_hour": "4.5", "prefer": "expiring",
+		"hold_for_browser": "0s", // off: a zero must not come back as the default
 	}
 	for _, s := range settings() {
 		v, ok := values[s.name]

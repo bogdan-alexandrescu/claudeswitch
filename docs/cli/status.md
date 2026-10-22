@@ -150,7 +150,11 @@ reasoning. It reads saved state only and changes nothing.
 Each profile block gives:
 
 - the decision (`staying put`, `rotating to work-team`, waiting) and its
-  reason;
+  reason. While a browser task holds the switch it reads `waiting to rotate
+  to work-team`, with the daemon's own words beneath (`switch wanted,
+  session busy (browser task 2m ago) — waiting for an idle gap`) and when
+  the hold runs out (`hold_for_browser`,
+  [GUIDE → Configuration](../GUIDE.md#configuration));
 - **CONSIDERED, in order**: every account in the profile's pools, pool by
   pool in the order the profile lists them and in rotation order within
   each, `▸` for the live one, `✓` for an eligible target, `✗` for one that
@@ -162,7 +166,8 @@ Each profile block gives:
   would expire unused.
 
 `--json` gives one object per profile, with `decision` (`kind`, `reason`,
-`target` for a switch, and `unpin` when it lifts a pin), `accounts` (each
+`target` for a switch, `unpin` when it lifts a pin, and `held` with
+`held_until` while a browser task holds the switch), `accounts` (each
 with `eligible`, `utilization`, `window`, `why`, `clears_at`, `weekly_pace`,
 `model_limits`, `trigger_at`, `weekly_resets_at` and `weekly_unused`, and
 `active_in`, the profile it is live in, when state records one), the
@@ -211,7 +216,7 @@ Exit status: as above.
 ## cs whoami
 
 ```
-cs whoami [--profile NAME] [--config PATH]
+cs whoami [--profile NAME] [--sync] [--config PATH]
 ```
 
 Which Claude account the live credential belongs to, asked of the usage API
@@ -224,7 +229,15 @@ It works even when the config does not load.
 | flag | default | meaning |
 |---|---|---|
 | `--profile NAME` | this shell's profile | the profile whose live credential to check |
+| `--sync` | off | also record this account as the one Claude Code in the profile is logged in as |
 | `--config PATH` | the default config | the config to read |
+
+Claude Code records the account it is logged in as in `oauthAccount`, in
+the profile's `.claude.json`, and Claude in Chrome connects only when that
+is the account of the credential in use (GROUND_TRUTH §53). Every swap
+rewrites it, and the daemon puts a stray one right on its next poll.
+`--sync` does it now, from the profile whoami has just read, and says what
+changed (`recorded login  lab3@… → lab2@…`).
 
 It reads the live credential, so on macOS it raises the Keychain prompt for
 this one profile. After installing a new binary, run `cs daemon check`

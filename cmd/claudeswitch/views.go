@@ -56,6 +56,9 @@ func (v profileView) input(st *state.State, now time.Time) policy.Input {
 	in := policy.Input{
 		Cfg: v.cfg, St: st, Now: now, LastSwitch: v.ist.LastSwitch, Pinned: v.ist.Pinned, PinHard: v.ist.PinHard,
 		Lookahead: lookahead(v.cfg),
+		// The last browser call the daemon recorded: `why` says a switch is
+		// waiting for a browser task as the daemon does (IMPROVEMENTS P4).
+		BrowserAt: v.ist.BrowserAt,
 	}
 	if v.declared {
 		in.Pool, in.Live, in.Tiers = v.pool, v.ist, v.in.Tiers
@@ -244,6 +247,13 @@ func renderWhy(w io.Writer, cfg *config.Config, st *state.State, now time.Time, 
 		}
 		dec, verdicts := policy.Explain(v.input(st, now))
 		render.Why(w, render.WhyOptions{Cfg: v.cfg, St: st, Decision: dec, Verdicts: verdicts, Profile: v.in.Name})
+		// Not a rotation decision, but the answer to "why does Claude in
+		// Chrome not connect" (P5).
+		if rec, differs, _ := loginOf(cfg, v.in, v.ist.Active); differs {
+			fmt.Fprintf(w, "  Claude Code is logged in as %s, not %s, so Claude in Chrome will not connect.\n"+
+				"  The daemon lines them up on its next poll; or now: claudeswitch whoami --sync --profile %s\n\n",
+				nonEmpty(rec.Email, rec.AccountUUID), v.ist.Active, v.in.Name)
+		}
 	}
 }
 

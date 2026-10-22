@@ -305,9 +305,12 @@ func chromeSwitchNotice(cfg *config.Config, st *state.State, local chromeLocal, 
 	// probably signed in as it; otherwise who it is signed in as is not
 	// known. Either way it is inferred: claudeswitch cannot read the
 	// extension's login (C1), so the notice says "may".
+	// The way out of signing in after every rotation is a Chrome profile
+	// per account (P2): the bridge then finds the right one by itself.
 	if from != "" && st.ChromeOf(from) == nil {
-		return fmt.Sprintf("Claude in Chrome in %q may still be signed in as %s; sign it in as %s (cs chrome signin %s)",
-			r.label(), from, to, to)
+		return fmt.Sprintf("Claude in Chrome in %q may still be signed in as %s; sign it in as %s (cs chrome signin %s), "+
+			"or give %s a Chrome profile of its own, which follows rotation by itself (cs chrome add %s)",
+			r.label(), from, to, to, to, to)
 	}
 	return fmt.Sprintf("Claude in Chrome in %q may be signed in as another account; sign it in as %s (cs chrome signin %s)",
 		r.label(), to, to)

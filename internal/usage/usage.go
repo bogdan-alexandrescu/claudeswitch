@@ -609,6 +609,9 @@ type Profile struct {
 		ExtraUsage    bool   `json:"has_extra_usage_enabled"`
 		SubStatus     string `json:"subscription_status"`
 	} `json:"organization"`
+	// Raw is the answer as sent, for what is kept whole (the login Claude
+	// Code records, IMPROVEMENTS P1).
+	Raw json.RawMessage `json:"-"`
 }
 
 // Plan renders the subscription behind a seat in a form a person recognises.
@@ -740,5 +743,6 @@ func (c *Client) FetchProfile(ctx context.Context, accessToken string) (*Profile
 	if pr.Account.UUID == "" {
 		return nil, &ShapeError{Detail: "identity lookup carried no account uuid"}
 	}
+	pr.Raw = body
 	return &pr, nil
 }

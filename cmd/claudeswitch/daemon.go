@@ -39,7 +39,7 @@ import (
 // insert profiles it finds on disk (mergeProfiles), and a map write racing
 // any of those reads is a crash, not a stale value.
 //
-// The detector's own methods (IdleFor, LastActivity,
+// The detector's own methods (IdleFor, LastActivity, LastBrowserCall,
 // WorstLatency) take its internal lock, so calling them from run is safe.
 
 // daemonPoller is the poller as the daemon drives it.
@@ -78,6 +78,9 @@ type daemonVault interface {
 	NeedsRefresh(accountID string, window time.Duration) bool
 	VaultedAt(accountID string) time.Time
 	RefreshIn(ctx context.Context, accountID, wantSeat string, holder keychain.Live, allowActive bool) (*vault.Entry, error)
+	// SyncLogin brings the login Claude Code records at path in line with
+	// accountID, live there under token (P1).
+	SyncLogin(ctx context.Context, path, accountID, token string, p usage.Priority) (bool, error)
 }
 
 // activity is a profile's transcript detector.
@@ -89,6 +92,9 @@ type activity interface {
 	WorstLatency() time.Duration
 	// Seeded is false until the startup walk of the transcripts is done.
 	Seeded() bool
+	// LastBrowserCall is the newest Claude in Chrome call the profile's
+	// sessions have made since the detector started (IMPROVEMENTS P4).
+	LastBrowserCall() time.Time
 }
 
 type auditor interface{ Write(audit.Event) error }
@@ -149,6 +155,11 @@ type profileLoop struct {
 	// token (R2), so a failing renewal is retried at most every
 	// liveRenewEvery.
 	liveRenewAt time.Time
+	// loginAt is when the daemon last tried to line up Claude Code's
+	// recorded login (P1), and loginSig the mismatch a dry run last
+	// reported, so it is said once.
+	loginAt  time.Time
+	loginSig string
 
 	// hold keeps a config reload that removed this profile's active account
 	// from turning into a swap; see activeHold.
@@ -317,6 +328,8 @@ func (quietDetector) WorstLatency() time.Duration           { return 0 }
 // Seeded: there is nothing to walk, so nothing is pending.
 func (quietDetector) Seeded() bool { return true }
 
+func (quietDetector) LastBrowserCall() time.Time { return time.Time{} }
+
 // multi reports whether more than one profile is configured. Notifications
 // name the profile only then: with one, the name says nothing.
 func (d *daemon) multi() bool { return len(d.profs) > 1 }
@@ -471,7 +484,9 @@ func (d *daemon) evaluate(ctx context.Context, il *profileLoop, trigger string) 
 	if il.live == nil || (len(il.pool) == 0 && !il.conf.FromEnv) {
 		return
 	}
+	d.reconcileLogin(ctx, il)
 	ist := d.profState(il)
+	d.noteBrowser(il)
 	// D34: an account live in another profile is not a candidate here.
 	// State says which, at no cost; the §3 check before a write asks the
 	// live items too, and adds what it finds.
@@ -485,6 +500,10 @@ func (d *daemon) evaluate(ctx context.Context, il *profileLoop, trigger string) 
 			// Whether an expired token explains an unreadable active account
 			// (IMPROVEMENTS A2): on an idle session it does.
 			SessionBusy: !il.det.IdleFor(d.idleGap),
+			// The newest browser call, this detector's or one an earlier
+			// daemon recorded (noteBrowser): a switch within
+			// hold_for_browser of it is Held (IMPROVEMENTS P4).
+			BrowserAt:   ist.BrowserAt,
 			Unavailable: unavailable,
 		}
 	}
@@ -566,17 +585,36 @@ func (d *daemon) evaluate(ctx context.Context, il *profileLoop, trigger string) 
 		il.wantSwitchSince = time.Now()
 	}
 	waited := time.Since(il.wantSwitchSince)
-	if !dec.Forced && !il.det.IdleFor(d.idleGap) {
+	// A session that used the browser within hold_for_browser is busy too,
+	// even between turns (IMPROVEMENTS P4): swapping the credential mid
+	// browser task breaks Claude in Chrome's bridge. The policy marks such a
+	// switch Held, and never a forced one.
+	if !dec.Forced && (dec.Held != "" || !il.det.IdleFor(d.idleGap)) {
+		busy := "session busy"
+		if dec.Held != "" {
+			busy = dec.Held
+		}
 		// A blind failover never splits a turn, however long it has waited
 		// (owner decision 2026-10-07): nothing says the work itself is in
 		// trouble, only that we cannot see the account.
 		if dec.Failover {
-			il.log.Info("blind failover wanted, session busy — waiting for an idle gap, never mid-turn",
+			il.log.Info("blind failover wanted, "+busy+" — waiting for an idle gap, never mid-turn",
 				"target", dec.Target, "reason", dec.Reason, "waited", waited.Round(time.Second))
 			return
 		}
+		// Nor is a browser hold cut short by max_switch_wait. That limit is
+		// there because a session in continuous use never goes quiet; a hold
+		// ends by itself, hold_for_browser after the last browser call, and
+		// only the hard floor (a forced switch) overrides it.
+		if dec.Held != "" {
+			il.log.Info(policy.WaitingFor(busy),
+				"target", dec.Target, "reason", dec.Reason,
+				"waited", waited.Round(time.Second),
+				"hold_ends_in", time.Until(dec.HeldUntil).Round(time.Second))
+			return
+		}
 		if waited < il.cfg.MaxSwitchWait.Duration {
-			il.log.Info("switch wanted, session busy — waiting for an idle gap",
+			il.log.Info(policy.WaitingFor(busy),
 				"target", dec.Target, "reason", dec.Reason,
 				"waited", waited.Round(time.Second),
 				"will_force_after", il.cfg.MaxSwitchWait.Duration)
@@ -847,6 +885,25 @@ func inUseWhy(other, how string) string {
 		return "may still be live in " + other
 	}
 	return "in use by " + other + " (" + how + ")"
+}
+
+// noteBrowser records in state the newest Claude in Chrome call the
+// profile's detector has seen (IMPROVEMENTS P4): `cs why` reads it there, and
+// so does the next daemon, whose detector reads no history. Only ever later:
+// a restarted daemon's detector has seen nothing yet.
+func (d *daemon) noteBrowser(il *profileLoop) {
+	ist := d.profState(il)
+	if at := il.det.LastBrowserCall(); at.After(ist.BrowserAt) {
+		ist.BrowserAt = at
+	}
+}
+
+// noteBrowsers is noteBrowser for every profile, before a save: a call made
+// since a profile's last tick is not lost when the daemon stops.
+func (d *daemon) noteBrowsers() {
+	for _, il := range d.profs {
+		d.noteBrowser(il)
+	}
 }
 
 // rejection is a refusal tagged with the profile whose transcripts showed it.
@@ -1294,6 +1351,7 @@ func (d *daemon) run(ctx context.Context, stop chan struct{}, sig <-chan os.Sign
 			d.log.Info("stopping")
 			close(stop)
 			d.stopProfiles()
+			d.noteBrowsers()
 			_ = d.save()
 			return nil
 		case <-tick:
@@ -1316,6 +1374,7 @@ func (d *daemon) run(ctx context.Context, stop chan struct{}, sig <-chan os.Sign
 					"no usage reading for "+blind.Round(time.Minute).String())
 				close(stop)
 				d.stopProfiles()
+				d.noteBrowsers()
 				_ = d.save()
 				return fmt.Errorf("blind for %s", blind.Round(time.Second))
 			}
@@ -1333,6 +1392,7 @@ func (d *daemon) run(ctx context.Context, stop chan struct{}, sig <-chan os.Sign
 				d.releaseGhosts(ctx)
 			}
 			d.recordReadings() // the re-attribution polls above
+			d.noteBrowsers()
 			if err := d.save(); err != nil {
 				d.log.Warn("state save failed", "err", err)
 			}

@@ -102,6 +102,19 @@
       "type": "duration"
     },
     {
+      "default": "5m0s",
+      "description": "hold a rotation this long after a session's last Claude in Chrome call (0 = off)",
+      "enum": [],
+      "key": "hold_for_browser",
+      "max": null,
+      "min": 0,
+      "min_exclusive": false,
+      "scopes": [
+        "global"
+      ],
+      "type": "duration"
+    },
+    {
       "default": "10m0s",
       "description": "minimum gap between rotations, to stop flapping",
       "enum": [],

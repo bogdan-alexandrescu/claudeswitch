@@ -106,6 +106,13 @@ After a rotation, **`cooldown`** (10 minutes) must pass before the next.
 With **`switch_when = idle`** a due switch waits for a gap between Claude
 Code's turns, for up to **`max_switch_wait`** (30 seconds), then goes ahead.
 
+A session running a **browser task** is busy too: after its last Claude in
+Chrome call a due switch waits **`hold_for_browser`** (5 minutes), because
+rotating mid task breaks the extension's bridge. That wait is not cut short
+by `max_switch_wait`; only the hard floor goes sooner. `cs why` says so
+(`switch wanted, session busy (browser task 2m ago) — waiting for an idle
+gap`). `hold_for_browser = "0s"` turns it off.
+
 `cs why` prints the decision and the reasoning for each account. The app's
 **Next:** line and `cs plan` show the same. `cs audit --kind decision` lists
 past decisions.

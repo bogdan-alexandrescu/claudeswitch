@@ -13,6 +13,10 @@
 //     only 24 real limit hits. Dedupe by (rateLimitType, resetsAt).
 //   - There are 2,197+ transcript files and new ones appear while running, so
 //     files are watched, never re-read wholesale.
+//
+// From the same reads it notes when each session last called a Claude in
+// Chrome tool (IMPROVEMENTS P4), so the daemon can hold a rotation while a
+// browser task runs.
 package detector
 
 import (
@@ -34,6 +38,24 @@ import (
 
 // marker is the cheap substring test that avoids JSON-parsing every line.
 const marker = `"quotaLimits"`
+
+// BrowserToolPrefix starts the name of every Claude in Chrome tool, as a
+// session's tool_use records it ("mcp__claude-in-chrome__navigate").
+const BrowserToolPrefix = "mcp__claude-in-chrome__"
+
+// browserMarker is the cheap test for a line that may call one: Claude Code
+// writes its records without spaces, so a call carries exactly this. The
+// tool list a session is handed carries it too, so a match is parsed before
+// it counts.
+var browserMarker = []byte(`"name":"` + BrowserToolPrefix)
+
+// Once more than browserSessions sessions have made a browser call, those
+// whose last one is older than browserKeep are forgotten: no sensible hold
+// reaches back a day, and a long-lived daemon's map must not grow forever.
+const (
+	browserKeep     = 24 * time.Hour
+	browserSessions = 64
+)
 
 // Window types as they appear in rateLimitType.
 const (
@@ -104,6 +126,13 @@ type Detector struct {
 
 	// seeded is set once the startup walk has stored what it found (seed).
 	seeded bool
+
+	// browser is, per session (its transcript), the time of the newest
+	// Claude in Chrome call read from it (IMPROVEMENTS P4). Only what the
+	// watcher hands over is read: the startup walk opens no file for it, so
+	// a call made before the daemon started is carried by the daemon's own
+	// state, not found again here (GROUND_TRUTH §50).
+	browser map[string]time.Time
 }
 
 // walkDir walks the transcripts tree; a seam, so a test can hold a walk open.
@@ -128,6 +157,7 @@ func New(root string, log *slog.Logger) *Detector {
 		offsets: map[string]int64{},
 		seen:    map[string]time.Time{},
 		out:     make(chan Rejection, 16),
+		browser: map[string]time.Time{},
 	}
 }
 
@@ -303,6 +333,13 @@ func (d *Detector) scanFile(path string) {
 				needCWD = false
 			}
 		}
+		// A Claude in Chrome call: the same one substring test per line,
+		// and a parse only for the few that pass it.
+		if bytes.Contains(b, browserMarker) {
+			if at, ok := browserCall(b, time.Now()); ok {
+				d.noteBrowser(path, at)
+			}
+		}
 		if !strings.Contains(string(b), marker) {
 			continue
 		}
@@ -343,6 +380,75 @@ func parseQuota(b []byte) []quotaLimit {
 		return many
 	}
 	return nil
+}
+
+// toolLine is the subset of a transcript record that names the tools it
+// calls: an assistant message's content blocks. A person's message has a
+// string there instead, which does not decode as blocks and is skipped.
+//
+// Only an "assistant" record counts. Claude Code also writes
+// "api-request-blob" records, copies of the messages it sends the API, with
+// the same tool_use blocks and no timestamp (seen 2026-10-21: 66 of them
+// beside 536 assistant records calling Claude in Chrome in one session);
+// taken as calls made when read, a copy of an old one would hold a rotation
+// for no browser task at all.
+type toolLine struct {
+	Type      string `json:"type"`
+	Timestamp string `json:"timestamp"`
+	Message   struct {
+		Content json.RawMessage `json:"content"`
+	} `json:"message"`
+}
+
+type toolBlock struct {
+	Type string `json:"type"`
+	Name string `json:"name"`
+}
+
+// browserCall reports whether a transcript record calls a Claude in Chrome
+// tool, and when: the record's own time, or now when it has none or names a
+// time still to come, since a clock running ahead must not stretch a hold.
+// The record's own time, not the time it was read, so a session that copies
+// old records into a new transcript does not look as if it just used the
+// browser.
+func browserCall(b []byte, now time.Time) (time.Time, bool) {
+	var l toolLine
+	if json.Unmarshal(b, &l) != nil || l.Type != "assistant" || len(l.Message.Content) == 0 {
+		return time.Time{}, false
+	}
+	var blocks []toolBlock
+	if json.Unmarshal(l.Message.Content, &blocks) != nil {
+		return time.Time{}, false
+	}
+	for _, c := range blocks {
+		if c.Type != "tool_use" || !strings.HasPrefix(c.Name, BrowserToolPrefix) {
+			continue
+		}
+		at, err := time.Parse(time.RFC3339Nano, l.Timestamp)
+		if err != nil || at.After(now) {
+			at = now
+		}
+		return at, true
+	}
+	return time.Time{}, false
+}
+
+// noteBrowser records a session's browser call, keeping the newest.
+func (d *Detector) noteBrowser(session string, at time.Time) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if at.After(d.browser[session]) {
+		d.browser[session] = at
+	}
+	if len(d.browser) <= browserSessions {
+		return
+	}
+	cut := at.Add(-browserKeep)
+	for s, last := range d.browser {
+		if last.Before(cut) {
+			delete(d.browser, s)
+		}
+	}
 }
 
 // emit publishes a rejection unless it is a retry of one already reported.
@@ -456,6 +562,21 @@ func (d *Detector) LastActivity() time.Time {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.lastWrite
+}
+
+// LastBrowserCall is the newest Claude in Chrome call any session has made
+// that this detector has read, zero when none has (IMPROVEMENTS P4). The
+// daemon holds a rotation hold_for_browser after it.
+func (d *Detector) LastBrowserCall() time.Time {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	var newest time.Time
+	for _, at := range d.browser {
+		if at.After(newest) {
+			newest = at
+		}
+	}
+	return newest
 }
 
 // IdleFor reports whether no transcript has been written for at least dur. A

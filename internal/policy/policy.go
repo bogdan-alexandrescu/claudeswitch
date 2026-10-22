@@ -43,6 +43,16 @@ type Decision struct {
 	// daemon never gives up waiting and swaps mid-turn for one.
 	Failover bool
 
+	// Held says why a switch waits even in an idle gap: a session of the
+	// profile called a Claude in Chrome tool within hold_for_browser
+	// (IMPROVEMENTS P4), as "session busy (browser task 2m ago)". HeldUntil
+	// is when that hold runs out, unless the session uses the browser again.
+	// Empty on anything but a switch that is neither forced nor off a refused
+	// account. The daemon waits it out (max_switch_wait does not cut it
+	// short) and `cs why` says it in the same words (WaitingFor).
+	Held      string
+	HeldUntil time.Time
+
 	// For Wait: which account recovers first, and when.
 	RecoversAccount string
 	RecoversAt      time.Time
@@ -124,6 +134,12 @@ type Input struct {
 	// refreshes the token on the next message — so blind failover holds.
 	// False when unknown (the CLI has no detector), which errs toward holding.
 	SessionBusy bool
+
+	// BrowserAt is the newest Claude in Chrome call the profile's sessions
+	// have made, zero when none is known (IMPROVEMENTS P4): the daemon's
+	// detector or, for the CLI, what the daemon recorded in state. A switch
+	// within hold_for_browser of it is Held. It decides nothing else.
+	BrowserAt time.Time
 
 	// Unavailable names accounts that are not candidates, each with why:
 	// live or maybe live in another profile ("in use by work"), or, for
@@ -270,10 +286,10 @@ func Decide(in Input) Decision {
 			why = a + " is not in this profile's accounts"
 		}
 		if c, ok := bestEligible(all, in); ok {
-			return Decision{Kind: Switch, Target: c.acct.ID, Reason: why}
+			return in.held(Decision{Kind: Switch, Target: c.acct.ID, Reason: why}, false)
 		}
 		if c, ok := bestWithin(all, in, 0, false); ok {
-			return Decision{Kind: Switch, Target: c.acct.ID, Reason: why + shortNote(c, in)}
+			return in.held(Decision{Kind: Switch, Target: c.acct.ID, Reason: why + shortNote(c, in)}, false)
 		}
 		return waiting(all, in, "no account is currently usable"+unavailableNote(all, in))
 	}
@@ -289,7 +305,7 @@ func Decide(in Input) Decision {
 		// account unreadable for long enough is failed over from (A2).
 		switch blind, held := blindness(active, in); {
 		case blind:
-			return failover(all, in, active)
+			return in.held(failover(all, in, active), false)
 		case held != "":
 			return Decision{Kind: Stay, Reason: held}
 		}
@@ -352,7 +368,45 @@ func Decide(in Input) Decision {
 	if e := expiringNote(c, in); e != "" {
 		note += "; " + e
 	}
-	return Decision{Kind: Switch, Target: c.acct.ID, Reason: reason + note, Forced: forced}
+	return in.held(Decision{Kind: Switch, Target: c.acct.ID, Reason: reason + note, Forced: forced}, activeBurnt)
+}
+
+// held marks a switch that a recent Claude in Chrome call holds
+// (IMPROVEMENTS P4): the session counts as busy, as a mid-turn one does, and
+// the switch waits for the hold to run out. Not a forced switch: past the
+// hard floor the wall is worse than a broken browser bridge. Not one off a
+// refused account either: that account serves nothing, the browser task
+// included, so the switch keeps a refusal's timing.
+func (in Input) held(d Decision, refused bool) Decision {
+	if d.Kind != Switch || d.Forced || refused || in.BrowserAt.IsZero() {
+		return d
+	}
+	hold := in.Cfg.BrowserHold()
+	ago := in.Now.Sub(in.BrowserAt)
+	if ago < 0 {
+		ago = 0
+	}
+	if hold <= 0 || ago >= hold {
+		return d
+	}
+	d.Held = "session busy (browser task " + agoText(ago) + " ago)"
+	d.HeldUntil = in.BrowserAt.Add(hold)
+	return d
+}
+
+// agoText is a short time since: seconds under a minute, whole minutes after.
+func agoText(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d/time.Second))
+	}
+	return fmt.Sprintf("%dm", int(d/time.Minute))
+}
+
+// WaitingFor is how a switch waiting on a busy session reads, in the daemon's
+// log and in `cs why` alike: "switch wanted, session busy (browser task 2m
+// ago) — waiting for an idle gap".
+func WaitingFor(busy string) string {
+	return "switch wanted, " + busy + " — waiting for an idle gap"
 }
 
 // PinLifted says why a pin on this account no longer holds (the pin safety

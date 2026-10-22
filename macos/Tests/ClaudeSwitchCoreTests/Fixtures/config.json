@@ -3,6 +3,7 @@
   "blind_failover_polls": "3",
   "cooldown": "10m0s",
   "hard_floor": "98",
+  "hold_for_browser": "5m0s",
   "hot_threshold": "60",
   "landing_margin": "10",
   "max_switch_wait": "30s",

@@ -573,7 +573,7 @@ func TestChromeSwitchNotice(t *testing.T) {
 	}
 	// Only the profile's chrome applies: sign it in.
 	cfg.Profiles[1].Chrome = "Profile 1"
-	want := `Claude in Chrome in "Work" may still be signed in as work-1; sign it in as work-team (cs chrome signin work-team)`
+	want := `Claude in Chrome in "Work" may still be signed in as work-1; sign it in as work-team (cs chrome signin work-team), or give work-team a Chrome profile of its own, which follows rotation by itself (cs chrome add work-team)`
 	if got := chromeSwitchNotice(cfg, st, local, "work", "work-1", "work-team"); got != want {
 		t.Fatalf("profile rule:\n got %q\nwant %q", got, want)
 	}
@@ -608,7 +608,7 @@ func TestDaemonSwitchAsksForASignInWhenOnlyTheProfileMaps(t *testing.T) {
 	for _, il := range r.d.profs {
 		r.d.evaluate(context.Background(), il, "poll")
 	}
-	want := `Claude in Chrome in "Work" may still be signed in as w1; sign it in as w2 (cs chrome signin w2)`
+	want := `Claude in Chrome in "Work" may still be signed in as w1; sign it in as w2 (cs chrome signin w2), or give w2 a Chrome profile of its own, which follows rotation by itself (cs chrome add w2)`
 	var chrome []string
 	for _, s := range r.nt.sent {
 		if strings.Contains(s, "Claude in Chrome") {
@@ -635,7 +635,7 @@ func TestUseChromeNoteNamesTheSignIn(t *testing.T) {
 	cfg.Profiles[1].Chrome = "Profile 1"
 	var out bytes.Buffer
 	useChromeNoteIn(&out, cfg, c2State(t), "work", "work-1", "work-team")
-	if !strings.Contains(out.String(), `Claude in Chrome in "Work" may still be signed in as work-1; sign it in as work-team (cs chrome signin work-team)`) {
+	if !strings.Contains(out.String(), `Claude in Chrome in "Work" may still be signed in as work-1; sign it in as work-team (cs chrome signin work-team), or give work-team a Chrome profile of its own, which follows rotation by itself (cs chrome add work-team)`) {
 		t.Fatalf("use note = %q", out.String())
 	}
 }

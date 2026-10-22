@@ -496,3 +496,31 @@ func runChromeHint(stdin io.Reader, stdout, stderr io.Writer, cfgPath string) in
 	fmt.Fprintln(stderr, msg)
 	return 2
 }
+
+// offerChromePerAccount is setup's offer of a Chrome profile per account
+// (P2): the setup in which Claude in Chrome follows rotation by itself,
+// because the bridge finds the browser signed in as the live account. It
+// is offered, not assumed: each new profile opens Chrome and needs one
+// sign-in. Accounts that have a Chrome profile already are left as they are.
+func offerChromePerAccount(w io.Writer, cfg *config.Config, st *state.State,
+	ask func(prompt string, def bool) bool, add func(id string) error) {
+	if len(cfg.Accounts) < 2 {
+		return
+	}
+	fmt.Fprintf(w, "\n  Claude in Chrome follows a rotation by itself when each account has a\n")
+	fmt.Fprintf(w, "  Chrome profile of its own, signed in once; otherwise the shared one needs\n")
+	fmt.Fprintf(w, "  signing in again after each rotation.\n")
+	if !ask("  Give each account its own Chrome profile now", false) {
+		fmt.Fprintf(w, "    later, one at a time:  claudeswitch chrome add <account>\n")
+		return
+	}
+	for _, a := range cfg.Accounts {
+		if st.ChromeOf(a.ID) != nil {
+			continue
+		}
+		if err := add(a.ID); err != nil {
+			fmt.Fprintf(w, "    %s: %v\n", a.ID, err)
+		}
+	}
+	fmt.Fprintf(w, "    in each window, sign in to claude.ai and to Claude in Chrome as its account\n")
+}

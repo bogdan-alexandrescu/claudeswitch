@@ -1056,3 +1056,20 @@ own copy back), P3 and P5 (show and record the mismatch), P2 (a Chrome
 profile per account as the recommended setup) and P4 (hold a rotation while
 a browser task runs), with P4 a setting that can be turned off. P6 is not
 being built.
+
+**Decided 2026-10-21 (owner), for 0.7.8:** P4 is on by default, holding for
+5 minutes after a session's last `claude-in-chrome` call (`0` turns it off).
+P1 writes the whole `oauthAccount` block from one profile read per swap; if
+the read fails, it writes the identity fields it already knows and fills in
+the rest on the next poll.
+
+**Built for 0.7.8 (2026-10-21):** P1 (`internal/cclogin`; every swap
+rewrites the recorded login from a profile read; the daemon repairs a stray
+or partial one; `cs whoami --sync`), P3 (status line `· login <name> ≠`,
+`cs doctor`), and P5 (`login` audit events, `cs why`). The field mapping was
+checked against a real answer, GROUND_TRUTH §53.
+P2 (setup's offer, the notice's and the banner's "its own Chrome profile",
+the Chrome guide's recommendation) is built for 0.7.8 too.
+P4 is built for 0.7.8 too (`hold_for_browser`, default 5m, 0 off). Owner
+decision, 2026-10-21: only the hard floor ends a hold early; max_switch_wait
+does not. A switch away from a refused account is not held.

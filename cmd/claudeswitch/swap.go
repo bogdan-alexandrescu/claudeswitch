@@ -50,7 +50,21 @@ func swapOptions(cfg *config.Config, profName, outgoing, target string) vault.Sw
 		OutgoingSeat: cfg.SeatOf(outgoing),
 		TargetSeat:   cfg.SeatOf(target),
 		SeatOwner:    cfg.AccountBySeat,
+		Identity:     identityFor(cfg, profName),
 	}
+}
+
+// identityFor is the .claude.json whose recorded login a swap in profName
+// keeps in step (P1): the one Claude Code in that profile reads. "" when the
+// profile is unknown. Paths only: profile.Resolve would also look the
+// profile's keychain item up, which a swap has no need of. A seam.
+var identityFor = func(cfg *config.Config, profName string) string {
+	for _, in := range cfg.EffectiveProfiles() {
+		if in.Name == profName {
+			return identityPathOf(in)
+		}
+	}
+	return ""
 }
 
 // freshenTarget refreshes a swap target whose access token expires within

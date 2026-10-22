@@ -593,6 +593,14 @@ func cmdAudit(args []string) error {
 		case "error":
 			kind = render.Bad("error")
 			detail = truncateStr(e.Err, 56)
+		case "login":
+			// Claude Code's recorded login lined up with the live account
+			// (IMPROVEMENTS P1, P5): why Claude in Chrome would not connect.
+			kind = render.Warn("login")
+			detail = nonEmpty(e.From, "?") + " → " + render.Bold(e.To)
+			if e.Profile != "" && e.Profile != config.DefaultProfile {
+				detail = e.Profile + ": " + detail
+			}
 		}
 		if e.DryRun {
 			detail += render.Dim("  [dry-run]")
@@ -868,7 +876,7 @@ func runDoctorTo(stdout io.Writer, cfgPath string, deep bool, rep *doctorReport)
 	}
 
 	if cfg != nil {
-		doctorProfiles(w, cfg, deps.resolve)
+		doctorProfiles(w, cfg, deps.resolve, activeOf(cfg, dupState))
 	}
 
 	root := detector.ProjectsRoot()
@@ -2433,6 +2441,12 @@ func statuslineBody(cfg *config.Config, st *state.State) error {
 			parts = append(parts, slPaint(ansiAmber, "· read "+slAge(age)+" ago", colour))
 		}
 	}
+	// Claude Code "logged in as" another account than the one it uses is
+	// why Claude in Chrome refuses to connect (P3). A swap lines the two up;
+	// this shows when one did not.
+	if rec, differs, _ := loginOf(cfg, view.in, active); differs {
+		parts = append(parts, slPaint(ansiAmber, "· login "+loginName(rec)+" ≠", colour))
+	}
 
 	fmt.Print(strings.Join(parts, "  "))
 	return nil
@@ -2451,6 +2465,8 @@ func cmdWhoami(args []string) error {
 	fs := flag.NewFlagSet("whoami", flag.ExitOnError)
 	cfgPath := fs.String("config", "", "path to config.toml")
 	profName := fs.String("profile", "", profileFlagHelp)
+	syncLogin := fs.Bool("sync", false, "also record this login as the one Claude Code is logged in as "+
+		"(its .claude.json), which Claude in Chrome checks")
 	parseInterleaved(fs, args)
 
 	cfg, cerr := config.Load(*cfgPath)
@@ -2495,11 +2511,15 @@ func cmdWhoami(args []string) error {
 	}
 
 	seat := ""
-	if pr, perr := vault.New(logger(false)).Identify(ctx, blob.ClaudeAIOAuth.AccessToken); perr == nil {
+	pr, perr := vault.New(logger(false)).Identify(ctx, blob.ClaudeAIOAuth.AccessToken)
+	if perr == nil {
 		seat = pr.Seat()
 		fmt.Printf("  signed in as  %s (%s)\n", pr.Account.Email, pr.Account.Name)
 		fmt.Printf("  account uuid  %s   <- this is the quota pool, not the org\n", pr.Account.UUID)
 		fmt.Printf("  organization  %s  %s\n", pr.Organization.Name, shortID(pr.Organization.UUID))
+	}
+	if *syncLogin {
+		whoamiSync(target, pr, perr)
 	}
 	fmt.Printf("  live credential belongs to organization %s\n", u.OrgID)
 	if cachedOrgName != "" {
@@ -4150,6 +4170,11 @@ func cmdSetup(args []string) error {
 			fmt.Printf("    %v\n", err)
 		}
 	}
+	if chromeSupported(chromeGOOS) {
+		offerChromePerAccount(os.Stdout, cfg, st, askYes, func(id string) error {
+			return runChrome(os.Stdout, os.Stderr, []string{"add", id, "--config", *cfgPath})
+		})
+	}
 	if !pluginInstalled() {
 		fmt.Printf("\n  For quota context and /cs skills inside Claude Code:\n")
 		fmt.Printf("    /plugin marketplace add https://github.com/bogdan-alexandrescu/claudeswitch\n")
@@ -4414,6 +4439,10 @@ func decisionJSON(d policy.Decision) map[string]any {
 	}
 	if d.Unpin != "" {
 		m["unpin"] = d.Unpin // IMPROVEMENTS F3: the pin this decision lifts
+	}
+	if d.Held != "" {
+		// IMPROVEMENTS P4: the switch waits for a browser task, until then.
+		m["held"], m["held_until"] = d.Held, d.HeldUntil
 	}
 	return m
 }

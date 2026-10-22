@@ -18,6 +18,7 @@ import (
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/detector"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/keychain"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/state"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/usage"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/vault"
 )
 
@@ -112,6 +113,13 @@ type fakeVault struct {
 	// onCall, when set, runs at the start of every swap, holds check and
 	// refresh, with the op's name: a test can look at what is held then.
 	onCall func(op string)
+	// loginSyncs is every SyncLogin asked for (P1).
+	loginSyncs []loginSync
+}
+
+func (f *fakeVault) SyncLogin(_ context.Context, path, id, token string, _ usage.Priority) (bool, error) {
+	f.loginSyncs = append(f.loginSyncs, loginSync{path, id, token})
+	return true, nil
 }
 
 func (f *fakeVault) called(op string) {
@@ -206,7 +214,9 @@ type fakeDet struct {
 	last time.Time
 	// unseeded is a detector still on its startup walk.
 	unseeded bool
-	out      chan detector.Rejection
+	// browser is the last Claude in Chrome call it has seen (P4).
+	browser time.Time
+	out     chan detector.Rejection
 	// runs and exits count Run's starts and returns.
 	runs, exits atomic.Int32
 }
@@ -222,6 +232,7 @@ func (f *fakeDet) IdleFor(time.Duration) bool            { return f.idle }
 func (f *fakeDet) LastActivity() time.Time               { return f.last }
 func (f *fakeDet) WorstLatency() time.Duration           { return 0 }
 func (f *fakeDet) Seeded() bool                          { return !f.unseeded }
+func (f *fakeDet) LastBrowserCall() time.Time            { return f.browser }
 
 type fakeAudit struct {
 	mu     sync.Mutex

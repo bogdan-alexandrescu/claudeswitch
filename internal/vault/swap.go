@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/cclock"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/cclogin"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/keychain"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/usage"
 )
@@ -43,6 +45,9 @@ type SwapOptions struct {
 	TargetSeat string
 	// LockWait bounds the wait for Claude Code's lock; 0 is cclock.DefaultWait.
 	LockWait time.Duration
+	// Identity is the profile's .claude.json, whose recorded login a swap
+	// brings in line with the account it installs (P1); "" leaves it alone.
+	Identity string
 }
 
 // SwapToIn is SwapTo against one profile's live credential, knowing nothing
@@ -164,12 +169,14 @@ func (v *Vault) SwapToWith(ctx context.Context, item keychain.Live, accountID, e
 		// Claude Code renews it on first use; the swap stands, unverified.
 		v.log.Info("swap installed without verifying: the incoming access token has expired, "+
 			"and Claude Code renews it on first use", "account", accountID)
+		v.recordLogin(ctx, o, accountID, incoming.AccessToken)
 		return &SwapResult{AccountID: accountID}, nil
 	case verr != nil:
 		if _, ok := usage.IsRateLimited(verr); ok {
 			// The credential is installed and may well be fine; we simply cannot
 			// prove it right now. Say so rather than roll back a good swap.
 			v.log.Warn("swap installed but could not be verified", "account", accountID, "why", verr)
+			v.recordLogin(ctx, o, accountID, incoming.AccessToken)
 			return &SwapResult{AccountID: accountID}, nil
 		}
 		return v.rollback(ctx, item, &snapshot, merged, accountID, o.LockWait,
@@ -182,6 +189,7 @@ func (v *Vault) SwapToWith(ctx context.Context, item keychain.Live, accountID, e
 	v.log.Info("swapped account", "account", accountID, "org", u.OrgID,
 		"five_hour", u.FiveHour.Pct(), "seven_day", u.SevenDay.Pct(),
 		"mcp_preserved", len(merged.MCPOAuth) > 0)
+	v.recordLogin(ctx, o, accountID, incoming.AccessToken)
 	return &SwapResult{AccountID: accountID, OrgID: u.OrgID, Usage: u,
 		LiveKey: usage.CredKey(incoming.AccessToken)}, nil
 }
@@ -427,4 +435,55 @@ func liveWorse(vaulted, live *keychain.OAuth) string {
 		return "the vaulted access token outlives the live one"
 	}
 	return ""
+}
+
+// recordLogin brings the profile's recorded login in line with the account a
+// swap installed. It never fails the swap: the credential is what counts,
+// and the daemon completes or repairs the block on a later poll.
+func (v *Vault) recordLogin(ctx context.Context, o SwapOptions, accountID, token string) {
+	if o.Identity == "" {
+		return
+	}
+	full, err := v.SyncLogin(ctx, o.Identity, accountID, token, usage.Swap)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		// The profile has not run Claude Code yet: nothing records a login.
+	case err != nil:
+		v.log.Warn("could not record the new login for Claude Code", "account", accountID,
+			"file", o.Identity, "why", err)
+	case !full:
+		v.log.Info("recorded the new login's identity for Claude Code; the rest follows on a later poll",
+			"account", accountID)
+	}
+}
+
+// SyncLogin brings the login Claude Code records at path (a profile's
+// .claude.json) in line with accountID, whose token is live in that profile
+// (P1). One profile read with the token fills the whole block, as Claude
+// Code's own sign-in would; when it cannot be made, the identity the vault
+// recorded goes in, marked partial, and full is false. A profile with no
+// .claude.json is an error wrapping os.ErrNotExist, and nothing is made.
+func (v *Vault) SyncLogin(ctx context.Context, path, accountID, token string, p usage.Priority) (full bool, err error) {
+	prev, err := cclogin.Block(path)
+	if err != nil {
+		return false, err
+	}
+	var block map[string]any
+	if pr, perr := v.identify(ctx, token, p); perr == nil && len(pr.Raw) > 0 {
+		if block, err = cclogin.FromProfile(pr.Raw, prev, time.Now()); err == nil {
+			full = true
+		}
+	}
+	if !full {
+		l := cclogin.Login{}
+		if e, rerr := readEntry(accountID); rerr == nil && e.Meta != nil {
+			l = cclogin.Login{AccountUUID: e.Meta.AccountUUID, Email: e.Meta.Email, OrgUUID: e.Meta.OrgID,
+				OrgName: e.Meta.OrgName}
+		}
+		if l.AccountUUID == "" {
+			return false, fmt.Errorf("neither the profile nor the vault says who %s is", accountID)
+		}
+		block = cclogin.IdentityOnly(l, prev)
+	}
+	return full, cclogin.Write(path, block)
 }

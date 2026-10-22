@@ -96,6 +96,7 @@ func TestWriteKeepsEverySetting(t *testing.T) {
 		Prefer:             PreferExpiring,
 		Cooldown:           Duration{7 * time.Minute},
 		MaxSwitchWait:      Duration{45 * time.Second},
+		HoldForBrowser:     &Duration{}, // 0 is a value, not "unset": the hold turned off
 		AutoRefresh:        &off,
 		RefreshWindow:      Duration{2 * time.Hour},
 		RefreshProbe:       Duration{12 * time.Hour},

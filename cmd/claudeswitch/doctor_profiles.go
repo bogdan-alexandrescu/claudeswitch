@@ -38,7 +38,7 @@ func doctorExit(failures int) error {
 // reports whether anything failed: a missing dir or an unresolved live item.
 // An empty pool is a warning and does not count.
 func doctorProfiles(w io.Writer, cfg *config.Config,
-	resolve func(config.Profile) (profile.Resolved, error)) bool {
+	resolve func(config.Profile) (profile.Resolved, error), active func(string) string) bool {
 	failed := false
 	mark := func(ok bool) string {
 		if ok {
@@ -92,6 +92,18 @@ func doctorProfiles(w io.Writer, cfg *config.Config,
 			fmt.Fprintf(w, "         └ pool        empty — this profile has no account to rotate to\n")
 		} else {
 			fmt.Fprintf(w, "         └ pool        %s\n", strings.Join(r.Pool, ", "))
+		}
+		// The login Claude Code records, when there is one to read: a login
+		// for another account than the live one keeps Claude in Chrome from
+		// connecting (P3). A warning, never a failure: the credential works.
+		if active != nil {
+			acct := active(in.Name)
+			if rec, differs, known := loginOf(cfg, in, acct); known && differs {
+				fmt.Fprintf(w, "         └ login       %s — not the live account %s, so Claude in Chrome will not "+
+					"connect; line them up with: claudeswitch whoami --sync --profile %s\n", rec.Email, acct, in.Name)
+			} else if known {
+				fmt.Fprintf(w, "         └ login       %s (%s)\n", rec.Email, acct)
+			}
 		}
 		if in.SwitchAt > 0 || in.SwitchAtWeekly > 0 || in.HardFloor > 0 {
 			fmt.Fprintf(w, "         └ thresholds  switch_at %g · switch_at_weekly %g · hard_floor %g\n",

@@ -42,6 +42,10 @@ several profiles it starts with the profile's name, as in `work: work-team`.
 - A refused account reads `personal  refused until 14:30  week ...`.
 - After a switch is due the line says what happens next, and
   `· read 12m ago` means the readings have stopped moving.
+- `· login lab3 ≠` means Claude Code in this profile is logged in as
+  another account than the one it uses, so Claude in Chrome will not connect.
+  Every swap lines the two up, and the daemon puts a stray one right on its
+  next poll; `cs whoami --sync` does it now.
 - `⚠ daemon outdated` at the end means the running daemon is older than this
   binary: restart it.
 

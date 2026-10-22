@@ -7,7 +7,7 @@ stands, and hot-swaps Claude Code onto a fresh account before the current one
 hits its limit: no restart, no lost session. It ships as a Go CLI plus daemon
 (macOS and Linux), a native macOS menu-bar app and a Claude Code plugin.
 
-Latest release: **v0.7.7**
+Latest release: **v0.7.8**
 ([releases](https://github.com/bogdan-alexandrescu/claudeswitch/releases)).
 
 <p align="center"><img src="docs/images/popover.png" width="384" alt="The ClaudeSwitch menu-bar popover: the daemon is live, the default profile is on work-1 and the work profile is on work-team"></p>
@@ -136,7 +136,7 @@ arm64, and a `checksums.txt`. The archives are reproducible: the same tag
 always produces the same bytes.
 
 ```sh
-VERSION=v0.7.7
+VERSION=v0.7.8
 TARGET=darwin_arm64            # darwin_amd64, linux_amd64, linux_arm64
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 curl -LO "$BASE/claudeswitch_${VERSION}_${TARGET}.tar.gz"
@@ -162,7 +162,7 @@ cd claudeswitch
 symlink, and installs the daemon in dry-run (see [Daemon](#daemon)). To build
 the binary alone: `go build -o bin/claudeswitch ./cmd/claudeswitch`.
 
-**Verify it worked:** `cs version` prints `claudeswitch v0.7.7` for the release
+**Verify it worked:** `cs version` prints `claudeswitch v0.7.8` for the release
 binary (a build from source prints `claudeswitch dev`). If the shell cannot
 find `cs`, add `~/.local/bin` to your `PATH`.
 
@@ -233,7 +233,7 @@ Re-run it after pulling to update.
 From a release, as a universal build:
 
 ```sh
-VERSION=v0.7.7
+VERSION=v0.7.8
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 ZIP="ClaudeSwitch-${VERSION#v}-macos.zip"
 curl -LO "$BASE/$ZIP"
@@ -259,7 +259,7 @@ to install it. [macos/README.md](macos/README.md) has the details.
 
 **Verify it worked:** the Twin rings glyph with the live account and its
 utilization appears in the menu bar, and **About ClaudeSwitch** in its ⋯ menu
-shows version 0.7.7. If you see nothing on a MacBook with a notch, see
+shows version 0.7.8. If you see nothing on a MacBook with a notch, see
 [Troubleshooting](#troubleshooting).
 
 ### Claude Code plugin
@@ -490,7 +490,7 @@ to, so nothing can rotate there until you sign in to it again
 
 ### Claude in Chrome on the card
 
-<p align="center"><img src="docs/images/popover-chrome-signin.png" width="384" alt="The work profile's card after a rotation from work-1 to work-team: an amber banner says Claude in Chrome in &quot;Work&quot; may still be signed in as work-1, with a Sign in as work-team button"></p>
+<p align="center"><img src="docs/images/popover-chrome-signin.png" width="384" alt="The work profile's card after a rotation from work-1 to work-team: an amber banner says Claude in Chrome in &quot;Work&quot; may still be signed in as work-1, with a Sign in as work-team button, a Give work-team its own Chrome profile link and a close button"></p>
 
 When a profile's accounts share one Chrome profile, the Claude in Chrome
 extension there stays signed in to the account before a rotation. The card
@@ -804,6 +804,7 @@ restart.
 | `hard_floor` | `99` | above this, swap mid-turn rather than wait for an idle gap |
 | `switch_when` | `idle` | `idle` swaps between turns; `immediate` does not wait |
 | `max_switch_wait` | `30s` | how long a due switch waits for an idle gap |
+| `hold_for_browser` | `5m` | a due switch waits this long after a session's last Claude in Chrome call, so a browser task is not cut off; only the hard floor goes sooner; `0s` turns it off |
 | `cooldown` | `10m` | minimum gap between rotations |
 | `landing_margin` | `10` | a switch target's session window needs this many points of room below `switch_at`, so it is not left again at once; `0` turns it off |
 | `models` | `[]` | models whose per-model weekly limit counts like the weekly window; empty means those limits are shown, never acted on |

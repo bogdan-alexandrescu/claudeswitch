@@ -169,6 +169,21 @@ eligible account whose weekly window resets soonest while it still has quota
 unused, room breaking ties. Eligibility is the same either way. It also
 decides `why --json`'s `best`.
 
+**`hold_for_browser`** (additive, IMPROVEMENTS P4) is in `config --json`,
+`config get`/`set` and `config schema` (listed right after
+`max_switch_wait`; Settings → Rotation). Global only:
+
+```json
+{"key": "hold_for_browser", "type": "duration", "default": "5m0s", "min": 0, "max": null,
+ "min_exclusive": false, "enum": [], "scopes": ["global"],
+ "description": "hold a rotation this long after a session's last Claude in Chrome call (0 = off)"}
+```
+
+A due switch waits until this long after a session's last Claude in Chrome
+call; `max_switch_wait` does not cut it short, and only a forced switch
+(past `hard_floor`) goes sooner. `0s` turns it off. A negative value is
+`invalid_value`.
+
 A config may still carry account `scope` lines and `[project.…]` tables
 from before lane 16. It loads: they are ignored, and commands that load the
 config print one warning naming them (the daemon logs it at start and when
@@ -554,6 +569,17 @@ in its log, a notification and the audit log:
 {"at": "…", "kind": "unpin", "profile": "work", "from": "w1", "reason": "pin on w1 lifted: it was refused"}
 ```
 
+When the daemon lines up the login Claude Code records with the live account
+(IMPROVEMENTS P1, P5), the audit log gains a `login` event (additive kind):
+
+```json
+{"at": "…", "kind": "login", "profile": "default", "from": "lab3@example.com", "to": "ai-eng-2",
+ "reason": "Claude Code was logged in as lab3@example.com, not ai-eng-2"}
+```
+
+A dry-run daemon writes it once per mismatch, with `"dry_run": true`, and
+changes nothing.
+
 A dry-run daemon lifts nothing; it writes that row once with `"dry_run":
 true`. `--hard` (`pin_hard: true`) keeps the pin even then, as every pin did
 before; a plain `pin` replaces a hard one, and `unpin` clears both. While a
@@ -755,6 +781,16 @@ read from config and state alone. With one profile:
 `{"profiles": [{"profile", "pool", "thresholds", "decision", "accounts",
 "best", "best_why", "on_best", "active_room", "best_room", "current"?}]}`. (Before contract 2 both shapes also
 carried `dir`, the working directory project rules were judged against.)
+
+**A switch held for a browser task** (additive, IMPROVEMENTS P4). When a
+session of the profile called a Claude in Chrome tool within
+`hold_for_browser`, the daemon waits before a switch that is neither forced
+nor off a refused account, and `decision` carries why and until when:
+`"held": "session busy (browser task 2m ago)"` and `"held_until"`, the
+time the hold runs out unless the session uses the browser again. Both are
+absent otherwise. `kind` stays `switch`: it is the switch that will be
+made. The daemon records the last call in state.json (`browser_at`, per
+profile), which is where `why` reads it.
 
 **Shared pools** (additive, D34). In a profile's `accounts`, an account
 state records live in another profile is never a candidate: `eligible`

@@ -62,6 +62,12 @@ const (
 	DefaultHotThreshold = 60.0
 )
 
+// DefaultHoldForBrowser is how long after a session's last Claude in Chrome
+// call a rotation of its profile waits (IMPROVEMENTS P4, owner decision
+// 2026-10-21). A rotation mid browser task breaks the extension's bridge, and
+// five minutes covers the pause between one browser step and the next.
+const DefaultHoldForBrowser = 5 * time.Minute
+
 type Account struct {
 	ID    string `toml:"id"`
 	Label string `toml:"label"`
@@ -404,6 +410,14 @@ func (c *Config) BlindPolls() int {
 	return *c.BlindFailoverPolls
 }
 
+// BrowserHold is hold_for_browser, or its default; zero means off.
+func (c *Config) BrowserHold() time.Duration {
+	if c.HoldForBrowser == nil {
+		return DefaultHoldForBrowser
+	}
+	return c.HoldForBrowser.Duration
+}
+
 func (a Account) Seat() string {
 	if a.AccountUUID == "" || a.OrgID == "" {
 		return ""
@@ -428,6 +442,14 @@ type Config struct {
 	// approaching — the transcript never goes quiet and the switch would be
 	// deferred all the way to the hard floor. Observed 2026-09-10 at 85%.
 	MaxSwitchWait Duration `toml:"max_switch_wait"`
+	// HoldForBrowser counts a session that called a Claude in Chrome tool
+	// this recently as busy, so a rotation waits for it (IMPROVEMENTS P4):
+	// swapping the credential in the middle of a browser task breaks the
+	// extension's bridge. Unlike a mid-turn wait, max_switch_wait does not
+	// cut it short; only a forced switch (the hard floor) does. Nil means
+	// DefaultHoldForBrowser; zero is a real value and turns the hold off.
+	// Read it through BrowserHold().
+	HoldForBrowser *Duration `toml:"hold_for_browser"`
 
 	// LandingMargin is the room, in points below the session trigger, a switch
 	// target's 5-hour window must have (IMPROVEMENTS A1). Nil means DefaultLandingMargin; zero
@@ -833,6 +855,9 @@ func (c *Config) validateRest() error {
 	if c.RefreshWindow.Duration < 0 || c.RefreshProbe.Duration < 0 {
 		return fmt.Errorf("refresh_window and refresh_probe cannot be negative")
 	}
+	if h := c.BrowserHold(); h < 0 {
+		return fmt.Errorf("hold_for_browser cannot be negative (0 turns the hold off), got %s", h)
+	}
 	if c.RefreshEnabled() && c.RefreshWindow.Duration == 0 {
 		return fmt.Errorf("refresh_window must be set when auto_refresh is on " +
 			"(a zero window would refresh on every check)")
@@ -985,6 +1010,10 @@ func (c *Config) Write(path string) error {
 		"poll_hot only above this (or burning fast), and only while moving toward the trigger")
 	dur("cooldown", c.Cooldown, def.Cooldown, "anti-flap")
 	dur("max_switch_wait", c.MaxSwitchWait, def.MaxSwitchWait, "stop waiting for an idle gap after this")
+	// Not through dur, which takes a zero for unset: here a zero is the hold
+	// turned off, and is written as one.
+	line("hold_for_browser", c.HoldForBrowser != nil, fmt.Sprintf("%q", c.BrowserHold().String()),
+		"after a session's last Claude in Chrome call, hold a rotation this long; 0 turns it off")
 	line("landing_margin", c.LandingMargin != nil, fmt.Sprintf("%g", c.Margin()),
 		"a switch target's 5-hour window needs this much room below its trigger")
 	// Written only once chosen, so a config without it reads back unchanged.

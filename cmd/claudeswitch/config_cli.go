@@ -126,6 +126,17 @@ func settings() []setting {
 			get:  func(c *config.Config) string { return c.MaxSwitchWait.String() },
 			set:  durSetter(func(c *config.Config) *config.Duration { return &c.MaxSwitchWait }),
 			help: "stop waiting for an idle gap after this"},
+		// IMPROVEMENTS P4: global only, like the other timing settings.
+		{name: "hold_for_browser", kind: "duration", min: num(0),
+			get: func(c *config.Config) string { return c.BrowserHold().String() },
+			set: func(c *config.Config, v string) error {
+				d, err := time.ParseDuration(strings.TrimSpace(v))
+				if err != nil {
+					return fmt.Errorf("%q is not a duration (try 90s, 5m, 2h)", v)
+				}
+				c.HoldForBrowser = &config.Duration{Duration: d}
+				return nil
+			}, help: "hold a rotation this long after a session's last Claude in Chrome call (0 = off)"},
 		{name: "cooldown", kind: "duration", min: num(0),
 			get:  func(c *config.Config) string { return c.Cooldown.String() },
 			set:  durSetter(func(c *config.Config) *config.Duration { return &c.Cooldown }),

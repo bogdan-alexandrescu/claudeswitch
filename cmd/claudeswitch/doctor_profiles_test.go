@@ -67,7 +67,7 @@ pool = ["w1", "w2"]
 		}
 	}
 	var b strings.Builder
-	failed := doctorProfiles(&b, cfg, resolve)
+	failed := doctorProfiles(&b, cfg, resolve, nil)
 	out := b.String()
 	if !failed {
 		t.Errorf("a missing dir and an unresolved item are failures:\n%s", out)
@@ -106,7 +106,7 @@ dir  = "~/.claude-spare"
 			Service: "svc", Pool: in.Pool}, nil
 	}
 	var b strings.Builder
-	doctorProfiles(&b, cfg, resolve)
+	doctorProfiles(&b, cfg, resolve, nil)
 	if !strings.Contains(b.String(), "empty") {
 		t.Errorf("a profile with no accounts cannot rotate, doctor must say so:\n%s", b.String())
 	}
@@ -135,7 +135,7 @@ dir  = "~/.claude-spare"
 			Service: "svc", Pool: in.Pool}, nil
 	}
 	var b strings.Builder
-	if doctorProfiles(&b, cfg, resolve) {
+	if doctorProfiles(&b, cfg, resolve, nil) {
 		t.Fatalf("an empty pool is a warning, not a failure:\n%s", b.String())
 	}
 }

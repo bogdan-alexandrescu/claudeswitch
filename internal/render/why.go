@@ -32,8 +32,11 @@ func Why(out io.Writer, o WhyOptions) {
 	switch o.Decision.Kind {
 	case policy.Switch:
 		verb := "rotating to"
-		if o.Decision.Forced {
+		switch {
+		case o.Decision.Forced:
 			verb = "switching immediately to"
+		case o.Decision.Held != "":
+			verb = "waiting to rotate to"
 		}
 		fmt.Fprintf(out, "  %s %s\n", paint(glacier, verb), paint(bold, o.Decision.Target))
 	case policy.Wait:
@@ -42,6 +45,15 @@ func Why(out io.Writer, o WhyOptions) {
 		fmt.Fprintf(out, "  %s\n", paint(meltwater, "staying put"))
 	}
 	fmt.Fprintf(out, "  %s\n", paint(grey, o.Decision.Reason))
+
+	// A browser task holds the switch (IMPROVEMENTS P4), in the daemon's
+	// words, and until when.
+	if o.Decision.Held != "" {
+		fmt.Fprintf(out, "  %s\n", paint(amber, policy.WaitingFor(o.Decision.Held)))
+		fmt.Fprintf(out, "  %s\n", paint(grey, fmt.Sprintf(
+			"held until %s, %s after the last browser call (hold_for_browser); past the %.0f%% hard floor it goes at once",
+			o.Decision.HeldUntil.Local().Format("15:04"), shortDur(o.Cfg.BrowserHold()), o.Cfg.HardFloor)))
+	}
 
 	if !o.Decision.RecoversAt.IsZero() {
 		fmt.Fprintf(out, "  %s\n", paint(grey, fmt.Sprintf("%s frees up in %s, at %s",

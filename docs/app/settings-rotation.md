@@ -4,7 +4,7 @@ When an account is rotated away from, and where to: the global rotation settings
 
 See also: [cs config](../cli/config.md) · [Concepts → how rotation decides](../concepts.md#how-rotation-decides) · [GUIDE → Configuration](../GUIDE.md#configuration)
 
-<p align="center"><img src="../images/settings-rotation.png" width="880" alt="Settings, Rotation pane: Switch at session, Switch at week, Hard floor, Switch when, Max switch wait, Cooldown, Landing margin and Count model limits, each with its description, default and range"></p>
+<p align="center"><img src="../images/settings-rotation.png" width="880" alt="Settings, Rotation pane: Switch at session, Switch at week, Hard floor, Switch when, Max switch wait, Hold for browser, Cooldown, Landing margin and Count model limits, each with its description, default and range"></p>
 
 Every row is one `cs config` setting. The app builds the pane from
 `cs config schema --json`, so the label, description, default and range below
@@ -22,6 +22,7 @@ ones marked "per profile" in [Settings → Profiles](settings-profiles.md).
 | **Switch when** | `switch_when` | `idle` prefers swapping between turns; `immediate` does not wait | idle | idle, immediate |
 | **Spend first** | `prefer` | which eligible account rotation moves to: **Most room**, or **Expiring quota**, the account whose weekly window resets soonest while it still has unused quota (ties go to room). Per profile. Hidden with a CLI that predates it | Most room (`room`) | room, expiring |
 | **Max switch wait** | `max_switch_wait` | stop waiting for an idle gap after this | 30s | at least 0s |
+| **Hold for browser** | `hold_for_browser` | hold a rotation this long after a session's last Claude in Chrome call (0 = off). Hidden with a CLI that predates it | 5m | at least 0s |
 | **Cooldown** | `cooldown` | minimum gap between rotations, to stop flapping | 10m | at least 0s |
 | **Landing margin** | `landing_margin` | a switch target needs this many points below its own trigger (0 = off). Per profile | 10 | 0 to 50 |
 | **Count model limits** | `models` | models whose per-model weekly limit counts like the weekly window (comma-separated; empty = none). Per profile | none | |

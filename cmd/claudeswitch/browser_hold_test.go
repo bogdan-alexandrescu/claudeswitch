@@ -1,0 +1,260 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"os"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
+)
+
+// IMPROVEMENTS P4 (owner decision 2026-10-21): rotating a profile while one
+// of its sessions runs a Claude in Chrome task breaks the browser bridge. A
+// session that called a Claude in Chrome tool within hold_for_browser (5
+// minutes unless set) counts as busy: the rotation waits for the hold to run
+// out, still goes at once past the hard floor, and hold_for_browser = 0 is
+// the behaviour before.
+
+// browserRig is one profile on a, over its 85% trigger, beside b with room;
+// the transcripts are quiet, so without a browser call it would swap now.
+func browserRig(t *testing.T, cfg *config.Config) *rig {
+	t.Helper()
+	r := newRig(t, cfg, true)
+	r.d.st.Default().SetActive("a")
+	put(r.d.st, "a", 90)
+	put(r.d.st, "b", 10)
+	return r
+}
+
+func TestDaemonHoldsARotationWhileABrowserTaskRuns(t *testing.T) {
+	r := browserRig(t, testCfg())
+	det, il := r.dets["default"], r.d.profs[0]
+	det.browser = time.Now().Add(-2*time.Minute - 10*time.Second)
+	r.d.evaluate(context.Background(), il, "poll")
+	if swaps := r.v.ops("swap"); len(swaps) != 0 {
+		t.Fatalf("swapped two minutes after a browser call: %+v", swaps)
+	}
+	want := "switch wanted, session busy (browser task 2m ago) — waiting for an idle gap"
+	if !strings.Contains(r.logs.String(), want) {
+		t.Fatalf("log lacks %q:\n%s", want, r.logs.String())
+	}
+
+	// max_switch_wait (90s here) does not cut the hold short: the hold is
+	// the wait, and only the hard floor overrides it.
+	il.wantSwitchSince = time.Now().Add(-time.Hour)
+	r.d.evaluate(context.Background(), il, "poll")
+	if swaps := r.v.ops("swap"); len(swaps) != 0 {
+		t.Fatalf("max_switch_wait ended a browser hold: %+v", swaps)
+	}
+
+	// Five minutes after the last call the hold is over. (The call moves
+	// back in the state too: the daemon only ever records a later one.)
+	det.browser = time.Now().Add(-5*time.Minute - time.Second)
+	r.d.st.Default().BrowserAt = det.browser
+	r.d.evaluate(context.Background(), il, "poll")
+	if swaps := r.v.ops("swap"); len(swaps) != 1 || swaps[0].account != "b" {
+		t.Fatalf("after the hold: swaps = %+v, want one into b", swaps)
+	}
+}
+
+func TestDaemonABrowserHoldStillGoesAtTheHardFloor(t *testing.T) {
+	r := browserRig(t, testCfg())
+	put(r.d.st, "a", 97) // testCfg's hard floor is 96
+	r.dets["default"].browser = time.Now().Add(-10 * time.Second)
+	r.d.evaluate(context.Background(), r.d.profs[0], "poll")
+	if swaps := r.v.ops("swap"); len(swaps) != 1 || swaps[0].account != "b" {
+		t.Fatalf("past the hard floor: swaps = %+v, want one into b at once", swaps)
+	}
+}
+
+func TestDaemonWithHoldForBrowserZeroRotatesAsBefore(t *testing.T) {
+	cfg := testCfg()
+	cfg.HoldForBrowser = &config.Duration{}
+	r := browserRig(t, cfg)
+	r.dets["default"].browser = time.Now().Add(-10 * time.Second)
+	r.d.evaluate(context.Background(), r.d.profs[0], "poll")
+	if swaps := r.v.ops("swap"); len(swaps) != 1 || swaps[0].account != "b" {
+		t.Fatalf("hold_for_browser = 0: swaps = %+v, want one into b at once", swaps)
+	}
+	if strings.Contains(r.logs.String(), "browser task") {
+		t.Fatalf("hold_for_browser = 0 still spoke of a browser task:\n%s", r.logs.String())
+	}
+}
+
+// A refused account serves nothing, the browser task included, so a refusal
+// keeps today's timing.
+func TestDaemonABrowserHoldDoesNotDelayARefusal(t *testing.T) {
+	r := browserRig(t, testCfg())
+	put(r.d.st, "a", 50)
+	a := r.d.st.Accounts["a"]
+	a.BurntTil, a.BurntWin = time.Now().Add(time.Hour), "five_hour"
+	r.dets["default"].browser = time.Now().Add(-10 * time.Second)
+	r.d.evaluate(context.Background(), r.d.profs[0], "poll")
+	if swaps := r.v.ops("swap"); len(swaps) != 1 || swaps[0].account != "b" {
+		t.Fatalf("refused, browser busy, transcripts quiet: swaps = %+v, want one into b at once", swaps)
+	}
+}
+
+func TestDaemonHoldsABlindFailoverForABrowserTask(t *testing.T) {
+	r := blindRig(t, 3)
+	r.dets["default"].browser = time.Now().Add(-3*time.Minute - 5*time.Second)
+	r.d.evaluate(context.Background(), r.d.profs[0], "poll")
+	if swaps := r.v.ops("swap"); len(swaps) != 0 {
+		t.Fatalf("failed over during a browser task: %+v", swaps)
+	}
+	want := "blind failover wanted, session busy (browser task 3m ago) — waiting for an idle gap, never mid-turn"
+	if !strings.Contains(r.logs.String(), want) {
+		t.Fatalf("log lacks %q:\n%s", want, r.logs.String())
+	}
+}
+
+// The daemon records the last call in its state: `cs why` reads it there, and
+// a restarted daemon, whose detector has not seen the call, keeps holding.
+func TestDaemonRecordsTheLastBrowserCallAndARestartKeepsHolding(t *testing.T) {
+	r := browserRig(t, testCfg())
+	call := time.Now().Add(-time.Minute).Truncate(time.Second)
+	r.dets["default"].browser = call
+	r.d.evaluate(context.Background(), r.d.profs[0], "poll")
+	if got := r.d.st.Default().BrowserAt; !got.Equal(call) {
+		t.Fatalf("state's browser_at = %v, want the detector's %v", got, call)
+	}
+
+	again := browserRig(t, testCfg())
+	again.d.st.Default().BrowserAt = call // what the previous daemon saved
+	again.d.evaluate(context.Background(), again.d.profs[0], "poll")
+	if swaps := again.v.ops("swap"); len(swaps) != 0 {
+		t.Fatalf("a restarted daemon swapped a minute after a browser call: %+v", swaps)
+	}
+	if !strings.Contains(again.logs.String(), "browser task 1m ago") {
+		t.Fatalf("log lacks the browser task:\n%s", again.logs.String())
+	}
+}
+
+// Stopping saves the last call the detector saw, even one made since the
+// last tick.
+func TestDaemonRecordsTheLastBrowserCallWhenItStops(t *testing.T) {
+	r := browserRig(t, testCfg())
+	call := time.Now().Add(-5 * time.Second).Truncate(time.Second)
+	r.dets["default"].browser = call
+	stop, sig, done := make(chan struct{}), make(chan os.Signal, 1), make(chan error, 1)
+	r.d.startDetectors(stop)
+	go func() { done <- r.d.run(context.Background(), stop, sig, make(chan time.Time), make(chan time.Time)) }()
+	sig <- os.Interrupt
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if got := r.d.st.Default().BrowserAt; !got.Equal(call) {
+		t.Fatalf("browser_at at stop = %v, want %v", got, call)
+	}
+}
+
+// `cs why` says it in the daemon's words, from state.
+func TestWhyExplainsARotationHeldForABrowserTask(t *testing.T) {
+	_, cfg, st := pinWorld(t, 90)
+	now := time.Now()
+	st.Default().BrowserAt = now.Add(-2*time.Minute - 10*time.Second)
+	var b bytes.Buffer
+	renderWhy(&b, cfg, st, now, "")
+	out := b.String()
+	for _, want := range []string{
+		"waiting to rotate to b",
+		"switch wanted, session busy (browser task 2m ago) — waiting for an idle gap",
+		"hold_for_browser",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("why lacks %q:\n%s", want, out)
+		}
+	}
+
+	dec := whyJSON(cfg, st, now, "")["decision"].(map[string]any)
+	if dec["kind"] != "switch" || dec["target"] != "b" || dec["held"] != "session busy (browser task 2m ago)" {
+		t.Fatalf("why --json decision = %v", dec)
+	}
+	until, ok := dec["held_until"].(time.Time)
+	if !ok || !until.Equal(st.Default().BrowserAt.Add(5*time.Minute)) {
+		t.Fatalf("held_until = %v, want five minutes after the call", dec["held_until"])
+	}
+}
+
+func TestWhyWithHoldForBrowserZeroSaysNothingOfIt(t *testing.T) {
+	_, cfg, st := pinWorld(t, 90)
+	cfg.HoldForBrowser = &config.Duration{}
+	now := time.Now()
+	st.Default().BrowserAt = now.Add(-time.Minute)
+	var b bytes.Buffer
+	renderWhy(&b, cfg, st, now, "")
+	if out := b.String(); strings.Contains(out, "browser") || !strings.Contains(out, "rotating to b") {
+		t.Fatalf("why with the hold off:\n%s", out)
+	}
+	if dec := whyJSON(cfg, st, now, "")["decision"].(map[string]any); dec["held"] != nil || dec["held_until"] != nil {
+		t.Fatalf("why --json decision with the hold off = %v", dec)
+	}
+}
+
+// The setting: in the schema with the rotation settings, after
+// max_switch_wait; global only, like it; a duration of at least 0.
+func TestConfigSchemaHasHoldForBrowser(t *testing.T) {
+	var buf bytes.Buffer
+	if err := runConfigCmd(&buf, "", []string{"schema"}, true, ""); err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		Settings []struct {
+			Key, Type, Default, Description string
+			Min                             *float64
+			MinExclusive                    bool `json:"min_exclusive"`
+			Scopes                          []string
+		}
+	}
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	for i, s := range out.Settings {
+		if s.Key != "hold_for_browser" {
+			continue
+		}
+		if s.Type != "duration" || s.Default != "5m0s" || s.Min == nil || *s.Min != 0 || s.MinExclusive ||
+			!slices.Equal(s.Scopes, []string{"global"}) || !strings.Contains(s.Description, "Claude in Chrome") {
+			t.Fatalf("hold_for_browser in the schema: %+v", s)
+		}
+		if i == 0 || out.Settings[i-1].Key != "max_switch_wait" {
+			t.Fatalf("hold_for_browser follows %q, want max_switch_wait", out.Settings[i-1].Key)
+		}
+		return
+	}
+	t.Fatal("no hold_for_browser in the schema")
+}
+
+func TestConfigSetHoldForBrowser(t *testing.T) {
+	path := appWorld(t, appTOML)
+	var buf bytes.Buffer
+	if err := runConfigCmd(&buf, path, []string{"set", "hold_for_browser", "0s"}, true, ""); err != nil {
+		t.Fatal(err)
+	}
+	if m := decodeJSON(t, buf.Bytes()); m["previous"] != "5m0s" || m["value"] != "0s" {
+		t.Fatalf("answered %v", m)
+	}
+	if got := loadOrFail(t, path).BrowserHold(); got != 0 {
+		t.Fatalf("read back %v, want 0 (off)", got)
+	}
+	if got := errCode(t, runConfigCmd(&buf, path, []string{"set", "hold_for_browser", "-1m"}, true, "")); got != codeInvalidValue {
+		t.Fatalf("a negative hold: %q", got)
+	}
+	if got := errCode(t, runConfigCmd(&buf, path, []string{"set", "hold_for_browser", "soon"}, true, "")); got != codeInvalidValue {
+		t.Fatalf("not a duration: %q", got)
+	}
+}
+
+// A running daemon picks an edit up, and its reload says what changed.
+func TestAReloadNamesAChangedBrowserHold(t *testing.T) {
+	old, next := testCfg(), testCfg()
+	next.HoldForBrowser = &config.Duration{Duration: 2 * time.Minute}
+	if got := configChanges(old, next); !slices.Contains(got, "hold_for_browser 5m0s → 2m0s") {
+		t.Fatalf("changes = %q", got)
+	}
+}

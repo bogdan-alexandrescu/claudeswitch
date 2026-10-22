@@ -34,6 +34,13 @@ In [Settings → Accounts](settings-accounts.md), an account's ⋯ menu has
 An account with its own Chrome profile, signed in as that account, routes by
 itself: browser tasks follow every rotation to it.
 
+**This is the recommended setup** (IMPROVEMENTS P2): one Chrome profile per
+account, each signed in once to claude.ai and to Claude in Chrome as its
+account. claudeswitch cannot move the extension's login from one account to
+another; with a profile per account it never has to. `cs setup` offers to
+make one for each account at the end, and the sign-in banner below has
+**Give \<account\> its own Chrome profile** for the account it names.
+
 ## Opening Chrome
 
 - The globe on a popover card opens the live account's Chrome profile.
@@ -44,16 +51,32 @@ CLI: `cs chrome open <id>`.
 
 ## The sign-in banner
 
-<p align="center"><img src="../images/popover-chrome-signin.png" width="384" alt="The work card: Claude in Chrome in &quot;Work&quot; may still be signed in as work-1, with a Sign in as work-team button and a close button"></p>
+<p align="center"><img src="../images/popover-chrome-signin.png" width="384" alt="The work card: Claude in Chrome in &quot;Work&quot; may still be signed in as work-1, with a Sign in as work-team button, a Give work-team its own Chrome profile link and a close button"></p>
 
 When a profile's accounts share a Chrome profile and rotation moved the
-profile to another account, its card says which Chrome profile is still
-signed in as the old account. **Sign in as work-team** opens that Chrome
+profile to another account, its card says which Chrome profile may still be
+signed in as the old account (claudeswitch cannot see the extension's login,
+so it says "may"). **Sign in as work-team** opens that Chrome
 profile at the claude.ai and Claude in Chrome sign-in pages
 (`cs chrome signin work-team`): sign in to both as work-team. × hides the
 banner until the next rotation.
 
 When Chrome is not supported on the machine, the globe and the Chrome
 controls are hidden or greyed out.
+
+## Claude Code's own login
+
+Claude in Chrome also checks the other end: the account Claude Code says it
+is logged in as, which it records in the profile's `.claude.json`. A swap
+used to change Claude Code's credential but not that record, and the bridge
+then refused with "the OAuth token Claude Code is using belongs to a
+different claude.ai account than the one Claude Code is logged in as".
+
+Every swap now rewrites the record from one profile read with the new
+account's token, and the daemon puts a stray one right on its next poll
+(GROUND_TRUTH §53). Until it does, the status line ends in
+`· login <name> ≠`, `cs doctor` and `cs why` say so, and
+`cs whoami --sync` lines them up at once. The audit log records each change
+as a `login` event.
 
 [← Documentation index](../README.md)

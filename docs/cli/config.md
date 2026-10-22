@@ -137,6 +137,7 @@ table in `cmd/claudeswitch/config_cli.go` and `config.Defaults()` in
 | `hot_threshold` | percent | `60` | [0, 100] | | poll the account in use every `poll_hot` above this, rather than `poll_active` |
 | `switch_when` | enum | `idle` | `idle`, `immediate` | | `idle` prefers swapping between turns; `immediate` does not wait |
 | `max_switch_wait` | duration | `30s` | at least 0 | | stop waiting for an idle gap after this |
+| `hold_for_browser` | duration | `5m0s` | at least 0 (`0s` turns it off) | | hold a rotation this long after a session's last Claude in Chrome call; only the hard floor goes sooner ([GUIDE](../GUIDE.md#configuration)) |
 | `cooldown` | duration | `10m0s` | at least 0 | | minimum gap between rotations, to stop flapping |
 | `poll_active` | duration | `3m0s` | at least 2m (120s) | | how often to read the account in use |
 | `poll_hot` | duration | `1m0s` | above 0 | | ...and when it is near the trigger or burning fast |

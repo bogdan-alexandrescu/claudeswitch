@@ -90,6 +90,9 @@ public struct ChromeSignInNotice: Equatable {
     /// "May": the old account is inferred, never read from the extension.
     public var text: String { "Claude in Chrome in \"\(chromeName)\" may still be signed in as \(old)" }
     public var button: String { "Sign in as \(account)" }
+    /// The way out of signing in after every rotation (P2): a Chrome profile
+    /// of the account's own, which the bridge finds by itself.
+    public var ownButton: String { "Give \(account) its own Chrome profile" }
 }
 
 /// An account's Chrome choice (Settings → Accounts).

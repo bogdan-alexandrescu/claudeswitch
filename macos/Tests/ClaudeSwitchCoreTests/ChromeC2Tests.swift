@@ -68,6 +68,8 @@ import Testing
     @Test func testShownWhenOnlyTheProfileApplies() throws {
         let n = try #require(live().signInNotice(dismissed: []))
         #expect(n.text == "Claude in Chrome in \"Work\" may still be signed in as work-1")
+        // P2: the way out of signing in after every rotation.
+        #expect(n.ownButton == "Give work-team its own Chrome profile")
         #expect(n.button == "Sign in as work-team")
         #expect(n.account == "work-team" && n.profile == "work")
     }

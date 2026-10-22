@@ -554,6 +554,16 @@ struct ChromeSignInBanner: View {
             .buttonStyle(PillButtonStyle(primary: true))
             .disabled(store.binaryPath == nil || store.isBusy("chrome:\(notice.account)"))
             .help("Open \"\(notice.chromeName)\" at the claude.ai and Claude in Chrome sign-in")
+            // P2: once the account has its own Chrome profile, rotation
+            // needs no sign-in at all.
+            Button(notice.ownButton) {
+                store.setAccountChrome(notice.account, .createNew)
+                store.dismissChromeNotice(notice.key)
+            }
+            .buttonStyle(.link).font(.caption)
+            .disabled(store.binaryPath == nil || store.isBusy("chrome:\(notice.account)"))
+            .help("Creates a Chrome profile for \(notice.account) and opens it at the sign-in pages; " +
+                  "sign in there once, and later rotations find it by themselves")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(8)

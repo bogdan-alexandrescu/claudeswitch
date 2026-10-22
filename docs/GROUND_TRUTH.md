@@ -1522,3 +1522,46 @@ the redirect. Only a request with this login's `state`, addressed to `localhost`
 `127.0.0.1` or `[::1]` on the port, ends the wait, a refusal as much as a code.
 Anything else gets a 400 while the wait goes on. A refusal's text is cut to
 printable ASCII before it reaches the terminal.
+
+## 53. What Claude Code records as its login, and where each field comes from (observed 2026-10-21)
+
+Claude Code keeps the account it believes it is logged in as in `oauthAccount`, in
+the profile's `.claude.json` (`~/.claude.json` when `CLAUDE_CONFIG_DIR` is unset). A
+hot swap changes the credential but not this block, and Claude in Chrome's bridge
+compares the two when it connects. Hence its refusal after a rotation, "the OAuth
+token Claude Code is using belongs to a different claude.ai account than the one
+Claude Code is logged in as" (IMPROVEMENTS, the Chrome requests).
+
+A running Claude Code keeps what is on disk in this block. A key added to it survived
+every write Claude Code made to the file over eight minutes.
+
+The block has 18 fields. `GET /api/oauth/profile` answers with `account`,
+`organization` and `application` objects and an `enabled_plugins` array. Comparing a
+real answer for one seat with the block Claude Code wrote for another seat of the same
+team organization showed where each field comes from:
+
+| oauthAccount | from the profile answer |
+|---|---|
+| `accountUuid`, `emailAddress`, `accountCreatedAt` | `account.uuid`, `.email`, `.created_at` |
+| `displayName`, `fullName` | `account.display_name`, `.full_name` (left out when null) |
+| `organizationUuid`, `organizationName`, `organizationType` | `organization.uuid`, `.name`, `.organization_type` |
+| `userRateLimitTier` | `organization.rate_limit_tier` (the user's tier, despite where it sits) |
+| `seatTier`, `billingType`, `hasExtraUsageEnabled`, `subscriptionCreatedAt` | the organization's fields of those names |
+| `ccOnboardingFlags`, `claudeCodeTrialEndsAt`, `claudeCodeTrialDurationDays` | `organization.cc_onboarding_flags` and the trial fields (kept as null) |
+| `organizationRateLimitTier` | not in this answer (`default_raven` for that team) |
+| `organizationRole`, `workspaceRole` | not in this answer |
+| `profileFetchedAt` | when the answer was read, in milliseconds |
+
+claudeswitch now rewrites the block on each swap from one profile read with the new
+token (P1, `internal/cclogin`). `organizationRateLimitTier` stays when the
+organization does; the two roles stay only for the same account.
+
+## 54. Transcripts repeat tool calls without a time, in api-request-blob records (observed 2026-10-21)
+
+Besides its `assistant` records, Claude Code writes `api-request-blob` records into
+a session's transcript. They copy tool_use blocks the session already made, and they
+carry no timestamp. One session held 66 of them beside 536 real Claude in Chrome
+calls. A reader that counted every tool_use would take an old browser call for a new
+one, and the P4 hold would keep a rotation waiting long after the task ended. The
+detector counts only `assistant` records, by their own timestamp (IMPROVEMENTS P4,
+`internal/detector`).

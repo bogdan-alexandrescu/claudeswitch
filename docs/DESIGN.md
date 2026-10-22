@@ -441,6 +441,20 @@ up as the daemon's entire CPU cost, pegged in `lstat`. The watcher already recei
 write event for every transcript change, so activity is now tracked from those, with one
 walk at startup. CPU went from spinning to 0.0%.
 
+**A browser task is activity too** (IMPROVEMENTS P4, owner decision 2026-10-21).
+Rotating a profile mid browser task breaks Claude in Chrome's bridge, so the same reads
+note, per session, the newest `tool_use` of a `mcp__claude-in-chrome__` tool, at the
+record's own time. Only an `assistant` record counts: the `api-request-blob` records
+beside it copy the same calls with no time of their own, and read as calls made now
+they would hold a rotation for a browser task long finished. A switch within
+`hold_for_browser` (5 minutes) of one waits, between
+turns as well as mid-turn. Unlike a mid-turn wait it is not cut short by
+`max_switch_wait`, which exists because a busy session may never go quiet; a hold ends
+by itself. Only a forced switch (the hard floor) goes sooner, and a switch off a refused
+account keeps its usual timing, since that account serves the browser task no better.
+The startup walk reads no history for it (GROUND_TRUTH §50): the daemon records the
+last call in state.json, and a restarted daemon holds from there.
+
 ### 4.11 Claude Code integration is a plugin over the CLI
 
 Decided 2026-09-16. The integration with Claude Code is a plugin (`plugin/`,

@@ -444,6 +444,12 @@ type ProfileState struct {
 	// with Active in a merge: the newer ActiveAt wins.
 	LiveKey string `json:"live_key,omitempty"`
 	LiveOrg string `json:"live_org,omitempty"`
+	// BrowserAt is the newest Claude in Chrome call the daemon has seen in
+	// this profile's transcripts (IMPROVEMENTS P4). A rotation waits
+	// hold_for_browser after it. Daemon-owned: it is recorded here so `cs
+	// why` can say the rotation is waiting for a browser task, and so a
+	// restarted daemon, whose detector reads no history, keeps holding.
+	BrowserAt time.Time `json:"browser_at,omitzero"`
 }
 
 // ItemRef is a resolved live item: its keychain service and Linux credential
@@ -927,6 +933,10 @@ func (s *State) SaveAs(as owner) error {
 				}
 				// The daemon owns the resolved item; a CLI copy may be stale.
 				mine.Item = disk.Item
+				// And the last browser call it saw.
+				if disk.BrowserAt.After(mine.BrowserAt) {
+					mine.BrowserAt = disk.BrowserAt
+				}
 			})
 			s.DaemonLive = disk.DaemonLive
 			s.DaemonSince = disk.DaemonSince
