@@ -58,9 +58,9 @@ type Decision struct {
 	RecoversAccount string
 	RecoversAt      time.Time
 
-	// org is the organization a switch during a claude.ai hold was kept to
-	// (IMPROVEMENTS phase 1 R, inOrg), for Explain's order; "" otherwise.
-	org string
+	// ownFirst says a switch during a claude.ai hold preferred accounts with
+	// a browser of their own (R, ownBrowserFirst), for Explain's order.
+	ownFirst bool
 
 	// Unpin is set when the pin was lifted to reach this decision (the pin
 	// safety valve, IMPROVEMENTS F3): "pin on work-1 lifted: it was
@@ -365,12 +365,12 @@ func Decide(in Input) Decision {
 		return waiting(all, in, why+unavailableNote(all, in))
 	}
 
-	// A switch that goes now, during a claude.ai hold, stays in the live
-	// account's organization if it can (R). One the hold delays is chosen
-	// when it goes.
-	org := ""
+	// A switch that goes now, during a claude.ai hold, prefers an account
+	// with a browser of its own (R). One the hold delays is chosen when it
+	// goes.
+	ownFirst := false
 	if forced || activeBurnt {
-		c, note, org = inOrg(all, in, active, c, note)
+		c, note, ownFirst = ownBrowserFirst(all, in, c, note)
 	}
 
 	reason := fmt.Sprintf("active account at %.0f%% of its %s, over the %.0f%% trigger",
@@ -381,50 +381,43 @@ func Decide(in Input) Decision {
 	if e := expiringNote(c, in); e != "" {
 		note += "; " + e
 	}
-	return in.held(Decision{Kind: Switch, Target: c.acct.ID, Reason: reason + note, Forced: forced, org: org}, activeBurnt)
+	return in.held(Decision{Kind: Switch, Target: c.acct.ID, Reason: reason + note, Forced: forced, ownFirst: ownFirst}, activeBurnt)
 }
 
-// orgOf is an account's organization: the one its entry is pinned to, or
-// else the one its last reading recorded; "" when neither is known.
-func orgOf(c candidate) string {
-	if c.acct.OrgID != "" {
-		return c.acct.OrgID
-	}
-	if c.obs != nil {
-		return c.obs.OrgID
-	}
-	return ""
-}
-
-// inOrg keeps a switch that goes during a claude.ai hold in the live
-// account's organization (IMPROVEMENTS phase 1 R, owner decision
-// 2026-10-21): Claude in Chrome connects only to a Claude Code signed in to
-// the extension's organization, so leaving it breaks the bridge until
-// /chrome. The best account there is taken, short of the landing margin if
+// ownBrowserFirst is R, re-aimed after phase 3 C0 (owner decision
+// 2026-10-22): a new Claude in Chrome connection needs a browser signed in as
+// the live account itself, not another of its organization (GROUND_TRUTH
+// §56), so a switch that goes during a claude.ai hold prefers an account with
+// a browser of its own (state.OwnBrowser), short of the landing margin if
 // need be, since this is a switch past the hard floor or off a refused
-// account. With none there, c stands, and the reason says so. It returns the
-// choice, its note, and the organization it was kept to ("" when it was
-// not narrowed: no hold, an unknown organization, or c already in it).
-func inOrg(all []candidate, in Input, active, c candidate, note string) (candidate, string, string) {
-	org := orgOf(active)
-	if _, holding := in.holdAgo(); !holding || org == "" || orgOf(c) == org {
-		return c, note, ""
+// account. With none that has room, c stands, and the reason says what a new
+// connection needs. An open connection survives any switch; this is for the
+// sessions that connect after it. It returns the choice, its note, and
+// whether accounts with their own browser were put first.
+func ownBrowserFirst(all []candidate, in Input, c candidate, note string) (candidate, string, bool) {
+	if _, holding := in.holdAgo(); !holding {
+		return c, note, false
 	}
-	var same []candidate
+	own := func(x candidate) bool { _, ok := in.St.OwnBrowser(x.acct.ID); return ok }
+	if own(c) {
+		return c, note, true
+	}
+	var mine []candidate
 	for _, x := range all {
-		if orgOf(x) == org {
-			same = append(same, x)
+		if own(x) {
+			mine = append(mine, x)
 		}
 	}
-	const kept = "kept to the live account's organization during claude.ai work, so Claude in Chrome stays connected"
-	if s, ok := bestEligible(same, in); ok {
-		return s, "; " + kept, org
+	const why = "an account with a Chrome profile of its own, during claude.ai work, so a new Claude in Chrome " +
+		"connection finds its browser"
+	if s, ok := bestEligible(mine, in); ok {
+		return s, "; " + why, true
 	}
-	if s, ok := bestWithin(same, in, 0, false); ok {
-		return s, fmt.Sprintf("; %s, short of the %g-point landing margin; %s",
-			shortOf(s, in), in.Cfg.Margin(), kept), org
+	if s, ok := bestWithin(mine, in, 0, false); ok {
+		return s, fmt.Sprintf("; %s, short of the %g-point landing margin; %s", shortOf(s, in), in.Cfg.Margin(), why), true
 	}
-	return c, note + "; no account in the live account's organization has room, so Claude in Chrome may need /chrome", ""
+	return c, note + "; a new Claude in Chrome connection needs a browser signed in as " + c.acct.ID +
+		" (cs chrome add " + c.acct.ID + ")", false
 }
 
 // held marks a switch that a recent claude.ai call holds (IMPROVEMENTS P4,
@@ -988,7 +981,7 @@ type Verdict struct {
 func Explain(in Input) (Decision, []Verdict) {
 	dec := Decide(in)
 	all := gather(in)
-	ordered := explainOrder(all, in, dec.org)
+	ordered := explainOrder(all, in, dec.ownFirst)
 
 	out := make([]Verdict, 0, len(ordered))
 	first := true
@@ -1086,16 +1079,17 @@ func Explain(in Input) (Decision, []Verdict) {
 // the reader is asking about — and the rest follow in selection order, which is
 // stable for ties because sort.SliceStable preserves the configured priority.
 // With several pools that order is pool by pool (D33), and while a switch
-// is kept to an organization (org, R) that organization's accounts come
+// prefers accounts with a browser of their own (ownFirst, R) those come
 // first, so the first ready account listed is still the one rotation takes.
-func explainOrder(all []candidate, in Input, org string) []candidate {
+func explainOrder(all []candidate, in Input, ownFirst bool) []candidate {
 	out := append([]candidate(nil), all...)
 	sort.SliceStable(out, func(i, j int) bool {
 		if a := out[i].acct.ID == in.active(); a != (out[j].acct.ID == in.active()) {
 			return a
 		}
-		if org != "" {
-			if a := orgOf(out[i]) == org; a != (orgOf(out[j]) == org) {
+		if ownFirst {
+			_, a := in.St.OwnBrowser(out[i].acct.ID)
+			if _, b := in.St.OwnBrowser(out[j].acct.ID); a != b {
 				return a
 			}
 		}

@@ -158,3 +158,29 @@ func TestRenameChromeAccountMovesMappingAndEmail(t *testing.T) {
 		t.Fatalf("EmailOf(new) = %q", got)
 	}
 }
+
+// Phase 3 (owner decision 2026-10-22): an account has a browser of its own
+// when a Chrome profile is mapped to it and to no other account. A new Claude
+// in Chrome connection needs a browser signed in as the live account
+// (GROUND_TRUTH §56); a shared profile is signed in as one of its accounts,
+// and nothing says which.
+func TestABrowserOfItsOwnIsAChromeProfileMappedToItAlone(t *testing.T) {
+	isolate(t)
+	st, _ := Load("", "default")
+	at := time.Date(2026, 10, 22, 3, 0, 0, 0, time.UTC)
+	st.SetChrome("a", "claudeswitch-a", at)
+	st.SetChromeExisting("b", "Profile 25", at)
+	st.SetChromeExisting("c", "Profile 25", at)
+	if dir, ok := st.OwnBrowser("a"); !ok || dir != "claudeswitch-a" {
+		t.Errorf("a: %q %v, want its own profile", dir, ok)
+	}
+	for _, id := range []string{"b", "c", "d", ""} {
+		if dir, ok := st.OwnBrowser(id); ok {
+			t.Errorf("%q has a browser of its own (%q)", id, dir)
+		}
+	}
+	st.DropChrome("c")
+	if _, ok := st.OwnBrowser("b"); !ok {
+		t.Error("b, alone on its profile now, has no browser of its own")
+	}
+}

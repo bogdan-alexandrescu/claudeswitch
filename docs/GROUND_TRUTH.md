@@ -1619,3 +1619,38 @@ cause is still not known. Two more facts: both sessions used the same browser
 (device 067c70fc…), and the "Browser 1" and "Browser 2" labels differ by session
 (that device was "Browser 1" in one and "Browser 2" in the other), so a label
 alone does not name a browser.
+
+## 56. A new Claude in Chrome connection needs a browser on the same account, not the same organization (phase 3 C0, observed 2026-10-22)
+
+All eight accounts were mapped to one shared Chrome profile ("Claude-In-Chrome").
+Fresh headless sessions (`claude -p --chrome`, Claude Code 2.1.308, plugin 0.8.0)
+called `tabs_context_mcp`, then `list_connected_browsers`, with the default
+profile on each account in turn (the work profile untouched):
+
+| live account | probes (PT) | result |
+|---|---|---|
+| AI-Eng-3 | 02:47, 02:51:44 | "Browser extension is not connected … logged into claude.ai with the same account as Claude Code"; `[]` |
+| AI-Eng-3 | 02:53:03 | two browsers, both local: devices 067c70fc ("Browser 2", in use) and dbb0f289 ("Browser 1"), both `connectedAt` 02:52:18 |
+| work-team, same organization (switched 02:53:59) | six probes, 02:54:02–02:57:32 | not connected; `[]` |
+| AI-Eng-3 (switched back 02:57:38) | five probes, 02:57:41–02:59:57 | connected at once, both still `connectedAt` 02:52:18 |
+
+- **The channel is per account.** Both browsers stayed connected on AI-Eng-3's
+  channel throughout (`connectedAt` never moved), and a session of work-team, in
+  the same organization, could not reach them for three and a half minutes. The
+  Chrome docs' "same organization" does not hold for a new connection; the
+  2026-10-07 reading of a channel per account uuid does.
+- **Both extensions are on AI-Eng-3's channel**, so two browsers share one
+  account's channel today; Claude in Chrome picks the one used last.
+- **Before 02:52:18 neither browser was on any channel these sessions reached**,
+  then both connected at the same second. What set that off is not known.
+- **An open connection is separate.** An interactive session opened the evening
+  before still listed the same two browsers with its own `connectedAt` (22:06 and
+  22:40 PT) through every switch.
+- **S in a real session.** The first probe after each switch took 51–58 s; probes
+  with no switch inside the 45 s before them took 19–31 s. The plugin's `hook pre`
+  held the first Chrome call until `settle_after_swap` after the switch, with
+  the session's own start-up overlapping the wait.
+
+Still open for C0: whether a Chrome profile's browser connects with its windows
+closed, and how an open session's browser calls behave once each account has a
+browser of its own.

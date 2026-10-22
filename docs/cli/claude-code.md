@@ -332,7 +332,17 @@ has room: session 40%, week 20%) and retry, or publish it again as a new artifac
 
 When the owner has no room it offers only the new artifact. `open` is never
 refused (it shows the page in the person's own browser), nor is an artifact
-the plugin did not see published. The record is
+the plugin did not see published.
+
+**In Chrome too.** claude.ai shows an artifact only to its owner, so Claude
+in Chrome opening another account's gets "This artifact is private". When the
+live account has a Chrome profile of its own (`cs chrome add`, mapped to no
+other account), the browser Claude in Chrome reaches is signed in as the live
+account, and a `navigate` (or a `browser_batch` navigate) to a recorded
+artifact of another account is refused the same way, offering `cs use
+<owner>` or opening one of the live account's own. With a Chrome profile
+shared by several accounts, or none, nothing is refused: whose claude.ai it
+shows is not known. The record is
 `~/.local/state/claudeswitch/artifacts.json`, the newest 500.
 
 Rotation itself waits for claude.ai work too: `hold_for_claude_ai`

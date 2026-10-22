@@ -377,3 +377,81 @@ func TestThePreHookOffersNoWayBackToAnOwnerNoLongerSetUp(t *testing.T) {
 		t.Fatalf("reason: %s", why)
 	}
 }
+
+// Phase 3 C1 (owner decision 2026-10-22): claude.ai shows an artifact only
+// to its owner, so opening another account's in the browser Claude in Chrome
+// reaches shows "This artifact is private". When the live account has a
+// Chrome profile of its own, that browser is signed in as the live account
+// (GROUND_TRUTH §45), and a navigation to another account's artifact is
+// refused, as G refuses the Artifact tools. A browser shared by several
+// accounts is signed in as one of them, nobody knows which: nothing is
+// refused there.
+
+// chromeFor maps accounts to Chrome profile folders in the hook world.
+func chromeFor(t *testing.T, dirs map[string]string) {
+	t.Helper()
+	st, err := state.Load("", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, dir := range dirs {
+		st.SetChrome(id, dir, hookClock)
+	}
+	if err := st.Save(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestThePreHookRefusesOpeningAnotherAccountsArtifactInItsOwnBrowser(t *testing.T) {
+	cfg, _ := hookWorld(t, time.Minute, 40)
+	chromeFor(t, map[string]string{"a": "claudeswitch-a", "b": "claudeswitch-b"})
+	record(t, state.Artifact{ID: "abc", Account: "a", Seat: "ua@oa", At: hookClock})
+	for _, call := range []string{
+		preCall("mcp__claude-in-chrome__navigate", `{"url":"https://claude.ai/code/artifact/abc"}`),
+		preCall("mcp__claude-in-chrome__navigate", `{"url":"claude.ai/artifact/abc","tabId":7}`),
+		preCall("mcp__claude-in-chrome__browser_batch",
+			`{"actions":[{"tool":"navigate","input":{"tabId":7,"url":"https://claude.ai/code/artifact/abc"}}]}`),
+	} {
+		out, _, code := runHookT(t, cfg, "pre", call)
+		if code != 0 {
+			t.Fatalf("code %d", code)
+		}
+		why := denial(t, out)
+		for _, want := range []string{"belongs to a", "only to its owner", "b's browser", "cs use a"} {
+			if !strings.Contains(why, want) {
+				t.Errorf("%s: reason lacks %q: %s", call, want, why)
+			}
+		}
+		if strings.Contains(why, "publish") {
+			t.Errorf("a navigation is told to publish: %s", why)
+		}
+	}
+}
+
+func TestThePreHookLetsANavigationGoOnWhenTheBrowserIsNotTheLiveAccountsAlone(t *testing.T) {
+	cfg, _ := hookWorld(t, time.Minute, 40)
+	record(t, state.Artifact{ID: "abc", Account: "a", Seat: "ua@oa", At: hookClock})
+	nav := preCall("mcp__claude-in-chrome__navigate", `{"url":"https://claude.ai/code/artifact/abc"}`)
+	if out, _, _ := runHookT(t, cfg, "pre", nav); out != "" {
+		t.Fatalf("no Chrome profile mapped, refused: %q", out)
+	}
+	chromeFor(t, map[string]string{"a": "Profile 25", "b": "Profile 25"})
+	if out, _, _ := runHookT(t, cfg, "pre", nav); out != "" {
+		t.Fatalf("a shared Chrome profile, refused: %q", out)
+	}
+	chromeFor(t, map[string]string{"a": "claudeswitch-a", "b": "claudeswitch-b"})
+	for _, call := range []string{
+		preCall("mcp__claude-in-chrome__navigate", `{"url":"https://example.com/artifact/abc"}`),
+		preCall("mcp__claude-in-chrome__navigate", `{"url":"https://claude.ai/code/artifact/unknown"}`),
+		preCall("mcp__claude-in-chrome__computer", `{"action":"screenshot"}`),
+	} {
+		if out, _, _ := runHookT(t, cfg, "pre", call); out != "" {
+			t.Errorf("%s refused: %q", call, out)
+		}
+	}
+	record(t, state.Artifact{ID: "mine", Account: "b", Seat: "ub@oa", At: hookClock})
+	if out, _, _ := runHookT(t, cfg, "pre", preCall("mcp__claude-in-chrome__navigate",
+		`{"url":"https://claude.ai/code/artifact/mine"}`)); out != "" {
+		t.Fatalf("the live account's own artifact refused: %q", out)
+	}
+}

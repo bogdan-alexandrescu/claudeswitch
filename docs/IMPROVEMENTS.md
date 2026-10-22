@@ -1166,7 +1166,7 @@ forced switch goes to the best account in another organization and says Claude
 in Chrome may need `/chrome`. S is a setting, `settle_after_swap`, default 45s
 (0 off).
 
-**Phase 1 built for 0.8.0 (2026-10-21), not yet released:**
+**Phase 1 shipped in 0.8.0 (released 2026-10-22):**
 - **H.** `hold_for_claude_ai` (default 5m) replaces `hold_for_browser`, which
   is still read from a file and still taken by `cs config get`/`set`; a set
   rewrites the line. The detector counts `Artifact`, `ArtifactComments`,
@@ -1191,3 +1191,84 @@ in Chrome may need `/chrome`. S is a setting, `settle_after_swap`, default 45s
   recorded artifact while another account is live, saying whose it is and
   either `cs use <owner>` (when it has room) or publishing a new one. `open`
   is never refused; a file path counts only in the session that published it.
+
+## Plan: a browser per account (phase 3, proposed 2026-10-22, not decided)
+
+Two things still follow the browser, not the live account, after 0.8.0:
+
+1. **Which browser a Chrome task reaches.** Claude Code meets the extension on
+   a bridge channel for its live account (C1, GROUND_TRUTH §45), and an open
+   connection survives a switch (tested 2026-10-21 21:13Z). What a *new*
+   connection after a switch finds is not settled: the 2026-10-07 reading
+   was a channel per account uuid; the Chrome docs say "same organization";
+   and in §55 one browser served all three organizations, possibly because
+   the connection never reopened.
+2. **Which artifacts open in it.** claude.ai shows an artifact only to its
+   owner (§55): "This artifact is private" in the same organization, "Page
+   not found" in another. What decides it is the browser's own claude.ai
+   sign-in, not the extension's.
+
+Today all eight accounts map to one Chrome profile ("Claude-In-Chrome", set
+2026-10-21), so every Chrome task and every artifact view goes through one
+claude.ai account. The accounts are in four organizations, five of them in
+Acme's team organization.
+
+**C0. Measure first (needs the owner's hands).** Sign a second Chrome
+profile in to claude.ai and the extension as another account in the same
+organization, and a third as an account in another organization. Then:
+- in a new session after each `cs use`, `list_connected_browsers`: is the
+  channel per account or per organization?
+- in an open session, a browser call 0, 15, 30 and 60 s after a switch:
+  does it move to the new account's browser, and when? (S already waits 45 s
+  before each browser call.)
+- with a profile's windows closed, does its browser still connect?
+
+**C1. Refuse opening another account's artifact in Chrome** (any shape
+below). G's book already knows each artifact's owner. `hook pre` on
+`mcp__claude-in-chrome__navigate` (and `tabs_create_mcp` with a URL) to a
+recorded artifact owned by an account that is not live would refuse, as G
+does, with `cs use <owner>`, rather than let the page load as "private".
+
+**C2. Remember each account's browser.** `hook post` on
+`list_connected_browsers` and `select_browser` records the device id and
+display name in use while each account was live. When a browser tool fails
+with several browsers connected and none selected, the chrome hint names
+the one claudeswitch saw that account use, so Claude's question to the
+person lists it first. claudeswitch never selects a browser itself (the
+tool requires the person to choose).
+
+**C3. The setup, by C0's answer.**
+- Per account: one Chrome profile per account (`cs chrome add`, P2), eight
+  here, each signed in twice by hand and kept open. Chrome tasks and
+  artifact views follow every rotation.
+- Per organization: four, one per organization. Chrome tasks connect after
+  any switch inside it, which R already keeps to during a hold; artifacts
+  open only for each browser's own account.
+- One shared browser (today): nothing to set up; C1 says why an artifact
+  will not open and how to get there.
+`cs doctor` would say which accounts have no browser of their own, and
+what that costs them.
+
+**Decided 2026-10-22 (owner):** start with C0 (measure, with a same-organization
+and an other-organization account each in a Chrome profile of its own); build C1,
+refusing as G does; decide C2 once C0 has answered whether several browsers
+share a channel.
+
+**C1 built (2026-10-22), for the next release:** `hook pre` refuses a
+`navigate` or `browser_batch` navigate to another account's recorded artifact
+when the live account has a Chrome profile of its own (mapped to no other
+account). A shared Chrome profile refuses nothing, since whose claude.ai it
+shows is unknown; on this Mac all eight accounts share one today, so C1 only
+acts once C0's per-account profiles exist.
+
+**Decided 2026-10-22 (owner), after C0 (GROUND_TRUTH §56: a new connection
+needs a browser on the same account, not the same organization):**
+- **R re-aimed.** During a hold, a switch that goes anyway prefers an account
+  with a Chrome profile of its own (mapped to it alone), where a new Claude in
+  Chrome connection finds a browser; otherwise the best account anywhere, and
+  its reason says a new connection needs a browser signed in as the target.
+  The organization no longer narrows anything.
+- **C3:** the team pool's five accounts (work-team, AI-Eng-1, AI-Eng-2,
+  AI-Eng-3, personal) get Chrome profiles of their own; the other three
+  keep the shared one.
+- **C2** is not being built.

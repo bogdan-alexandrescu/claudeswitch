@@ -118,11 +118,14 @@ called it `hold_for_browser`, and a config that still does is read as
 before.
 
 A switch that cannot wait for the hold (past the hard floor, or off a
-refused account) **stays in the live account's organization**: Claude in
-Chrome connects only to a Claude Code signed in to the extension's
-organization. It takes the best account there, short of the landing margin
-if need be. When no account there has room it goes to the best one
-elsewhere, and its reason says `Claude in Chrome may need /chrome`.
+refused account) **prefers an account with a browser of its own**: a Chrome
+profile mapped to it alone (`cs chrome add`). A new Claude in Chrome
+connection reaches only a browser signed in as the live account itself, not
+another account of its organization. It takes the best such account, short
+of the landing margin if need be. When none has room it goes to the best one
+anywhere, and its reason says `a new Claude in Chrome connection needs a
+browser signed in as <account>`. A connection already open survives any
+switch.
 
 Inside a session, the plugin looks after the calls themselves. After a
 switch Claude Code's claude.ai tools act as the previous account for up to

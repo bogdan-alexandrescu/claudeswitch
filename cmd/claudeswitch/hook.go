@@ -96,17 +96,60 @@ func hookPre(in hookCall, stdout io.Writer, cfgPath string) {
 		return
 	}
 	st := settle(cfg, prof.Name)
-	if st == nil || !artifactTools[in.Tool] {
+	if st == nil {
 		return
 	}
 	ps := st.Profiles[prof.Name]
 	if ps == nil || ps.Active == "" || ps.Active == state.Unattributed {
 		return
 	}
+	live := ps.Active
+	var why string
+	switch {
+	case artifactTools[in.Tool]:
+		owner, ok := artifactCallOwner(in)
+		if !ok || ownedBy(cfg, owner, live) {
+			return
+		}
+		name := ownerName(cfg, owner)
+		why = fmt.Sprintf("[claudeswitch] This artifact belongs to %s: it was published while %s was live, and "+
+			"claude.ai lets only the account that published an artifact read, change or delete it. This session "+
+			"now uses %s (claudeswitch rotated its profile). ", name, name, live)
+		why += wayBack(cfg, st, name, "publish it again as a new artifact under "+live)
+	case opensPages[in.Tool]:
+		dir, own := st.OwnBrowser(live)
+		if !own {
+			return
+		}
+		owner, ok := navigationOwner(cfg, in, live)
+		if !ok {
+			return
+		}
+		name := ownerName(cfg, owner)
+		why = fmt.Sprintf("[claudeswitch] This artifact belongs to %s, and claude.ai shows an artifact only to its "+
+			"owner. Claude in Chrome here reaches %s's browser (Chrome profile %q, signed in as %s), where it "+
+			"would show as private. ", name, live, readChromeLocal().nameOf(dir), live)
+		why += wayBack(cfg, st, name, "open one of "+live+"'s own instead")
+	default:
+		return
+	}
+	out := map[string]any{"hookSpecificOutput": map[string]any{
+		"hookEventName":            "PreToolUse",
+		"permissionDecision":       "deny",
+		"permissionDecisionReason": why,
+	}}
+	_ = json.NewEncoder(stdout).Encode(out)
+}
+
+// artifactCallOwner is the recorded owner of the artifact an Artifact tool
+// call acts on: by its URL, or, for a publish without one, by the file this
+// session published it from. `open` acts on nothing of claude.ai's: it shows
+// the page to the person, in their browser, as whoever that is.
+func artifactCallOwner(in hookCall) (state.Artifact, bool) {
 	var ai artifactInput
 	_ = json.Unmarshal(in.Input, &ai)
 	if ai.Action == "open" {
-		return // it shows the page to the person, in their browser, as whoever that is
+		return state.Artifact{}, false
 	}
 	var owner state.Artifact
 	var found bool
@@ -115,32 +158,47 @@ func hookPre(in hookCall, stdout io.Writer, cfgPath string) {
 	} else if ai.FilePath != "" && (ai.Action == "" || ai.Action == "publish") {
 		owner, found, _ = state.ArtifactAt(in.Session, ai.FilePath)
 	}
-	if !found || ownedBy(cfg, owner, ps.Active) {
-		return
+	return owner, found
+}
+
+// opensPages are the Claude in Chrome tools whose input can open a URL:
+// navigate, and browser_batch, whose actions may include navigates.
+var opensPages = map[string]bool{
+	detector.BrowserToolPrefix + "navigate":      true,
+	detector.BrowserToolPrefix + "browser_batch": true,
+}
+
+// navigationOwner is the owner of the first recorded artifact, not the live
+// account's, that a navigation would open (phase 3 C1).
+func navigationOwner(cfg *config.Config, in hookCall, live string) (state.Artifact, bool) {
+	for _, u := range artifactURL.FindAllString(string(in.Input), -1) {
+		if a, ok, _ := state.ArtifactOwner(state.ArtifactID(u)); ok && !ownedBy(cfg, a, live) {
+			return a, true
+		}
 	}
-	name := owner.Account
+	return state.Artifact{}, false
+}
+
+// ownerName is a recorded owner as it is called now: by its seat, which
+// survives a rename, else by the name it had.
+func ownerName(cfg *config.Config, owner state.Artifact) string {
 	if id := cfg.AccountBySeat(owner.Seat); id != "" {
-		name = id
+		return id
 	}
-	why := fmt.Sprintf("[claudeswitch] This artifact belongs to %s: it was published while %s was live, and "+
-		"claude.ai lets only the account that published an artifact read, change or delete it. This session "+
-		"now uses %s (claudeswitch rotated its profile). ", name, name, ps.Active)
+	return owner.Account
+}
+
+// wayBack is what a refusal offers: switching to the owner when it is set up
+// here and has room, else only the other way (instead).
+func wayBack(cfg *config.Config, st *state.State, name, instead string) string {
 	if !slices.ContainsFunc(cfg.Accounts, func(a config.Account) bool { return a.ID == name }) {
-		why += fmt.Sprintf("%s is no longer set up here, so publish it again as a new artifact under %s.",
-			name, ps.Active)
-	} else if room, how := hasRoom(cfg, st, name, hookNow()); room {
-		why += fmt.Sprintf("Either run `cs use %s` (%s has room: %s) and retry, or publish it again as a new "+
-			"artifact under %s.", name, name, how, ps.Active)
-	} else {
-		why += fmt.Sprintf("%s has no room now (%s), so publish it again as a new artifact under %s, or wait "+
-			"for %s to recover.", name, how, ps.Active, name)
+		return fmt.Sprintf("%s is no longer set up here, so %s.", name, instead)
 	}
-	out := map[string]any{"hookSpecificOutput": map[string]any{
-		"hookEventName":            "PreToolUse",
-		"permissionDecision":       "deny",
-		"permissionDecisionReason": why,
-	}}
-	_ = json.NewEncoder(stdout).Encode(out)
+	room, how := hasRoom(cfg, st, name, hookNow())
+	if room {
+		return fmt.Sprintf("Either run `cs use %s` (%s has room: %s) and retry, or %s.", name, name, how, instead)
+	}
+	return fmt.Sprintf("%s has no room now (%s), so %s, or wait for %s to recover.", name, how, instead, name)
 }
 
 // settle waits until settle_after_swap after the profile's last switch, and

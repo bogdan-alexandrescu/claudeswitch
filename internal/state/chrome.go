@@ -242,3 +242,22 @@ func (s *State) mergeChrome(disk *State) {
 		s.Plans = nil
 	}
 }
+
+// OwnBrowser is the Chrome profile folder of an account's own browser: one
+// mapped to it and to no other account (phase 3, owner decision 2026-10-22).
+// Its claude.ai and extension are signed in as that account, so a new Claude
+// in Chrome connection finds it while the account is live (GROUND_TRUTH §56).
+// A profile shared by several accounts is signed in as one of them, and
+// nothing says which.
+func (s *State) OwnBrowser(account string) (string, bool) {
+	cp := s.ChromeOf(account)
+	if cp == nil || cp.Dir == "" {
+		return "", false
+	}
+	for id, other := range s.Chrome {
+		if id != account && other != nil && other.Dir == cp.Dir {
+			return "", false
+		}
+	}
+	return cp.Dir, true
+}

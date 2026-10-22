@@ -460,15 +460,18 @@ account keeps its usual timing, since that account serves the work no better.
 The startup walk reads no history for it (GROUND_TRUTH §50): the daemon records the
 last call in state.json, and a restarted daemon holds from there.
 
-A switch that goes during a hold anyway (forced, or off a refused account) **stays in
-the live account's organization** (phase 1 R, owner decision 2026-10-21): Claude in
-Chrome connects only to a Claude Code signed in to the extension's organization, so a
-switch across organizations breaks the bridge until `/chrome`. The policy chooses among
-the organization's accounts first, short of the landing margin if need be, as any
-switch past the hard floor may; with none, the best account elsewhere, and the reason
-says `Claude in Chrome may need /chrome`. An account's organization is its pinned
-`org_id`, or else the one its last reading recorded; unknown, nothing is narrowed. A
-switch the hold delays is not narrowed: it is chosen when it goes, after the hold.
+A switch that goes during a hold anyway (forced, or off a refused account) **prefers
+an account with a browser of its own** (phase 1 R, re-aimed after phase 3 C0, owner
+decision 2026-10-22). A new Claude in Chrome connection reaches only a browser whose
+extension is on the live account's own channel; another account of the same
+organization does not (GROUND_TRUTH §56), so 0.8.0's narrowing to the organization
+bought nothing. An account has a browser of its own when a Chrome profile is mapped to
+it and to no other account (`state.OwnBrowser`): a shared profile is signed in as one
+of its accounts, and nothing says which. The policy chooses among those first, short of
+the landing margin if need be, as any switch past the hard floor may; with none, the
+best account anywhere, and the reason says `a new Claude in Chrome connection needs a
+browser signed in as <account>`. A switch the hold delays is not narrowed: it is
+chosen when it goes, after the hold. A connection already open survives any switch.
 
 ### 4.11 Claude Code integration is a plugin over the CLI
 
