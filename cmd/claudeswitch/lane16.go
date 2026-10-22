@@ -43,11 +43,11 @@ func warnLegacy(w io.Writer, cfg *config.Config) {
 var legacyWarned, legacyQuiet bool
 
 // quietCommand reports the invocations Claude Code runs on its own — the
-// status line, `context`, the plugin's `chrome hint` hook — where a
-// warning on stderr is noise in someone else's output.
+// status line, `context`, the plugin's `chrome hint` and `hook` hooks —
+// where a warning on stderr is noise in someone else's output.
 func quietCommand(cmd string, args []string) bool {
 	switch cmd {
-	case "statusline", "context":
+	case "statusline", "context", "hook":
 		return true
 	case "chrome":
 		return len(args) > 0 && args[0] == "hint"

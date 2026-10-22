@@ -441,19 +441,34 @@ up as the daemon's entire CPU cost, pegged in `lstat`. The watcher already recei
 write event for every transcript change, so activity is now tracked from those, with one
 walk at startup. CPU went from spinning to 0.0%.
 
-**A browser task is activity too** (IMPROVEMENTS P4, owner decision 2026-10-21).
-Rotating a profile mid browser task breaks Claude in Chrome's bridge, so the same reads
-note, per session, the newest `tool_use` of a `mcp__claude-in-chrome__` tool, at the
-record's own time. Only an `assistant` record counts: the `api-request-blob` records
-beside it copy the same calls with no time of their own, and read as calls made now
-they would hold a rotation for a browser task long finished. A switch within
-`hold_for_browser` (5 minutes) of one waits, between
+**claude.ai work is activity too** (IMPROVEMENTS P4 and phase 1 H, owner decisions
+2026-10-21). Rotating a profile mid browser task breaks Claude in Chrome's bridge, and
+an artifact or Docs call acts as whichever account is live, so a rotation between two
+of them splits the work across accounts (GROUND_TRUTH §55). The same reads note, per
+session, the newest `tool_use` of a claude.ai tool, at the record's own time: a
+`mcp__claude-in-chrome__` or `mcp__claude_ai_Claude_Docs__` tool, or `Artifact`,
+`ArtifactComments` or `ArtifactData`. claude.ai's other connectors do not count; they
+reach services of their own, the same whichever account is live. Only an `assistant`
+record counts: the `api-request-blob` records beside it copy the same calls with no
+time of their own, and read as calls made now they would hold a rotation for work long
+finished. A switch within `hold_for_claude_ai` (5 minutes; `hold_for_browser` in 0.7.8
+and 0.7.9, still read) of one waits, between
 turns as well as mid-turn. Unlike a mid-turn wait it is not cut short by
 `max_switch_wait`, which exists because a busy session may never go quiet; a hold ends
 by itself. Only a forced switch (the hard floor) goes sooner, and a switch off a refused
-account keeps its usual timing, since that account serves the browser task no better.
+account keeps its usual timing, since that account serves the work no better.
 The startup walk reads no history for it (GROUND_TRUTH §50): the daemon records the
 last call in state.json, and a restarted daemon holds from there.
+
+A switch that goes during a hold anyway (forced, or off a refused account) **stays in
+the live account's organization** (phase 1 R, owner decision 2026-10-21): Claude in
+Chrome connects only to a Claude Code signed in to the extension's organization, so a
+switch across organizations breaks the bridge until `/chrome`. The policy chooses among
+the organization's accounts first, short of the landing margin if need be, as any
+switch past the hard floor may; with none, the best account elsewhere, and the reason
+says `Claude in Chrome may need /chrome`. An account's organization is its pinned
+`org_id`, or else the one its last reading recorded; unknown, nothing is narrowed. A
+switch the hold delays is not narrowed: it is chosen when it goes, after the hold.
 
 ### 4.11 Claude Code integration is a plugin over the CLI
 
@@ -487,6 +502,20 @@ into someone's config directory.
 - **The plugin's version is the binary's.** `plugin/.claude-plugin/plugin.json`
   carries the release version and is bumped with every release; Claude Code only
   offers an update when it changes.
+- **The hooks around claude.ai calls wait and refuse; they never allow**
+  (IMPROVEMENTS phase 1 S and G, owner decisions 2026-10-21). A swap takes
+  effect for Claude Code's claude.ai tools only when they next re-read the
+  credential, up to about half a minute later (GROUND_TRUTH §55), and nothing
+  short of `/login` makes a running session switch sooner. So `hook pre`
+  sleeps out `settle_after_swap` after the profile's last switch, inside the
+  hook's own timeout (330 s, past the 5-minute cap), and lets the call go on
+  through the normal flow: it never answers `permissionDecision: allow`, which
+  would skip the person's permission prompt. Its one answer is `deny`, for a
+  call on an artifact `hook post` saw another account publish, with the reason
+  Claude reads. The owner book is its own file (`artifacts.json`), written
+  under its own lock by every session's hook, apart from the daemon's
+  state.json. An uncertain owner (a switch while the publish ran) is not
+  recorded: a wrong owner would refuse the real owner's calls.
 
 ## 5. Failure modes, and what happens
 

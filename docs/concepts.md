@@ -106,12 +106,33 @@ After a rotation, **`cooldown`** (10 minutes) must pass before the next.
 With **`switch_when = idle`** a due switch waits for a gap between Claude
 Code's turns, for up to **`max_switch_wait`** (30 seconds), then goes ahead.
 
-A session running a **browser task** is busy too: after its last Claude in
-Chrome call a due switch waits **`hold_for_browser`** (5 minutes), because
-rotating mid task breaks the extension's bridge. That wait is not cut short
-by `max_switch_wait`; only the hard floor goes sooner. `cs why` says so
-(`switch wanted, session busy (browser task 2m ago) — waiting for an idle
-gap`). `hold_for_browser = "0s"` turns it off.
+A session doing **claude.ai work** is busy too: after its last Claude in
+Chrome, artifact or Docs call a due switch waits **`hold_for_claude_ai`** (5
+minutes). Rotating mid browser task breaks the extension's bridge, and an
+artifact belongs to the account live when it was published, so a rotation
+mid task leaves the next call acting as another account. That wait is not
+cut short by `max_switch_wait`; only the hard floor goes sooner. `cs why`
+says so (`switch wanted, session busy (claude.ai work 2m ago) — waiting for
+an idle gap`). `hold_for_claude_ai = "0s"` turns it off. 0.7.8 and 0.7.9
+called it `hold_for_browser`, and a config that still does is read as
+before.
+
+A switch that cannot wait for the hold (past the hard floor, or off a
+refused account) **stays in the live account's organization**: Claude in
+Chrome connects only to a Claude Code signed in to the extension's
+organization. It takes the best account there, short of the landing margin
+if need be. When no account there has room it goes to the best one
+elsewhere, and its reason says `Claude in Chrome may need /chrome`.
+
+Inside a session, the plugin looks after the calls themselves. After a
+switch Claude Code's claude.ai tools act as the previous account for up to
+about half a minute, so it holds a Claude in Chrome, artifact or Docs call
+until **`settle_after_swap`** (45 seconds) after the switch. And since only
+the account that published an artifact can read, change or delete it, it
+records each publish's owner and refuses a later call on that artifact while
+another account is live, saying whose it is: `cs use <owner>` and retry, or
+publish a new one ([cs and Claude Code → The
+plugin](cli/claude-code.md#claudeai-calls-across-a-switch)).
 
 `cs why` prints the decision and the reasoning for each account. The app's
 **Next:** line and `cs plan` show the same. `cs audit --kind decision` lists

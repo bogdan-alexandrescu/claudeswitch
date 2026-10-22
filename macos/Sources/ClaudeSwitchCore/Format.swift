@@ -127,6 +127,12 @@ public struct MenuTitle: Equatable {
         self.loading = loading
     }
 
+    /// The label while `--render` draws the screens to files. SwiftUI puts
+    /// the menu bar item up for those seconds whatever the app does, beside
+    /// the real app's; "cs …" read as a second ClaudeSwitch that never loads
+    /// (2026-10-21), so it says what it is.
+    public static let rendering = MenuTitle(text: "cs render", level: .ok, problem: false)
+
     /// The label, told what went wrong reaching the binary. Only a binary
     /// that is missing or too old is a problem (the question mark); with no
     /// data yet and nothing wrong it is loading, which shows the ordinary

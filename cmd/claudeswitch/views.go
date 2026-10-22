@@ -56,9 +56,9 @@ func (v profileView) input(st *state.State, now time.Time) policy.Input {
 	in := policy.Input{
 		Cfg: v.cfg, St: st, Now: now, LastSwitch: v.ist.LastSwitch, Pinned: v.ist.Pinned, PinHard: v.ist.PinHard,
 		Lookahead: lookahead(v.cfg),
-		// The last browser call the daemon recorded: `why` says a switch is
-		// waiting for a browser task as the daemon does (IMPROVEMENTS P4).
-		BrowserAt: v.ist.BrowserAt,
+		// The last claude.ai call the daemon recorded: `why` says a switch
+		// is waiting for that work as the daemon does (IMPROVEMENTS P4).
+		ClaudeAIAt: v.ist.ClaudeAIAt,
 	}
 	if v.declared {
 		in.Pool, in.Live, in.Tiers = v.pool, v.ist, v.in.Tiers

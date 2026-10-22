@@ -39,7 +39,7 @@ import (
 // insert profiles it finds on disk (mergeProfiles), and a map write racing
 // any of those reads is a crash, not a stale value.
 //
-// The detector's own methods (IdleFor, LastActivity, LastBrowserCall,
+// The detector's own methods (IdleFor, LastActivity, LastClaudeAICall,
 // WorstLatency) take its internal lock, so calling them from run is safe.
 
 // daemonPoller is the poller as the daemon drives it.
@@ -92,9 +92,10 @@ type activity interface {
 	WorstLatency() time.Duration
 	// Seeded is false until the startup walk of the transcripts is done.
 	Seeded() bool
-	// LastBrowserCall is the newest Claude in Chrome call the profile's
-	// sessions have made since the detector started (IMPROVEMENTS P4).
-	LastBrowserCall() time.Time
+	// LastClaudeAICall is the newest claude.ai call (Claude in Chrome, an
+	// artifact, a Doc) the profile's sessions have made since the detector
+	// started (IMPROVEMENTS P4, phase 1 H).
+	LastClaudeAICall() time.Time
 }
 
 type auditor interface{ Write(audit.Event) error }
@@ -328,7 +329,7 @@ func (quietDetector) WorstLatency() time.Duration           { return 0 }
 // Seeded: there is nothing to walk, so nothing is pending.
 func (quietDetector) Seeded() bool { return true }
 
-func (quietDetector) LastBrowserCall() time.Time { return time.Time{} }
+func (quietDetector) LastClaudeAICall() time.Time { return time.Time{} }
 
 // multi reports whether more than one profile is configured. Notifications
 // name the profile only then: with one, the name says nothing.
@@ -486,7 +487,7 @@ func (d *daemon) evaluate(ctx context.Context, il *profileLoop, trigger string) 
 	}
 	d.reconcileLogin(ctx, il)
 	ist := d.profState(il)
-	d.noteBrowser(il)
+	d.noteClaudeAI(il)
 	// D34: an account live in another profile is not a candidate here.
 	// State says which, at no cost; the §3 check before a write asks the
 	// live items too, and adds what it finds.
@@ -500,10 +501,10 @@ func (d *daemon) evaluate(ctx context.Context, il *profileLoop, trigger string) 
 			// Whether an expired token explains an unreadable active account
 			// (IMPROVEMENTS A2): on an idle session it does.
 			SessionBusy: !il.det.IdleFor(d.idleGap),
-			// The newest browser call, this detector's or one an earlier
-			// daemon recorded (noteBrowser): a switch within
-			// hold_for_browser of it is Held (IMPROVEMENTS P4).
-			BrowserAt:   ist.BrowserAt,
+			// The newest claude.ai call, this detector's or one an earlier
+			// daemon recorded (noteClaudeAI): a switch within
+			// hold_for_claude_ai of it is Held (IMPROVEMENTS P4, phase 1 H).
+			ClaudeAIAt:  ist.ClaudeAIAt,
 			Unavailable: unavailable,
 		}
 	}
@@ -585,10 +586,11 @@ func (d *daemon) evaluate(ctx context.Context, il *profileLoop, trigger string) 
 		il.wantSwitchSince = time.Now()
 	}
 	waited := time.Since(il.wantSwitchSince)
-	// A session that used the browser within hold_for_browser is busy too,
-	// even between turns (IMPROVEMENTS P4): swapping the credential mid
-	// browser task breaks Claude in Chrome's bridge. The policy marks such a
-	// switch Held, and never a forced one.
+	// A session that made a claude.ai call within hold_for_claude_ai is busy
+	// too, even between turns (IMPROVEMENTS P4, phase 1 H): swapping the
+	// credential mid browser task breaks Claude in Chrome's bridge, and mid
+	// artifact work leaves the next call acting as another account. The
+	// policy marks such a switch Held, and never a forced one.
 	if !dec.Forced && (dec.Held != "" || !il.det.IdleFor(d.idleGap)) {
 		busy := "session busy"
 		if dec.Held != "" {
@@ -602,10 +604,10 @@ func (d *daemon) evaluate(ctx context.Context, il *profileLoop, trigger string) 
 				"target", dec.Target, "reason", dec.Reason, "waited", waited.Round(time.Second))
 			return
 		}
-		// Nor is a browser hold cut short by max_switch_wait. That limit is
-		// there because a session in continuous use never goes quiet; a hold
-		// ends by itself, hold_for_browser after the last browser call, and
-		// only the hard floor (a forced switch) overrides it.
+		// Nor is a claude.ai hold cut short by max_switch_wait. That limit
+		// is there because a session in continuous use never goes quiet; a
+		// hold ends by itself, hold_for_claude_ai after the last claude.ai
+		// call, and only the hard floor (a forced switch) overrides it.
 		if dec.Held != "" {
 			il.log.Info(policy.WaitingFor(busy),
 				"target", dec.Target, "reason", dec.Reason,
@@ -887,22 +889,22 @@ func inUseWhy(other, how string) string {
 	return "in use by " + other + " (" + how + ")"
 }
 
-// noteBrowser records in state the newest Claude in Chrome call the
-// profile's detector has seen (IMPROVEMENTS P4): `cs why` reads it there, and
+// noteClaudeAI records in state the newest claude.ai call the profile's
+// detector has seen (IMPROVEMENTS P4, phase 1 H): `cs why` reads it there, and
 // so does the next daemon, whose detector reads no history. Only ever later:
 // a restarted daemon's detector has seen nothing yet.
-func (d *daemon) noteBrowser(il *profileLoop) {
+func (d *daemon) noteClaudeAI(il *profileLoop) {
 	ist := d.profState(il)
-	if at := il.det.LastBrowserCall(); at.After(ist.BrowserAt) {
-		ist.BrowserAt = at
+	if at := il.det.LastClaudeAICall(); at.After(ist.ClaudeAIAt) {
+		ist.ClaudeAIAt = at
 	}
 }
 
-// noteBrowsers is noteBrowser for every profile, before a save: a call made
+// noteClaudeAIs is noteClaudeAI for every profile, before a save: a call made
 // since a profile's last tick is not lost when the daemon stops.
-func (d *daemon) noteBrowsers() {
+func (d *daemon) noteClaudeAIs() {
 	for _, il := range d.profs {
-		d.noteBrowser(il)
+		d.noteClaudeAI(il)
 	}
 }
 
@@ -1351,7 +1353,7 @@ func (d *daemon) run(ctx context.Context, stop chan struct{}, sig <-chan os.Sign
 			d.log.Info("stopping")
 			close(stop)
 			d.stopProfiles()
-			d.noteBrowsers()
+			d.noteClaudeAIs()
 			_ = d.save()
 			return nil
 		case <-tick:
@@ -1374,7 +1376,7 @@ func (d *daemon) run(ctx context.Context, stop chan struct{}, sig <-chan os.Sign
 					"no usage reading for "+blind.Round(time.Minute).String())
 				close(stop)
 				d.stopProfiles()
-				d.noteBrowsers()
+				d.noteClaudeAIs()
 				_ = d.save()
 				return fmt.Errorf("blind for %s", blind.Round(time.Second))
 			}
@@ -1392,7 +1394,7 @@ func (d *daemon) run(ctx context.Context, stop chan struct{}, sig <-chan os.Sign
 				d.releaseGhosts(ctx)
 			}
 			d.recordReadings() // the re-attribution polls above
-			d.noteBrowsers()
+			d.noteClaudeAIs()
 			if err := d.save(); err != nil {
 				d.log.Warn("state save failed", "err", err)
 			}

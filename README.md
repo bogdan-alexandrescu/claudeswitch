@@ -7,7 +7,7 @@ stands, and hot-swaps Claude Code onto a fresh account before the current one
 hits its limit: no restart, no lost session. It ships as a Go CLI plus daemon
 (macOS and Linux), a native macOS menu-bar app and a Claude Code plugin.
 
-Latest release: **v0.7.9**
+Latest release: **v0.8.0**
 ([releases](https://github.com/bogdan-alexandrescu/claudeswitch/releases)).
 
 <p align="center"><img src="docs/images/popover.png" width="384" alt="The ClaudeSwitch menu-bar popover: the daemon is live, the default profile is on work-1 and the work profile is on work-team"></p>
@@ -136,7 +136,7 @@ arm64, and a `checksums.txt`. The archives are reproducible: the same tag
 always produces the same bytes.
 
 ```sh
-VERSION=v0.7.9
+VERSION=v0.8.0
 TARGET=darwin_arm64            # darwin_amd64, linux_amd64, linux_arm64
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 curl -LO "$BASE/claudeswitch_${VERSION}_${TARGET}.tar.gz"
@@ -162,7 +162,7 @@ cd claudeswitch
 symlink, and installs the daemon in dry-run (see [Daemon](#daemon)). To build
 the binary alone: `go build -o bin/claudeswitch ./cmd/claudeswitch`.
 
-**Verify it worked:** `cs version` prints `claudeswitch v0.7.9` for the release
+**Verify it worked:** `cs version` prints `claudeswitch v0.8.0` for the release
 binary (a build from source prints `claudeswitch dev`). If the shell cannot
 find `cs`, add `~/.local/bin` to your `PATH`.
 
@@ -233,7 +233,7 @@ Re-run it after pulling to update.
 From a release, as a universal build:
 
 ```sh
-VERSION=v0.7.9
+VERSION=v0.8.0
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 ZIP="ClaudeSwitch-${VERSION#v}-macos.zip"
 curl -LO "$BASE/$ZIP"
@@ -259,7 +259,7 @@ to install it. [macos/README.md](macos/README.md) has the details.
 
 **Verify it worked:** the Twin rings glyph with the live account and its
 utilization appears in the menu bar, and **About ClaudeSwitch** in its ⋯ menu
-shows version 0.7.9. If you see nothing on a MacBook with a notch, see
+shows version 0.8.0. If you see nothing on a MacBook with a notch, see
 [Troubleshooting](#troubleshooting).
 
 ### Claude Code plugin
@@ -804,7 +804,8 @@ restart.
 | `hard_floor` | `99` | above this, swap mid-turn rather than wait for an idle gap |
 | `switch_when` | `idle` | `idle` swaps between turns; `immediate` does not wait |
 | `max_switch_wait` | `30s` | how long a due switch waits for an idle gap |
-| `hold_for_browser` | `5m` | a due switch waits this long after a session's last Claude in Chrome call, so a browser task is not cut off; only the hard floor goes sooner; `0s` turns it off |
+| `hold_for_claude_ai` | `5m` | a due switch waits this long after a session's last Claude in Chrome, artifact or Docs call, so that work is not split across accounts; only the hard floor goes sooner; `0s` turns it off (`hold_for_browser` in 0.7.8–0.7.9, still read) |
+| `settle_after_swap` | `45s` | after a switch, the plugin holds a Claude in Chrome, artifact or Docs call until this long after it, so the call acts as the new account; `0s` turns it off |
 | `cooldown` | `10m` | minimum gap between rotations |
 | `landing_margin` | `10` | a switch target's session window needs this many points of room below `switch_at`, so it is not left again at once; `0` turns it off |
 | `models` | `[]` | models whose per-model weekly limit counts like the weekly window; empty means those limits are shown, never acted on |

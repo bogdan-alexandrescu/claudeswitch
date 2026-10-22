@@ -9,11 +9,14 @@ struct ClaudeSwitchBarApp: App {
     @StateObject private var store = AppHub.store
     @StateObject private var login = LoginItem()
 
+    /// --render: drawing the screens to files, then exiting.
+    static let rendering = CommandLine.arguments.contains("--render")
+
     init() {
         // Before the status item exists, so AppKit places it by this on a
         // first launch: near the right edge, clear of a notch. Never over
         // a stored position (a ⌘-drag).
-        if !CommandLine.arguments.contains("--render") {
+        if !Self.rendering {
             StatusItemPlacement.seed(.standard)
         }
     }
@@ -24,9 +27,10 @@ struct ClaudeSwitchBarApp: App {
                 .environmentObject(store)
                 .environmentObject(login)
         } label: {
-            MenuBarLabel(title: MenuTitle.of(store.problem == .missing ? nil : store.snapshot,
-                                             compact: store.compact, profile: store.menuProfile,
-                                             problem: store.problem),
+            MenuBarLabel(title: Self.rendering ? .rendering
+                                : MenuTitle.of(store.problem == .missing ? nil : store.snapshot,
+                                               compact: store.compact, profile: store.menuProfile,
+                                               problem: store.problem),
                          glyph: GlyphReading.of(store.problem == .missing ? nil : store.snapshot,
                                                 profile: store.menuProfile))
                 .background(SettingsOpener(store: store))

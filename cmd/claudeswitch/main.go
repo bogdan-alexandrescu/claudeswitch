@@ -135,6 +135,8 @@ func main() {
 		err = cmdApp(args)
 	case "chrome":
 		err = cmdChrome(args)
+	case "hook":
+		cmdHook(args)
 	case "version", "-v", "--version":
 		err = cmdVersion(os.Stdout, args)
 	default:
@@ -4441,7 +4443,7 @@ func decisionJSON(d policy.Decision) map[string]any {
 		m["unpin"] = d.Unpin // IMPROVEMENTS F3: the pin this decision lifts
 	}
 	if d.Held != "" {
-		// IMPROVEMENTS P4: the switch waits for a browser task, until then.
+		// IMPROVEMENTS P4, phase 1 H: the switch waits for claude.ai work, until then.
 		m["held"], m["held_until"] = d.Held, d.HeldUntil
 	}
 	return m

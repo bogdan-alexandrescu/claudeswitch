@@ -12,7 +12,10 @@ import (
 // IMPROVEMENTS P4 (owner decision 2026-10-21): a rotation in the middle of a
 // browser task breaks Claude in Chrome's bridge, so the detector notes, for
 // each session, when it last called a Claude in Chrome tool, and the daemon
-// holds a rotation while that is recent.
+// holds a rotation while that is recent. Phase 1 H (owner decision
+// 2026-10-21) counts artifact and Docs calls too: each acts as the account
+// live when it is made, so a rotation between two of them splits the work
+// across accounts (GROUND_TRUTH §55).
 
 // stamp is a transcript record's timestamp, as Claude Code writes it.
 func stamp(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000Z") }
@@ -49,20 +52,20 @@ func TestABrowserCallIsRecordedForItsSessionAtItsOwnTime(t *testing.T) {
 	b := writeSession(t, proj, "b.jsonl", toolUseLine(second, "mcp__claude-in-chrome__computer"))
 
 	d := New(root, quietLog())
-	if at := d.LastBrowserCall(); !at.IsZero() {
-		t.Fatalf("LastBrowserCall %v before any transcript was read, want zero", at)
+	if at := d.LastClaudeAICall(); !at.IsZero() {
+		t.Fatalf("LastClaudeAICall %v before any transcript was read, want zero", at)
 	}
 	d.scanFile(a)
-	if at := d.LastBrowserCall(); !at.Equal(first) {
-		t.Fatalf("LastBrowserCall %v, want the record's own time %v", at, first)
+	if at := d.LastClaudeAICall(); !at.Equal(first) {
+		t.Fatalf("LastClaudeAICall %v, want the record's own time %v", at, first)
 	}
 	d.scanFile(b)
-	if at := d.LastBrowserCall(); !at.Equal(second) {
-		t.Fatalf("LastBrowserCall %v, want the newest session's call %v", at, second)
+	if at := d.LastClaudeAICall(); !at.Equal(second) {
+		t.Fatalf("LastClaudeAICall %v, want the newest session's call %v", at, second)
 	}
 
 	d.mu.Lock()
-	n, atA, atB := len(d.browser), d.browser[a], d.browser[b]
+	n, atA, atB := len(d.claudeAI), d.claudeAI[a], d.claudeAI[b]
 	d.mu.Unlock()
 	if n != 2 || !atA.Equal(first) || !atB.Equal(second) {
 		t.Errorf("per session: %d sessions, a %v, b %v; want a %v and b %v", n, atA, atB, first, second)
@@ -89,8 +92,8 @@ func TestOnlyAClaudeInChromeToolUseCounts(t *testing.T) {
 	)
 	d := New(root, quietLog())
 	d.scanFile(p)
-	if at := d.LastBrowserCall(); !at.IsZero() {
-		t.Fatalf("LastBrowserCall %v from records that call no Claude in Chrome tool, want zero", at)
+	if at := d.LastClaudeAICall(); !at.IsZero() {
+		t.Fatalf("LastClaudeAICall %v from records that call no Claude in Chrome tool, want zero", at)
 	}
 }
 
@@ -109,8 +112,8 @@ func TestABrowserCallStampedAheadOrNotAtAllCountsAsNow(t *testing.T) {
 		before := time.Now()
 		d.scanFile(p)
 		after := time.Now()
-		if at := d.LastBrowserCall(); at.Before(before) || at.After(after) {
-			t.Errorf("%s: LastBrowserCall %v, want the time it was read (%v to %v)", filepath.Base(p), at, before, after)
+		if at := d.LastClaudeAICall(); at.Before(before) || at.After(after) {
+			t.Errorf("%s: LastClaudeAICall %v, want the time it was read (%v to %v)", filepath.Base(p), at, before, after)
 		}
 	}
 }
@@ -133,7 +136,34 @@ func TestStartupReadsNoTranscriptForBrowserCalls(t *testing.T) {
 	if !d.Seeded() {
 		t.Fatal("never seeded")
 	}
-	if at := d.LastBrowserCall(); !at.IsZero() {
-		t.Fatalf("LastBrowserCall %v after startup, want zero: history is not replayed", at)
+	if at := d.LastClaudeAICall(); !at.IsZero() {
+		t.Fatalf("LastClaudeAICall %v after startup, want zero: history is not replayed", at)
+	}
+}
+
+// The Artifact tools and the Claude Docs connector are claude.ai work as much
+// as the browser is; other tools, claude.ai's other connectors among them,
+// are not.
+func TestArtifactAndDocsCallsCountAsClaudeAIWork(t *testing.T) {
+	root := t.TempDir()
+	proj := filepath.Join(root, "p")
+	for i, name := range []string{"Artifact", "ArtifactComments", "ArtifactData",
+		"mcp__claude_ai_Claude_Docs__batch", "mcp__claude_ai_Claude_Docs__read"} {
+		at := time.Now().Add(-time.Duration(i+1) * time.Minute).UTC().Truncate(time.Millisecond)
+		p := writeSession(t, proj, fmt.Sprintf("s%d.jsonl", i), toolUseLine(at, name))
+		d := New(root, quietLog())
+		d.scanFile(p)
+		if got := d.LastClaudeAICall(); !got.Equal(at) {
+			t.Errorf("%s: LastClaudeAICall %v, want %v", name, got, at)
+		}
+	}
+	for i, name := range []string{"Artifacts", "ArtifactX", "mcp__claude_ai_Notion__search",
+		"mcp__claude_ai_Claude_Docsx__read", "Agent"} {
+		p := writeSession(t, proj, fmt.Sprintf("n%d.jsonl", i), toolUseLine(time.Now().Add(-time.Minute), name))
+		d := New(root, quietLog())
+		d.scanFile(p)
+		if got := d.LastClaudeAICall(); !got.IsZero() {
+			t.Errorf("%s counted as claude.ai work (%v)", name, got)
+		}
 	}
 }

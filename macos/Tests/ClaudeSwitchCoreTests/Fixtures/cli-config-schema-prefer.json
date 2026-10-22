@@ -103,10 +103,23 @@
     },
     {
       "default": "5m0s",
-      "description": "hold a rotation this long after a session's last Claude in Chrome call (0 = off)",
+      "description": "hold a rotation this long after a session's last claude.ai call: Claude in Chrome, an artifact, a Doc (0 = off)",
       "enum": [],
-      "key": "hold_for_browser",
+      "key": "hold_for_claude_ai",
       "max": null,
+      "min": 0,
+      "min_exclusive": false,
+      "scopes": [
+        "global"
+      ],
+      "type": "duration"
+    },
+    {
+      "default": "45s",
+      "description": "after a switch, hold a claude.ai call until this long after it, so it acts as the new account (0 = off)",
+      "enum": [],
+      "key": "settle_after_swap",
+      "max": 300,
       "min": 0,
       "min_exclusive": false,
       "scopes": [

@@ -1157,3 +1157,37 @@ phase 1; G refuses with instructions (whose artifact it is, and `cs use
 <owner>` when that account has room) rather than switching back by itself or
 only warning. P (a pinned profile) is not being set up; C (a browser per
 account) waits until after phase 1.
+
+**Decided 2026-10-21 (owner), phase 1 details:** H is one setting renamed to
+`hold_for_claude_ai` (Claude in Chrome, Artifact and Docs calls, default 5m;
+`hold_for_browser` is still read as its old name). R: when no account in the
+live account's organization has room at the hard floor during a hold, the
+forced switch goes to the best account in another organization and says Claude
+in Chrome may need `/chrome`. S is a setting, `settle_after_swap`, default 45s
+(0 off).
+
+**Phase 1 built for 0.8.0 (2026-10-21), not yet released:**
+- **H.** `hold_for_claude_ai` (default 5m) replaces `hold_for_browser`, which
+  is still read from a file and still taken by `cs config get`/`set`; a set
+  rewrites the line. The detector counts `Artifact`, `ArtifactComments`,
+  `ArtifactData` and `mcp__claude_ai_Claude_Docs__*` calls beside Claude in
+  Chrome ones; claude.ai's other connectors do not count. The hold reads
+  `session busy (claude.ai work 2m ago)`; state.json keeps the last call as
+  `claude_ai_at`.
+- **R.** A switch that goes during a hold (forced, or off a refused account)
+  takes the best account in the live account's organization, short of the
+  landing margin if need be; with none there, the best elsewhere, and its
+  reason says `Claude in Chrome may need /chrome`. An account's organization
+  is its `org_id`, or else its last reading's. A switch the hold delays is not
+  narrowed.
+- **S.** `settle_after_swap` (default 45s, 0 off, at most 5m). The plugin's
+  `PreToolUse` hook (`claudeswitch hook pre`, timeout 330 s) waits until that
+  long after the profile's last switch, again for a switch while it waits, and
+  never answers a permission.
+- **G.** The plugin's `PostToolUse` hook on `Artifact` (`hook post`) records
+  each publish's owner (id, file, session, account and seat) in
+  `artifacts.json`, unless a switch while it ran makes the owner uncertain.
+  `hook pre` denies an Artifact, ArtifactComments or ArtifactData call on a
+  recorded artifact while another account is live, saying whose it is and
+  either `cs use <owner>` (when it has room) or publishing a new one. `open`
+  is never refused; a file path counts only in the session that published it.

@@ -147,8 +147,11 @@ func configChanges(old, next *config.Config) []string {
 	}
 	dur("cooldown", old.Cooldown, next.Cooldown)
 	dur("max_switch_wait", old.MaxSwitchWait, next.MaxSwitchWait)
-	if a, b := old.BrowserHold(), next.BrowserHold(); a != b {
-		out = append(out, fmt.Sprintf("hold_for_browser %s → %s", a, b))
+	if a, b := old.ClaudeAIHold(), next.ClaudeAIHold(); a != b {
+		out = append(out, fmt.Sprintf("hold_for_claude_ai %s → %s", a, b))
+	}
+	if a, b := old.Settle(), next.Settle(); a != b {
+		out = append(out, fmt.Sprintf("settle_after_swap %s → %s", a, b))
 	}
 	dur("poll_active", old.PollActive, next.PollActive)
 	dur("poll_hot", old.PollHot, next.PollHot)

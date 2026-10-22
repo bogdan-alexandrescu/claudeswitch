@@ -232,7 +232,7 @@ func (f *fakeDet) IdleFor(time.Duration) bool            { return f.idle }
 func (f *fakeDet) LastActivity() time.Time               { return f.last }
 func (f *fakeDet) WorstLatency() time.Duration           { return 0 }
 func (f *fakeDet) Seeded() bool                          { return !f.unseeded }
-func (f *fakeDet) LastBrowserCall() time.Time            { return f.browser }
+func (f *fakeDet) LastClaudeAICall() time.Time           { return f.browser }
 
 type fakeAudit struct {
 	mu     sync.Mutex

@@ -126,17 +126,30 @@ func settings() []setting {
 			get:  func(c *config.Config) string { return c.MaxSwitchWait.String() },
 			set:  durSetter(func(c *config.Config) *config.Duration { return &c.MaxSwitchWait }),
 			help: "stop waiting for an idle gap after this"},
-		// IMPROVEMENTS P4: global only, like the other timing settings.
-		{name: "hold_for_browser", kind: "duration", min: num(0),
-			get: func(c *config.Config) string { return c.BrowserHold().String() },
+		// IMPROVEMENTS P4 and phase 1 H: global only, like the other timing
+		// settings. Still found by its old name (findSetting).
+		{name: "hold_for_claude_ai", kind: "duration", min: num(0),
+			get: func(c *config.Config) string { return c.ClaudeAIHold().String() },
 			set: func(c *config.Config, v string) error {
 				d, err := time.ParseDuration(strings.TrimSpace(v))
 				if err != nil {
 					return fmt.Errorf("%q is not a duration (try 90s, 5m, 2h)", v)
 				}
-				c.HoldForBrowser = &config.Duration{Duration: d}
+				c.HoldForClaudeAI = &config.Duration{Duration: d}
 				return nil
-			}, help: "hold a rotation this long after a session's last Claude in Chrome call (0 = off)"},
+			}, help: "hold a rotation this long after a session's last claude.ai call: Claude in Chrome, an artifact, a Doc (0 = off)"},
+		// IMPROVEMENTS phase 1 S: read by the plugin's hook before each
+		// claude.ai call; global only.
+		{name: "settle_after_swap", kind: "duration", min: num(0), max: num(config.MaxSettleAfterSwap.Seconds()),
+			get: func(c *config.Config) string { return c.Settle().String() },
+			set: func(c *config.Config, v string) error {
+				d, err := time.ParseDuration(strings.TrimSpace(v))
+				if err != nil {
+					return fmt.Errorf("%q is not a duration (try 30s, 45s, 1m)", v)
+				}
+				c.SettleAfterSwap = &config.Duration{Duration: d}
+				return nil
+			}, help: "after a switch, hold a claude.ai call until this long after it, so it acts as the new account (0 = off)"},
 		{name: "cooldown", kind: "duration", min: num(0),
 			get:  func(c *config.Config) string { return c.Cooldown.String() },
 			set:  durSetter(func(c *config.Config) *config.Duration { return &c.Cooldown }),
@@ -251,6 +264,9 @@ func (s setting) schema(def *config.Config) map[string]any {
 }
 
 func findSetting(name string) (setting, bool) {
+	if name == config.OldHoldForClaudeAI {
+		name = "hold_for_claude_ai"
+	}
 	for _, s := range settings() {
 		if s.name == name {
 			return s, true
@@ -432,6 +448,10 @@ func configSet(w io.Writer, cfg *config.Config, s setting, value string, asJSON 
 	} else {
 		err := editConfigText(cfg.Path, func(text string) (string, error) {
 			out, err := setKey(text, blockRef{}, s.name, s.tomlValue(cfg))
+			if err == nil && s.name == "hold_for_claude_ai" {
+				// The file never carries both names.
+				out, err = deleteKey(out, blockRef{}, config.OldHoldForClaudeAI)
+			}
 			if err != nil || s.name == "poll_active" {
 				return out, err
 			}

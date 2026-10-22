@@ -119,7 +119,8 @@ public enum SettingsPane: String, CaseIterable {
     case rotation, polling, advanced
 
     static let rotationKeys = ["switch_at", "switch_at_weekly", "hard_floor", "landing_margin", "switch_when",
-                               "max_switch_wait", "hold_for_browser", "cooldown", "models", "prefer"]
+                               "max_switch_wait", "hold_for_claude_ai", "settle_after_swap", "cooldown",
+                               "models", "prefer"]
     static let pollingKeys = ["hot_threshold", "poll_active", "poll_hot", "poll_idle", "api_budget",
                               "blind_failover_polls"]
 

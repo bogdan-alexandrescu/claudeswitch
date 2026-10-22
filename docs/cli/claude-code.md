@@ -284,7 +284,7 @@ read. The rows above show the layout; their values are illustrative.
 ## The plugin
 
 The Claude Code plugin `cs@claudeswitch` (installing it:
-[README → Claude Code plugin](../../README.md#claude-code-plugin)) adds two
+[README → Claude Code plugin](../../README.md#claude-code-plugin)) adds four
 hooks and the `/cs` command. It carries no logic of its own: each piece calls
 the binary, found on `PATH` or at `~/.local/bin/claudeswitch`.
 
@@ -294,8 +294,49 @@ the binary, found on `PATH` or at `~/.local/bin/claudeswitch`.
 |---|---|---|
 | `SessionStart` | `cs context` | the lines above. Without the binary it says `plugin installed but \`claudeswitch\` is not on PATH`; with one too old for `context`, `the installed binary is older than this plugin`. Always exits 0 |
 | `PostToolUseFailure` on `mcp__claude-in-chrome__*` | `cs chrome hint` | when a browser tool failed because the extension is on another claude.ai account or not connected, tells Claude which account Claude Code is on and the command to run, once per rotation. Only lines starting `[claudeswitch]` reach Claude ([cs chrome](chrome.md#cs-chrome-hint-plugin-hook)) |
+| `PreToolUse` on `Artifact`, `ArtifactComments`, `ArtifactData`, `mcp__claude_ai_Claude_Docs__*` and `mcp__claude-in-chrome__*` | `cs hook pre` | **settles**, then **guards** ([below](#claudeai-calls-across-a-switch)). It never answers a permission prompt: a call it lets through goes on as it would without the plugin |
+| `PostToolUse` on `Artifact` | `cs hook post` | records which account published an artifact, for the guard |
 
-Both time out after 10 seconds.
+`cs hook pre` times out after 330 seconds, past the longest settle (5
+minutes); the others after 10. Every hook exits 0: none is ever why a tool
+call or a session fails.
+
+### claude.ai calls across a switch
+
+After a switch, Claude Code's claude.ai tools (Claude in Chrome, Artifact,
+Claude Docs) go on acting as the previous account for up to about half a
+minute: measured at up to 35 seconds over four switches. And claude.ai keeps
+an artifact for the account that published it: only that account can read,
+change or delete it. So the plugin does two things around those calls.
+
+**Settle.** Before such a call, `cs hook pre` waits until
+`settle_after_swap` (45 seconds; `0s` turns it off) after the session's
+profile last switched, and again if another switch comes while it waits, so
+the call acts as the account now live. A call made long after a switch does
+not wait at all.
+
+**Guard.** After a publish, `cs hook post` records the artifact's id, the
+file it came from and the session, for the account live then (and its seat,
+so a renamed account still owns its artifacts). If a switch came while the
+call ran, the owner is uncertain and nothing is recorded. Before an
+Artifact, ArtifactComments or ArtifactData call on a recorded artifact
+(named by its URL, or, in the session that published it, by its file) while
+another account is live, `cs hook pre` refuses the call, and Claude reads:
+
+```
+[claudeswitch] This artifact belongs to work-a: it was published while work-a was live, and
+claude.ai lets only the account that published an artifact read, change or delete it. This
+session now uses work-b (claudeswitch rotated its profile). Either run `cs use work-a` (work-a
+has room: session 40%, week 20%) and retry, or publish it again as a new artifact under work-b.
+```
+
+When the owner has no room it offers only the new artifact. `open` is never
+refused (it shows the page in the person's own browser), nor is an artifact
+the plugin did not see published. The record is
+`~/.local/state/claudeswitch/artifacts.json`, the newest 500.
+
+Rotation itself waits for claude.ai work too: `hold_for_claude_ai`
+([GUIDE → Configuration](../GUIDE.md#configuration)).
 
 ### /cs
 

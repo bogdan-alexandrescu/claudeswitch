@@ -1,5 +1,5 @@
 {
-  "description": "claudeswitch: tell Claude how much quota the active account has left, and which Chrome profile Claude in Chrome needs after a rotation",
+  "description": "claudeswitch: tell Claude how much quota the active account has left, which Chrome profile Claude in Chrome needs after a rotation, and keep claude.ai calls (Claude in Chrome, artifacts, Docs) acting as the account live after a switch",
   "hooks": {
     "SessionStart": [
       {
@@ -19,6 +19,30 @@
           {
             "type": "command",
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/chrome-hint.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "^(Artifact|ArtifactComments|ArtifactData|mcp__claude_ai_Claude_Docs__.*|mcp__claude-in-chrome__.*)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/claude-ai.sh\" pre",
+            "timeout": 330
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^Artifact$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/claude-ai.sh\" post",
             "timeout": 10
           }
         ]

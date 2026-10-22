@@ -1610,3 +1610,12 @@ A fourth, earlier switch (20:53:30, made by someone else) had been picked up
 within 25 s. Every pickup came within 35 s, at varying points, which fits a
 credential re-read roughly every 30 s whose phase the switch lands in at
 random. The settle wait (S) is 45 s.
+
+**The Oracle session's failure (problem 4), resolved the same night.** Its
+`/status` named Acme, the extension's organization, so the organization rule did
+not explain it. Its Claude in Chrome connected, and a full production walk ran,
+once Chrome's claude.ai was signed in again, as work-team (about 21:00). The root
+cause is still not known. Two more facts: both sessions used the same browser
+(device 067c70fc…), and the "Browser 1" and "Browser 2" labels differ by session
+(that device was "Browser 1" in one and "Browser 2" in the other), so a label
+alone does not name a browser.

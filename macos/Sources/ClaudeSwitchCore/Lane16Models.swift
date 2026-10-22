@@ -294,6 +294,7 @@ public enum SettingNames {
         "landing_margin": "Landing margin",
         "models": "Count model limits",
         "prefer": "Spend first",
+        "hold_for_claude_ai": "Hold for claude.ai",
     ]
 
     /// An enum setting's choices as a person reads them (F1); a choice not

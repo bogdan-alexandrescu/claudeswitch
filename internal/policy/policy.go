@@ -44,9 +44,10 @@ type Decision struct {
 	Failover bool
 
 	// Held says why a switch waits even in an idle gap: a session of the
-	// profile called a Claude in Chrome tool within hold_for_browser
-	// (IMPROVEMENTS P4), as "session busy (browser task 2m ago)". HeldUntil
-	// is when that hold runs out, unless the session uses the browser again.
+	// profile called a claude.ai tool (Claude in Chrome, an artifact, a Doc)
+	// within hold_for_claude_ai (IMPROVEMENTS P4, phase 1 H), as "session
+	// busy (claude.ai work 2m ago)". HeldUntil is when that hold runs out,
+	// unless the session makes another such call.
 	// Empty on anything but a switch that is neither forced nor off a refused
 	// account. The daemon waits it out (max_switch_wait does not cut it
 	// short) and `cs why` says it in the same words (WaitingFor).
@@ -56,6 +57,10 @@ type Decision struct {
 	// For Wait: which account recovers first, and when.
 	RecoversAccount string
 	RecoversAt      time.Time
+
+	// org is the organization a switch during a claude.ai hold was kept to
+	// (IMPROVEMENTS phase 1 R, inOrg), for Explain's order; "" otherwise.
+	org string
 
 	// Unpin is set when the pin was lifted to reach this decision (the pin
 	// safety valve, IMPROVEMENTS F3): "pin on work-1 lifted: it was
@@ -135,11 +140,11 @@ type Input struct {
 	// False when unknown (the CLI has no detector), which errs toward holding.
 	SessionBusy bool
 
-	// BrowserAt is the newest Claude in Chrome call the profile's sessions
-	// have made, zero when none is known (IMPROVEMENTS P4): the daemon's
-	// detector or, for the CLI, what the daemon recorded in state. A switch
-	// within hold_for_browser of it is Held. It decides nothing else.
-	BrowserAt time.Time
+	// ClaudeAIAt is the newest claude.ai call the profile's sessions have
+	// made, zero when none is known (IMPROVEMENTS P4, phase 1 H): the
+	// daemon's detector or, for the CLI, what the daemon recorded in state.
+	// A switch within hold_for_claude_ai of it is Held.
+	ClaudeAIAt time.Time
 
 	// Unavailable names accounts that are not candidates, each with why:
 	// live or maybe live in another profile ("in use by work"), or, for
@@ -360,6 +365,14 @@ func Decide(in Input) Decision {
 		return waiting(all, in, why+unavailableNote(all, in))
 	}
 
+	// A switch that goes now, during a claude.ai hold, stays in the live
+	// account's organization if it can (R). One the hold delays is chosen
+	// when it goes.
+	org := ""
+	if forced || activeBurnt {
+		c, note, org = inOrg(all, in, active, c, note)
+	}
+
 	reason := fmt.Sprintf("active account at %.0f%% of its %s, over the %.0f%% trigger",
 		active.worst, active.windowLabel(), active.trigger(in.Cfg))
 	if activeBurnt {
@@ -368,30 +381,81 @@ func Decide(in Input) Decision {
 	if e := expiringNote(c, in); e != "" {
 		note += "; " + e
 	}
-	return in.held(Decision{Kind: Switch, Target: c.acct.ID, Reason: reason + note, Forced: forced}, activeBurnt)
+	return in.held(Decision{Kind: Switch, Target: c.acct.ID, Reason: reason + note, Forced: forced, org: org}, activeBurnt)
 }
 
-// held marks a switch that a recent Claude in Chrome call holds
-// (IMPROVEMENTS P4): the session counts as busy, as a mid-turn one does, and
-// the switch waits for the hold to run out. Not a forced switch: past the
-// hard floor the wall is worse than a broken browser bridge. Not one off a
-// refused account either: that account serves nothing, the browser task
-// included, so the switch keeps a refusal's timing.
+// orgOf is an account's organization: the one its entry is pinned to, or
+// else the one its last reading recorded; "" when neither is known.
+func orgOf(c candidate) string {
+	if c.acct.OrgID != "" {
+		return c.acct.OrgID
+	}
+	if c.obs != nil {
+		return c.obs.OrgID
+	}
+	return ""
+}
+
+// inOrg keeps a switch that goes during a claude.ai hold in the live
+// account's organization (IMPROVEMENTS phase 1 R, owner decision
+// 2026-10-21): Claude in Chrome connects only to a Claude Code signed in to
+// the extension's organization, so leaving it breaks the bridge until
+// /chrome. The best account there is taken, short of the landing margin if
+// need be, since this is a switch past the hard floor or off a refused
+// account. With none there, c stands, and the reason says so. It returns the
+// choice, its note, and the organization it was kept to ("" when it was
+// not narrowed: no hold, an unknown organization, or c already in it).
+func inOrg(all []candidate, in Input, active, c candidate, note string) (candidate, string, string) {
+	org := orgOf(active)
+	if _, holding := in.holdAgo(); !holding || org == "" || orgOf(c) == org {
+		return c, note, ""
+	}
+	var same []candidate
+	for _, x := range all {
+		if orgOf(x) == org {
+			same = append(same, x)
+		}
+	}
+	const kept = "kept to the live account's organization during claude.ai work, so Claude in Chrome stays connected"
+	if s, ok := bestEligible(same, in); ok {
+		return s, "; " + kept, org
+	}
+	if s, ok := bestWithin(same, in, 0, false); ok {
+		return s, fmt.Sprintf("; %s, short of the %g-point landing margin; %s",
+			shortOf(s, in), in.Cfg.Margin(), kept), org
+	}
+	return c, note + "; no account in the live account's organization has room, so Claude in Chrome may need /chrome", ""
+}
+
+// held marks a switch that a recent claude.ai call holds (IMPROVEMENTS P4,
+// phase 1 H): the session counts as busy, as a mid-turn one does, and the
+// switch waits for the hold to run out. Not a forced switch: past the hard
+// floor the wall is worse than a broken browser bridge or a split artifact.
+// Not one off a refused account either: that account serves nothing, the
+// claude.ai work included, so the switch keeps a refusal's timing.
 func (in Input) held(d Decision, refused bool) Decision {
-	if d.Kind != Switch || d.Forced || refused || in.BrowserAt.IsZero() {
+	if d.Kind != Switch || d.Forced || refused {
 		return d
 	}
-	hold := in.Cfg.BrowserHold()
-	ago := in.Now.Sub(in.BrowserAt)
-	if ago < 0 {
-		ago = 0
-	}
-	if hold <= 0 || ago >= hold {
+	ago, holding := in.holdAgo()
+	if !holding {
 		return d
 	}
-	d.Held = "session busy (browser task " + agoText(ago) + " ago)"
-	d.HeldUntil = in.BrowserAt.Add(hold)
+	d.Held = "session busy (claude.ai work " + agoText(ago) + " ago)"
+	d.HeldUntil = in.ClaudeAIAt.Add(in.Cfg.ClaudeAIHold())
 	return d
+}
+
+// holdAgo is how long ago the profile's last claude.ai call was, and whether
+// it is recent enough to hold a rotation: within hold_for_claude_ai, which
+// is not off.
+func (in Input) holdAgo() (time.Duration, bool) {
+	if in.ClaudeAIAt.IsZero() {
+		return 0, false
+	}
+	ago := max(in.Now.Sub(in.ClaudeAIAt), 0)
+	hold := in.Cfg.ClaudeAIHold()
+	return ago, hold > 0 && ago < hold
 }
 
 // agoText is a short time since: seconds under a minute, whole minutes after.
@@ -403,7 +467,7 @@ func agoText(d time.Duration) string {
 }
 
 // WaitingFor is how a switch waiting on a busy session reads, in the daemon's
-// log and in `cs why` alike: "switch wanted, session busy (browser task 2m
+// log and in `cs why` alike: "switch wanted, session busy (claude.ai work 2m
 // ago) — waiting for an idle gap".
 func WaitingFor(busy string) string {
 	return "switch wanted, " + busy + " — waiting for an idle gap"
@@ -924,7 +988,7 @@ type Verdict struct {
 func Explain(in Input) (Decision, []Verdict) {
 	dec := Decide(in)
 	all := gather(in)
-	ordered := explainOrder(all, in)
+	ordered := explainOrder(all, in, dec.org)
 
 	out := make([]Verdict, 0, len(ordered))
 	first := true
@@ -1021,13 +1085,19 @@ func Explain(in Input) (Decision, []Verdict) {
 // in order" is a true statement. The active account stays first — it is the one
 // the reader is asking about — and the rest follow in selection order, which is
 // stable for ties because sort.SliceStable preserves the configured priority.
-// With several pools that order is pool by pool (D33), so the first ready
-// account listed is still the one rotation takes.
-func explainOrder(all []candidate, in Input) []candidate {
+// With several pools that order is pool by pool (D33), and while a switch
+// is kept to an organization (org, R) that organization's accounts come
+// first, so the first ready account listed is still the one rotation takes.
+func explainOrder(all []candidate, in Input, org string) []candidate {
 	out := append([]candidate(nil), all...)
 	sort.SliceStable(out, func(i, j int) bool {
 		if a := out[i].acct.ID == in.active(); a != (out[j].acct.ID == in.active()) {
 			return a
+		}
+		if org != "" {
+			if a := orgOf(out[i]) == org; a != (orgOf(out[j]) == org) {
+				return a
+			}
 		}
 		return ahead(out[i], out[j], in)
 	})

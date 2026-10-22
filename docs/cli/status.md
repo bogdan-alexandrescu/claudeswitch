@@ -150,10 +150,10 @@ reasoning. It reads saved state only and changes nothing.
 Each profile block gives:
 
 - the decision (`staying put`, `rotating to work-team`, waiting) and its
-  reason. While a browser task holds the switch it reads `waiting to rotate
+  reason. While claude.ai work holds the switch it reads `waiting to rotate
   to work-team`, with the daemon's own words beneath (`switch wanted,
-  session busy (browser task 2m ago) — waiting for an idle gap`) and when
-  the hold runs out (`hold_for_browser`,
+  session busy (claude.ai work 2m ago) — waiting for an idle gap`) and when
+  the hold runs out (`hold_for_claude_ai`,
   [GUIDE → Configuration](../GUIDE.md#configuration));
 - **CONSIDERED, in order**: every account in the profile's pools, pool by
   pool in the order the profile lists them and in rotation order within
@@ -167,7 +167,7 @@ Each profile block gives:
 
 `--json` gives one object per profile, with `decision` (`kind`, `reason`,
 `target` for a switch, `unpin` when it lifts a pin, and `held` with
-`held_until` while a browser task holds the switch), `accounts` (each
+`held_until` while claude.ai work holds the switch), `accounts` (each
 with `eligible`, `utilization`, `window`, `why`, `clears_at`, `weekly_pace`,
 `model_limits`, `trigger_at`, `weekly_resets_at` and `weekly_unused`, and
 `active_in`, the profile it is live in, when state records one), the

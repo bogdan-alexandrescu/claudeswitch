@@ -62,11 +62,31 @@ const (
 	DefaultHotThreshold = 60.0
 )
 
-// DefaultHoldForBrowser is how long after a session's last Claude in Chrome
-// call a rotation of its profile waits (IMPROVEMENTS P4, owner decision
-// 2026-10-21). A rotation mid browser task breaks the extension's bridge, and
-// five minutes covers the pause between one browser step and the next.
-const DefaultHoldForBrowser = 5 * time.Minute
+// DefaultHoldForClaudeAI is how long after a session's last claude.ai call
+// (Claude in Chrome, an artifact, a Doc) a rotation of its profile waits
+// (IMPROVEMENTS P4 and phase 1 H, owner decisions 2026-10-21). A rotation mid
+// browser task breaks the extension's bridge, one between two artifact calls
+// leaves the second acting as another account, and five minutes covers the
+// pause between one step and the next.
+const DefaultHoldForClaudeAI = 5 * time.Minute
+
+// DefaultSettleAfterSwap is how long after a profile's switch the plugin
+// holds a claude.ai call (Claude in Chrome, an artifact, a Doc) before letting
+// it go (IMPROVEMENTS phase 1 S, owner decision 2026-10-21). Claude Code's
+// claude.ai tools act as the previous account for a while after a swap:
+// measured at up to 35 seconds over four switches (GROUND_TRUTH §55), which
+// fits a re-read about every 30. MaxSettleAfterSwap bounds it, below the
+// plugin hook's timeout.
+const (
+	DefaultSettleAfterSwap = 45 * time.Second
+	MaxSettleAfterSwap     = 5 * time.Minute
+)
+
+// OldHoldForClaudeAI is hold_for_claude_ai's name in 0.7.8 and 0.7.9, when it
+// held for Claude in Chrome calls only. A file that still says it is read as
+// before; the next whole-file write, or `cs config set`, carries the new name
+// only.
+const OldHoldForClaudeAI = "hold_for_browser"
 
 type Account struct {
 	ID    string `toml:"id"`
@@ -410,12 +430,20 @@ func (c *Config) BlindPolls() int {
 	return *c.BlindFailoverPolls
 }
 
-// BrowserHold is hold_for_browser, or its default; zero means off.
-func (c *Config) BrowserHold() time.Duration {
-	if c.HoldForBrowser == nil {
-		return DefaultHoldForBrowser
+// ClaudeAIHold is hold_for_claude_ai, or its default; zero means off.
+func (c *Config) ClaudeAIHold() time.Duration {
+	if c.HoldForClaudeAI == nil {
+		return DefaultHoldForClaudeAI
 	}
-	return c.HoldForBrowser.Duration
+	return c.HoldForClaudeAI.Duration
+}
+
+// Settle is settle_after_swap, or its default; zero means off.
+func (c *Config) Settle() time.Duration {
+	if c.SettleAfterSwap == nil {
+		return DefaultSettleAfterSwap
+	}
+	return c.SettleAfterSwap.Duration
 }
 
 func (a Account) Seat() string {
@@ -442,14 +470,22 @@ type Config struct {
 	// approaching — the transcript never goes quiet and the switch would be
 	// deferred all the way to the hard floor. Observed 2026-09-10 at 85%.
 	MaxSwitchWait Duration `toml:"max_switch_wait"`
-	// HoldForBrowser counts a session that called a Claude in Chrome tool
-	// this recently as busy, so a rotation waits for it (IMPROVEMENTS P4):
-	// swapping the credential in the middle of a browser task breaks the
-	// extension's bridge. Unlike a mid-turn wait, max_switch_wait does not
-	// cut it short; only a forced switch (the hard floor) does. Nil means
-	// DefaultHoldForBrowser; zero is a real value and turns the hold off.
-	// Read it through BrowserHold().
-	HoldForBrowser *Duration `toml:"hold_for_browser"`
+	// HoldForClaudeAI counts a session that called a claude.ai tool (Claude
+	// in Chrome, an artifact, a Doc) this recently as busy, so a rotation
+	// waits for it (IMPROVEMENTS P4, phase 1 H): swapping the credential in
+	// the middle of a browser task breaks the extension's bridge, and an
+	// artifact call acts as whichever account is live. Unlike a mid-turn
+	// wait, max_switch_wait does not cut it short; only a forced switch (the
+	// hard floor) does. Nil means DefaultHoldForClaudeAI; zero is a real
+	// value and turns the hold off. Read it through ClaudeAIHold(). A file
+	// may still call it OldHoldForClaudeAI.
+	HoldForClaudeAI *Duration `toml:"hold_for_claude_ai"`
+	// SettleAfterSwap is how long after a profile's last switch the plugin's
+	// hook holds a claude.ai call, so it acts as the new account rather than
+	// the one before (IMPROVEMENTS phase 1 S). Nil means
+	// DefaultSettleAfterSwap; zero is a real value and turns it off. Read it
+	// through Settle().
+	SettleAfterSwap *Duration `toml:"settle_after_swap"`
 
 	// LandingMargin is the room, in points below the session trigger, a switch
 	// target's 5-hour window must have (IMPROVEMENTS A1). Nil means DefaultLandingMargin; zero
@@ -621,11 +657,25 @@ func decode(path string) (*Config, error) {
 			"rename each [[instance]] to [[profile]] (the keys inside are unchanged)", path)
 	}
 	c.legacy = findLegacy(string(raw))
+	// The hold's old name, read as the new one unless the file has both.
+	if md.IsDefined(OldHoldForClaudeAI) && !md.IsDefined("hold_for_claude_ai") {
+		var old struct {
+			Hold *Duration `toml:"hold_for_browser"`
+		}
+		if _, err := toml.Decode(string(raw), &old); err != nil {
+			return nil, fmt.Errorf("parsing %s: %w", path, err)
+		}
+		c.HoldForClaudeAI = old.Hold
+	}
 	// Which top-level settings the file actually carries, so Write keeps
 	// those and leaves every other one to its default.
 	for _, k := range md.Keys() {
 		if len(k) == 1 {
-			c.MarkSet(k[0])
+			key := k[0]
+			if key == OldHoldForClaudeAI {
+				key = "hold_for_claude_ai"
+			}
+			c.MarkSet(key)
 		}
 	}
 	return c, nil
@@ -855,8 +905,11 @@ func (c *Config) validateRest() error {
 	if c.RefreshWindow.Duration < 0 || c.RefreshProbe.Duration < 0 {
 		return fmt.Errorf("refresh_window and refresh_probe cannot be negative")
 	}
-	if h := c.BrowserHold(); h < 0 {
-		return fmt.Errorf("hold_for_browser cannot be negative (0 turns the hold off), got %s", h)
+	if h := c.ClaudeAIHold(); h < 0 {
+		return fmt.Errorf("hold_for_claude_ai cannot be negative (0 turns the hold off), got %s", h)
+	}
+	if w := c.Settle(); w < 0 || w > MaxSettleAfterSwap {
+		return fmt.Errorf("settle_after_swap must be between 0s (off) and %s, got %s", MaxSettleAfterSwap, w)
 	}
 	if c.RefreshEnabled() && c.RefreshWindow.Duration == 0 {
 		return fmt.Errorf("refresh_window must be set when auto_refresh is on " +
@@ -1012,8 +1065,10 @@ func (c *Config) Write(path string) error {
 	dur("max_switch_wait", c.MaxSwitchWait, def.MaxSwitchWait, "stop waiting for an idle gap after this")
 	// Not through dur, which takes a zero for unset: here a zero is the hold
 	// turned off, and is written as one.
-	line("hold_for_browser", c.HoldForBrowser != nil, fmt.Sprintf("%q", c.BrowserHold().String()),
-		"after a session's last Claude in Chrome call, hold a rotation this long; 0 turns it off")
+	line("hold_for_claude_ai", c.HoldForClaudeAI != nil, fmt.Sprintf("%q", c.ClaudeAIHold().String()),
+		"after a session's last Claude in Chrome, artifact or Docs call, hold a rotation this long; 0 turns it off")
+	line("settle_after_swap", c.SettleAfterSwap != nil, fmt.Sprintf("%q", c.Settle().String()),
+		"after a switch, hold a claude.ai call until this long after it, so it acts as the new account; 0 turns it off")
 	line("landing_margin", c.LandingMargin != nil, fmt.Sprintf("%g", c.Margin()),
 		"a switch target's 5-hour window needs this much room below its trigger")
 	// Written only once chosen, so a config without it reads back unchanged.

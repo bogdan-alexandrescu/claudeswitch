@@ -169,18 +169,37 @@ eligible account whose weekly window resets soonest while it still has quota
 unused, room breaking ties. Eligibility is the same either way. It also
 decides `why --json`'s `best`.
 
-**`hold_for_browser`** (additive, IMPROVEMENTS P4) is in `config --json`,
-`config get`/`set` and `config schema` (listed right after
+**`hold_for_claude_ai`** (IMPROVEMENTS P4 and phase 1 H) is in `config
+--json`, `config get`/`set` and `config schema` (listed right after
 `max_switch_wait`; Settings → Rotation). Global only:
 
 ```json
-{"key": "hold_for_browser", "type": "duration", "default": "5m0s", "min": 0, "max": null,
+{"key": "hold_for_claude_ai", "type": "duration", "default": "5m0s", "min": 0, "max": null,
  "min_exclusive": false, "enum": [], "scopes": ["global"],
- "description": "hold a rotation this long after a session's last Claude in Chrome call (0 = off)"}
+ "description": "hold a rotation this long after a session's last claude.ai call: Claude in Chrome, an artifact, a Doc (0 = off)"}
 ```
 
-A due switch waits until this long after a session's last Claude in Chrome
-call; `max_switch_wait` does not cut it short, and only a forced switch
+0.7.8 and 0.7.9 called it `hold_for_browser`, and held for Claude in Chrome
+calls only. From 0.8.0 the schema and `config --json` carry the new key only;
+`config get`/`set hold_for_browser` still work and answer as
+`hold_for_claude_ai`, and a config file that still says `hold_for_browser` is
+read as before (a `config set` of the hold rewrites the line under the new
+name). An app that knows only the old key hides its row with a 0.8.0 CLI.
+
+**`settle_after_swap`** (additive, IMPROVEMENTS phase 1 S) follows it in
+the same places (Settings → Rotation). Global only:
+
+```json
+{"key": "settle_after_swap", "type": "duration", "default": "45s", "min": 0, "max": 300,
+ "min_exclusive": false, "enum": [], "scopes": ["global"],
+ "description": "after a switch, hold a claude.ai call until this long after it, so it acts as the new account (0 = off)"}
+```
+
+The plugin's hook reads it; the daemon does not. Above `5m0s` or below 0 is
+`invalid_value`.
+
+For `hold_for_claude_ai`, a due switch waits until this long after a
+session's last Claude in Chrome, artifact or Docs call; `max_switch_wait` does not cut it short, and only a forced switch
 (past `hard_floor`) goes sooner. `0s` turns it off. A negative value is
 `invalid_value`.
 
@@ -782,15 +801,16 @@ read from config and state alone. With one profile:
 "best", "best_why", "on_best", "active_room", "best_room", "current"?}]}`. (Before contract 2 both shapes also
 carried `dir`, the working directory project rules were judged against.)
 
-**A switch held for a browser task** (additive, IMPROVEMENTS P4). When a
-session of the profile called a Claude in Chrome tool within
-`hold_for_browser`, the daemon waits before a switch that is neither forced
-nor off a refused account, and `decision` carries why and until when:
-`"held": "session busy (browser task 2m ago)"` and `"held_until"`, the
-time the hold runs out unless the session uses the browser again. Both are
-absent otherwise. `kind` stays `switch`: it is the switch that will be
-made. The daemon records the last call in state.json (`browser_at`, per
-profile), which is where `why` reads it.
+**A switch held for claude.ai work** (additive, IMPROVEMENTS P4 and phase 1
+H). When a session of the profile called a Claude in Chrome, Artifact or
+Claude Docs tool within `hold_for_claude_ai`, the daemon waits before a
+switch that is neither forced nor off a refused account, and `decision`
+carries why and until when: `"held": "session busy (claude.ai work 2m
+ago)"` (`browser task` before 0.8.0) and `"held_until"`, the time the hold
+runs out unless the session makes another such call. Both are absent
+otherwise. `kind` stays `switch`: it is the switch that will be made. The
+daemon records the last call in state.json (`claude_ai_at`, per profile;
+`browser_at` before 0.8.0), which is where `why` reads it.
 
 **Shared pools** (additive, D34). In a profile's `accounts`, an account
 state records live in another profile is never a candidate: `eligible`
@@ -1022,7 +1042,9 @@ Linux), `config_invalid`, `usage`, `failed` (the launcher failed; `hint` is
 its output).
 
 `claudeswitch chrome hint` is the plugin's PostToolUseFailure
-hook, not an app action: it reads the hook's JSON on stdin.
+hook, not an app action: it reads the hook's JSON on stdin. So is
+`claudeswitch hook pre|post` (IMPROVEMENTS phase 1 S and G), around
+claude.ai tool calls ([cs and Claude Code → The plugin](cli/claude-code.md#the-plugin)).
 
 ## history
 

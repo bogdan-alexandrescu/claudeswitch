@@ -14,9 +14,10 @@
 //   - There are 2,197+ transcript files and new ones appear while running, so
 //     files are watched, never re-read wholesale.
 //
-// From the same reads it notes when each session last called a Claude in
-// Chrome tool (IMPROVEMENTS P4), so the daemon can hold a rotation while a
-// browser task runs.
+// From the same reads it notes when each session last called a claude.ai
+// tool: Claude in Chrome, an Artifact tool or the Claude Docs connector
+// (IMPROVEMENTS P4, phase 1 H), so the daemon can hold a rotation while that
+// work runs.
 package detector
 
 import (
@@ -28,6 +29,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -43,18 +45,50 @@ const marker = `"quotaLimits"`
 // session's tool_use records it ("mcp__claude-in-chrome__navigate").
 const BrowserToolPrefix = "mcp__claude-in-chrome__"
 
-// browserMarker is the cheap test for a line that may call one: Claude Code
-// writes its records without spaces, so a call carries exactly this. The
-// tool list a session is handed carries it too, so a match is parsed before
-// it counts.
-var browserMarker = []byte(`"name":"` + BrowserToolPrefix)
+// DocsToolPrefix starts the name of every Claude Docs connector tool
+// ("mcp__claude_ai_Claude_Docs__batch").
+const DocsToolPrefix = "mcp__claude_ai_Claude_Docs__"
 
-// Once more than browserSessions sessions have made a browser call, those
-// whose last one is older than browserKeep are forgotten: no sensible hold
+// artifactTools are the Artifact tools, whose every action acts as the
+// account live when it is called: a publish belongs to it, and a read,
+// comment or delete of another account's artifact fails (GROUND_TRUTH §55).
+var artifactTools = []string{"Artifact", "ArtifactComments", "ArtifactData"}
+
+// ClaudeAITool reports whether a tool's calls are claude.ai work that a
+// rotation would split across accounts (IMPROVEMENTS P4, phase 1 H). The
+// other claude.ai connectors are not: they read and write services of their
+// own, the same whichever account is live.
+func ClaudeAITool(name string) bool {
+	return strings.HasPrefix(name, BrowserToolPrefix) || strings.HasPrefix(name, DocsToolPrefix) ||
+		slices.Contains(artifactTools, name)
+}
+
+// claudeAIMarkers are the cheap test for a line that may call one: Claude
+// Code writes its records without spaces, so a call carries exactly one of
+// these. The tool list a session is handed carries them too, and "Artifact"
+// starts other names, so a match is parsed before it counts.
+var claudeAIMarkers = [][]byte{
+	[]byte(`"name":"` + BrowserToolPrefix),
+	[]byte(`"name":"` + DocsToolPrefix),
+	[]byte(`"name":"Artifact`),
+}
+
+// mayCallClaudeAI is the substring test, before any parse.
+func mayCallClaudeAI(b []byte) bool {
+	for _, m := range claudeAIMarkers {
+		if bytes.Contains(b, m) {
+			return true
+		}
+	}
+	return false
+}
+
+// Once more than claudeAISessions sessions have made a claude.ai call, those
+// whose last one is older than claudeAIKeep are forgotten: no sensible hold
 // reaches back a day, and a long-lived daemon's map must not grow forever.
 const (
-	browserKeep     = 24 * time.Hour
-	browserSessions = 64
+	claudeAIKeep     = 24 * time.Hour
+	claudeAISessions = 64
 )
 
 // Window types as they appear in rateLimitType.
@@ -127,12 +161,12 @@ type Detector struct {
 	// seeded is set once the startup walk has stored what it found (seed).
 	seeded bool
 
-	// browser is, per session (its transcript), the time of the newest
+	// claudeAI is, per session (its transcript), the time of the newest
 	// Claude in Chrome call read from it (IMPROVEMENTS P4). Only what the
 	// watcher hands over is read: the startup walk opens no file for it, so
 	// a call made before the daemon started is carried by the daemon's own
 	// state, not found again here (GROUND_TRUTH §50).
-	browser map[string]time.Time
+	claudeAI map[string]time.Time
 }
 
 // walkDir walks the transcripts tree; a seam, so a test can hold a walk open.
@@ -152,12 +186,12 @@ func New(root string, log *slog.Logger) *Detector {
 		root = ProjectsRoot()
 	}
 	return &Detector{
-		root:    root,
-		log:     log,
-		offsets: map[string]int64{},
-		seen:    map[string]time.Time{},
-		out:     make(chan Rejection, 16),
-		browser: map[string]time.Time{},
+		root:     root,
+		log:      log,
+		offsets:  map[string]int64{},
+		seen:     map[string]time.Time{},
+		out:      make(chan Rejection, 16),
+		claudeAI: map[string]time.Time{},
 	}
 }
 
@@ -333,11 +367,11 @@ func (d *Detector) scanFile(path string) {
 				needCWD = false
 			}
 		}
-		// A Claude in Chrome call: the same one substring test per line,
-		// and a parse only for the few that pass it.
-		if bytes.Contains(b, browserMarker) {
-			if at, ok := browserCall(b, time.Now()); ok {
-				d.noteBrowser(path, at)
+		// A claude.ai call: a few substring tests per line, and a parse
+		// only for the few that pass them.
+		if mayCallClaudeAI(b) {
+			if at, ok := claudeAICall(b, time.Now()); ok {
+				d.noteClaudeAI(path, at)
 			}
 		}
 		if !strings.Contains(string(b), marker) {
@@ -391,7 +425,7 @@ func parseQuota(b []byte) []quotaLimit {
 // the same tool_use blocks and no timestamp (seen 2026-10-21: 66 of them
 // beside 536 assistant records calling Claude in Chrome in one session);
 // taken as calls made when read, a copy of an old one would hold a rotation
-// for no browser task at all.
+// for no claude.ai work at all.
 type toolLine struct {
 	Type      string `json:"type"`
 	Timestamp string `json:"timestamp"`
@@ -405,13 +439,13 @@ type toolBlock struct {
 	Name string `json:"name"`
 }
 
-// browserCall reports whether a transcript record calls a Claude in Chrome
-// tool, and when: the record's own time, or now when it has none or names a
+// claudeAICall reports whether a transcript record calls a claude.ai tool
+// (ClaudeAITool), and when: the record's own time, or now when it has none or names a
 // time still to come, since a clock running ahead must not stretch a hold.
 // The record's own time, not the time it was read, so a session that copies
-// old records into a new transcript does not look as if it just used the
-// browser.
-func browserCall(b []byte, now time.Time) (time.Time, bool) {
+// old records into a new transcript does not look as if it just did
+// claude.ai work.
+func claudeAICall(b []byte, now time.Time) (time.Time, bool) {
 	var l toolLine
 	if json.Unmarshal(b, &l) != nil || l.Type != "assistant" || len(l.Message.Content) == 0 {
 		return time.Time{}, false
@@ -421,7 +455,7 @@ func browserCall(b []byte, now time.Time) (time.Time, bool) {
 		return time.Time{}, false
 	}
 	for _, c := range blocks {
-		if c.Type != "tool_use" || !strings.HasPrefix(c.Name, BrowserToolPrefix) {
+		if c.Type != "tool_use" || !ClaudeAITool(c.Name) {
 			continue
 		}
 		at, err := time.Parse(time.RFC3339Nano, l.Timestamp)
@@ -433,20 +467,20 @@ func browserCall(b []byte, now time.Time) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// noteBrowser records a session's browser call, keeping the newest.
-func (d *Detector) noteBrowser(session string, at time.Time) {
+// noteClaudeAI records a session's claude.ai call, keeping the newest.
+func (d *Detector) noteClaudeAI(session string, at time.Time) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if at.After(d.browser[session]) {
-		d.browser[session] = at
+	if at.After(d.claudeAI[session]) {
+		d.claudeAI[session] = at
 	}
-	if len(d.browser) <= browserSessions {
+	if len(d.claudeAI) <= claudeAISessions {
 		return
 	}
-	cut := at.Add(-browserKeep)
-	for s, last := range d.browser {
+	cut := at.Add(-claudeAIKeep)
+	for s, last := range d.claudeAI {
 		if last.Before(cut) {
-			delete(d.browser, s)
+			delete(d.claudeAI, s)
 		}
 	}
 }
@@ -564,14 +598,14 @@ func (d *Detector) LastActivity() time.Time {
 	return d.lastWrite
 }
 
-// LastBrowserCall is the newest Claude in Chrome call any session has made
-// that this detector has read, zero when none has (IMPROVEMENTS P4). The
-// daemon holds a rotation hold_for_browser after it.
-func (d *Detector) LastBrowserCall() time.Time {
+// LastClaudeAICall is the newest claude.ai call (ClaudeAITool) any session
+// has made that this detector has read, zero when none has (IMPROVEMENTS P4,
+// phase 1 H). The daemon holds a rotation hold_for_claude_ai after it.
+func (d *Detector) LastClaudeAICall() time.Time {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	var newest time.Time
-	for _, at := range d.browser {
+	for _, at := range d.claudeAI {
 		if at.After(newest) {
 			newest = at
 		}
