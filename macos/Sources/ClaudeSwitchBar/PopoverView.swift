@@ -251,9 +251,13 @@ struct ProfileCardView: View {
             }
             HStack(alignment: .top, spacing: 8) {
                 if card.nextVisible {
+                    // Its full height, up to three lines: given only one
+                    // line's it was cut ("…under the 98…"). The popover has a
+                    // fixed width, so the height is measured against it.
                     Text("Next: " + nextText)
                         .font(.caption).foregroundStyle(.secondary)
                         .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
                         .help(nextText)
                 }
                 Spacer(minLength: 0)
@@ -648,13 +652,23 @@ struct NoteBanner: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-            Text(text).font(.caption).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-            Spacer()
+            // Up to four lines across the width it is given, not fixed to its
+            // ideal height: in Settings the banner sits in the window's
+            // bottom inset, where the window asks for an ideal size with no
+            // width, and a fixed height then came back as one word a line.
+            // The window's content was then taller than the window, and
+            // AppKit pushed its top under the title bar (2026-10-21).
+            Text(text).font(.caption).textSelection(.enabled)
+                .lineLimit(1...4)
+                .frame(maxWidth: .infinity, alignment: .leading)
             Button(action: dismiss) { Image(systemName: "xmark") }
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Dismiss")
         }
         .padding(8)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.green.opacity(0.1)))
+        // Opaque under the tint: rows scrolled beneath the banner showed
+        // through its text.
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .windowBackgroundColor)))
     }
 }
