@@ -9,6 +9,7 @@ import (
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/keychain"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/usage"
 )
 
 // tokenLive is a live item holding tok.
@@ -39,6 +40,7 @@ func loginRig(t *testing.T, live bool, uuid, org string) (*rig, string) {
 	}
 	r := newRig(t, cfg, live)
 	r.d.st.Profile("work").SetActive("a")
+	r.d.st.Profile("work").LiveKey = usage.CredKey("a-token") // the daemon's view matches the item
 	r.d.profs[0].live = tokenLive{name: "item-work", tok: "a-token"}
 	return r, path
 }
@@ -99,5 +101,26 @@ func TestALoginInStepIsLeftAlone(t *testing.T) {
 	r.d.reconcileLogin(context.Background(), r.d.profs[0])
 	if len(r.v.loginSyncs) != 0 {
 		t.Errorf("synced a login in step: %+v (%s)", r.v.loginSyncs, path)
+	}
+}
+
+// Seconds after a `cs use`, the item holds the new account's token while the
+// daemon still has the old one as live: the swap has recorded the new login
+// already, and the daemon must not "repair" it from its stale view (seen
+// 2026-10-21: "lined up … now=work-team" three seconds after `cs use
+// AI-Eng-3`). It waits until it has taken the switch in.
+func TestTheDaemonLeavesTheLoginAloneUntilItHasTakenASwitchIn(t *testing.T) {
+	r, _ := loginRig(t, true, "ub", "ob")
+	r.d.st.Profile("work").LiveKey = usage.CredKey("the-token-before")
+	r.d.reconcileLogin(context.Background(), r.d.profs[0])
+	if len(r.v.loginSyncs) != 0 || len(r.loginEvents()) != 0 {
+		t.Fatalf("repaired from a stale view: syncs %+v, audit %v", r.v.loginSyncs, r.loginEvents())
+	}
+	// Once the daemon has the item's token as live, the repair goes ahead,
+	// without waiting out the retry clock the skipped tick did not start.
+	r.d.st.Profile("work").LiveKey = usage.CredKey("a-token")
+	r.d.reconcileLogin(context.Background(), r.d.profs[0])
+	if len(r.v.loginSyncs) != 1 {
+		t.Errorf("syncs %+v, want one once the daemon caught up", r.v.loginSyncs)
 	}
 }

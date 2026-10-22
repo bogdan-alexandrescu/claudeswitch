@@ -27,6 +27,22 @@ func (d *daemon) reconcileLogin(ctx context.Context, il *profileLoop) {
 		il.loginSig = ""
 		return
 	}
+	// The item must hold the token the daemon has as live. Seconds after a
+	// `cs use` it holds the new account's while the daemon still has the
+	// old one: the swap has recorded the new login already, and a "repair"
+	// from the stale view would name the wrong account, or write it if the
+	// profile read failed (seen 2026-10-21). Such a tick is left alone, and
+	// starts no retry clock.
+	if il.live == nil {
+		return
+	}
+	blob, err := il.live.Read()
+	if err != nil || blob.ClaudeAIOAuth == nil {
+		return
+	}
+	if usage.CredKey(blob.ClaudeAIOAuth.AccessToken) != d.profState(il).LiveKey {
+		return
+	}
 	why := fmt.Sprintf("Claude Code was logged in as %s, not %s", nonEmpty(rec.Email, rec.AccountUUID), active)
 	if !differs {
 		why = fmt.Sprintf("Claude Code's recorded login for %s was incomplete", active)
@@ -41,15 +57,10 @@ func (d *daemon) reconcileLogin(ctx context.Context, il *profileLoop) {
 		}
 		return
 	}
-	if il.live == nil || time.Since(il.loginAt) < loginRecheckEvery {
+	if time.Since(il.loginAt) < loginRecheckEvery {
 		return
 	}
 	il.loginAt = time.Now()
-	blob, err := il.live.Read()
-	if err != nil || blob.ClaudeAIOAuth == nil {
-		il.log.Warn("could not read the live credential to line up Claude Code's recorded login", "err", err)
-		return
-	}
 	full, err := d.v.SyncLogin(ctx, identityPathOf(il.conf), active, blob.ClaudeAIOAuth.AccessToken, usage.Scheduled)
 	if err != nil {
 		il.log.Warn("could not line up Claude Code's recorded login", "account", active, "err", err)

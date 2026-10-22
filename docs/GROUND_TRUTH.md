@@ -1565,3 +1565,48 @@ calls. A reader that counted every tool_use would take an old browser call for a
 one, and the P4 hold would keep a rotation waiting long after the task ended. The
 detector counts only `assistant` records, by their own timestamp (IMPROVEMENTS P4,
 `internal/detector`).
+
+## 55. Claude Code's claude.ai tools follow a hot swap late, and what they make belongs to one account (observed 2026-10-21)
+
+A test switched the default profile through six accounts in three organizations
+(`cs use`, 18:17–18:20 PT). After each switch one session published a private
+artifact, opened it in Chrome through Claude in Chrome, and later deleted it.
+
+- **The bridge held throughout.** With each swap keeping the recorded login in step
+  (P1), Claude in Chrome connected after every switch, across all three
+  organizations.
+- **An artifact opens only for the account that owns it.** Chrome's claude.ai was
+  signed in as lab3. Every other account's artifact showed "This artifact is
+  private" (same organization) or "Page not found" (another organization). Only
+  AI-Eng-3's rendered.
+- **The artifact tool picks up a swapped credential late.** A publish a few seconds
+  after `cs use AI-Eng-1` went out as the previous account: the page was owned by
+  work-main. So did the publish after `cs use personal`: that page was
+  owned by AI-Eng-1. Deletes and listings 10–60 s after a switch still answered as
+  the previous account, and refused the new account's artifacts as "no Artifact at
+  …". After waiting 20–25 s, the listing answered as the new account three times
+  out of three. The delay varies, which suggests a cached credential re-read on
+  its own schedule, not once per request. It is not documented.
+- **What a session makes is spread across accounts.** Every artifact published since
+  the last rotation is owned by the account that was live then (or the one before,
+  inside the delay). Listing, updating or deleting it works only while that account
+  is live again.
+- **Not explained yet.** Another session in the same profile (Product Oracle,
+  resumed on AI-Eng-3) kept failing with "Browser extension is not connected …
+  logged into claude.ai with the same account as Claude Code" after `/chrome`, at
+  times when this session's calls worked.
+
+**Measured the same evening (phase 0a).** Three timed switches of the default
+profile, polling the artifact listing every 4–13 s and telling the accounts
+apart by how many artifacts each owns:
+
+| switch (done) | still the previous account at | the new account by | so, picked up after |
+|---|---|---|---|
+| AI-Eng-3 → work-main (21:22:34) | — | 21:22:40 | ≤ 6 s |
+| work-main → AI-Eng-1 (21:22:47) | 21:23:09 | 21:23:22 | 22–35 s |
+| AI-Eng-1 → AI-Eng-3 (21:23:30) | 21:23:47 | 21:24:01 | 17–31 s |
+
+A fourth, earlier switch (20:53:30, made by someone else) had been picked up
+within 25 s. Every pickup came within 35 s, at varying points, which fits a
+credential re-read roughly every 30 s whose phase the switch lands in at
+random. The settle wait (S) is 45 s.

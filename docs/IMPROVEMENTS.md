@@ -1073,3 +1073,87 @@ the Chrome guide's recommendation) is built for 0.7.8 too.
 P4 is built for 0.7.8 too (`hold_for_browser`, default 5m, 0 off). Owner
 decision, 2026-10-21: only the hard floor ends a hold early; max_switch_wait
 does not. A switch away from a refused account is not held.
+
+## Plan: claude.ai work across rotations (proposed 2026-10-21, not decided)
+
+The 0.7.8 test (GROUND_TRUTH §55) fixed what it set out to: Claude in Chrome
+connects after every switch. Deleting its pages showed four problems it had
+hidden:
+
+1. **Late pickup.** For 10–60 s after a swap, Claude Code's claude.ai tools
+   (Artifact; likely Docs and Chrome too) still act as the previous account.
+2. **Scattering.** Each artifact belongs to the account live when it was
+   published. Listing, updating and deleting it work only while that account
+   is live.
+3. **Chrome shows one account.** An artifact opens in Chrome only when
+   Chrome's claude.ai is signed in as its owner.
+4. **Unexplained.** Another session's Claude in Chrome stayed "not connected"
+   after `/chrome` while this session's worked.
+
+claudeswitch cannot make a running Claude Code take up a swap at once, and
+cannot change an artifact's owner or sharing. It can control *when* a
+session acts and *which* account is live when it does.
+
+**Phase 0: measure and diagnose (no code).**
+- 0a. Measure the delay: switch three times, and after each list artifacts
+  every few seconds until the answer changes account. That gives the wait
+  for S below. Each switch moves every session in the profile for a minute.
+- 0b. Diagnose problem 4 with the session that has it: its connected
+  browsers, `cs doctor`, its Claude Code version.
+
+**Phase 1: make claude.ai work safe under rotation (plugin hooks).**
+- **S. Settle.** Before an Artifact, Docs or Claude in Chrome call, if the
+  session's profile swapped less than the measured delay ago, the hook waits
+  out the rest, then lets the call go. Nothing goes out as the previous
+  account.
+- **G. Owner guard.** After a publish, claudeswitch records which account owns
+  the URL. Before a call on that URL (republish, read, comments, data,
+  delete) while another account is live, the hook refuses, with a reason
+  Claude sees: whose it is, and `cs use <owner>` if that account has room.
+  Or it switches back by itself (a decision).
+- **H. Hold for claude.ai work.** P4's hold extends to Artifact and Docs
+  calls: a rotation waits 5 minutes after the last one, as after a browser
+  call, and still goes at the hard floor.
+
+**Phase 2: a home account for claude.ai work (setup and docs).**
+- **P.** A project whose work lives on claude.ai (Product Oracle: artifacts,
+  Chrome walks of each deploy) runs in its own profile, pinned to one home
+  account. Rotation goes on in the other profiles. With Chrome's claude.ai
+  signed in as that account, its artifacts open and its bridge matches.
+
+**Phase 3: optional, a browser per account.**
+- **C.** Each account has its own Chrome profile, signed in to claude.ai and
+  to Claude in Chrome (P2). claudeswitch remembers each browser's device id,
+  and after a swap the hook tells Claude to select the live account's
+  browser before its next browser call. Most moving parts of all of these.
+
+**From the Claude Code docs (checked 2026-10-21), which change the plan:**
+- Hooks can carry S and G. A PreToolUse command hook may wait (default
+  timeout 600 s; on a timeout the call goes ahead unless the hook sets
+  `onFailure: "block"`). It can refuse a call with a reason Claude sees
+  (`permissionDecision: "deny"`), add context, or rewrite the input.
+  PostToolUse hooks get the tool's result. The Artifact tools' names and their
+  result's shape are not documented, so a logging hook reads them first (0c).
+- There is no supported way to make a running session switch subscription
+  accounts other than `/login`. `CLAUDE_CODE_OAUTH_TOKEN` is read at start only
+  and turns Chrome off, and apiKeyHelper is an API-key path that bypasses
+  subscription limits. Making the swap take effect at once is out.
+- Claude in Chrome needs the extension "signed in to the same organization as
+  Claude Code"; otherwise its tools return "Browser extension is not connected"
+  (docs: Chrome). That is problem 4's message. Hypothesis: a running session
+  keeps the organization it started (or last `/login`ed) with. The Oracle
+  session resumed when its recorded login may have named another organization.
+  This session started on Acme, which would explain why its bridge survived
+  even the switch to `personal`. Test: `/status` in that session (0b); if it
+  names another organization, restarting the session (`claude --resume`) picks
+  up the recorded login P1 now keeps right.
+- **R. Rotate browser sessions within their organization** (new): while P4's
+  hold applies, or as a setting, a profile whose sessions use Claude in Chrome
+  rotates only to accounts in the same organization. With five Acme seats in
+  the team pool, rotation can go on without ever breaking the bridge.
+
+**Decided 2026-10-21 (owner):** run phase 0 in full; build S, G, R and H in
+phase 1; G refuses with instructions (whose artifact it is, and `cs use
+<owner>` when that account has room) rather than switching back by itself or
+only warning. P (a pinned profile) is not being set up; C (a browser per
+account) waits until after phase 1.
