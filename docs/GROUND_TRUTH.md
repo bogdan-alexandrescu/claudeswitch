@@ -1699,4 +1699,13 @@ session, already running, still listed no browser, and launching AI-Eng-2's
 profile did not change that: a running session that lost its connection does not
 move to the new account's browser.
 
+**`/mcp` Reconnect moves a running session (2026-10-23, 12:3x PT).** This
+session, started long before and unable to reach any browser after a switch even
+with `/chrome`, listed AI-Eng-2's own browser (677e7ea4) at once after the owner
+ran `/mcp`, chose claude-in-chrome and Reconnect, with AI-Eng-2 live; its next
+`tabs_context_mcp` answered normally. With one browser on the channel no
+`select_browser` was needed (a user report, anthropics/claude-code issue 98621,
+needed one after Reconnect). So `/mcp` Reconnect, not `/chrome`, is what makes a
+running session follow a switch.
+
 Still open for C0: what keeps an idle extension connected.

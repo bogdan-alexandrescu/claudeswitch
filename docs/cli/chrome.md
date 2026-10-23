@@ -331,8 +331,9 @@ stdin, and only when the tool's `error` says "same claude.ai account" or "not
 connected" does it act, once per rotation of the session's profile: it opens
 the live account's own Chrome profile in the background (C4) and tells Claude
 which account Claude Code is on, to retry, and never to ask the person to sign
-in; a session that started on another account is told a new session
-(`claude --resume`) reaches the live account's browser. For an account with
+in; a session that started on another account is told that `/mcp` →
+claude-in-chrome → Reconnect moves it to the live account's browser (or a new
+session, `claude --resume`). For an account with
 no Chrome profile of its own it names `cs chrome add <account>`. It never reads a
 successful call's output (that is page content). It is not meant to be run by
 hand. See [cs and Claude Code](claude-code.md#the-plugin).

@@ -416,9 +416,9 @@ claudeswitch cannot move it. So:
   account (the daemon's, `cs use`'s and the app's), so its extension connects
   and a new Claude in Chrome connection finds it. Nothing asks you to sign in
   again. A session already connected keeps its browser through a switch; one
-  that started on another account and lost its connection reaches the new
-  account's browser through a new session (`claude --resume`, GROUND_TRUTH
-  §56);
+  that started on another account and lost its connection moves to the new
+  account's browser with `/mcp` → claude-in-chrome → Reconnect (`/chrome` does
+  not do it), or through a new session (`claude --resume`, GROUND_TRUTH §56);
 - **a Chrome profile shared by a profile's accounts cannot follow**: its
   extension stays signed in as one account. claudeswitch never asks you to
   sign it in again after a rotation; it says how to give the account a Chrome

@@ -159,7 +159,11 @@ func TestChromeHintOpensTheLiveAccountsProfileItself(t *testing.T) {
 	var out, errOut bytes.Buffer
 	code := runChromeHint(strings.NewReader(failure), &out, &errOut, cfg)
 	msg := errOut.String()
+	// A session that started on another account moves to the live
+	// account's browser with /mcp → claude-in-chrome → Reconnect (GROUND_TRUTH
+	// §56, 2026-10-23), where /chrome does not; a new session works too.
 	if code != 2 || !strings.Contains(msg, "opened") || !strings.Contains(msg, "retry") ||
+		!strings.Contains(msg, "/mcp") || !strings.Contains(msg, "Reconnect") ||
 		!strings.Contains(msg, "claude --resume") || !strings.Contains(msg, "Do not ask") {
 		t.Fatalf("code %d, hint %q", code, msg)
 	}

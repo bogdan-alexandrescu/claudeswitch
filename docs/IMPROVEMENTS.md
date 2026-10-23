@@ -1309,3 +1309,19 @@ claudeswitch opens the new account's own Chrome profile right after every switch
   the live account's browser through a new session.
 Not in claudeswitch's reach: a running session that lost its connection does not
 move its bridge to the new account even after `/chrome`; a new session does.
+
+**Shipped in 0.8.2 (released 2026-10-23):** C4. Then, the same day:
+- **work-main** keeps no browser of its own (owner decision): its
+  extension stays bound to alice@example.com's own organization, as a user report
+  describes the extension staying bound to whichever account first opened it
+  (anthropics/claude-code issue 82455, closed as not planned).
+- **A running session follows with `/mcp` Reconnect** (GROUND_TRUTH §56), so
+  `chrome hint` now names it before a new session.
+- The `cs use` refusals at 11:51 ("could not be confirmed absent") were the work
+  profile's live token having expired (R2: no identity call with an expired
+  token); the daemon renewed it at 11:54 and the refusals stopped.
+- AI-Eng-3's channel also had BGD's main Chrome profile ("1-Alice Personal",
+  device dbb0f289), whose extension was signed in as AI-Eng-3; BGD signed it out
+  (2026-10-23 14:58), leaving one browser per account: work-team, AI-Eng-1,
+  AI-Eng-2, AI-Eng-3, personal, personal and work-team each have a
+  Chrome profile of their own and no other browser on their channel.

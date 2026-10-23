@@ -345,6 +345,12 @@ shared by several accounts, or none, nothing is refused: whose claude.ai it
 shows is not known. The record is
 `~/.local/state/claudeswitch/artifacts.json`, the newest 500.
 
+After a switch, claudeswitch opens the new account's own Chrome profile in
+the background, so Claude in Chrome finds its browser (C4). A session already
+connected keeps its browser; one that started on another account and lost its
+connection moves to the live account's browser with `/mcp` → claude-in-chrome
+→ Reconnect (`/chrome` does not do it).
+
 Rotation itself waits for claude.ai work too: `hold_for_claude_ai`
 ([GUIDE → Configuration](../GUIDE.md#configuration)).
 

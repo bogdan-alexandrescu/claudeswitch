@@ -501,7 +501,9 @@ func runChromeHint(stdin io.Reader, stdout, stderr io.Writer, cfgPath string) in
 		}
 		msg += fmt.Sprintf("Do not ask the person to sign in to Claude in Chrome. If the call still says not "+
 			"connected, this session started on another account and keeps that connection (GROUND_TRUTH §56): "+
-			"a new session, such as `claude --resume`, reaches %s's browser.", id)
+			"ask the person to run /mcp, choose claude-in-chrome and Reconnect, which moves this session to %s's "+
+			"browser (if several browsers are then listed, select_browser the one on this computer); a new "+
+			"session, such as `claude --resume`, reaches it too.", id)
 	} else {
 		msg += fmt.Sprintf("%s has no Chrome profile of its own, so no browser follows it there. Do not ask the "+
 			"person to sign in to Claude in Chrome; the lasting fix is a Chrome profile for %s, set up once "+
