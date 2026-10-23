@@ -65,12 +65,14 @@ import Testing
                    lastFrom: from, lastSwitch: at)
     }
 
+    /// C4 (owner decision 2026-10-23): it never asks to sign in again; the
+    /// one way out is a Chrome profile of the account's own, which claudeswitch
+    /// then opens after every switch.
     @Test func testShownWhenOnlyTheProfileApplies() throws {
         let n = try #require(live().signInNotice(dismissed: []))
-        #expect(n.text == "Claude in Chrome in \"Work\" may still be signed in as work-1")
-        // P2: the way out of signing in after every rotation.
+        #expect(n.text == "Claude in Chrome in \"Work\" does not follow switches to work-team")
         #expect(n.ownButton == "Give work-team its own Chrome profile")
-        #expect(n.button == "Sign in as work-team")
+        #expect(!n.text.lowercased().contains("sign"))
         #expect(n.account == "work-team" && n.profile == "work")
     }
 
@@ -90,7 +92,7 @@ import Testing
 
     @Test func testFolderNamesItWithoutAName() throws {
         let n = try #require(live(name: nil).signInNotice(dismissed: []))
-        #expect(n.text == "Claude in Chrome in \"Profile 1\" may still be signed in as work-1")
+        #expect(n.text == "Claude in Chrome in \"Profile 1\" does not follow switches to work-team")
     }
 }
 

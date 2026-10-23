@@ -1837,9 +1837,16 @@ func cmdUse(args []string) error {
 	if err := st.Save(); err != nil {
 		fmt.Fprintf(os.Stderr, "note: %v\n", err)
 	}
+	// C4: Claude in Chrome follows the account, the app's switches (which
+	// come through --json) included.
+	chromeLine := ""
+	if from != id {
+		chromeLine = chromeFollow(cfg, st, readChromeLocal(), target.Name, from, id)
+	}
 	if *asJSON {
 		m := map[string]any{"account": id, "profile": target.Name, "from": orNull(from), "dry_run": false,
-			"org_id": orNull(res.OrgID), "verified": res.Usage != nil, "five_hour": nil, "seven_day": nil}
+			"org_id": orNull(res.OrgID), "verified": res.Usage != nil, "five_hour": nil, "seven_day": nil,
+			"chrome": orNull(chromeLine)}
 		if res.Usage != nil {
 			m["five_hour"], m["seven_day"] = res.Usage.FiveHour.Pct(), res.Usage.SevenDay.Pct()
 		}
@@ -1853,8 +1860,8 @@ func cmdUse(args []string) error {
 	} else {
 		fmt.Printf("    installed, but usage could not be read to confirm it (rate limited)\n")
 	}
-	if from != id {
-		useChromeNoteIn(os.Stdout, cfg, st, target.Name, from, id)
+	if chromeLine != "" {
+		fmt.Printf("    %s\n", chromeLine)
 	}
 	fmt.Printf("    your MCP logins were left untouched\n")
 	fmt.Printf("    no restart needed — running sessions pick this up going forward\n\n")

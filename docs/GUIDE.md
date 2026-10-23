@@ -410,31 +410,39 @@ profile's `chrome`, and `cs config get chrome --profile work` prints it.
 **The honest limit.** The extension holds one login per Chrome profile and
 claudeswitch cannot move it. So:
 
-- **an account with its own Chrome profile routes by itself**: once that
-  profile's claude.ai and extension are signed in as the account, browser
-  tasks follow every rotation to it (confirmed 2026-10-08);
-- **a Chrome profile shared by a profile's accounts needs one sign-in per
-  rotation**: after a switch from work-a to work-b, the extension there is
-  still signed in as work-a until you sign it in as work-b
-  (`cs chrome signin work-b`, or the button on the app's card).
+- **an account with its own Chrome profile is followed**: once that
+  profile's claude.ai and extension are signed in as the account, claudeswitch
+  opens that Chrome profile in the background right after every switch to the
+  account (the daemon's, `cs use`'s and the app's), so its extension connects
+  and a new Claude in Chrome connection finds it. Nothing asks you to sign in
+  again. A session already connected keeps its browser through a switch; one
+  that started on another account and lost its connection reaches the new
+  account's browser through a new session (`claude --resume`, GROUND_TRUTH
+  §56);
+- **a Chrome profile shared by a profile's accounts cannot follow**: its
+  extension stays signed in as one account. claudeswitch never asks you to
+  sign it in again after a rotation; it says how to give the account a Chrome
+  profile of its own.
 
 In the window `add` or `signin` opens: sign in to claude.ai as that account,
 add (or enable) Claude in Chrome, and sign the extension in as the same
 account. Then:
 
 - after a rotation to an account with its own Chrome profile, the daemon and
-  `cs use` say `Claude in Chrome: use the work-b Chrome profile (cs chrome
-  work-b)`;
+  `cs use` open it in the background and say `Claude in Chrome: opened
+  work-b's Chrome profile "Work B"`;
 - to one that uses its profile's Chrome profile, they say
-  `Claude in Chrome in "Work" may still be signed in as work-a; sign it in as
-  work-b (cs chrome signin work-b)`, and the app's card shows the same with a
-  **Sign in as work-b** button (dismissable until the next rotation);
+  `Claude in Chrome in "Work" does not follow switches: give work-b a Chrome
+  profile of its own (cs chrome add work-b)`, and the app's card shows the
+  same with a **Give work-b its own Chrome profile** button (dismissable until
+  the next rotation);
 - to one with neither, once you have set up a Chrome profile for any account,
   they say `Claude in Chrome: work-b has no Chrome profile — cs chrome add
   work-b`;
 - when a browser tool fails with the same-account or not-connected error, the
-  plugin tells Claude which account Claude Code is on and the command, once
-  per rotation (it looks only at failures, never at page content).
+  plugin opens the live account's own Chrome profile and tells Claude to
+  retry, never to ask you to sign in, once per rotation (it looks only at
+  failures, never at page content).
 
 The steps `add` and `signin` print name the account's email when claudeswitch recorded
 one (at `add`, `login`, `setup` or `identify`); it never reads the keychain

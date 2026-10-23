@@ -106,8 +106,8 @@ do there:
 
 The last three lines appear only when the rule is not `account`. When
 claudeswitch has recorded the account's email, it reads
-`sign in as <email> (<account>)`. This is what the app's **Sign in as ...**
-button runs.
+`sign in as <email> (<account>)`. Nothing runs it after a rotation any more
+(C4); it is there for setting a Chrome profile up by hand.
 
 `--json` (`cli-chrome-signin.json`):
 
@@ -241,10 +241,10 @@ With none: `no Chrome profiles yet; make one with: cs chrome add <account>`.
 `added`, `live_in`, `existing`, `name`), `supported`, and `live`: for each
 claudeswitch profile with a live account, that account's resolved Chrome
 profile (`account`, `profile`, `profile_dir`, `name`, `rule`) and the rotation
-that made it live (`last_from`, `last_switch`). The app's sign-in banner is
-built from `live`: a `profile` rule with a `last_from` means the shared Chrome
-profile may still be signed in as the account before. It is inferred, not read:
-claudeswitch cannot see the extension's login.
+that made it live (`last_from`, `last_switch`). The app's Chrome banner is
+built from `live`: a `profile` rule with a `last_from` means the rotation moved
+to an account whose Chrome profile is shared, which cannot follow switches; the
+banner offers a Chrome profile of the account's own.
 
 ## cs chrome forget \<account\>
 
@@ -304,27 +304,36 @@ last-used folder (`cli-profile-set-chrome-inherit.json`).
 
 ## After a rotation
 
-The daemon's notification and `cs use` add one line when Chrome profiles are
-in use:
+Claude in Chrome follows the account (IMPROVEMENTS C4, 2026-10-23). After every
+switch the daemon, `cs use` and the app make (never in a dry run), to an account
+with a Chrome profile of its own, claudeswitch opens that profile in the
+background (`open -g -na "Google Chrome" --args --profile-directory=<folder>` on
+macOS), so its extension starts and connects on the new account's channel. Then
+the daemon's notification and `cs use` add one line (and `use --json` carries it
+as `chrome`):
 
 - to an account with its own Chrome profile:
-  `Claude in Chrome: use the work-team Chrome profile (cs chrome work-team)`;
-- to one that uses its profile's Chrome profile:
-  `Claude in Chrome in "Work" may still be signed in as work-1; sign it in as work-team (cs chrome signin work-team)`
-  (or `may be signed in as another account` when the account before had its
-  own);
+  `Claude in Chrome: opened work-team's Chrome profile "Work 2"` (or `could not
+  open … ; cs chrome work-team opens it`);
+- to one that uses its profile's Chrome profile, which cannot follow:
+  `Claude in Chrome in "Work" does not follow switches: give work-team a Chrome profile of its own (cs chrome add work-team)`;
 - to one with neither, once any account has a Chrome profile:
   `Claude in Chrome: work-team has no Chrome profile — cs chrome add work-team`.
 
-Nothing is said when nobody has set up a Chrome profile.
+Nothing is said when nobody has set up a Chrome profile, and nothing ever asks
+for a sign-in after a rotation.
 
 ## cs chrome hint (plugin hook)
 
 `cs chrome hint [--config PATH]` is run by the plugin's `PostToolUseFailure`
 hook after a Claude in Chrome tool call fails. It reads the hook's JSON on
 stdin, and only when the tool's `error` says "same claude.ai account" or "not
-connected" does it tell Claude which account Claude Code is on and the
-command to run, once per rotation of the session's profile. It never reads a
+connected" does it act, once per rotation of the session's profile: it opens
+the live account's own Chrome profile in the background (C4) and tells Claude
+which account Claude Code is on, to retry, and never to ask the person to sign
+in; a session that started on another account is told a new session
+(`claude --resume`) reaches the live account's browser. For an account with
+no Chrome profile of its own it names `cs chrome add <account>`. It never reads a
 successful call's output (that is page content). It is not meant to be run by
 hand. See [cs and Claude Code](claude-code.md#the-plugin).
 

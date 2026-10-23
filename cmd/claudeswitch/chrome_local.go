@@ -289,36 +289,45 @@ func (r chromeResolved) json() map[string]any {
 		"name": orNull(r.Name), "rule": r.Rule}
 }
 
-// chromeSwitchNotice is the line said after a rotation in profile to the
-// account `to` (IMPROVEMENTS C2). When only the profile's chrome applies,
-// the extension there is still signed in as the account before; anything
-// else is lane 13's notice.
-func chromeSwitchNotice(cfg *config.Config, st *state.State, local chromeLocal, profile, from, to string) string {
+// chromeFollow is what follows a rotation in profile to the account `to`
+// for Claude in Chrome (IMPROVEMENTS C4, owner decision 2026-10-23), and the
+// line that says so. A new bridge connection finds only a browser on the live
+// account's own channel, and a Chrome profile's extension connects only
+// while the profile runs (GROUND_TRUTH §56), so an account's own mapping is
+// opened at once, in the background. Nothing asks the person to sign
+// Claude in Chrome in again: when only the profile's chrome applies, which
+// cannot follow (C2), the line says how to give the account a Chrome profile
+// of its own. When no account has one at all, nothing is said; nor when
+// nothing moved. The callers run it after a swap that happened, never in a
+// dry run.
+func chromeFollow(cfg *config.Config, st *state.State, local chromeLocal, profile, from, to string) string {
 	if to == "" || from == to {
 		return ""
 	}
-	r := resolveChrome(cfg, st, local, profile, to)
-	if r.Rule != "profile" {
-		return chromeRotationNotice(st, from, to)
+	if cp := st.ChromeOf(to); cp != nil {
+		name := local.nameOf(cp.Dir)
+		if name == "" {
+			name = cp.Dir
+		}
+		if err := launchChromeBackground(cp.Dir); err != nil {
+			return fmt.Sprintf("Claude in Chrome: could not open %s's Chrome profile %q (%v); cs chrome %s opens it",
+				to, name, err, to)
+		}
+		return fmt.Sprintf("Claude in Chrome: opened %s's Chrome profile %q", to, name)
 	}
-	// The account before used this Chrome profile too, so its extension was
-	// probably signed in as it; otherwise who it is signed in as is not
-	// known. Either way it is inferred: claudeswitch cannot read the
-	// extension's login (C1), so the notice says "may".
-	// The way out of signing in after every rotation is a Chrome profile
-	// per account (P2): the bridge then finds the right one by itself.
-	if from != "" && st.ChromeOf(from) == nil {
-		return fmt.Sprintf("Claude in Chrome in %q may still be signed in as %s; sign it in as %s (cs chrome signin %s), "+
-			"or give %s a Chrome profile of its own, which follows rotation by itself (cs chrome add %s)",
-			r.label(), from, to, to, to, to)
+	if r := resolveChrome(cfg, st, local, profile, to); r.Rule == "profile" {
+		return fmt.Sprintf("Claude in Chrome in %q does not follow switches: give %s a Chrome profile of its own "+
+			"(cs chrome add %s)", r.label(), to, to)
 	}
-	return fmt.Sprintf("Claude in Chrome in %q may be signed in as another account; sign it in as %s (cs chrome signin %s)",
-		r.label(), to, to)
+	if len(st.ChromeList()) > 0 {
+		return fmt.Sprintf("Claude in Chrome: %s has no Chrome profile — cs chrome add %s", to, to)
+	}
+	return ""
 }
 
-// useChromeNoteIn is `cs use`'s form of the notice.
+// useChromeNoteIn is `cs use`'s form of it.
 func useChromeNoteIn(w io.Writer, cfg *config.Config, st *state.State, profile, from, to string) {
-	if msg := chromeSwitchNotice(cfg, st, readChromeLocal(), profile, from, to); msg != "" {
+	if msg := chromeFollow(cfg, st, readChromeLocal(), profile, from, to); msg != "" {
 		fmt.Fprintf(w, "    %s\n", msg)
 	}
 }

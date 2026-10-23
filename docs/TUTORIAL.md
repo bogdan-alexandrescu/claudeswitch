@@ -46,7 +46,7 @@ Pick the archive for your machine (`darwin_arm64` for Apple silicon,
 put the binary in `~/.local/bin` with `cs` as a short name for it:
 
 ```sh
-VERSION=v0.8.1
+VERSION=v0.8.2
 TARGET=darwin_arm64
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 curl -LO "$BASE/claudeswitch_${VERSION}_${TARGET}.tar.gz"
@@ -65,7 +65,7 @@ cs version
 ```
 
 ```
-claudeswitch v0.8.1
+claudeswitch v0.8.2
 ```
 
 If your shell says `cs: command not found`, add `~/.local/bin` to your `PATH`
@@ -408,23 +408,26 @@ else Chrome's last used.
 ### When the card says to sign in
 
 Here `work` shares the "Work" Chrome profile, and has just rotated from
-work-1 to work-team. The extension in "Work" was signed in as work-1, so the
-work card says it may still be (claudeswitch cannot read the extension's
-login, so it says "may"):
+work-1 to work-team. A shared Chrome profile's extension stays signed in as
+one account, so Claude in Chrome there cannot follow the switch, and the work
+card says so:
 
-<p align="center"><img src="images/popover-chrome-signin.png" width="384" alt="The work card: an amber banner says Claude in Chrome in &quot;Work&quot; may still be signed in as work-1, with a Sign in as work-team button, a Give work-team its own Chrome profile link and a close button"></p>
+<p align="center"><img src="images/popover-chrome-signin.png" width="384" alt="The work card: an amber banner says Claude in Chrome in &quot;Work&quot; does not follow switches to work-team, with a Give work-team its own Chrome profile button and a close button"></p>
 
-Click **Sign in as work-team**. It opens the "Work" Chrome profile at the
-claude.ai and Claude in Chrome sign-in pages. Sign in to both as work-team.
-The × hides the banner until the next rotation. From a terminal:
+Click **Give work-team its own Chrome profile**. It creates a Chrome profile
+for work-team and opens it at the claude.ai and Claude in Chrome sign-in
+pages: sign in to both as work-team, once. From then on claudeswitch opens
+that profile in the background after every switch to work-team, and Claude in
+Chrome follows. The × hides the banner until the next rotation. From a
+terminal:
 
 ```sh
-cs chrome signin work-team
+cs chrome add work-team
 ```
 
 The daemon's notification and `cs use` say the same after a rotation. If a
-browser tool fails inside Claude Code, the plugin tells Claude which account
-Claude Code is on and this command.
+browser tool fails inside Claude Code, the plugin opens the live account's own
+Chrome profile and tells Claude to retry; it never asks you to sign in.
 
 The globe next to the account picker on each card opens the live account's
 Chrome profile (`cs chrome <id>`). More, including exactly what claudeswitch

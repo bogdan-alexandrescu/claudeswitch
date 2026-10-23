@@ -353,6 +353,18 @@ func chromeArgv(goos, dir string, urls []string) ([]string, error) {
 		"cs chrome supports macOS and Linux; this is %s", goos)
 }
 
+// chromeArgvBackground is the command that opens Chrome on that profile
+// directory without taking focus (IMPROVEMENTS C4): after a switch the window
+// comes up behind whatever the person is doing. Linux has no such switch;
+// Chrome opens the window as it does.
+func chromeArgvBackground(goos, dir string) ([]string, error) {
+	argv, err := chromeArgv(goos, dir, nil)
+	if err != nil || goos != "darwin" {
+		return argv, err
+	}
+	return append([]string{"open", "-g"}, argv[1:]...), nil
+}
+
 // launchChrome runs the launcher. On macOS `open` returns once Chrome has the
 // request. On Linux the binary may itself become the browser, so it is
 // started in its own session and waited for only briefly: an early exit is
@@ -365,6 +377,23 @@ func launchChrome(dir string, urls []string) error {
 	if err != nil {
 		return err
 	}
+	return runChromeLauncher(argv)
+}
+
+// launchChromeBackground opens a profile behind the current app, with no
+// pages: its extension starts and connects (C4).
+func launchChromeBackground(dir string) error {
+	if e := validChromeDir(dir); e != nil {
+		return e
+	}
+	argv, err := chromeArgvBackground(chromeGOOS, dir)
+	if err != nil {
+		return err
+	}
+	return runChromeLauncher(argv)
+}
+
+func runChromeLauncher(argv []string) error {
 	c := exec.Command(argv[0], argv[1:]...)
 	var out bytes.Buffer
 	c.Stdout, c.Stderr = &out, &out
@@ -391,41 +420,16 @@ func launchChrome(dir string, urls []string) error {
 	return nil
 }
 
-// chromeRotationNotice is the line said after a rotation (owner decision,
-// lane 13): whenever the account switched to has a Chrome profile, it names
-// that profile. When it has none but another account has one, Claude in
-// Chrome is evidently in use, so it says how to make one. Someone who never
-// set up a Chrome profile hears nothing, and nothing is said when nothing
-// moved. Said once, with the switch.
-func chromeRotationNotice(st *state.State, from, to string) string {
-	if to == "" || from == to {
-		return ""
-	}
-	if st.ChromeOf(to) != nil {
-		return fmt.Sprintf("Claude in Chrome: use the %s Chrome profile (cs chrome %s)", to, to)
-	}
-	if len(st.ChromeList()) > 0 {
-		return fmt.Sprintf("Claude in Chrome: %s has no Chrome profile — cs chrome add %s", to, to)
-	}
-	return ""
-}
-
-// useChromeNote is `cs use`'s form of the notice.
-func useChromeNote(w io.Writer, st *state.State, from, to string) {
-	if msg := chromeRotationNotice(st, from, to); msg != "" {
-		fmt.Fprintf(w, "    %s\n", msg)
-	}
-}
-
 // chromeHintPhrases are the failures that mean the extension and Claude Code
 // are not on one account (or no browser answers on this account's channel).
 var chromeHintPhrases = []string{"same claude.ai account", "not connected"}
 
 // runChromeHint is the plugin hook after a Claude in Chrome tool call. When
-// the tool failed with the same-account or not-connected error, it tells
-// Claude which account Claude Code is on and the command that opens that
-// account's Chrome profile, once per rotation of the caller's profile. It
-// never fails the tool call: every other case exits 0 silently.
+// the tool failed with the same-account or not-connected error, it opens the
+// live account's own Chrome profile (C4) and tells Claude which account
+// Claude Code is on and to retry, once per rotation of the caller's profile;
+// it never asks for a sign-in. It never fails the tool call: every other
+// case exits 0 silently.
 //
 // Only PostToolUseFailure counts, and only its `error` field is read. A
 // successful call's response is page content: a page saying "not connected"
@@ -480,18 +484,28 @@ func runChromeHint(stdin io.Reader, stdout, stderr io.Writer, cfgPath string) in
 	if multiProfile(cfg) {
 		on = " (profile " + prof.Name + ")"
 	}
-	msg := fmt.Sprintf("[claudeswitch] Claude in Chrome only answers Claude Code when both are signed in "+
-		"to the same claude.ai account, and Claude Code is on account %s%s. ", id, on)
-	if r := resolveChrome(cfg, st, readChromeLocal(), prof.Name, id); r.Rule == "profile" {
-		msg += fmt.Sprintf("The Chrome profile %q is used for this profile's accounts, and Claude in Chrome there "+
-			"may still be signed in to the account before the last rotation. Tell the user to run "+
-			"`cs chrome signin %s` and sign Claude in Chrome in as %s there, then retry.", r.label(), id, id)
-	} else if cp := st.ChromeOf(id); cp != nil {
-		msg += fmt.Sprintf("Tell the user to run `cs chrome %s`: it opens the Chrome profile whose "+
-			"extension is signed in to %s, then retry.", id, id)
+	msg := fmt.Sprintf("[claudeswitch] Claude in Chrome reaches only a browser signed in to the account Claude Code "+
+		"is on, %s%s. ", id, on)
+	if cp := st.ChromeOf(id); cp != nil {
+		// C4: open it rather than tell anyone how to (owner decision
+		// 2026-10-23), once per rotation like the hint itself.
+		name := readChromeLocal().nameOf(cp.Dir)
+		if name == "" {
+			name = cp.Dir
+		}
+		if err := launchChromeBackground(cp.Dir); err != nil {
+			msg += fmt.Sprintf("claudeswitch could not open %s's Chrome profile %q (%v). ", id, name, err)
+		} else {
+			msg += fmt.Sprintf("claudeswitch has just opened %s's Chrome profile %q, whose extension is signed in "+
+				"as %s: retry the browser call in a few seconds. ", id, name, id)
+		}
+		msg += fmt.Sprintf("Do not ask the person to sign in to Claude in Chrome. If the call still says not "+
+			"connected, this session started on another account and keeps that connection (GROUND_TRUTH §56): "+
+			"a new session, such as `claude --resume`, reaches %s's browser.", id)
 	} else {
-		msg += fmt.Sprintf("No Chrome profile is set up for %s; tell the user to run `cs chrome add %s` "+
-			"and sign in to claude.ai and the extension there as that account, then retry.", id, id)
+		msg += fmt.Sprintf("%s has no Chrome profile of its own, so no browser follows it there. Do not ask the "+
+			"person to sign in to Claude in Chrome; the lasting fix is a Chrome profile for %s, set up once "+
+			"with `cs chrome add %s`.", id, id, id)
 	}
 	fmt.Fprintln(stderr, msg)
 	return 2

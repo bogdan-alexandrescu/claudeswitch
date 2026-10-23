@@ -557,7 +557,8 @@ func TestChromeSigninWithNothingToOpenRefuses(t *testing.T) {
 	}
 }
 
-// The notice after a rotation in profile P to account A.
+// The notice after a rotation in profile P to account A (C2, and C4 since
+// 2026-10-23: no sign-in asks, and an account's own mapping is opened).
 func TestChromeSwitchNotice(t *testing.T) {
 	cfgPath := c2World(t, "darwin", c2LocalState)
 	cfg, err := config.Load(cfgPath)
@@ -568,32 +569,39 @@ func TestChromeSwitchNotice(t *testing.T) {
 	local := readChromeLocal()
 
 	// Nothing set up anywhere: silence, as before.
-	if got := chromeSwitchNotice(cfg, st, local, "work", "work-1", "work-team"); got != "" {
+	if got := chromeFollow(cfg, st, local, "work", "work-1", "work-team"); got != "" {
 		t.Fatalf("nothing set: %q", got)
 	}
-	// Only the profile's chrome applies: sign it in.
+	// Only the profile's chrome applies: it cannot follow, so the way to a
+	// profile of the account's own, and no sign-in.
 	cfg.Profiles[1].Chrome = "Profile 1"
-	want := `Claude in Chrome in "Work" may still be signed in as work-1; sign it in as work-team (cs chrome signin work-team), or give work-team a Chrome profile of its own, which follows rotation by itself (cs chrome add work-team)`
-	if got := chromeSwitchNotice(cfg, st, local, "work", "work-1", "work-team"); got != want {
+	want := `Claude in Chrome in "Work" does not follow switches: give work-team a Chrome profile of its own (cs chrome add work-team)`
+	if got := chromeFollow(cfg, st, local, "work", "work-1", "work-team"); got != want {
 		t.Fatalf("profile rule:\n got %q\nwant %q", got, want)
 	}
-	if got := chromeSwitchNotice(cfg, st, local, "work", "work-team", "work-team"); got != "" {
+	if got := chromeFollow(cfg, st, local, "work", "work-team", "work-team"); got != "" {
 		t.Fatalf("not a rotation: %q", got)
 	}
 	// Without Local State the folder names it.
-	if got := chromeSwitchNotice(cfg, st, chromeLocal{}, "work", "work-1", "work-team"); !strings.Contains(got,
-		`in "Profile 1" may still be signed in as work-1`) {
+	if got := chromeFollow(cfg, st, chromeLocal{}, "work", "work-1", "work-team"); !strings.Contains(got,
+		`in "Profile 1" does not follow switches`) {
 		t.Fatalf("no Local State: %q", got)
 	}
-	// The account's own mapping keeps today's notice.
+	if l := c2Launches(t); len(l) != 0 {
+		t.Fatalf("launched %q without an account mapping", l)
+	}
+	// The account's own mapping is opened, in the background.
 	st.SetChromeExisting("work-team", "Profile 2", time.Now())
-	if got := chromeSwitchNotice(cfg, st, local, "work", "work-1", "work-team"); got !=
-		"Claude in Chrome: use the work-team Chrome profile (cs chrome work-team)" {
+	if got := chromeFollow(cfg, st, local, "work", "work-1", "work-team"); got !=
+		`Claude in Chrome: opened work-team's Chrome profile "Work 2"` {
 		t.Fatalf("own mapping: %q", got)
+	}
+	if l := c2Launches(t); len(l) != 1 || l[0][1] != "-g" || l[0][len(l[0])-1] != "--profile-directory=Profile 2" {
+		t.Fatalf("launches = %q", l)
 	}
 }
 
-func TestDaemonSwitchAsksForASignInWhenOnlyTheProfileMaps(t *testing.T) {
+func TestDaemonSwitchAsksForNoSignInWhenOnlyTheProfileMaps(t *testing.T) {
 	c2World(t, "darwin", c2LocalState)
 	cfg := twoProfiles()
 	cfg.Profiles[1].Chrome = "Profile 1"
@@ -608,7 +616,7 @@ func TestDaemonSwitchAsksForASignInWhenOnlyTheProfileMaps(t *testing.T) {
 	for _, il := range r.d.profs {
 		r.d.evaluate(context.Background(), il, "poll")
 	}
-	want := `Claude in Chrome in "Work" may still be signed in as w1; sign it in as w2 (cs chrome signin w2), or give w2 a Chrome profile of its own, which follows rotation by itself (cs chrome add w2)`
+	want := `Claude in Chrome in "Work" does not follow switches: give w2 a Chrome profile of its own (cs chrome add w2)`
 	var chrome []string
 	for _, s := range r.nt.sent {
 		if strings.Contains(s, "Claude in Chrome") {
@@ -618,15 +626,15 @@ func TestDaemonSwitchAsksForASignInWhenOnlyTheProfileMaps(t *testing.T) {
 	if len(chrome) != 1 || !strings.Contains(chrome[0], want) {
 		t.Fatalf("notifications = %q, want one with %q", r.nt.sent, want)
 	}
-	if !strings.Contains(r.logs.String(), "cs chrome signin w2") {
-		t.Errorf("log lacks the sign-in line:\n%s", r.logs.String())
+	if !strings.Contains(r.logs.String(), "cs chrome add w2") || strings.Contains(r.logs.String(), "signin") {
+		t.Errorf("log lacks the Chrome line, or asks for a sign-in:\n%s", r.logs.String())
 	}
 	if got := st.Profile("work").LastFrom; got != "w1" {
 		t.Errorf("last_from = %q, want w1", got)
 	}
 }
 
-func TestUseChromeNoteNamesTheSignIn(t *testing.T) {
+func TestUseChromeNoteAsksForNoSignIn(t *testing.T) {
 	cfgPath := c2World(t, "darwin", c2LocalState)
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
@@ -635,7 +643,7 @@ func TestUseChromeNoteNamesTheSignIn(t *testing.T) {
 	cfg.Profiles[1].Chrome = "Profile 1"
 	var out bytes.Buffer
 	useChromeNoteIn(&out, cfg, c2State(t), "work", "work-1", "work-team")
-	if !strings.Contains(out.String(), `Claude in Chrome in "Work" may still be signed in as work-1; sign it in as work-team (cs chrome signin work-team), or give work-team a Chrome profile of its own, which follows rotation by itself (cs chrome add work-team)`) {
+	if !strings.Contains(out.String(), `Claude in Chrome in "Work" does not follow switches: give work-team a Chrome profile of its own (cs chrome add work-team)`) {
 		t.Fatalf("use note = %q", out.String())
 	}
 }

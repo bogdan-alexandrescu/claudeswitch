@@ -293,7 +293,7 @@ the binary, found on `PATH` or at `~/.local/bin/claudeswitch`.
 | hook | runs | what it does |
 |---|---|---|
 | `SessionStart` | `cs context` | the lines above. Without the binary it says `plugin installed but \`claudeswitch\` is not on PATH`; with one too old for `context`, `the installed binary is older than this plugin`. Always exits 0 |
-| `PostToolUseFailure` on `mcp__claude-in-chrome__*` | `cs chrome hint` | when a browser tool failed because the extension is on another claude.ai account or not connected, tells Claude which account Claude Code is on and the command to run, once per rotation. Only lines starting `[claudeswitch]` reach Claude ([cs chrome](chrome.md#cs-chrome-hint-plugin-hook)) |
+| `PostToolUseFailure` on `mcp__claude-in-chrome__*` | `cs chrome hint` | when a browser tool failed because the extension is on another claude.ai account or not connected, opens the live account's own Chrome profile and tells Claude to retry, never to ask for a sign-in, once per rotation. Only lines starting `[claudeswitch]` reach Claude ([cs chrome](chrome.md#cs-chrome-hint-plugin-hook)) |
 | `PreToolUse` on `Artifact`, `ArtifactComments`, `ArtifactData`, `mcp__claude_ai_Claude_Docs__*` and `mcp__claude-in-chrome__*` | `cs hook pre` | **settles**, then **guards** ([below](#claudeai-calls-across-a-switch)). It never answers a permission prompt: a call it lets through goes on as it would without the plugin |
 | `PostToolUse` on `Artifact` | `cs hook post` | records which account published an artifact, for the guard |
 

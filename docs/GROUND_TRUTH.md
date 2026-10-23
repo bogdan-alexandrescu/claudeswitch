@@ -1651,6 +1651,52 @@ profile on each account in turn (the work profile untouched):
   held the first Chrome call until `settle_after_swap` after the switch, with
   the session's own start-up overlapping the wait.
 
-Still open for C0: whether a Chrome profile's browser connects with its windows
-closed, and how an open session's browser calls behave once each account has a
-browser of its own.
+**With four new Chrome profiles (same day, C3 setup).** `cs chrome add` made one
+each for work-team, AI-Eng-1, AI-Eng-2 and personal, and they were signed in.
+Probed 18:55–18:59 PT with their windows closed, none of the four accounts had a
+browser. Reopened (`cs chrome <account>`) and probed again, 22:08–22:12 PT:
+
+| live account | browsers on its channel |
+|---|---|
+| work-team | four: 9b913557, 310635cd, 33618a63, a507c1db, all `connectedAt` 22:08:04–05, the second the probe asked |
+| AI-Eng-1, AI-Eng-2 (same organization) | none |
+| personal (work-team's own claude.ai account, uuid bbbbbbbb…, in its personal organization) | none |
+| AI-Eng-3 | its own two, dbb0f289 and 067c70fc |
+
+- **A closed profile's browser does not connect.** Its windows must be open.
+- **All four new extensions were on work-team's channel**, so they were signed
+  in as work-team, whichever account their window was meant for.
+- **Same organization is not enough, a second time:** work-team's four browsers
+  were invisible to AI-Eng-1 and AI-Eng-2.
+- **Same account in another organization is not enough either:** personal,
+  the same claude.ai account as work-team in another organization, did not see
+  them. The channel is per account and organization: per seat.
+- **A browser connects when asked.** All four connected within a second of the
+  work-team probe, as AI-Eng-3's two did at 02:52:18.
+
+**Setting them up one at a time (2026-10-22, 22:25–23:00 PT).**
+- **An open window is not enough: an idle extension drops off.** work-team's
+  window, open and signed in, answered no probe (22:25–22:29) until its
+  extension's panel was opened; then it connected at once (22:31:07, device
+  33618a63). AI-Eng-1's (9b913557) connected at 22:39:20 and 22:42:19, dropped
+  off mid-call at 22:46, answered at 22:58, and was gone again at 22:59, right
+  after the 22:58 session closed its tab (which removed its tab group).
+- **A session that started on another account cannot use the new account's
+  browser.** This session, started while AI-Eng-3 was live, listed no browser
+  and got "not connected" with AI-Eng-1 live, even after `/chrome`, while fresh
+  sessions reached AI-Eng-1's browser. It seems to keep the login it started
+  with.
+- **The extension's channel and the window's claude.ai are separate sign-ins.**
+  The check for claude.ai is opening an artifact the account published, in
+  that window: AI-Eng-1's rendered there (23:00). `get_page_text` returns no
+  text for a rendered artifact (it sits in a sandboxed frame).
+
+**Launching a profile brings its browser back (2026-10-23, 11:00 PT).** With
+personal live and no browser on its channel (11:00:50), `cs chrome
+personal` launched "Claude-Acme-Personal"; its browser (9d485bc2) was
+connected three seconds later (11:01:53), with no sign-in. This interactive
+session, already running, still listed no browser, and launching AI-Eng-2's
+profile did not change that: a running session that lost its connection does not
+move to the new account's browser.
+
+Still open for C0: what keeps an idle extension connected.

@@ -392,28 +392,31 @@ func TestChromeAddJSON(t *testing.T) {
 	}
 }
 
-// The rotation notice (owner decision, lane 13): whenever the account just
-// switched to has a Chrome profile, name it; when it has none but some other
-// account has one (so Claude in Chrome is in use), say how to make one;
-// nothing for someone who never set Chrome up, or when nothing moved.
+// The rotation notice (owner decision, lane 13; C4, 2026-10-23): whenever
+// the account just switched to has a Chrome profile, it is opened and named;
+// when it has none but some other account has one (so Claude in Chrome is in
+// use), say how to make one; nothing for someone who never set Chrome up, or
+// when nothing moved.
 func TestChromeRotationNotice(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	cfgPath := chromeWorld(t, "darwin")
+	cfg := loadOrFail(t, cfgPath)
 	st := chromeState(t)
-	if got := chromeRotationNotice(st, "w1", "w2"); got != "" {
+	local := readChromeLocal()
+	if got := chromeFollow(cfg, st, local, "work", "w1", "w2"); got != "" {
 		t.Fatalf("no mappings: %q", got)
 	}
 	st.SetChrome("w2", "claudeswitch-w2", time.Now())
-	use := "Claude in Chrome: use the w2 Chrome profile (cs chrome w2)"
+	opened := `Claude in Chrome: opened w2's Chrome profile "claudeswitch-w2"`
 	for _, from := range []string{"w1", ""} {
-		if got := chromeRotationNotice(st, from, "w2"); got != use {
-			t.Fatalf("from %q: notice = %q, want %q", from, got, use)
+		if got := chromeFollow(cfg, st, local, "work", from, "w2"); got != opened {
+			t.Fatalf("from %q: notice = %q, want %q", from, got, opened)
 		}
 	}
-	if got := chromeRotationNotice(st, "w2", "w2"); got != "" {
+	if got := chromeFollow(cfg, st, local, "work", "w2", "w2"); got != "" {
 		t.Fatalf("not a rotation: %q", got)
 	}
 	missing := "Claude in Chrome: w1 has no Chrome profile — cs chrome add w1"
-	if got := chromeRotationNotice(st, "w2", "w1"); got != missing {
+	if got := chromeFollow(cfg, st, local, "work", "w2", "w1"); got != missing {
 		t.Fatalf("to an unmapped account: %q, want %q", got, missing)
 	}
 }
@@ -440,10 +443,10 @@ func TestDaemonSwitchNamesTheChromeProfile(t *testing.T) {
 			chrome = append(chrome, s)
 		}
 	}
-	if len(chrome) != 1 || !strings.Contains(chrome[0], "cs chrome w2") {
-		t.Fatalf("notifications = %q, want one naming cs chrome w2", r.nt.sent)
+	if len(chrome) != 1 || !strings.Contains(chrome[0], "opened w2's Chrome profile") {
+		t.Fatalf("notifications = %q, want one saying w2's Chrome profile was opened", r.nt.sent)
 	}
-	if !strings.Contains(r.logs.String(), "cs chrome w2") {
+	if !strings.Contains(r.logs.String(), "opened w2's Chrome profile") {
 		t.Errorf("log lacks the Chrome line:\n%s", r.logs.String())
 	}
 	// A later evaluation with no switch says nothing more.
@@ -501,24 +504,6 @@ func TestDaemonSwitchSaysNothingAboutChromeWhenNoneIsSetUp(t *testing.T) {
 	}
 }
 
-// `cs use` prints the same line after its swap.
-func TestUseChromeNote(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	st := chromeState(t)
-	st.SetChrome("w1", "claudeswitch-w1", time.Now())
-	st.SetChrome("w2", "claudeswitch-w2", time.Now())
-	var out bytes.Buffer
-	useChromeNote(&out, st, "w1", "w2")
-	if !strings.Contains(out.String(), "Claude in Chrome: use the w2 Chrome profile (cs chrome w2)") {
-		t.Fatalf("use note = %q", out.String())
-	}
-	out.Reset()
-	useChromeNote(&out, st, "w2", "w2")
-	if out.Len() != 0 {
-		t.Fatalf("no rotation, but printed %q", out.String())
-	}
-}
-
 // The plugin hook: a Claude in Chrome tool that fails because the extension
 // is on another account gets one hint per rotation naming the account and the
 // command.
@@ -545,7 +530,7 @@ func TestChromeHintOncePerRotation(t *testing.T) {
 	}
 
 	_, stderr, code := hint(failure)
-	if code != 2 || !strings.Contains(stderr, "w2") || !strings.Contains(stderr, "cs chrome w2") {
+	if code != 2 || !strings.Contains(stderr, "w2") || !strings.Contains(stderr, "opened") {
 		t.Fatalf("first hint: code %d stderr %q", code, stderr)
 	}
 	if out, stderr, code := hint(failure); code != 0 || out != "" || stderr != "" {

@@ -67,8 +67,10 @@ public struct ChromeLive: Equatable {
 
     /// The card's notice (C2): the live account's Chrome profile comes from
     /// its profile, not a mapping of its own, and the last rotation changed
-    /// the account, so Claude in Chrome there is still signed in as the one
-    /// before. Nil once dismissed for this rotation.
+    /// the account, so Claude in Chrome there cannot follow it. Since C4
+    /// (owner decision 2026-10-23) it never asks for a sign-in: the way out
+    /// is a Chrome profile of the account's own, which claudeswitch opens
+    /// after every switch. Nil once dismissed for this rotation.
     public func signInNotice(dismissed: Set<String>) -> ChromeSignInNotice? {
         guard rule == "profile", let old = lastFrom, old != account else { return nil }
         let n = ChromeSignInNotice(profile: profile, chromeName: label, old: old, account: account,
@@ -78,7 +80,8 @@ public struct ChromeLive: Equatable {
     }
 }
 
-/// "Claude in Chrome in "Work" is still signed in as work-1", with its button.
+/// "Claude in Chrome in "Work" does not follow switches to work-team", with
+/// its button.
 public struct ChromeSignInNotice: Equatable {
     public var profile: String
     public var chromeName: String
@@ -87,11 +90,9 @@ public struct ChromeSignInNotice: Equatable {
     /// One rotation's identity, for dismissing it.
     public var key: String
 
-    /// "May": the old account is inferred, never read from the extension.
-    public var text: String { "Claude in Chrome in \"\(chromeName)\" may still be signed in as \(old)" }
-    public var button: String { "Sign in as \(account)" }
-    /// The way out of signing in after every rotation (P2): a Chrome profile
-    /// of the account's own, which the bridge finds by itself.
+    public var text: String { "Claude in Chrome in \"\(chromeName)\" does not follow switches to \(account)" }
+    /// The way out (P2, C4): a Chrome profile of the account's own, which
+    /// claudeswitch opens after every switch and the bridge then finds.
     public var ownButton: String { "Give \(account) its own Chrome profile" }
 }
 

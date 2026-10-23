@@ -522,9 +522,10 @@ struct IconButton: View {
     }
 }
 
-/// C2: the profile's Chrome profile is still signed in to the account before
-/// the last rotation. The amber warning tone, a brand pill to sign in, and a
-/// dismiss that lasts until the next rotation.
+/// C2: the profile's Chrome profile cannot follow the last rotation, since
+/// the account has no Chrome profile of its own. The amber warning tone, a
+/// brand pill that gives it one (C4: never a sign-in), and a dismiss that
+/// lasts until the next rotation.
 struct ChromeSignInBanner: View {
     @EnvironmentObject var store: Store
     let notice: ChromeSignInNotice
@@ -542,28 +543,22 @@ struct ChromeSignInBanner: View {
                     .help("Dismiss until the next rotation")
                     .accessibilityLabel("Dismiss the Claude in Chrome notice")
             }
+            // P2, C4: once the account has its own Chrome profile,
+            // claudeswitch opens it after every switch.
             Button {
-                store.chromeSignin(notice.account, card: card, notice: notice.key)
+                store.setAccountChrome(notice.account, .createNew)
+                store.dismissChromeNotice(notice.key)
             } label: {
                 if store.isBusy("chrome:\(notice.account)") {
                     ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 28)
                 } else {
-                    Text(notice.button).lineLimit(1).truncationMode(.middle).frame(maxWidth: .infinity, minHeight: 28)
+                    Text(notice.ownButton).lineLimit(1).truncationMode(.middle).frame(maxWidth: .infinity, minHeight: 28)
                 }
             }
             .buttonStyle(PillButtonStyle(primary: true))
             .disabled(store.binaryPath == nil || store.isBusy("chrome:\(notice.account)"))
-            .help("Open \"\(notice.chromeName)\" at the claude.ai and Claude in Chrome sign-in")
-            // P2: once the account has its own Chrome profile, rotation
-            // needs no sign-in at all.
-            Button(notice.ownButton) {
-                store.setAccountChrome(notice.account, .createNew)
-                store.dismissChromeNotice(notice.key)
-            }
-            .buttonStyle(.link).font(.caption)
-            .disabled(store.binaryPath == nil || store.isBusy("chrome:\(notice.account)"))
             .help("Creates a Chrome profile for \(notice.account) and opens it at the sign-in pages; " +
-                  "sign in there once, and later rotations find it by themselves")
+                  "sign in there once, and claudeswitch opens it after every switch to \(notice.account)")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(8)

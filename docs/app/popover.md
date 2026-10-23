@@ -72,7 +72,7 @@ Banners appear on the card they concern.
 
 | banner | when | what to do |
 |---|---|---|
-| **Claude in Chrome in "Work" may still be signed in as work-1** (amber) | the profile's accounts share one Chrome profile, and rotation moved it to another account | **Sign in as work-team** opens that Chrome profile at the sign-in pages (`cs chrome signin work-team`). × hides it until the next rotation. See [Claude in Chrome in the app](chrome.md) |
+| **Claude in Chrome in "Work" does not follow switches to work-team** (amber) | the profile's accounts share one Chrome profile, and rotation moved it to another account | **Give work-team its own Chrome profile** creates one and opens it at the sign-in pages (`cs chrome add work-team`); after that claudeswitch opens it after every switch. × hides it until the next rotation. See [Claude in Chrome in the app](chrome.md) |
 | **Pin on work-2 lifted: it was refused, so rotation runs again** (amber) | the daemon lifted the profile's pin because its account was refused or needed a login. Shown for a day, from the audit log's `unpin` event | × dismisses it; pin again, or **Pin, even if it runs out** |
 | **Could not switch …** (red) | an action on the card failed, for example `use` refused. It gives the CLI's message, and when the refusal ends, **Try again at …** | wait, or follow the message. × dismisses it |
 | a problem line (red, with a triangle) | the live account's last reading failed: a 401, a timeout, no stored credential | sign in again (`cs login <id> --direct`), or see [cs setup → doctor](../cli/setup.md) |

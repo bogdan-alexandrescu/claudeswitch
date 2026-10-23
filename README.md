@@ -7,7 +7,7 @@ stands, and hot-swaps Claude Code onto a fresh account before the current one
 hits its limit: no restart, no lost session. It ships as a Go CLI plus daemon
 (macOS and Linux), a native macOS menu-bar app and a Claude Code plugin.
 
-Latest release: **v0.8.1**
+Latest release: **v0.8.2**
 ([releases](https://github.com/bogdan-alexandrescu/claudeswitch/releases)).
 
 <p align="center"><img src="docs/images/popover.png" width="384" alt="The ClaudeSwitch menu-bar popover: the daemon is live, the default profile is on work-1 and the work profile is on work-team"></p>
@@ -136,7 +136,7 @@ arm64, and a `checksums.txt`. The archives are reproducible: the same tag
 always produces the same bytes.
 
 ```sh
-VERSION=v0.8.1
+VERSION=v0.8.2
 TARGET=darwin_arm64            # darwin_amd64, linux_amd64, linux_arm64
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 curl -LO "$BASE/claudeswitch_${VERSION}_${TARGET}.tar.gz"
@@ -162,7 +162,7 @@ cd claudeswitch
 symlink, and installs the daemon in dry-run (see [Daemon](#daemon)). To build
 the binary alone: `go build -o bin/claudeswitch ./cmd/claudeswitch`.
 
-**Verify it worked:** `cs version` prints `claudeswitch v0.8.1` for the release
+**Verify it worked:** `cs version` prints `claudeswitch v0.8.2` for the release
 binary (a build from source prints `claudeswitch dev`). If the shell cannot
 find `cs`, add `~/.local/bin` to your `PATH`.
 
@@ -233,7 +233,7 @@ Re-run it after pulling to update.
 From a release, as a universal build:
 
 ```sh
-VERSION=v0.8.1
+VERSION=v0.8.2
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 ZIP="ClaudeSwitch-${VERSION#v}-macos.zip"
 curl -LO "$BASE/$ZIP"
@@ -259,7 +259,7 @@ to install it. [macos/README.md](macos/README.md) has the details.
 
 **Verify it worked:** the Twin rings glyph with the live account and its
 utilization appears in the menu bar, and **About ClaudeSwitch** in its ⋯ menu
-shows version 0.8.1. If you see nothing on a MacBook with a notch, see
+shows version 0.8.2. If you see nothing on a MacBook with a notch, see
 [Troubleshooting](#troubleshooting).
 
 ### Claude Code plugin
@@ -490,15 +490,16 @@ to, so nothing can rotate there until you sign in to it again
 
 ### Claude in Chrome on the card
 
-<p align="center"><img src="docs/images/popover-chrome-signin.png" width="384" alt="The work profile's card after a rotation from work-1 to work-team: an amber banner says Claude in Chrome in &quot;Work&quot; may still be signed in as work-1, with a Sign in as work-team button, a Give work-team its own Chrome profile link and a close button"></p>
+<p align="center"><img src="docs/images/popover-chrome-signin.png" width="384" alt="The work profile's card after a rotation from work-1 to work-team: an amber banner says Claude in Chrome in &quot;Work&quot; does not follow switches to work-team, with a Give work-team its own Chrome profile button and a close button"></p>
 
-When a profile's accounts share one Chrome profile, the Claude in Chrome
-extension there stays signed in to the account before a rotation. The card
-says so in amber, naming the Chrome profile and the old account, with a
-**Sign in as ...** button. The button opens that Chrome profile at the
-claude.ai and Claude in Chrome sign-in pages (`cs chrome signin <id>`). The ×
-hides the banner until the next rotation. An account with a Chrome profile of
-its own never needs this: see [Claude in Chrome](#claude-in-chrome).
+An account with a Chrome profile of its own is followed: after every switch
+to it, claudeswitch opens that Chrome profile in the background, so Claude in
+Chrome finds the right browser, and nothing asks you to sign in again (see
+[Claude in Chrome](#claude-in-chrome)). When a profile's accounts share one
+Chrome profile instead, that can't follow a rotation. The card says so in
+amber, with a **Give ... its own Chrome profile** button that sets one up
+(`cs chrome add <id>`, one sign-in, once). The × hides the banner until the
+next rotation.
 
 ### Settings
 

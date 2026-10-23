@@ -1272,3 +1272,40 @@ needs a browser on the same account, not the same organization):**
   AI-Eng-3, personal) get Chrome profiles of their own; the other three
   keep the shared one.
 - **C2** is not being built.
+
+**Shipped in 0.8.1 (released 2026-10-22):** R re-aimed (a switch during a hold
+prefers an account with a Chrome profile of its own) and C1. Setup the same day:
+personal, work-main and work-team no longer map to
+"Claude-In-Chrome", leaving it AI-Eng-3's own; work-team's Chrome profile
+(`claudeswitch-work-team`) opened for its sign-ins, with AI-Eng-1, AI-Eng-2 and
+personal to follow.
+
+**C3 done for seven of eight (2026-10-22/23).** Each account has a Chrome profile
+of its own whose extension is on its channel and whose claude.ai opens its own
+artifact: work-team ("Claude-Acme-Team", device 33618a63), AI-Eng-1 ("AI-ENG-1",
+9b913557), AI-Eng-2 ("AI-ENG-2", 677e7ea4), AI-Eng-3 ("AI-ENG-3", a507c1db),
+personal ("Claude-Acme-Personal", 9d485bc2), personal ("Claude-Personal",
+e2cce59e), work-team ("Claude-Acme-Devops-Team", 2ff3b1e1). Open:
+work-main ("Claude-Acme-Devops-Main", 067c70fc), whose extension keeps
+signing in to alice@example.com's own organization, work-team's seat.
+
+**C4. Claude in Chrome follows the account (owner request and decisions,
+2026-10-23).** The owner: Claude in Chrome should use the Chrome profile set for
+the account live in cs, switch to it automatically, and never ask him to sign in
+again. A new bridge connection finds only a browser on the live account's own
+channel, and a profile's extension connects only while the profile runs;
+launching one brought its browser back in 3 s (GROUND_TRUTH §56). Decided:
+claudeswitch opens the new account's own Chrome profile right after every switch
+(the daemon's, `cs use`'s and the app's, never in a dry run), in the background
+(`open -g`). Built the same day:
+- the switch line says `Claude in Chrome: opened <account>'s Chrome profile
+  "<name>"`; `use --json` carries it as `chrome`;
+- no notice asks for a sign-in: a shared profile's chrome says the account
+  needs a Chrome profile of its own (`cs chrome add`), and the app's banner
+  offers that instead of "Sign in as";
+- `chrome hint` (after a failed Claude in Chrome call) opens the live account's
+  own profile itself, once per rotation, and tells Claude to retry, never to ask
+  the person to sign in, and that a session started on another account reaches
+  the live account's browser through a new session.
+Not in claudeswitch's reach: a running session that lost its connection does not
+move its bridge to the new account even after `/chrome`; a new session does.

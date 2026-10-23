@@ -49,17 +49,18 @@ make one for each account at the end, and the sign-in banner below has
 
 CLI: `cs chrome open <id>`.
 
-## The sign-in banner
+## The Chrome banner
 
-<p align="center"><img src="../images/popover-chrome-signin.png" width="384" alt="The work card: Claude in Chrome in &quot;Work&quot; may still be signed in as work-1, with a Sign in as work-team button, a Give work-team its own Chrome profile link and a close button"></p>
+<p align="center"><img src="../images/popover-chrome-signin.png" width="384" alt="The work card: Claude in Chrome in &quot;Work&quot; does not follow switches to work-team, with a Give work-team its own Chrome profile button and a close button"></p>
 
-When a profile's accounts share a Chrome profile and rotation moved the
-profile to another account, its card says which Chrome profile may still be
-signed in as the old account (claudeswitch cannot see the extension's login,
-so it says "may"). **Sign in as work-team** opens that Chrome
-profile at the claude.ai and Claude in Chrome sign-in pages
-(`cs chrome signin work-team`): sign in to both as work-team. × hides the
-banner until the next rotation.
+An account with a Chrome profile of its own needs nothing here: after every
+switch to it, claudeswitch opens that profile in the background and Claude in
+Chrome follows (C4). When a profile's accounts share a Chrome profile and
+rotation moved the profile to another account, the shared profile cannot
+follow, and its card says so. **Give work-team its own Chrome profile**
+creates one and opens it at the claude.ai and Claude in Chrome sign-in pages
+(`cs chrome add work-team`): sign in to both as work-team, once. It never asks
+for a sign-in after a rotation. × hides the banner until the next rotation.
 
 When Chrome is not supported on the machine, the globe and the Chrome
 controls are hidden or greyed out.
