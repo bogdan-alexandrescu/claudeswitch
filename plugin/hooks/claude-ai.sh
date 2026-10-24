@@ -3,9 +3,11 @@
 # phase 1 S and G): `claudeswitch hook pre` before one waits until
 # settle_after_swap after the profile's last switch, so the call acts as the
 # account now live, and refuses a call on an artifact another account
-# published, saying whose it is; `claudeswitch hook post` after a publish
-# records its owner. They read the config, state.json and the plugin's
-# artifact book only: no keychain, no API, no browser.
+# published, saying whose it is, and on a session's first Claude in Chrome
+# call after a switch tells Claude its earlier tabs stayed in the previous
+# account's Chrome profile; `claudeswitch hook post` after a publish records
+# its owner. They read the config, state.json and the plugin's artifact and
+# session books only: no keychain, no API, no browser.
 #
 # usage: claude-ai.sh pre|post   (the hook's JSON on stdin)
 #

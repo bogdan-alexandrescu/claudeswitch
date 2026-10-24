@@ -150,6 +150,18 @@ func settings() []setting {
 				c.SettleAfterSwap = &config.Duration{Duration: d}
 				return nil
 			}, help: "after a switch, hold a claude.ai call until this long after it, so it acts as the new account (0 = off)"},
+		// Owner decision 2026-10-23: an idle profile gives up an account
+		// another profile wants. Global only.
+		{name: "release_idle_after", kind: "duration", min: num(0),
+			get: func(c *config.Config) string { return c.ReleaseIdle().String() },
+			set: func(c *config.Config, v string) error {
+				d, err := time.ParseDuration(strings.TrimSpace(v))
+				if err != nil {
+					return fmt.Errorf("%q is not a duration (try 30m, 1h)", v)
+				}
+				c.ReleaseIdleAfter = &config.Duration{Duration: d}
+				return nil
+			}, help: "give up an account another profile wants when this profile's sessions have been idle this long (0 = never)"},
 		{name: "cooldown", kind: "duration", min: num(0),
 			get:  func(c *config.Config) string { return c.Cooldown.String() },
 			set:  durSetter(func(c *config.Config) *config.Duration { return &c.Cooldown }),

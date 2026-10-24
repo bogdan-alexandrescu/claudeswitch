@@ -24,6 +24,7 @@ ones marked "per profile" in [Settings → Profiles](settings-profiles.md).
 | **Max switch wait** | `max_switch_wait` | stop waiting for an idle gap after this | 30s | at least 0s |
 | **Hold for claude.ai** | `hold_for_claude_ai` | hold a rotation this long after a session's last claude.ai call: Claude in Chrome, an artifact, a Doc (0 = off). Hidden with a CLI that predates it (before 0.8.0 the row was **Hold for browser**, `hold_for_browser`) | 5m | at least 0s |
 | **Settle after swap** | `settle_after_swap` | after a switch, hold a claude.ai call until this long after it, so it acts as the new account (0 = off). Hidden with a CLI that predates it | 45s | 0s to 5m |
+| **Release idle after** | `release_idle_after` | give up an account another profile wants when this profile's sessions have been idle this long (0 = never). Hidden with a CLI that predates it | 30m | at least 0s |
 | **Cooldown** | `cooldown` | minimum gap between rotations, to stop flapping | 10m | at least 0s |
 | **Landing margin** | `landing_margin` | a switch target needs this many points below its own trigger (0 = off). Per profile | 10 | 0 to 50 |
 | **Count model limits** | `models` | models whose per-model weekly limit counts like the weekly window (comma-separated; empty = none). Per profile | none | |

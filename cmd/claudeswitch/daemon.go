@@ -488,6 +488,7 @@ func (d *daemon) evaluate(ctx context.Context, il *profileLoop, trigger string) 
 	d.reconcileLogin(ctx, il)
 	ist := d.profState(il)
 	d.noteClaudeAI(il)
+	d.noteActivity(il)
 	// D34: an account live in another profile is not a candidate here.
 	// State says which, at no cost; the §3 check before a write asks the
 	// live items too, and adds what it finds.
@@ -655,10 +656,28 @@ func (d *daemon) evaluate(ctx context.Context, il *profileLoop, trigger string) 
 	// audited, once per finding, with no notification. Before shared pools
 	// it refused the swap loudly and waited.
 	refusals := map[string]bool{}
+	released := map[string]bool{}
 	for {
 		other, how, at := d.liveElsewhere(ctx, il, dec.Target)
 		if other == "" {
 			break
+		}
+		// The holder is a profile idle for release_idle_after: it gives the
+		// account up, moving to its own best other account, and the check
+		// runs again (owner decision 2026-10-23). Once per holder, and only
+		// on state's word that it holds the target.
+		if q := d.loopNamed(other); q != nil && at.IsZero() && !released[other] &&
+			d.profState(q).Active == dec.Target {
+			if idle, ok := idleHolder(d.cfg, d.st, other, time.Now(), d.st.DaemonSince); ok {
+				released[other] = true
+				if _, err := releaseFrom(ctx, d.v, d.cfg, d.st, other, q.live, dec.Target, il.name, idle, q.log,
+					func(e audit.Event) { _ = d.aud.Write(e) }); err == nil {
+					_ = d.save()
+					continue
+				} else {
+					how = err.Error()
+				}
+			}
 		}
 		msg := fmt.Sprintf("refusing to install %s in profile %s: %s (%s), "+
 			"and one credential live in two profiles is revoked by whichever refreshes first",
@@ -785,7 +804,7 @@ const RunwayWarning = 2 * time.Hour
 // out is the exhausted notice's to say.
 func (d *daemon) noteRunway(il *profileLoop, in policy.Input) {
 	now := in.Now
-	in.Unavailable = bestExclusions(d.cfg, d.st, il.name, now)
+	in.Unavailable = bestExclusions(d.cfg, d.st, il.name, now, d.st.DaemonSince)
 	r := policy.Forecast(in)
 	switch {
 	case r.Kind == policy.RunwayRefills, r.Kind == policy.RunwayDry && r.DryAt.Sub(now) > RunwayWarning:
@@ -863,23 +882,49 @@ func (d *daemon) inUseElsewhere(il *profileLoop) map[string]string {
 	for _, o := range d.profs {
 		names = append(names, o.name)
 	}
-	return inUseElsewhereOf(names, d.st, il.name)
+	return inUseElsewhereOf(d.cfg, names, d.st, il.name, time.Now(), d.st.DaemonSince)
 }
 
 // inUseElsewhereOf is inUseElsewhere for any caller: what state records live
 // in each of the other profiles named. `why` and `status` ask it too, so the
-// decision they show is the daemon's.
-func inUseElsewhereOf(profiles []string, st *state.State, name string) map[string]string {
+// decision they show is the daemon's. A profile idle for release_idle_after
+// gives its account up when it is wanted (releaseFrom), so that account is a
+// candidate (owner decision 2026-10-23).
+func inUseElsewhereOf(cfg *config.Config, profiles []string, st *state.State, name string,
+	now, recordingSince time.Time) map[string]string {
 	out := map[string]string{}
 	for _, o := range profiles {
 		if o == name {
 			continue
 		}
 		if ps := st.Profiles[o]; ps != nil && ps.Active != "" && ps.Active != state.Unattributed {
+			if _, idle := idleHolder(cfg, st, o, now, recordingSince); idle {
+				continue
+			}
 			out[ps.Active] = "in use by " + o
 		}
 	}
 	return out
+}
+
+// recordingSince is when the daemon began recording each profile's activity,
+// for a command deciding whether a profile is idle: its start, while one is
+// running; zero, which knows of no idle, otherwise.
+func recordingSince(st *state.State) time.Time {
+	if !daemonRunning() {
+		return time.Time{}
+	}
+	return st.DaemonSince
+}
+
+// loopNamed is the profile loop of that name, nil for none (a ghost).
+func (d *daemon) loopNamed(name string) *profileLoop {
+	for _, il := range d.profs {
+		if il.name == name {
+			return il
+		}
+	}
+	return nil
 }
 
 // inUseWhy is a §3 finding as the reason a candidate is passed over (D34).
@@ -901,11 +946,23 @@ func (d *daemon) noteClaudeAI(il *profileLoop) {
 	}
 }
 
+// noteActivity records in state the newest transcript write the profile's
+// detector has seen: whether the profile is idle enough to give up its
+// account to another (release_idle_after) is read from it, by the daemon and
+// by `cs use`. Only ever later, as noteClaudeAI.
+func (d *daemon) noteActivity(il *profileLoop) {
+	ist := d.profState(il)
+	if at := il.det.LastActivity(); at.After(ist.ActivityAt) {
+		ist.ActivityAt = at
+	}
+}
+
 // noteClaudeAIs is noteClaudeAI for every profile, before a save: a call made
 // since a profile's last tick is not lost when the daemon stops.
 func (d *daemon) noteClaudeAIs() {
 	for _, il := range d.profs {
 		d.noteClaudeAI(il)
+		d.noteActivity(il)
 	}
 }
 

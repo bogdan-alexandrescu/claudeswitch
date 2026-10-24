@@ -36,8 +36,13 @@ of accounts, and an account is in one pool. A profile rotates over the
 pools it uses, in order: its own (`pool = [...]` on the profile) or the
 named `[[pool]]` blocks it lists (`pools = [...]`). Two profiles that list
 the same pool share its accounts, one profile at a time: an account live in
-one is "in use by" it in the other. Accounts in no pool are used by the
-profile named `default`, after its pools. One daemon drives every profile.
+one is "in use by" it in the other (a refresh in one would log the other
+out). A profile nobody is using does not keep it, though: once its sessions
+have been idle for **`release_idle_after`** (30 minutes), another profile
+that wants the account gets it, and the idle profile moves to the best other
+account of its own pools first. A pinned profile never gives its account up.
+Accounts in no pool are used by the profile named `default`, after its
+pools. One daemon drives every profile.
 
 With no `[[profile]]` blocks in the config, everything is one implicit
 `default` profile. `cs profile create` declares the first real one,

@@ -200,6 +200,16 @@ the same places (Settings → Rotation). Global only:
 The plugin's hook reads it; the daemon does not. Above `5m0s` or below 0 is
 `invalid_value`.
 
+**`release_idle_after`** (additive, owner decision 2026-10-23) follows it
+(Settings → Rotation), global only, `{"key": "release_idle_after", "type":
+"duration", "default": "30m0s", "min": 0, "max": null, ...}`. An account live
+in a profile whose sessions have been idle this long (no transcript write,
+claude.ai call or switch, as the daemon records them in state.json's
+`activity_at`) is a candidate for other profiles; taking it first moves that
+profile to the best other account of its own pools. A pinned profile never
+gives one up. `use --json` says so in `"released": {"profile", "from", "to"}`
+(with `--dry-run`: `{"profile", "from", "would": true}`), null otherwise.
+
 For `hold_for_claude_ai`, a due switch waits until this long after a
 session's last Claude in Chrome, artifact or Docs call; `max_switch_wait` does not cut it short, and only a forced switch
 (past `hard_floor`) goes sooner. `0s` turns it off. A negative value is

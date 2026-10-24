@@ -1350,3 +1350,33 @@ day):
 - **`cs chrome add`** warns, for an email with seats in several
   organizations, to switch claude.ai to the account's organization before the
   extension is first opened (it stays bound to the first one).
+
+**Release from an idle profile (owner request and decisions, 2026-10-23).**
+work-team was live in the work profile, which nobody was using, so default
+could not have it until the owner moved work by hand. One account cannot be
+live in two profiles (a refresh in one logs the other out), but an idle
+profile need not hold it. Decided: automatic, after 30 minutes idle
+(`release_idle_after`, 0 never). Built: the daemon records each profile's
+newest transcript write (`activity_at`); an account live in a profile idle
+that long (no transcript write, claude.ai call or switch) is a candidate for
+the daemon's rotation, `why`, "Switch to best" and `cs use`; taking it first
+moves the idle profile to the best other account of its own pools, audited
+as `released <account> for <profile>`. A pinned profile, or one with nowhere
+to go, keeps it.
+
+**Claude reopens its pages (owner request and decision, 2026-10-23).** The
+owner asked for a setting that, on a switch, moves every tab and window of
+the old account's Chrome profile into the new one's and then closes the old
+ones. Copying tabs keeps URLs only: sign-ins, form contents, history and tab
+groups stay behind, and Claude in Chrome's own tab ids break anyway. Shown the
+alternatives, the owner chose this one: the person's windows are never
+touched, and Claude, which knows which pages it needs, reopens them. Built:
+on a session's first Claude in Chrome call after its profile switched
+accounts, `hook pre` adds context, once: from which account to which, the
+Chrome profile a new connection reaches, that the tabs it opened before stay
+in the old account's and their ids no longer work, and to call
+`tabs_context_mcp` and reopen the pages it needs with `navigate`, never asking
+the person to sign in or move tabs. A session's first call ever, or accounts
+that share one Chrome profile, say nothing. The record of which account each
+session's last call ran as is `chrome-sessions.json` beside `state.json`, the
+200 most recent sessions.

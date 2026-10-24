@@ -13,6 +13,7 @@
   "poll_idle": "10m0s",
   "refresh_probe": "24h0m0s",
   "refresh_window": "1h0m0s",
+  "release_idle_after": "30m0s",
   "settle_after_swap": "45s",
   "switch_at": "90",
   "switch_at_weekly": "95",

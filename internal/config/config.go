@@ -82,6 +82,14 @@ const (
 	MaxSettleAfterSwap     = 5 * time.Minute
 )
 
+// DefaultReleaseIdleAfter is how long a profile's sessions must have been
+// idle before an account live in it is given up to another profile that wants
+// it (owner decision 2026-10-23). One account cannot be live in two profiles
+// (a refresh in one logs the other out), so an idle profile holding one kept
+// it from everyone; half an hour never takes it from a session pausing
+// between turns.
+const DefaultReleaseIdleAfter = 30 * time.Minute
+
 // OldHoldForClaudeAI is hold_for_claude_ai's name in 0.7.8 and 0.7.9, when it
 // held for Claude in Chrome calls only. A file that still says it is read as
 // before; the next whole-file write, or `cs config set`, carries the new name
@@ -438,6 +446,14 @@ func (c *Config) ClaudeAIHold() time.Duration {
 	return c.HoldForClaudeAI.Duration
 }
 
+// ReleaseIdle is release_idle_after, or its default; zero means never.
+func (c *Config) ReleaseIdle() time.Duration {
+	if c.ReleaseIdleAfter == nil {
+		return DefaultReleaseIdleAfter
+	}
+	return c.ReleaseIdleAfter.Duration
+}
+
 // Settle is settle_after_swap, or its default; zero means off.
 func (c *Config) Settle() time.Duration {
 	if c.SettleAfterSwap == nil {
@@ -486,6 +502,12 @@ type Config struct {
 	// DefaultSettleAfterSwap; zero is a real value and turns it off. Read it
 	// through Settle().
 	SettleAfterSwap *Duration `toml:"settle_after_swap"`
+	// ReleaseIdleAfter is how long a profile's sessions must have been idle
+	// before an account live in it is given up to another profile that
+	// wants it: that profile is first moved to the best other account of
+	// its own pools. Nil means DefaultReleaseIdleAfter; zero is a real value
+	// and means never. Read it through ReleaseIdle().
+	ReleaseIdleAfter *Duration `toml:"release_idle_after"`
 
 	// LandingMargin is the room, in points below the session trigger, a switch
 	// target's 5-hour window must have (IMPROVEMENTS A1). Nil means DefaultLandingMargin; zero
@@ -908,6 +930,9 @@ func (c *Config) validateRest() error {
 	if h := c.ClaudeAIHold(); h < 0 {
 		return fmt.Errorf("hold_for_claude_ai cannot be negative (0 turns the hold off), got %s", h)
 	}
+	if r := c.ReleaseIdle(); r < 0 {
+		return fmt.Errorf("release_idle_after cannot be negative (0 never releases), got %s", r)
+	}
 	if w := c.Settle(); w < 0 || w > MaxSettleAfterSwap {
 		return fmt.Errorf("settle_after_swap must be between 0s (off) and %s, got %s", MaxSettleAfterSwap, w)
 	}
@@ -1069,6 +1094,8 @@ func (c *Config) Write(path string) error {
 		"after a session's last Claude in Chrome, artifact or Docs call, hold a rotation this long; 0 turns it off")
 	line("settle_after_swap", c.SettleAfterSwap != nil, fmt.Sprintf("%q", c.Settle().String()),
 		"after a switch, hold a claude.ai call until this long after it, so it acts as the new account; 0 turns it off")
+	line("release_idle_after", c.ReleaseIdleAfter != nil, fmt.Sprintf("%q", c.ReleaseIdle().String()),
+		"give up an account another profile wants once this profile's sessions are idle this long; 0 never")
 	line("landing_margin", c.LandingMargin != nil, fmt.Sprintf("%g", c.Margin()),
 		"a switch target's 5-hour window needs this much room below its trigger")
 	// Written only once chosen, so a config without it reads back unchanged.

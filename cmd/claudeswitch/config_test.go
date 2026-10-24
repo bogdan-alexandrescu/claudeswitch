@@ -20,6 +20,7 @@ func TestEveryConfigSettingIsWritten(t *testing.T) {
 		"hot_reserve": "6", "unseen_calls_per_hour": "4.5", "prefer": "expiring",
 		"hold_for_claude_ai": "0s", // off: a zero must not come back as the default
 		"settle_after_swap":  "0s",
+		"release_idle_after": "45m0s",
 	}
 	for _, s := range settings() {
 		v, ok := values[s.name]

@@ -455,3 +455,83 @@ func TestThePreHookLetsANavigationGoOnWhenTheBrowserIsNotTheLiveAccountsAlone(t 
 		t.Fatalf("the live account's own artifact refused: %q", out)
 	}
 }
+
+// Owner decision 2026-10-23 (instead of moving tabs between Chrome
+// profiles): on a session's first Claude in Chrome call after its profile
+// switched accounts, the plugin's hook tells Claude what changed (from which
+// account to which, and which Chrome profile a new connection reaches) and
+// to reopen the pages it needs there if its tabs are gone. It adds context
+// only: no refusal, no permission answer. A session's first call ever, or a
+// call with no switch since the last, says nothing.
+func TestThePreHookTellsClaudeItsBrowserMovedAfterASwitch(t *testing.T) {
+	cfg, _ := hookWorld(t, time.Hour, 40) // live b since an hour ago, from a
+	chromeFor(t, map[string]string{"a": "claudeswitch-a", "b": "claudeswitch-b"})
+	call := preCall("mcp__claude-in-chrome__navigate", `{"url":"https://example.com"}`)
+	// First call of the session: nothing to say.
+	if out, _, _ := runHookT(t, cfg, "pre", call); out != "" {
+		t.Fatalf("first call said %q", out)
+	}
+	// Then the profile switches to a (after that first call).
+	st, _ := state.Load("", "default")
+	st.Default().SetActive("a")
+	st.Default().LastFrom = "b"
+	st.Default().LastSwitch = hookClock.Add(time.Minute)
+	if err := st.Save(); err != nil {
+		t.Fatal(err)
+	}
+	old := hookNow
+	hookNow = func() time.Time { return hookClock.Add(10 * time.Minute) }
+	t.Cleanup(func() { hookNow = old })
+	out, _, code := runHookT(t, cfg, "pre", call)
+	if code != 0 {
+		t.Fatalf("code %d", code)
+	}
+	var r struct {
+		Hook struct {
+			Event    string `json:"hookEventName"`
+			Decision string `json:"permissionDecision"`
+			Context  string `json:"additionalContext"`
+		} `json:"hookSpecificOutput"`
+	}
+	if err := json.Unmarshal([]byte(out), &r); err != nil || r.Hook.Event != "PreToolUse" || r.Hook.Decision != "" {
+		t.Fatalf("not context alone: %q (%v)", out, err)
+	}
+	for _, want := range []string{"from b to a", "claudeswitch-a", "claudeswitch-b", "reopen"} {
+		if !strings.Contains(r.Hook.Context, want) {
+			t.Errorf("context lacks %q: %s", want, r.Hook.Context)
+		}
+	}
+	// Said once: the next call has nothing new.
+	if out, _, _ := runHookT(t, cfg, "pre", call); out != "" {
+		t.Fatalf("said again: %q", out)
+	}
+	// Another session's first call says nothing either.
+	other := strings.Replace(call, `"s1"`, `"s2"`, 1)
+	if out, _, _ := runHookT(t, cfg, "pre", other); out != "" {
+		t.Fatalf("a new session was told: %q", out)
+	}
+}
+
+// Accounts that share one Chrome profile moved nothing: the tabs are where
+// they were, and nothing is said.
+func TestThePreHookSaysNothingWhenTheAccountsShareABrowser(t *testing.T) {
+	cfg, _ := hookWorld(t, time.Hour, 40)
+	chromeFor(t, map[string]string{"a": "Default", "b": "Default"})
+	call := preCall("mcp__claude-in-chrome__tabs_context_mcp", `{}`)
+	if out, _, _ := runHookT(t, cfg, "pre", call); out != "" {
+		t.Fatalf("first call said %q", out)
+	}
+	st, _ := state.Load("", "default")
+	st.Default().SetActive("a")
+	st.Default().LastFrom = "b"
+	st.Default().LastSwitch = hookClock.Add(time.Minute)
+	if err := st.Save(); err != nil {
+		t.Fatal(err)
+	}
+	old := hookNow
+	hookNow = func() time.Time { return hookClock.Add(10 * time.Minute) }
+	t.Cleanup(func() { hookNow = old })
+	if out, _, _ := runHookT(t, cfg, "pre", call); out != "" {
+		t.Fatalf("a shared browser was reported moved: %q", out)
+	}
+}

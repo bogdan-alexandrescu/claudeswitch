@@ -294,7 +294,7 @@ the binary, found on `PATH` or at `~/.local/bin/claudeswitch`.
 |---|---|---|
 | `SessionStart` | `cs context` | the lines above. Without the binary it says `plugin installed but \`claudeswitch\` is not on PATH`; with one too old for `context`, `the installed binary is older than this plugin`. Always exits 0 |
 | `PostToolUseFailure` on `mcp__claude-in-chrome__*` | `cs chrome hint` | when a browser tool failed because the extension is on another claude.ai account or not connected, opens the live account's own Chrome profile and tells Claude to retry, never to ask for a sign-in, once per rotation. Only lines starting `[claudeswitch]` reach Claude ([cs chrome](chrome.md#cs-chrome-hint-plugin-hook)) |
-| `PreToolUse` on `Artifact`, `ArtifactComments`, `ArtifactData`, `mcp__claude_ai_Claude_Docs__*` and `mcp__claude-in-chrome__*` | `cs hook pre` | **settles**, then **guards** ([below](#claudeai-calls-across-a-switch)). It never answers a permission prompt: a call it lets through goes on as it would without the plugin |
+| `PreToolUse` on `Artifact`, `ArtifactComments`, `ArtifactData`, `mcp__claude_ai_Claude_Docs__*` and `mcp__claude-in-chrome__*` | `cs hook pre` | **settles**, then **guards**, and on a browser call after a switch tells Claude where its tabs went ([below](#claudeai-calls-across-a-switch)). It never answers a permission prompt: a call it lets through goes on as it would without the plugin |
 | `PostToolUse` on `Artifact` | `cs hook post` | records which account published an artifact, for the guard |
 
 `cs hook pre` times out after 330 seconds, past the longest settle (5
@@ -355,6 +355,25 @@ task>' | claude -p --chrome --allowedTools mcp__claude-in-chrome`: a new process
 always reaches the live account's browser (a deck session finished its Google
 Slides edits this way, 2026-10-23). `cs chrome check` shows what such a process
 finds.
+
+**Tabs after a switch.** The tabs a session opened stay in the Chrome profile
+they were opened in; claudeswitch never moves or closes the person's windows.
+On a session's first Claude in Chrome call after its profile switched
+accounts, `cs hook pre` adds a note for Claude, once:
+
+```
+[claudeswitch] Since this session's last Claude in Chrome call, claudeswitch switched Claude
+Code from work-a to work-b at 14:02. Claude in Chrome follows the live account: a new
+connection reaches work-b's Chrome profile "Work B". The tabs this session opened before are
+in work-a's ("Work A"), out of its reach, and their tab ids no longer work. Do not ask the
+person to sign in or to move tabs: call tabs_context_mcp, then reopen the pages you still
+need with navigate.
+```
+
+A session's first browser call has nothing to compare with, and accounts that
+share one Chrome profile moved nothing: neither says anything. The record of
+which account each session's last call ran as is
+`~/.local/state/claudeswitch/chrome-sessions.json`, the 200 most recent.
 
 Rotation itself waits for claude.ai work too: `hold_for_claude_ai`
 ([GUIDE → Configuration](../GUIDE.md#configuration)).

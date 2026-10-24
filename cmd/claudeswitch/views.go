@@ -64,7 +64,7 @@ func (v profileView) input(st *state.State, now time.Time) policy.Input {
 		in.Pool, in.Live, in.Tiers = v.pool, v.ist, v.in.Tiers
 		// D34, as the daemon decides: what another profile is on is not a
 		// candidate here.
-		in.Unavailable = inUseElsewhereOf(v.profiles, st, v.in.Name)
+		in.Unavailable = inUseElsewhereOf(v.cfg, v.profiles, st, v.in.Name, now, recordingSince(st))
 	}
 	return in
 }
@@ -74,7 +74,7 @@ func (v profileView) input(st *state.State, now time.Time) policy.Input {
 // needing a sign-in, is out of the pool's reach.
 func (v profileView) runway(cfg *config.Config, st *state.State, now time.Time) policy.Runway {
 	in := v.input(st, now)
-	in.Unavailable = bestExclusions(cfg, st, v.in.Name, now)
+	in.Unavailable = bestExclusions(cfg, st, v.in.Name, now, recordingSince(st))
 	return policy.Forecast(in)
 }
 
@@ -296,7 +296,7 @@ func whyJSON(cfg *config.Config, st *state.State, now time.Time, only string) ma
 // M12's "on_best", "active_room" and "best_room" (policy.Choose; a room is
 // null when unknown, never 0).
 func addBest(m map[string]any, in policy.Input, name string, cfg *config.Config, st *state.State, now time.Time) {
-	in.Unavailable = bestExclusions(cfg, st, name, now)
+	in.Unavailable = bestExclusions(cfg, st, name, now, recordingSince(st))
 	c := policy.Choose(in, name)
 	m["best"], m["best_why"] = orNull(c.ID), orNull(c.Why)
 	m["on_best"], m["active_room"], m["best_room"] = c.OnBest, roomJSON(c.ActiveRoom), roomJSON(c.BestRoom)
@@ -314,7 +314,12 @@ func roomJSON(r *float64) any {
 // profile name (owner decision, lane 16): live in another profile, or maybe
 // live there (a ghost guards it, D18/D22), and accounts only a sign-in
 // brings back. From config and state alone, like the rest of `why`.
-func bestExclusions(cfg *config.Config, st *state.State, name string, now time.Time) map[string]string {
+//
+// An account live in a profile idle for release_idle_after is offered: taking
+// it moves that profile to another account first (releaseFrom). recordingSince
+// is when the daemon began recording activity (zero: no idle is known, so
+// nothing is offered that way).
+func bestExclusions(cfg *config.Config, st *state.State, name string, now, recordingSince time.Time) map[string]string {
 	if name == "" {
 		name = state.DefaultProfile
 	}
@@ -326,7 +331,9 @@ func bestExclusions(cfg *config.Config, st *state.State, name string, now time.T
 	}
 	for _, v := range profileViews(cfg, st, "") {
 		if a := v.ist.Active; a != "" && a != state.Unattributed && v.in.Name != name {
-			out[a] = "in use by " + v.in.Name
+			if _, idle := idleHolder(cfg, st, v.in.Name, now, recordingSince); !idle {
+				out[a] = "in use by " + v.in.Name
+			}
 		}
 	}
 	for _, g := range allGhosts(cfg, st) {

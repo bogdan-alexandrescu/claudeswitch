@@ -124,7 +124,7 @@ enum FakeAppCLI {
         try FakeAppCLI.reply(dir, fixture: "cli-config-schema")
         let s = try cli.configSchema().get()
         #expect(lastCall() == ["config", "schema", "--json"])
-        #expect(s.settings.count == 20)
+        #expect(s.settings.count == 21)
         #expect(s.setting("hot_reserve") != nil && s.setting("unseen_calls_per_hour") != nil)
         let sw = try #require(s.setting("switch_at"))
         #expect(sw.type == "percent")

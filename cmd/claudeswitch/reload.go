@@ -153,6 +153,9 @@ func configChanges(old, next *config.Config) []string {
 	if a, b := old.Settle(), next.Settle(); a != b {
 		out = append(out, fmt.Sprintf("settle_after_swap %s → %s", a, b))
 	}
+	if a, b := old.ReleaseIdle(), next.ReleaseIdle(); a != b {
+		out = append(out, fmt.Sprintf("release_idle_after %s → %s", a, b))
+	}
 	dur("poll_active", old.PollActive, next.PollActive)
 	dur("poll_hot", old.PollHot, next.PollHot)
 	dur("poll_idle", old.PollIdle, next.PollIdle)

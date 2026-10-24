@@ -8,6 +8,7 @@ import (
 	"os"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
@@ -117,20 +118,15 @@ func hookPre(in hookCall, stdout io.Writer, cfgPath string) {
 			"now uses %s (claudeswitch rotated its profile). ", name, name, live)
 		why += wayBack(cfg, st, name, "publish it again as a new artifact under "+live)
 	case opensPages[in.Tool]:
-		dir, own := st.OwnBrowser(live)
-		if !own {
-			return
+		why = navigationRefusal(cfg, st, in, live)
+	}
+	if why == "" {
+		if note := browserMoved(cfg, st, prof.Name, in, live); note != "" {
+			_ = json.NewEncoder(stdout).Encode(map[string]any{"hookSpecificOutput": map[string]any{
+				"hookEventName":     "PreToolUse",
+				"additionalContext": note,
+			}})
 		}
-		owner, ok := navigationOwner(cfg, in, live)
-		if !ok {
-			return
-		}
-		name := ownerName(cfg, owner)
-		why = fmt.Sprintf("[claudeswitch] This artifact belongs to %s, and claude.ai shows an artifact only to its "+
-			"owner. Claude in Chrome here reaches %s's browser (Chrome profile %q, signed in as %s), where it "+
-			"would show as private. ", name, live, readChromeLocal().nameOf(dir), live)
-		why += wayBack(cfg, st, name, "open one of "+live+"'s own instead")
-	default:
 		return
 	}
 	out := map[string]any{"hookSpecificOutput": map[string]any{
@@ -139,6 +135,70 @@ func hookPre(in hookCall, stdout io.Writer, cfgPath string) {
 		"permissionDecisionReason": why,
 	}}
 	_ = json.NewEncoder(stdout).Encode(out)
+}
+
+// navigationRefusal is why a navigation in the live account's own browser
+// to another account's artifact is refused (phase 3 C1), or "".
+func navigationRefusal(cfg *config.Config, st *state.State, in hookCall, live string) string {
+	dir, own := st.OwnBrowser(live)
+	if !own {
+		return ""
+	}
+	owner, ok := navigationOwner(cfg, in, live)
+	if !ok {
+		return ""
+	}
+	name := ownerName(cfg, owner)
+	why := fmt.Sprintf("[claudeswitch] This artifact belongs to %s, and claude.ai shows an artifact only to its "+
+		"owner. Claude in Chrome here reaches %s's browser (Chrome profile %q, signed in as %s), where it "+
+		"would show as private. ", name, live, readChromeLocal().nameOf(dir), live)
+	return why + wayBack(cfg, st, name, "open one of "+live+"'s own instead")
+}
+
+// browserMoved is what a session's first Claude in Chrome call after its
+// profile switched accounts tells Claude (owner decision 2026-10-23, in
+// place of moving tabs between Chrome profiles): the tabs it opened before
+// stayed in the previous account's Chrome profile, and a new connection
+// reaches the live account's, so it reopens the pages it needs there. A
+// session's first call ever has nothing to compare with, and a profile
+// whose accounts share one browser moved nothing: both say nothing.
+func browserMoved(cfg *config.Config, st *state.State, profile string, in hookCall, live string) string {
+	if !strings.HasPrefix(in.Tool, detector.BrowserToolPrefix) || in.Session == "" {
+		return ""
+	}
+	now := hookNow()
+	prev, found, err := state.NoteChromeSession(state.ChromeSession{Session: in.Session, Profile: profile,
+		Account: live, At: now})
+	if err != nil || !found || prev.Profile != profile || prev.Account == live {
+		return ""
+	}
+	local := readChromeLocal()
+	from := resolveChrome(cfg, st, local, profile, prev.Account)
+	to := resolveChrome(cfg, st, local, profile, live)
+	if from.Dir != "" && from.Dir == to.Dir {
+		return ""
+	}
+	when := ""
+	if ps := st.Profiles[profile]; ps != nil && ps.LastSwitch.After(prev.At) {
+		when = " at " + ps.LastSwitch.Local().Format("15:04")
+	}
+	msg := fmt.Sprintf("[claudeswitch] Since this session's last Claude in Chrome call, claudeswitch switched "+
+		"Claude Code from %s to %s%s. Claude in Chrome follows the live account: ", prev.Account, live, when)
+	if to.Rule == "account" {
+		msg += fmt.Sprintf("a new connection reaches %s's Chrome profile %q. ", live, to.label())
+	} else {
+		msg += fmt.Sprintf("a new connection reaches only a browser whose Claude in Chrome is signed in as %s, "+
+			"and %s has no Chrome profile of its own (cs chrome add %s). ", live, live, live)
+	}
+	if from.Rule == "account" {
+		msg += fmt.Sprintf("The tabs this session opened before are in %s's (%q), out of its reach, and their "+
+			"tab ids no longer work. ", prev.Account, from.label())
+	} else {
+		msg += fmt.Sprintf("The tabs this session opened before are in the browser %s used, out of its reach, and "+
+			"their tab ids no longer work. ", prev.Account)
+	}
+	return msg + "Do not ask the person to sign in or to move tabs: call tabs_context_mcp, then reopen the " +
+		"pages you still need with navigate."
 }
 
 // artifactCallOwner is the recorded owner of the artifact an Artifact tool

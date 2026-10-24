@@ -351,3 +351,11 @@ func TestAReloadNamesAChangedSettle(t *testing.T) {
 		t.Fatalf("changes = %q", got)
 	}
 }
+
+func TestAReloadNamesAChangedReleaseIdle(t *testing.T) {
+	old, next := testCfg(), testCfg()
+	next.ReleaseIdleAfter = &config.Duration{Duration: time.Hour}
+	if got := configChanges(old, next); !slices.Contains(got, "release_idle_after 30m0s → 1h0m0s") {
+		t.Fatalf("changes = %q", got)
+	}
+}

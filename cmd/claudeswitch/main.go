@@ -1791,13 +1791,46 @@ func cmdUse(args []string) error {
 			}
 		}
 	}
+	// An account live in a profile idle for release_idle_after is given up
+	// (owner decision 2026-10-23): that profile moves to its own best other
+	// account first, then the §3 check below finds the account free.
+	var released map[string]any
+	if holder := holderOf(st, target.Name, id); holder != "" {
+		if idle, ok := idleHolder(cfg, st, holder, time.Now(), recordingSince(st)); ok {
+			if *dry {
+				released = map[string]any{"profile": holder, "from": id, "would": true}
+			} else if hp, found := cfg.ProfileNamed(holder); found {
+				if hlive, err := cliLiveFor(hp); err == nil {
+					rctx, rcancel := context.WithTimeout(context.Background(), 80*time.Second)
+					moved, rerr := releaseFrom(rctx, v, cfg, st, holder, hlive, id, target.Name, idle, log,
+						func(e audit.Event) {
+							if aud, err := audit.Open(""); err == nil {
+								_ = aud.Write(e)
+							}
+						})
+					rcancel()
+					if rerr == nil {
+						if err := st.Save(); err != nil {
+							fmt.Fprintf(os.Stderr, "note: %v\n", err)
+						}
+						released = map[string]any{"profile": holder, "from": id, "to": moved}
+						if !*asJSON {
+							fmt.Printf("\n  %s has been idle %s: moved %s %s → %s\n", holder, idle.Round(time.Minute),
+								holder, id, moved)
+						}
+					}
+				}
+			}
+		}
+	}
 	// §3, as the daemon checks it before every swap: one credential may be
 	// live in at most one profile. Unknown counts as live (D18).
 	on := ""
 	if multiProfile(cfg) {
 		on = " in profile " + target.Name
 	}
-	if other, why, at := liveConflict(cfg, st, v, target.Name, id); other != "" {
+	if other, why, at := liveConflict(cfg, st, v, target.Name, id); other != "" &&
+		!(released != nil && released["would"] == true && other == released["profile"]) {
 		if !at.IsZero() {
 			return rateLimitedRefusal(id, other, at)
 		}
@@ -1819,8 +1852,11 @@ func cmdUse(args []string) error {
 
 	if *dry {
 		if *asJSON {
-			return emitJSON(map[string]any{"account": id, "profile": target.Name, "dry_run": true,
+			return emitJSON(map[string]any{"account": id, "profile": target.Name, "dry_run": true, "released": released,
 				"from": orNull(st.Profile(target.Name).Active), "expect_org": orNull(expectOrg)})
+		}
+		if released != nil {
+			fmt.Printf("\n  would move %s off %s first: it has been idle (release_idle_after)\n", released["profile"], id)
 		}
 		fmt.Printf("\n  would swap%s to %q (expecting org %s)\n", on, id, nonEmpty(expectOrg, "any"))
 		fmt.Printf("  mcpOAuth would be carried over from the live item, unchanged\n\n")
@@ -1879,7 +1915,7 @@ func cmdUse(args []string) error {
 	if *asJSON {
 		m := map[string]any{"account": id, "profile": target.Name, "from": orNull(from), "dry_run": false,
 			"org_id": orNull(res.OrgID), "verified": res.Usage != nil, "five_hour": nil, "seven_day": nil,
-			"chrome": orNull(chromeLine)}
+			"chrome": orNull(chromeLine), "released": released}
 		if res.Usage != nil {
 			m["five_hour"], m["seven_day"] = res.Usage.FiveHour.Pct(), res.Usage.SevenDay.Pct()
 		}
@@ -1899,6 +1935,17 @@ func cmdUse(args []string) error {
 	fmt.Printf("    your MCP logins were left untouched\n")
 	fmt.Printf("    no restart needed — running sessions pick this up going forward\n\n")
 	return nil
+}
+
+// holderOf is the other profile state records the account live in, "" for
+// none.
+func holderOf(st *state.State, self, id string) string {
+	for name, ps := range st.Profiles {
+		if name != self && ps != nil && ps.Active == id {
+			return name
+		}
+	}
+	return ""
 }
 
 // claudeAIBusyRefusal is `use`'s refusal to move a profile whose sessions are

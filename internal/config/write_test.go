@@ -98,6 +98,7 @@ func TestWriteKeepsEverySetting(t *testing.T) {
 		MaxSwitchWait:      Duration{45 * time.Second},
 		HoldForClaudeAI:    &Duration{}, // 0 is a value, not "unset": the hold turned off
 		SettleAfterSwap:    &Duration{Duration: 20 * time.Second},
+		ReleaseIdleAfter:   &Duration{Duration: 45 * time.Minute},
 		AutoRefresh:        &off,
 		RefreshWindow:      Duration{2 * time.Hour},
 		RefreshProbe:       Duration{12 * time.Hour},

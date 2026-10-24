@@ -537,6 +537,7 @@ cooldown         = "10m"
 max_switch_wait  = "30s"  # how long a due switch waits for an idle gap
 hold_for_claude_ai = "5m" # the default: after a session's last Claude in Chrome, artifact or Docs call, a due switch waits this long; "0s" turns it off
 settle_after_swap = "45s" # the default: after a switch, the plugin holds a claude.ai call until this long after it; "0s" turns it off
+release_idle_after = "30m" # the default: a profile idle this long gives up its account to another profile that wants it; "0s" never
 landing_margin   = 10     # a switch target's session window needs this many points below its trigger
 prefer           = "room" # the default; "expiring" spends the soonest-resetting weekly quota first
 blind_failover_polls = 3  # unreadable polls of the account in use before failing over; 0 holds

@@ -59,4 +59,18 @@ import Testing
         #expect(s.validate("6m") != nil)
         #expect(s.validate("-1s") != nil)
     }
+
+    /// release_idle_after (owner decision 2026-10-23) follows the settle in
+    /// Settings → Rotation.
+    @Test func testReleaseIdleAfterIsTheRotationRowAfterTheSettle() throws {
+        let schema = try #require(ConfigSchema(data: try fixture("cli-config-schema.json")))
+        let s = try #require(schema.setting("release_idle_after"))
+        #expect(SettingsPane.of(s) == .rotation)
+        let rotation = schema.settings(in: .rotation).map(\.key)
+        let settle = try #require(rotation.firstIndex(of: "settle_after_swap"))
+        #expect(rotation.firstIndex(of: "release_idle_after") == settle + 1)
+        #expect(SettingNames.value(s, s.defaultValue) == "30m")
+        #expect(s.validate("0s") == nil, "0 never releases")
+        #expect(s.validate("-1m") != nil)
+    }
 }

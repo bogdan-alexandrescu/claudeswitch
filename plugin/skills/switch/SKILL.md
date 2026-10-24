@@ -93,6 +93,9 @@ may stay on the old browser: if a browser call then fails as not connected,
 the user can run `/mcp`, pick claude-in-chrome and Reconnect, or you can run
 the browser step in a fresh process (`claude -p --chrome`).
 `claudeswitch chrome check` shows which browsers a fresh connection finds.
+Tabs opened before the switch stay in the old account's Chrome profile: reopen
+the pages you need there with `navigate`, and do not ask the user to move them
+(the plugin says so on the first browser call after a switch).
 
 If `use` fails because the account is not in the vault, or its credential no
 longer works, suggest `/cs login <id>`. Do not start a login yourself.

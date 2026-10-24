@@ -111,6 +111,19 @@
       "type": "duration"
     },
     {
+      "default": "30m0s",
+      "description": "give up an account another profile wants when this profile's sessions have been idle this long (0 = never)",
+      "enum": [],
+      "key": "release_idle_after",
+      "max": null,
+      "min": 0,
+      "min_exclusive": false,
+      "scopes": [
+        "global"
+      ],
+      "type": "duration"
+    },
+    {
       "default": "10m0s",
       "description": "minimum gap between rotations, to stop flapping",
       "enum": [],

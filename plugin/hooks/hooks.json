@@ -1,5 +1,5 @@
 {
-  "description": "claudeswitch: tell Claude how much quota the active account has left, which Chrome profile Claude in Chrome needs after a rotation, and keep claude.ai calls (Claude in Chrome, artifacts, Docs) acting as the account live after a switch",
+  "description": "claudeswitch: tell Claude how much quota the active account has left, which Chrome profile Claude in Chrome needs after a rotation and where its earlier tabs went, and keep claude.ai calls (Claude in Chrome, artifacts, Docs) acting as the account live after a switch",
   "hooks": {
     "SessionStart": [
       {

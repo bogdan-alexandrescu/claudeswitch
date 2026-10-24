@@ -197,3 +197,31 @@ func TestSettleAfterSwapSurvivesAWholeFileWrite(t *testing.T) {
 		t.Errorf("a chosen 0 read back as %v:\n%s", got, raw)
 	}
 }
+
+// release_idle_after (owner decision 2026-10-23): an account live in a
+// profile whose sessions have been idle this long is given up when another
+// profile wants it. 30m unless set; 0 never.
+func TestReleaseIdleAfterDefaultsTo30MinutesAndZeroTurnsItOff(t *testing.T) {
+	if got := Defaults().ReleaseIdle(); got != 30*time.Minute {
+		t.Errorf("Defaults().ReleaseIdle() = %v, want 30m", got)
+	}
+	if got := (&Config{}).ReleaseIdle(); got != 30*time.Minute {
+		t.Errorf("a Config literal releases after %v, want 30m", got)
+	}
+	for body, want := range map[string]time.Duration{
+		`release_idle_after = "0s"`: 0,
+		`release_idle_after = "2h"`: 2 * time.Hour,
+	} {
+		c, err := loadText(t, body+"\n"+oneAccount)
+		if err != nil {
+			t.Fatalf("%s: %v", body, err)
+		}
+		if got := c.ReleaseIdle(); got != want {
+			t.Errorf("%s: ReleaseIdle() = %v, want %v", body, got, want)
+		}
+	}
+	if _, err := loadText(t, `release_idle_after = "-1m"`+"\n"+oneAccount); err == nil ||
+		!strings.Contains(err.Error(), "release_idle_after") {
+		t.Errorf("a negative value loaded: %v", err)
+	}
+}

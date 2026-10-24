@@ -453,6 +453,11 @@ type ProfileState struct {
 	// browser_at; one recorded under that name is at most a hold's length
 	// old by the time a newer daemon starts, and is not read.
 	ClaudeAIAt time.Time `json:"claude_ai_at,omitzero"`
+	// ActivityAt is the newest transcript write the daemon has seen in this
+	// profile, its sessions' last sign of work. Daemon-owned like ClaudeAIAt:
+	// it decides whether the profile is idle enough to give up an account
+	// another profile wants (release_idle_after, owner decision 2026-10-23).
+	ActivityAt time.Time `json:"activity_at,omitzero"`
 }
 
 // ItemRef is a resolved live item: its keychain service and Linux credential
@@ -939,6 +944,9 @@ func (s *State) SaveAs(as owner) error {
 				// And the last claude.ai call it saw.
 				if disk.ClaudeAIAt.After(mine.ClaudeAIAt) {
 					mine.ClaudeAIAt = disk.ClaudeAIAt
+				}
+				if disk.ActivityAt.After(mine.ActivityAt) {
+					mine.ActivityAt = disk.ActivityAt
 				}
 			})
 			s.DaemonLive = disk.DaemonLive

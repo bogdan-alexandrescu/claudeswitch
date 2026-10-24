@@ -139,6 +139,7 @@ table in `cmd/claudeswitch/config_cli.go` and `config.Defaults()` in
 | `max_switch_wait` | duration | `30s` | at least 0 | | stop waiting for an idle gap after this |
 | `hold_for_claude_ai` | duration | `5m0s` | at least 0 (`0s` turns it off) | | hold a rotation this long after a session's last Claude in Chrome, artifact or Docs call; only the hard floor goes sooner. `hold_for_browser`, its name in 0.7.8–0.7.9, still works in `get`, `set` and the file ([GUIDE](../GUIDE.md#configuration)) |
 | `settle_after_swap` | duration | `45s` | 0 to 5m (`0s` turns it off) | | after a switch, the plugin's hook holds a Claude in Chrome, artifact or Docs call until this long after it, so the call acts as the new account ([cs and Claude Code](claude-code.md#claudeai-calls-across-a-switch)) |
+| `release_idle_after` | duration | `30m0s` | at least 0 (`0s` never releases) | | a profile idle this long gives up its account when another profile wants it, moving to its own best other account first ([concepts](../concepts.md)) |
 | `cooldown` | duration | `10m0s` | at least 0 | | minimum gap between rotations, to stop flapping |
 | `poll_active` | duration | `3m0s` | at least 2m (120s) | | how often to read the account in use |
 | `poll_hot` | duration | `1m0s` | above 0 | | ...and when it is near the trigger or burning fast |
