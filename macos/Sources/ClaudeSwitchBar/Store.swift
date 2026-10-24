@@ -467,7 +467,11 @@ final class Store: ObservableObject {
         act("use:\(profile)", title: "Could not switch \(profile) to \(account)", profiles: true, card: profile,
             { $0.use(account, profile: profile) }) { [weak self] r in
             var text = "\(r.profile) now uses \(r.account)"
-            if !r.verified { text += " (not yet confirmed by a usage read)" }
+            if r.already {
+                text = "\(r.profile) already uses \(r.account)"
+            } else if !r.verified {
+                text += " (not yet confirmed by a usage read)"
+            }
             self?.note = text
         }
     }

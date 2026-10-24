@@ -11,7 +11,12 @@ allowed-tools:
 
 # claudeswitch switch
 
-Switching is quick and reversible, so do it without asking for confirmation.
+Switching is quick and reversible, so do it without asking for confirmation
+when the user asked for it. A switch moves EVERY session in the profile, not
+only this one: their quota account, the browser Claude in Chrome reaches, and
+which of their artifacts they can open. So never switch a profile on your own
+initiative while other sessions may be working in it (to test something, for
+instance), and never to work around one of the refusals below.
 
 ## 1. Pick the target
 
@@ -63,16 +68,31 @@ If it refuses because another command or the daemon is switching an account
 (`switch_busy`), nothing changed: run the same command once more after a few
 seconds.
 
+Two refusals protect other sessions' work; report them and stop, unless the
+user explicitly tells you to override:
+
+- `pinned`: the profile is pinned to another account. Do not unpin it
+  (`cs account unpin`) yourself; the pin is the user's.
+- `claude_ai_busy`: a session in the profile made a Claude in Chrome,
+  artifact or Docs call in the last few minutes, and the switch would move
+  that work to another account. `--force` switches anyway; use it only when
+  the user says so.
+
+If the account is already live, `use` answers `already using` and changes
+nothing.
+
 ## 3. Report
 
 One line: from which account to which, with the new account's session and
 weekly utilization from the output.
 
-If the output has a `Claude in Chrome: use the <id> Chrome profile` line,
-repeat it: Claude in Chrome answers only when the extension is signed in to
-the same claude.ai account as Claude Code, and the user keeps one Chrome
-profile per account. `claudeswitch chrome <id>` opens it; run it only if the
-user asks.
+If the output has a `Claude in Chrome: opened <id>'s Chrome profile` line,
+repeat it: claudeswitch opened the new account's own Chrome profile, so a new
+Claude in Chrome connection reaches it. This session's existing connection
+may stay on the old browser: if a browser call then fails as not connected,
+the user can run `/mcp`, pick claude-in-chrome and Reconnect, or you can run
+the browser step in a fresh process (`claude -p --chrome`).
+`claudeswitch chrome check` shows which browsers a fresh connection finds.
 
 If `use` fails because the account is not in the vault, or its credential no
 longer works, suggest `/cs login <id>`. Do not start a login yourself.

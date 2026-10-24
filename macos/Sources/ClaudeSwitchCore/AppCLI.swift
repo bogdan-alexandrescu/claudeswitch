@@ -389,10 +389,24 @@ public extension CLI {
 
     // MARK: use
 
+    /// A switch the person asked for. When the CLI refuses because a session
+    /// in the profile is doing claude.ai work (claude_ai_busy, owner decision
+    /// 2026-10-23), it is retried once with --force: the refusal is there to
+    /// stop agents, and this is the person's own click. A CLI that predates
+    /// it never sends the code, so it never sees the flag.
     func use(_ id: String, profile: String?) -> Result<UseResult, CallError> {
+        let r = use(id, profile: profile, force: false)
+        if case .failure(let e) = r, e.code == "claude_ai_busy" {
+            return use(id, profile: profile, force: true)
+        }
+        return r
+    }
+
+    private func use(_ id: String, profile: String?, force: Bool) -> Result<UseResult, CallError> {
         decode(timeout: 90, {
             var a = ["use", try Argv.name(id, "account")]
             if let p = profile { a.append(try Argv.flag("profile", Argv.name(p, "profile"), "profile")) }
+            if force { a.append("--force") }
             return a + ["--json"]
         }, UseResult.init)
     }

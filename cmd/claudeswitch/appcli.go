@@ -39,6 +39,8 @@ const (
 	codeUnsupported     = "unsupported_platform"  // no launchd or systemd here
 	codeServiceFailed   = "service_failed"        // launchctl or systemctl failed
 	codeNotActive       = "not_active"            // pin: the account is not the live one
+	codePinned          = "pinned"                // use: the profile is pinned to another account
+	codeClaudeAIBusy    = "claude_ai_busy"        // use: a session in the profile is doing claude.ai work (--force)
 	codeNoPendingLogin  = "no_pending_login"      // login --code with no login started
 	codeWrongAccount    = "wrong_account"         // a login came back as another seat
 	codeAlreadyVaulted  = "already_vaulted"       // that credential is vaulted under another name

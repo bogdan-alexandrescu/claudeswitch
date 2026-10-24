@@ -1,6 +1,7 @@
 package policy
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -376,5 +377,38 @@ func TestAnUnsetWeeklyTriggerFallsBackRatherThanBlockingEverything(t *testing.T)
 	if d := Decide(in); d.Kind != Switch || d.Target != "work-b" {
 		t.Fatalf("an unset weekly trigger must fall back to the session one: %v -> %s (%s)",
 			d.Kind, d.Target, d.Reason)
+	}
+}
+
+// Owner report 2026-10-23: a pinned profile found on another account (moved
+// by something that ignored the pin) stayed there: "pinned to X; automatic
+// rotation is off" kept it on the wrong account. The pin is the account the
+// profile must be on, so the daemon goes back to it, unless the pin would be
+// lifted (the pinned account was refused, ran out or needs a sign-in), when
+// rotation decides as before.
+func TestAPinnedProfileOnAnotherAccountGoesBackToThePin(t *testing.T) {
+	s := st("work-a", map[string]*state.Account{
+		"work-a": reading(20, 20, now.Add(time.Hour)),
+		"work-b": reading(40, 40, now.Add(time.Hour)),
+	})
+	d := Decide(Input{Cfg: cfg(), Now: now, St: s, Pinned: "work-b"})
+	if d.Kind != Switch || d.Target != "work-b" || !strings.Contains(d.Reason, "pinned to work-b") {
+		t.Fatalf("got %v, want a switch back to the pinned work-b", d)
+	}
+	// On the pinned account: stay, as before.
+	s2 := st("work-b", map[string]*state.Account{
+		"work-a": reading(20, 20, now.Add(time.Hour)),
+		"work-b": reading(40, 40, now.Add(time.Hour)),
+	})
+	if d := Decide(Input{Cfg: cfg(), Now: now, St: s2, Pinned: "work-b"}); d.Kind != Stay {
+		t.Fatalf("on the pinned account: %v, want stay", d)
+	}
+	// A pinned account out of quota is not gone back to; the pin lifts.
+	s3 := st("work-a", map[string]*state.Account{
+		"work-a": reading(20, 20, now.Add(time.Hour)),
+		"work-b": reading(100, 40, now.Add(time.Hour)),
+	})
+	if d := Decide(Input{Cfg: cfg(), Now: now, St: s3, Pinned: "work-b"}); d.Target == "work-b" || d.Unpin == "" {
+		t.Fatalf("pinned to an account out of quota: %v (unpin %q), want the pin lifted", d, d.Unpin)
 	}
 }

@@ -1721,9 +1721,11 @@ func cmdUse(args []string) error {
 	dry := fs.Bool("dry-run", false, "say what would happen, change nothing")
 	profName := fs.String("profile", "", profileFlagHelp)
 	asJSON := fs.Bool("json", false, "machine-readable output")
+	force := fs.Bool("force", false, "switch even while a session in the profile is doing claude.ai work, "+
+		"or reinstall the account already live")
 	positional := parseInterleaved(fs, args)
 	if len(positional) != 1 {
-		return appErr(codeUsage, "", "usage: claudeswitch use <account-id> [--profile NAME] [--json]")
+		return appErr(codeUsage, "", "usage: claudeswitch use <account-id> [--profile NAME] [--force] [--json]")
 	}
 	id := positional[0]
 
@@ -1735,6 +1737,28 @@ func cmdUse(args []string) error {
 	target, err := profileForAccount(cfg, *profName, id, false)
 	if err != nil {
 		return err
+	}
+	// A pin is a promise that nothing moves the profile (owner report
+	// 2026-10-23: a `cs use` from another session moved a pinned profile and
+	// the deck session on it lost its browser). Checked before anything is
+	// read, and again under the switch lock.
+	if err := pinnedRefusal(st, target.Name, id); err != nil {
+		return err
+	}
+	// The account already live is no switch: nothing moves, and the
+	// profile's switch time stays, so no session waits out a settle for
+	// nothing (seen 2026-10-23). --force reinstalls it.
+	if !*force && st.Profile(target.Name).Active == id {
+		if *asJSON {
+			return emitJSON(map[string]any{"account": id, "profile": target.Name, "already": true})
+		}
+		fmt.Printf("\n  already using %s in profile %s; nothing to switch (--force reinstalls it)\n\n", id, target.Name)
+		return nil
+	}
+	if !*force {
+		if err := claudeAIBusyRefusal(cfg, st, target.Name, id, time.Now()); err != nil {
+			return err
+		}
 	}
 	log := logger(false)
 	v := vault.New(log)
@@ -1758,6 +1782,14 @@ func cmdUse(args []string) error {
 		}
 		defer lock.Release()
 		st = rereadState(cfg, st)
+		if err := pinnedRefusal(st, target.Name, id); err != nil {
+			return err
+		}
+		if !*force {
+			if err := claudeAIBusyRefusal(cfg, st, target.Name, id, time.Now()); err != nil {
+				return err
+			}
+		}
 	}
 	// §3, as the daemon checks it before every swap: one credential may be
 	// live in at most one profile. Unknown counts as live (D18).
@@ -1814,8 +1846,9 @@ func cmdUse(args []string) error {
 	ist.LiveKey, ist.LiveOrg = res.LiveKey, res.OrgID
 	// A deliberate manual switch gets the cooldown's protection too, so the
 	// daemon does not immediately rotate away from the account you just chose.
-	ist.LastSwitch = time.Now()
+	// A reinstall of the account already live (--force) is no switch.
 	if from != id {
+		ist.LastSwitch = time.Now()
 		ist.LastFrom = from // IMPROVEMENTS C2: whom a shared Chrome profile is still signed in as
 	}
 	// And it belongs in the audit log. Recording only the daemon's switches made
@@ -1866,6 +1899,45 @@ func cmdUse(args []string) error {
 	fmt.Printf("    your MCP logins were left untouched\n")
 	fmt.Printf("    no restart needed — running sessions pick this up going forward\n\n")
 	return nil
+}
+
+// claudeAIBusyRefusal is `use`'s refusal to move a profile whose sessions are
+// doing claude.ai work (owner decision 2026-10-23): a Claude in Chrome,
+// artifact or Docs call within hold_for_claude_ai, as the daemon recorded
+// it. A switch moves that work's browser and artifacts to the new account,
+// which a test switch did to a deck session mid-task. The daemon's hold
+// keeps rotation off such work; this keeps a manual switch off it, unless
+// --force. nil when the hold is off or the work is older.
+func claudeAIBusyRefusal(cfg *config.Config, st *state.State, profile, id string, now time.Time) error {
+	at := st.Profile(profile).ClaudeAIAt
+	hold := cfg.ClaudeAIHold()
+	if hold <= 0 || at.IsZero() || now.Sub(at) >= hold {
+		return nil
+	}
+	ago := max(now.Sub(at), 0)
+	agoText := fmt.Sprintf("%dm ago", int(ago/time.Minute))
+	if ago < time.Minute {
+		agoText = fmt.Sprintf("%ds ago", int(ago/time.Second))
+	}
+	return &appError{Code: codeClaudeAIBusy,
+		Message: fmt.Sprintf("profile %s has claude.ai work in progress (a Claude in Chrome, artifact or Docs call "+
+			"%s); switching moves that session's browser and artifacts to %s, so nothing was changed",
+			profile, agoText, id),
+		Hint: fmt.Sprintf("cs use %s --force switches anyway; or wait until %s", id,
+			at.Add(hold).Local().Format("15:04"))}
+}
+
+// pinnedRefusal is `use`'s refusal to move a profile pinned to another
+// account: nil when it is not pinned, or pinned to id.
+func pinnedRefusal(st *state.State, profile, id string) error {
+	p := st.Profile(profile).Pinned
+	if p == "" || p == id {
+		return nil
+	}
+	return &appError{Code: codePinned,
+		Message: fmt.Sprintf("profile %s is pinned to %s, so nothing was changed", profile, p),
+		Hint: fmt.Sprintf("to switch it: cs account unpin --profile %s, then cs use %s (or pin %s there afterwards)",
+			profile, id, id)}
 }
 
 func cmdAccounts(args []string) error {

@@ -496,10 +496,13 @@ public struct UseResult: Equatable {
     public var verified: Bool
     public var fiveHour: Double?
     public var sevenDay: Double?
+    /// The account was already live: nothing switched (2026-10-23).
+    public var already: Bool
 
     init?(_ j: JSON) {
         guard let a = j["account"].string else { return nil }
         account = a
+        already = j["already"].bool ?? false
         profile = j["profile"].string ?? StateFile.defaultProfile
         from = nonEmpty(j["from"])
         dryRun = j["dry_run"].bool ?? false

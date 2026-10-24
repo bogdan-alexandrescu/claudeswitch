@@ -100,7 +100,8 @@ func cmdChrome(args []string) error {
 }
 
 const chromeUsage = "usage: claudeswitch chrome add <account> [--existing <folder|name>] | " +
-	"chrome forget <account> | chrome [open|signin] [<account>] | chrome list|profiles [--json]"
+	"chrome forget <account> | chrome [open|signin] [<account>] | chrome list|profiles [--json] | " +
+	"chrome check [--profile NAME] [--json]"
 
 // runChrome is `cs chrome` without the exits: add, open, list, forget, and
 // a bare account (or nothing) to open.
@@ -118,12 +119,13 @@ func runChrome(stdout, stderr io.Writer, args []string) error {
 	cfgPath := fs.String("config", "", "path to config.toml")
 	asJSON := fs.Bool("json", false, "answer with one JSON object")
 	existing := fs.String("existing", "", "add: map the account to a Chrome profile you already have (folder or name)")
+	profName := fs.String("profile", "", "check: the Claude Code profile to check (default: this shell's)")
 	pos := parseInterleaved(fs, args)
 
 	sub := "open"
 	if len(pos) > 0 {
 		switch pos[0] {
-		case "add", "open", "list", "forget", "profiles", "signin":
+		case "add", "open", "list", "forget", "profiles", "signin", "check":
 			sub, pos = pos[0], pos[1:]
 		}
 	}
@@ -132,7 +134,7 @@ func runChrome(stdout, stderr io.Writer, args []string) error {
 		human = stderr
 	}
 	usageErr := func() error { return chromeFail("usage", "", chromeUsage) }
-	if *existing != "" && sub != "add" {
+	if *existing != "" && sub != "add" || *profName != "" && sub != "check" {
 		return usageErr()
 	}
 
@@ -142,6 +144,11 @@ func runChrome(stdout, stderr io.Writer, args []string) error {
 	}
 
 	switch sub {
+	case "check":
+		if len(pos) != 0 {
+			return usageErr()
+		}
+		return chromeCheck(stdout, human, cfg, st, *profName, *asJSON)
 	case "profiles":
 		if len(pos) != 0 {
 			return usageErr()
@@ -276,6 +283,15 @@ func chromeAdd(stdout, human io.Writer, cfg *config.Config, st *state.State, id 
 	fmt.Fprintf(human, "    1. sign in to claude.ai as %s\n", as)
 	fmt.Fprintf(human, "    2. in the Web Store tab, add (or enable) Claude in Chrome\n")
 	fmt.Fprintf(human, "    3. open the extension and sign it in, as %s too\n", as)
+	if others := sameEmailAccounts(st, id); email != "" && len(others) > 0 {
+		// The extension stays bound to the organization it is first opened
+		// in (seen 2026-10-23 with alice@example.com, whose extension never
+		// left its own organization; anthropics/claude-code issue 82455).
+		fmt.Fprintf(human, "\n  %s is also %s (%s), in another organization. Before the extension is first\n",
+			email, strings.Join(others, ", "), map[bool]string{true: "its other seat", false: "its other seats"}[len(others) == 1])
+		fmt.Fprintf(human, "  opened, switch claude.ai to %s's organization: it stays bound to the one it is\n", id)
+		fmt.Fprintf(human, "  first opened in.\n")
+	}
 	fmt.Fprintf(human, "\n  Chrome names the profile itself; rename it there if you like.\n")
 	fmt.Fprintf(human, "  From now on, `cs chrome %s` opens this profile.\n\n", id)
 	return nil
@@ -503,7 +519,10 @@ func runChromeHint(stdin io.Reader, stdout, stderr io.Writer, cfgPath string) in
 			"connected, this session started on another account and keeps that connection (GROUND_TRUTH §56): "+
 			"ask the person to run /mcp, choose claude-in-chrome and Reconnect, which moves this session to %s's "+
 			"browser (if several browsers are then listed, select_browser the one on this computer); a new "+
-			"session, such as `claude --resume`, reaches it too.", id)
+			"session, such as `claude --resume`, reaches it too. Without the person, run the browser step in a "+
+			"fresh process, which always reaches the live account's browser: echo '<the whole browser task>' | "+
+			"claude -p --chrome --allowedTools mcp__claude-in-chrome (`cs chrome check` shows what a fresh "+
+			"connection finds).", id)
 	} else {
 		msg += fmt.Sprintf("%s has no Chrome profile of its own, so no browser follows it there. Do not ask the "+
 			"person to sign in to Claude in Chrome; the lasting fix is a Chrome profile for %s, set up once "+
@@ -511,6 +530,23 @@ func runChromeHint(stdin io.Reader, stdout, stderr io.Writer, cfgPath string) in
 	}
 	fmt.Fprintln(stderr, msg)
 	return 2
+}
+
+// sameEmailAccounts are the other accounts recorded with id's email: the
+// same person's seats in other organizations.
+func sameEmailAccounts(st *state.State, id string) []string {
+	email := st.EmailOf(id)
+	if email == "" {
+		return nil
+	}
+	var out []string
+	for other, e := range st.Emails {
+		if other != id && strings.EqualFold(e, email) {
+			out = append(out, other)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // offerChromePerAccount is setup's offer of a Chrome profile per account

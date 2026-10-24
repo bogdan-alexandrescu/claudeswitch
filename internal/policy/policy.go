@@ -264,6 +264,18 @@ func Decide(in Input) Decision {
 			why = PinLifted(in.St.Accounts[in.Pinned], in.Now)
 		}
 		if why == "" {
+			// The pin is the account the profile must be on (owner report
+			// 2026-10-23): one found on another account, moved by something
+			// that ignored the pin, goes back to it. Not held for claude.ai
+			// work: going back is what keeps that work on its account. A hard
+			// pin to an account that can no longer serve is not gone back
+			// to; the profile stays where it is.
+			if a := in.active(); a != in.Pinned && a != "" {
+				if PinLifted(in.St.Accounts[in.Pinned], in.Now) == "" {
+					return Decision{Kind: Switch, Target: in.Pinned,
+						Reason: fmt.Sprintf("pinned to %s, but %s is live; going back to the pin", in.Pinned, a)}
+				}
+			}
 			return Decision{Kind: Stay, Reason: fmt.Sprintf("pinned to %s; automatic rotation is off", in.Pinned)}
 		}
 		lift := fmt.Sprintf("pin on %s lifted: %s", in.Pinned, why)

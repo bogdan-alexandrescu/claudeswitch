@@ -164,7 +164,8 @@ func TestChromeHintOpensTheLiveAccountsProfileItself(t *testing.T) {
 	// §56, 2026-10-23), where /chrome does not; a new session works too.
 	if code != 2 || !strings.Contains(msg, "opened") || !strings.Contains(msg, "retry") ||
 		!strings.Contains(msg, "/mcp") || !strings.Contains(msg, "Reconnect") ||
-		!strings.Contains(msg, "claude --resume") || !strings.Contains(msg, "Do not ask") {
+		!strings.Contains(msg, "claude --resume") || !strings.Contains(msg, "Do not ask") ||
+		!strings.Contains(msg, "claude -p --chrome") {
 		t.Fatalf("code %d, hint %q", code, msg)
 	}
 	if strings.Contains(msg, "signin") || strings.Contains(msg, "sign it in") || strings.Contains(msg, "Tell the user to run") {
@@ -198,5 +199,37 @@ func TestChromeHintForAnAccountWithoutAProfileAsksForNoSignIn(t *testing.T) {
 	}
 	if l := testshim.Launches(); len(l) != 0 {
 		t.Fatalf("launched %q", l)
+	}
+}
+
+// An email with seats in several organizations (work-team and personal
+// are alice@example.com in two): the extension stays bound to the organization
+// it is first opened in (seen 2026-10-23 with alice@example.com; a user report,
+// anthropics/claude-code issue 82455), so `chrome add` says to choose the
+// account's organization on claude.ai before opening the extension.
+func TestChromeAddWarnsAboutTheOrganizationForAnEmailInSeveral(t *testing.T) {
+	cfg := chromeWorld(t, "darwin")
+	st := chromeState(t)
+	st.SetEmail("w1", "w2@example.com") // chromeWorld gave w2 this email
+	if err := st.Save(); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err := runChromeT(t, "add", "w2", "--config", cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lo := strings.ToLower(out); !strings.Contains(lo, "organization") || !strings.Contains(lo, "before") ||
+		!strings.Contains(out, "w1") {
+		t.Fatalf("no warning about the organization:\n%s", out)
+	}
+	// One seat per email: no warning.
+	st = chromeState(t)
+	st.SetEmail("w1", "w1@example.com")
+	if err := st.Save(); err != nil {
+		t.Fatal(err)
+	}
+	out, _, _ = runChromeT(t, "add", "w2", "--config", cfg)
+	if strings.Contains(out, "first opened") {
+		t.Fatalf("warned for an email with one seat:\n%s", out)
 	}
 }

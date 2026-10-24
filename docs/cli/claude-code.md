@@ -349,7 +349,12 @@ After a switch, claudeswitch opens the new account's own Chrome profile in
 the background, so Claude in Chrome finds its browser (C4). A session already
 connected keeps its browser; one that started on another account and lost its
 connection moves to the live account's browser with `/mcp` → claude-in-chrome
-→ Reconnect (`/chrome` does not do it).
+→ Reconnect (`/chrome` does not do it). Without the person, the dependable
+route is to run each browser step in a fresh process, `echo '<the whole browser
+task>' | claude -p --chrome --allowedTools mcp__claude-in-chrome`: a new process
+always reaches the live account's browser (a deck session finished its Google
+Slides edits this way, 2026-10-23). `cs chrome check` shows what such a process
+finds.
 
 Rotation itself waits for claude.ai work too: `hold_for_claude_ai`
 ([GUIDE → Configuration](../GUIDE.md#configuration)).

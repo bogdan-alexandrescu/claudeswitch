@@ -30,7 +30,7 @@ fail instead (`confirmation_required`, `name_required`).
 ## cs use
 
 ```
-cs use <id> [--profile NAME] [--dry-run] [--json]
+cs use <id> [--profile NAME] [--force] [--dry-run] [--json]
 ```
 
 Swaps a profile onto a vaulted account. Only the live credential's
@@ -40,10 +40,16 @@ Claude Code sessions pick it up from their next request, with no restart.
 | flag | default | meaning |
 |---|---|---|
 | `--profile NAME` | the profile this shell's `CLAUDE_CONFIG_DIR` belongs to | the profile to switch |
+| `--force` | off | switch even while a session in the profile is doing claude.ai work (below), or reinstall the account already live |
 | `--dry-run` | off | say what would happen, change nothing |
 | `--json` | off | machine-readable output |
 
 <p align="center"><img src="../images/cli-use.svg" width="720" alt="Output of cs use work-team --profile work: now using work-team in profile work, with its 5-hour and 7-day usage, MCP logins untouched, no restart needed"></p>
+
+Naming the account already live changes nothing: it answers `already using
+<id> in profile <P>` (`--json`: `{"account", "profile", "already": true}`),
+and leaves the profile's switch time alone, so no session waits out a settle
+for it. `--force` reinstalls it.
 
 It refuses, and changes nothing, when:
 
@@ -52,6 +58,17 @@ It refuses, and changes nothing, when:
   one credential ends up live in two profiles, so there is no `--force`. An
   account two profiles share through a pool both list may be used by either,
   one at a time;
+- the profile is pinned to another account (`pinned`: "profile default is
+  pinned to work-1, so nothing was changed"; the hint says to `cs account
+  unpin --profile <P>` first). A pin is a promise that nothing moves the
+  profile; `use` of the pinned account itself goes ahead;
+- a session in the profile made a Claude in Chrome, artifact or Docs call
+  within `hold_for_claude_ai` (`claude_ai_busy`: "profile default has claude.ai
+  work in progress (a Claude in Chrome, artifact or Docs call 1m ago);
+  switching moves that session's browser and artifacts to work-2"). The
+  daemon's hold keeps rotation off such work; this keeps a manual switch off
+  it too, since a switch moves every session in the profile. `--force`
+  switches anyway, and the app's own switch does (it retries with `--force`);
 - the account is not vaulted (`not_vaulted`: "Log in to it, then run
   `claudeswitch add <id>`");
 - the account is, or may be, live in another profile (`live`). If a rate
@@ -296,6 +313,10 @@ one `--profile` names (an account in a shared pool may be used by several,
 one at a time). Only the
 live account can be pinned (`not_active` otherwise); a pin on another would
 hold the profile on whatever it is using now. The popover's **Pin** runs it.
+While it holds, `cs use` of another account in that profile refuses
+(`pinned`), and if something that ignores pins moves the profile anyway (a
+hand `/login`, an older binary), the daemon puts it back on the pinned
+account (`pinned to work-1, but work-2 is live; going back to the pin`).
 
 **The pin safety valve.** If the pinned account is refused (a 429 in the
 transcripts), is out of quota (a current reading at 100% on either window)

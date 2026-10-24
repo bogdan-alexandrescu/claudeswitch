@@ -1708,4 +1708,22 @@ ran `/mcp`, chose claude-in-chrome and Reconnect, with AI-Eng-2 live; its next
 needed one after Reconnect). So `/mcp` Reconnect, not `/chrome`, is what makes a
 running session follow a switch.
 
-Still open for C0: what keeps an idle extension connected.
+**Idle, and C4 in real rotations (2026-10-23, 15:11–16:44 PT).** Every ten
+minutes a fresh session called `list_connected_browsers` alone, with the live
+account's Chrome window untouched:
+
+| probe | live | its channel |
+|---|---|---|
+| 15:11–15:52 (5) | AI-Eng-3 | a507c1db, `connectedAt` 13:37:09 |
+| 16:03 | AI-Eng-3 | a507c1db, `connectedAt` 15:59:20 |
+| 16:13 | AI-Eng-1 | 9b913557, 16:07:59 |
+| 16:23–16:44 (3) | AI-Eng-2 | 677e7ea4, 16:12:34 |
+
+- **An idle extension stayed connected** for 2 h 22 min, then reconnected by
+  itself (15:59:20) and was there at the next probe. The drop-offs of the evening
+  before came while windows were being signed in and out.
+- **C4 followed every switch.** The daemon (0.8.3) rotated default at 16:03:46
+  (AI-Eng-3 → AI-Eng-2) and 16:16:23 (AI-Eng-1 → AI-Eng-2), logging `Claude in
+  Chrome: opened AI-Eng-2's Chrome profile "AI-ENG-2"` each time; a switch to
+  AI-Eng-1 around 16:08 that was not the daemon's brought its browser up too.
+  Every probe after a switch found the new account's own browser on its channel.

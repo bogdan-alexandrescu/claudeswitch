@@ -315,6 +315,30 @@ enum FakeAppCLI {
         #expect(cli.use("personal", profile: "default").failureCode == "outside_pool")
     }
 
+    /// Owner decision 2026-10-23: `use` refuses (claude_ai_busy) while a
+    /// session in the profile does claude.ai work, which keeps agents from
+    /// moving it; a switch from the app is BGD's own click, so the app
+    /// switches anyway, retrying once with --force. A CLI that predates the
+    /// refusal never sends the code, so it never sees the flag.
+    @Test func testUseSwitchesAnywayWhenTheProfileIsBusy() throws {
+        try FakeAppCLI.reply(dir, text: #"{"error": {"code": "claude_ai_busy", "message": "busy", "hint": ""}}"#, exit: 1)
+        _ = cli.use("personal", profile: "default")
+        let calls = FakeAppCLI.calls(dir).filter { $0.first == "use" }
+        #expect(calls.suffix(2) == [["use", "personal", "--profile=default", "--json"],
+                                    ["use", "personal", "--profile=default", "--force", "--json"]])
+        try FakeAppCLI.reply(dir, fixture: "cli-error-outside-pool", exit: 1)
+        let before = FakeAppCLI.calls(dir).count
+        _ = cli.use("personal", profile: "default")
+        #expect(FakeAppCLI.calls(dir).count == before + 1, "no retry for any other refusal")
+    }
+
+    /// `use` of the account already live answers `already` (2026-10-23).
+    @Test func testUseOfTheLiveAccountReadsAsAlready() throws {
+        try FakeAppCLI.reply(dir, text: #"{"account": "personal", "profile": "default", "already": true}"#, exit: 0)
+        let u = try cli.use("personal", profile: "default").get()
+        #expect(u.already && u.account == "personal")
+    }
+
     // MARK: adding an account
 
     @Test func testBrowserLogin() throws {

@@ -1325,3 +1325,28 @@ move its bridge to the new account even after `/chrome`; a new session does.
   (2026-10-23 14:58), leaving one browser per account: work-team, AI-Eng-1,
   AI-Eng-2, AI-Eng-3, personal, personal and work-team each have a
   Chrome profile of their own and no other browser on their channel.
+
+**Lessons of 2026-10-23 (owner: "learn from this last set of interactions and
+apply fixes").** A deck session (newdeck-85) needed Claude in Chrome in the
+profile where Google is alice@example.com, and lost it twice: a test `cs use`
+from the claudeswitch session moved the default profile under it, and a
+`cs use` went over the pin the owner had set. Its own running session never
+reconnected, while fresh `claude -p --chrome` processes always reached the
+live account's browser; it finished that way. Built (owner decisions the same
+day):
+- **A pin holds.** `cs use` of another account in a pinned profile refuses
+  (`pinned`); the daemon puts a pinned profile found elsewhere back on its pin.
+- **A busy guard on manual switches.** `cs use` refuses (`claude_ai_busy`)
+  while a session in the profile did claude.ai work within
+  `hold_for_claude_ai`; `--force` overrides, and the app retries with it, as
+  its switch is the owner's click.
+- **A no-op `use` is no switch**: it answers `already` and leaves the switch
+  time, so no session waits out a settle for nothing.
+- **`cs chrome check`** asks a fresh process which browsers the live account's
+  channel has, opening the account's own Chrome profile if none answers.
+- **The hint and the `/cs switch` skill** name the fresh-process route, and
+  the skill tells Claude never to switch a profile other sessions work in on
+  its own initiative, nor to unpin or `--force` without the user.
+- **`cs chrome add`** warns, for an email with seats in several
+  organizations, to switch claude.ai to the account's organization before the
+  extension is first opened (it stays bound to the first one).

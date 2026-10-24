@@ -34,6 +34,7 @@ cs chrome add <account> [--existing <name|folder>] [--config PATH] [--json]
 cs chrome profiles                              [--config PATH] [--json]
 cs chrome list                                  [--config PATH] [--json]
 cs chrome forget <account>                      [--config PATH] [--json]
+cs chrome check [--profile NAME]                [--config PATH] [--json]
 cs profile set <profile> chrome <name|folder|inherit> [--config PATH] [--json]
 ```
 
@@ -44,6 +45,7 @@ Flags shared by every `chrome` subcommand:
 | `--config PATH` | `~/.config/claudeswitch/config.toml` | the config file to read |
 | `--json` | off | answer with one JSON object on stdout; human text, if any, goes to stderr |
 | `--existing NAME` | none | `add` only: map the account to a Chrome profile you already have, by its name ("Work") or folder (`Profile 1`). Any other subcommand with `--existing` is a usage error |
+| `--profile NAME` | this shell's | `check` only: the Claude Code profile whose live account to check |
 
 A Chrome profile is named either by Chrome's display name for it or by its
 folder (`Default`, `Profile 1`, ...). With Chrome's profile list available, a
@@ -148,6 +150,12 @@ one of your own profiles with `--existing`, it is replaced by a new one.
     3. open the extension and sign it in, as personal too
 
   Chrome names the profile itself; rename it there if you like.
+
+When claudeswitch has recorded the same email for another account (the same
+person's seat in another organization, as with alice@example.com in Acme's team
+organization and in its own), `add` also says to switch claude.ai to this
+account's organization before the extension is first opened: the extension
+stays bound to the organization it is first opened in (GROUND_TRUTH §56).
   From now on, `cs chrome personal` opens this profile.
 ```
 
@@ -323,6 +331,28 @@ as `chrome`):
 Nothing is said when nobody has set up a Chrome profile, and nothing ever asks
 for a sign-in after a rotation.
 
+## cs chrome check
+
+Asks a fresh Claude Code process (`claude -p --chrome`, run in the profile's
+own config dir) which browsers a new Claude in Chrome connection finds for the
+account live in the profile: the one question a session that is already
+running cannot be trusted to answer after a switch (GROUND_TRUTH §56). When
+none answers and the account has a Chrome profile of its own, it opens that
+profile in the background and asks once more. It costs one short headless
+Claude Code run (and one more after opening a profile).
+
+```
+  default: personal
+  browser 9d485bc2, connected 18:18, in use
+  its own Chrome profile: "Claude-Acme-Personal" (Profile 18)
+  ✓ a new Claude in Chrome connection reaches it
+  a session that started before a switch reaches it after /mcp → claude-in-chrome → Reconnect
+```
+
+`--json`: `{"profile", "account", "chrome_profile": {"dir", "name"} | null,
+"browsers": [{"device_id", "name", "connected_at", "in_use"}], "reachable",
+"opened"}`.
+
 ## cs chrome hint (plugin hook)
 
 `cs chrome hint [--config PATH]` is run by the plugin's `PostToolUseFailure`
@@ -333,7 +363,8 @@ the live account's own Chrome profile in the background (C4) and tells Claude
 which account Claude Code is on, to retry, and never to ask the person to sign
 in; a session that started on another account is told that `/mcp` →
 claude-in-chrome → Reconnect moves it to the live account's browser (or a new
-session, `claude --resume`). For an account with
+session, `claude --resume`), and that, without the person, a browser step run
+in a fresh process (`claude -p --chrome`) always reaches it. For an account with
 no Chrome profile of its own it names `cs chrome add <account>`. It never reads a
 successful call's output (that is page content). It is not meant to be run by
 hand. See [cs and Claude Code](claude-code.md#the-plugin).

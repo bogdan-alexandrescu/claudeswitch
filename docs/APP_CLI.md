@@ -67,6 +67,8 @@ this document's contract. Plain `claudeswitch version` still prints
 | `live` | the account is, or may be (D18: unknown counts as live), live in a profile or a removed profile's old item; the message names it; `retry_at` when a rate-limit lock is why it could not be confirmed |
 | `in_other_pool` | D1, D32: another pool lists the account (an account is in one pool); the message names that pool |
 | `outside_pool` | D5: the account is not in this profile's pools; the message names every profile that may use it |
+| `pinned` | `use`: the profile is pinned to another account; nothing was changed, and the hint says to unpin it first |
+| `claude_ai_busy` | `use`: a session in the profile made a Claude in Chrome, artifact or Docs call within `hold_for_claude_ai`; nothing was changed. `use --force` switches anyway; the app retries with it once, since its switch is the person's own click |
 | `would_orphan` | removing it from its pool would leave it in no pool |
 | `switch_busy` | D34: another command or the daemon held the switch lock for the whole wait (30 s); nothing was changed, and the same command works again shortly |
 | `pool_in_use` | `pool delete` from a binary before D38: a profile lists the pool, or it is a profile's own pool. Current binaries delete it (D38) |
@@ -652,7 +654,9 @@ limited, refused by the incoming account's own call allowance, or not sent
 for an expired access token (the swap itself succeeded and stays installed;
 the machine-wide budget never refuses that read, GROUND_TRUTH §47). With
 `--dry-run`: `{"account", "profile", "dry_run": true, "from", "expect_org"}`.
-Errors: `outside_pool`, `not_vaulted`, `live`, `switch_busy`, `failed`.
+Naming the account already live answers `{"account", "profile", "already":
+true}` and changes nothing (additive). Errors: `outside_pool`, `pinned`,
+`claude_ai_busy`, `not_vaulted`, `live`, `switch_busy`, `failed`.
 
 ## Adding an account (owner decision M4)
 

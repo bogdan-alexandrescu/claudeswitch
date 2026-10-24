@@ -419,6 +419,9 @@ claudeswitch cannot move it. So:
   that started on another account and lost its connection moves to the new
   account's browser with `/mcp` → claude-in-chrome → Reconnect (`/chrome` does
   not do it), or through a new session (`claude --resume`, GROUND_TRUTH §56);
+  an agent can run a browser step in a fresh `claude -p --chrome` process,
+  which always reaches it, and `cs chrome check` shows what a fresh
+  connection finds;
 - **a Chrome profile shared by a profile's accounts cannot follow**: its
   extension stays signed in as one account. claudeswitch never asks you to
   sign it in again after a rotation; it says how to give the account a Chrome
