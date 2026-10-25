@@ -19,6 +19,18 @@ public enum Format {
     }
 
     /// A duration as its two largest units: "3d 4h", "2h 14m", "45m", "30s".
+    /// A size as the CLI prints it (internal/clean's human): "1.4 GB",
+    /// "512 MB", "12 KB".
+    public static func bytes(_ n: Int64) -> String {
+        let gb: Int64 = 1 << 30, mb: Int64 = 1 << 20, kb: Int64 = 1 << 10
+        switch n {
+        case gb...: return String(format: "%.1f GB", Double(n) / Double(gb))
+        case mb...: return String(format: "%.0f MB", Double(n) / Double(mb))
+        case kb...: return String(format: "%.0f KB", Double(n) / Double(kb))
+        default: return "\(n) B"
+        }
+    }
+
     public static func duration(_ seconds: TimeInterval) -> String {
         let s = max(0, Int(seconds.rounded()))
         let d = s / 86_400, h = (s % 86_400) / 3600, m = (s % 3600) / 60

@@ -280,6 +280,136 @@
         "profile"
       ],
       "type": "list"
+    },
+    {
+      "default": "false",
+      "description": "clean up after Claude on a schedule: what is merged, unused and unchanged goes to the Trash (cs clean)",
+      "enum": [],
+      "key": "clean",
+      "max": null,
+      "min": null,
+      "min_exclusive": false,
+      "scopes": [
+        "global"
+      ],
+      "type": "bool"
+    },
+    {
+      "default": "24h0m0s",
+      "description": "how often the scheduled cleanup runs",
+      "enum": [],
+      "key": "clean_every",
+      "max": null,
+      "min": 3600,
+      "min_exclusive": false,
+      "scopes": [
+        "global"
+      ],
+      "type": "duration"
+    },
+    {
+      "default": "72h0m0s",
+      "description": "only what has not changed (a commit, a merge, a file written) for this long",
+      "enum": [],
+      "key": "clean_after",
+      "max": null,
+      "min": 0,
+      "min_exclusive": false,
+      "scopes": [
+        "global"
+      ],
+      "type": "duration"
+    },
+    {
+      "default": "true",
+      "description": "merged worktrees and local branches, and git's records of worktrees whose folder is gone",
+      "enum": [],
+      "key": "clean_worktrees",
+      "max": null,
+      "min": null,
+      "min_exclusive": false,
+      "scopes": [
+        "global"
+      ],
+      "type": "bool"
+    },
+    {
+      "default": "true",
+      "description": "second clones beside a project whose every branch is merged",
+      "enum": [],
+      "key": "clean_clones",
+      "max": null,
+      "min": null,
+      "min_exclusive": false,
+      "scopes": [
+        "global"
+      ],
+      "type": "bool"
+    },
+    {
+      "default": "true",
+      "description": "ended sessions' scratch folders, plugin versions no session uses, old subagent transcripts",
+      "enum": [],
+      "key": "clean_temp",
+      "max": null,
+      "min": null,
+      "min_exclusive": false,
+      "scopes": [
+        "global"
+      ],
+      "type": "bool"
+    },
+    {
+      "default": "720h0m0s",
+      "description": "with temp files on, an ended session's subagent transcripts this old go (0 keeps them)",
+      "enum": [],
+      "key": "clean_transcripts_after",
+      "max": null,
+      "min": 0,
+      "min_exclusive": false,
+      "scopes": [
+        "global"
+      ],
+      "type": "duration"
+    },
+    {
+      "default": "false",
+      "description": "also delete a merged pull request's branch on GitHub, when it is exactly the merged tip",
+      "enum": [],
+      "key": "clean_remote_branches",
+      "max": null,
+      "min": null,
+      "min_exclusive": false,
+      "scopes": [
+        "global"
+      ],
+      "type": "bool"
+    },
+    {
+      "default": "",
+      "description": "globs matched against paths, folder names and branch names; a match is never removed (comma-separated)",
+      "enum": [],
+      "key": "clean_keep",
+      "max": null,
+      "min": null,
+      "min_exclusive": false,
+      "scopes": [
+        "global"
+      ],
+      "type": "list"
+    },
+    {
+      "default": "",
+      "description": "more folders to look for repositories in, besides those Claude Code has run in (comma-separated)",
+      "enum": [],
+      "key": "clean_roots",
+      "max": null,
+      "min": null,
+      "min_exclusive": false,
+      "scopes": [
+        "global"
+      ],
+      "type": "list"
     }
   ]
 }

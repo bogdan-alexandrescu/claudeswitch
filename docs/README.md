@@ -38,6 +38,8 @@ the CLI command it runs, and its default.
   and the call budget.
 - [Settings → Daemon](app/settings-daemon.md): status, live or dry run, and
   managing the service.
+- [Settings → Cleanup](app/settings-cleanup.md): what Claude left behind
+  once merged, previewed, moved to the Trash, and put back.
 - [Settings → History](app/settings-history.md): each account's session and
   week over 30 days, with its switches.
 - [Settings → Health](app/settings-health.md): every `cs doctor` check, with a
@@ -71,6 +73,8 @@ One page per command group, with every subcommand and flag, an example, the
   range.
 - [Daemon](cli/daemon.md): `daemon …`, `watch`, `uninstall`.
 - [Chrome](cli/chrome.md): `chrome …` and a profile's `chrome` setting.
+- [Clean](cli/clean.md): `clean`, `clean --apply`, `clean undo`: what Claude
+  left behind once merged, to the Trash.
 - [Claude Code](cli/claude-code.md): `statusline`, `context`, `session`,
   `history`, `audit`, and the plugin's `/cs` commands.
 - [Setup](cli/setup.md): `setup`, `init`, `doctor`, `version`.

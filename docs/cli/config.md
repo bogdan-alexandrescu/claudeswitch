@@ -153,6 +153,16 @@ table in `cmd/claudeswitch/config_cli.go` and `config.Defaults()` in
 | `refresh_window` | duration | `1h0m0s` | above 0 | | renew a credential this long before it expires |
 | `refresh_probe` | duration | `24h0m0s` | at least 0 (`0s` disables) | | also renew idle accounts this often, to catch a dead refresh token |
 | `models` | list | empty | comma-separated | yes | models whose weekly limit counts like the weekly window; empty means none |
+| `clean` | bool | `false` | `true`, `false` | | the daemon cleans up after Claude every `clean_every` ([cs clean](clean.md)) |
+| `clean_every` | duration | `24h0m0s` | at least 1h | | how often the scheduled cleanup runs, while `clean` is on |
+| `clean_after` | duration | `72h0m0s` | at least 0 | | only what has not changed (a commit, a merge, a file written) for this long |
+| `clean_worktrees` | bool | `true` | | | merged worktrees and local branches, and git's records of worktrees whose folder is gone |
+| `clean_clones` | bool | `true` | | | second clones beside a project whose every branch is merged |
+| `clean_temp` | bool | `true` | | | ended sessions' scratch folders, plugin versions no session uses, old subagent transcripts |
+| `clean_transcripts_after` | duration | `720h0m0s` | at least 0 (`0s` keeps them) | | with `clean_temp`, an ended session's subagent transcripts this old go |
+| `clean_remote_branches` | bool | `false` | | | also delete a merged pull request's branch on GitHub, when it is exactly the merged tip |
+| `clean_keep` | list | empty | comma-separated | | globs matched against paths, folder names and branch names; a match is never removed |
+| `clean_roots` | list | empty | comma-separated | | more folders to look for repositories in, besides those Claude Code has run in |
 
 Durations are written like `90s`, `5m` or `2h`. Percentages may end in `%`.
 Two values are per account or per profile only and are not `cs config`

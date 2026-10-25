@@ -21,6 +21,9 @@ func TestEveryConfigSettingIsWritten(t *testing.T) {
 		"hold_for_claude_ai": "0s", // off: a zero must not come back as the default
 		"settle_after_swap":  "0s",
 		"release_idle_after": "45m0s",
+		"clean":              "true", "clean_every": "12h0m0s", "clean_after": "96h0m0s", "clean_worktrees": "false",
+		"clean_clones": "false", "clean_temp": "false", "clean_transcripts_after": "240h0m0s",
+		"clean_remote_branches": "true", "clean_keep": "*-rel,keep/*", "clean_roots": "~/src",
 	}
 	for _, s := range settings() {
 		v, ok := values[s.name]

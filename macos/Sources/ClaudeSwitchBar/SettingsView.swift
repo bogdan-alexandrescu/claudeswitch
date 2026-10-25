@@ -4,7 +4,7 @@ import SwiftUI
 
 enum Pane: String, CaseIterable, Identifiable {
     case profiles = "Profiles", accounts = "Accounts", rotation = "Rotation", polling = "Polling",
-         daemon = "Daemon", history = "History", health = "Health", advanced = "Advanced"
+         daemon = "Daemon", cleanup = "Cleanup", history = "History", health = "Health", advanced = "Advanced"
 
     var id: String { rawValue }
 
@@ -15,6 +15,7 @@ enum Pane: String, CaseIterable, Identifiable {
         case .rotation: return "arrow.triangle.2.circlepath"
         case .polling: return "timer"
         case .daemon: return "gearshape.2"
+        case .cleanup: return "trash"
         case .history: return "chart.xyaxis.line"
         case .health: return "stethoscope"
         case .advanced: return "slider.horizontal.3"
@@ -110,6 +111,7 @@ struct SettingsView: View {
                 case .polling: SchemaPane(pane: .polling, title: "Polling",
                                           subtitle: "How often the daemon reads each account's usage.")
                 case .daemon: DaemonPane()
+                case .cleanup: CleanupPane()
                 case .history: HistoryPane()
                 case .health: HealthPane()
                 case .advanced: AdvancedPane()
@@ -231,7 +233,13 @@ struct SettingRow: View {
     }
 
     @ViewBuilder var control: some View {
-        if setting.type == "enum" {
+        if setting.type == "bool" {
+            Toggle("", isOn: Binding(get: { current == "true" }, set: { save($0 ? "true" : "false") }))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .accessibilityLabel(settingLabel(setting.key))
+        } else if setting.type == "enum" {
             Picker("", selection: Binding(get: { current }, set: { save($0) })) {
                 ForEach(setting.enumValues, id: \.self) { Text(SettingNames.value(setting, $0)).tag($0) }
             }

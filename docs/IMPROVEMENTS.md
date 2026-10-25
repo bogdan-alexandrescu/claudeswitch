@@ -1380,3 +1380,95 @@ the person to sign in or move tabs. A session's first call ever, or accounts
 that share one Chrome profile, say nothing. The record of which account each
 session's last call ran as is `chrome-sessions.json` beside `state.json`, the
 200 most recent sessions.
+Shipped in 0.8.5 (released 2026-10-23) with the release from an idle profile.
+
+**Logins inside one Chrome profile (owner question, 2026-10-23).** Asked
+whether claudeswitch can control which accounts one Chrome profile is signed
+in as. It cannot: Chrome's own account is the person's to set, website
+sign-ins are cookies claudeswitch never reads or writes (owner decision
+2026-10-08), and Claude in Chrome's extension has no sign-out and stays bound
+to the seat it was first opened as. Decided: keep one Chrome profile per
+account, as now; nothing to build. Extra Google accounts a work site needs
+are added in that profile by the person.
+
+## Cleaning up after Claude (owner request and decisions, 2026-10-25)
+
+**Asked:** a configurable feature, with an on/off toggle, that removes what
+Claude leaves behind once its work is merged (worktrees, local branches, and
+the like), and any other temporary artifact no longer used, with a way to be
+sure nothing removed was still needed.
+
+**Measured on this Mac (2026-10-25, read-only).** 712 linked worktrees in 11
+repos under ~/claudespace, about 230 GB: 379 merged (PR merged or in the
+default branch) and clean, 102 GB; 214 merged but showing changes, which in a
+sample of 20 were 19 stale checkouts (the tracked files exactly an older
+commit's, after the branch moved on) plus an agent's `scratchpad/`; 44 not
+merged; 9 locked; 68 entries whose folder was already gone. About 4,000 local
+branches. About 25 lane clones (`*-integrate-*`, `*-wt`), about 20 GB. 15.8 GB
+of transcripts, 10.7 GB of them subagent transcripts. 7.1 GB of session
+scratch in /private/tmp/claude-501. 4 MB of old plugin versions.
+
+**What a cleanup without rules cost.** During the measurement another
+cleanup removed 532 of the 712 worktrees and five lane clones in about 20
+minutes. Among them: 33 with commits in no merged PR (30 kept their branch);
+two detached ones whose commits survived only as unreferenced objects in
+their clone (rescued to ~/claudespace/_rescue/ai-studio-cis2-wt.git);
+`fix/454-workers`, a worktree of a clone deleted whole, with no PR and no
+remote branch, lost; and one swarmcloud worktree whose 217 changed files
+matched no commit checked. The rules below exist so that none of this can
+happen.
+
+**Decided (owner, 2026-10-25):**
+- **Where:** like the other features, in claudeswitch: `cs clean` (a plan;
+  `--apply` acts; `undo`), the daemon on a schedule while the toggle is on,
+  Settings → Cleanup in the app, and `/cs clean` in the plugin. Off by
+  default.
+- **What, each kind its own setting:** worktrees and local branches (with the
+  metadata of worktrees whose folder is gone); lane clones; Claude's temp
+  files (ended sessions' scratch, plugin versions no session can be using,
+  subagent transcripts older than a set age); and merged branches on GitHub,
+  which acts outside this Mac and is off until turned on.
+- **Nothing to lose on disk:** clean, or a stale checkout (tracked files and
+  index exactly a commit that stays reachable); rebuildable folders
+  (`node_modules`, `.venv`, `dist`, `build`, caches) are dropped; anything
+  else untracked or ignored, an agent's `scratchpad/` included, is copied to
+  an archive first.
+- **How:** to the Trash, with a journal; each deleted branch's tip is kept as
+  `refs/archive/<branch>`; `cs clean undo <run>` puts things back.
+
+**The rules.** Something is removed only when every one holds:
+1. **No unique commits.** HEAD is in the default branch, or its PR merged with
+   exactly this tip (nothing committed after the merge). For a clone, every
+   local branch passes, there is no stash, no tag the primary clone lacks,
+   no ref outside heads, remotes, tags and refs/archive, and no worktree of
+   its own left.
+2. **No unique files,** as above.
+3. **Not in use.** No live Claude Code session (any profile's
+   `sessions/<pid>.json`, its pid alive) works inside it, no process has its
+   working directory there, it is not locked, no merge, rebase, cherry-pick,
+   revert or bisect is in progress and no index.lock is held, and nothing in
+   it changed (commit, merge, file write) within `clean_after`.
+4. **Not protected.** Not a repository's main worktree or default branch,
+   not a clone whose folder is named after its repository (that is the
+   primary), not matched by `clean_keep`.
+5. **Reversible,** as above: Trash, journal, `refs/archive/<branch>`.
+
+**Built (2026-10-25), for the next release:** `internal/clean` (scan, rules,
+apply, undo), `cs clean` with `--apply`, `runs` and `undo`, the ten `clean*`
+settings (the first `bool` ones), the daemon's runs (one at a time, not in
+its first ten minutes, timed from the newest journal; a dry-run daemon only
+plans; audited as kind `clean`), and `/cs clean` in the plugin, which asks
+before `--apply`. On this Mac the first plan found 132 worktrees (77.7 GB),
+62 records of missing worktrees, 2,660 local branches, a lane clone, 22
+ended sessions' scratch folders and 7 unused plugin versions, in about a
+minute. A sample of 40 removals was checked by hand against git and gh.
+- **Wider than "its PR merged with this tip":** a branch counts as merged
+  when every commit of it is in the head of some merged pull request, under
+  any name (`verify-899` at #899's head, `fix/x-r6` behind its merged round
+  `r7`), checked with one `git for-each-ref --merged=<head>…` per
+  repository. 117 more branches qualified that way on this Mac; 10 were
+  checked by hand. Kept (owner decision 2026-10-25).
+- **The first run on this Mac** waits for the owner to read the whole plan
+  (every item, removed and kept, with its reason); `clean` goes on after it
+  checks out (owner decisions 2026-10-25).
+

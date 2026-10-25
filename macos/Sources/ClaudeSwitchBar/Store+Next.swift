@@ -22,6 +22,14 @@ struct NextState {
     var dismissedLifts: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "dismissedPinLifts") ?? [])
     /// Asks the Settings window to open on a pane (a notification's action).
     var settingsRequest: SettingsRequest?
+    /// Cleanup (owner decisions 2026-10-25): the last plan, the last run
+    /// this app made or undid, and the journals.
+    var cleanPlan: CleanPlan?
+    var cleanPlanAt: Date?
+    var cleanPlanError: CallError?
+    var cleanRun: CleanRun?
+    var cleanRunError: CallError?
+    var cleanRuns: [CleanRunSummary]?
 }
 
 struct SettingsRequest: Equatable {
@@ -217,5 +225,63 @@ struct SettingsOpener: View {
                 NSApp.activate(ignoringOtherApps: true)
                 openWindow(id: SettingsView.windowID)
             }
+    }
+}
+
+// MARK: cleanup
+
+extension Store {
+    /// `clean --json`: what would go, and why. Changes nothing.
+    func previewClean() {
+        guard !preview else { return }
+        Task {
+            switch await call("clean:plan", { $0.cleanPlan() }) {
+            case .success(let p):
+                next.cleanPlan = p
+                next.cleanPlanAt = Date()
+                next.cleanPlanError = nil
+            case .failure(let e):
+                next.cleanPlanError = e
+            }
+        }
+    }
+
+    /// `clean --apply --json`, after the person confirmed the plan.
+    func applyClean() {
+        guard !preview else { return }
+        Task {
+            switch await call("clean:apply", { $0.cleanApply() }) {
+            case .success(let r):
+                next.cleanRun = r
+                next.cleanRunError = nil
+                next.cleanPlan = nil
+            case .failure(let e):
+                next.cleanRunError = e
+            }
+            loadCleanRuns()
+        }
+    }
+
+    func undoClean(_ run: String) {
+        guard !preview else { return }
+        Task {
+            switch await call("clean:undo", { $0.cleanUndo(run) }) {
+            case .success(let r):
+                next.cleanRun = r
+                next.cleanRunError = nil
+            case .failure(let e):
+                next.cleanRunError = e
+            }
+            loadCleanRuns()
+        }
+    }
+
+    func loadCleanRuns() {
+        guard !preview else { return }
+        Task {
+            if case .success(let runs) = await call("clean:runs", { $0.cleanRuns() }) {
+                next.cleanRuns = runs
+            }
+        }
     }
 }

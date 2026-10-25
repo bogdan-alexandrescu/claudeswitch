@@ -295,6 +295,16 @@ public enum SettingNames {
         "models": "Count model limits",
         "prefer": "Spend first",
         "hold_for_claude_ai": "Hold for claude.ai",
+        "clean": "Clean up on a schedule",
+        "clean_every": "Every",
+        "clean_after": "Only once unchanged for",
+        "clean_worktrees": "Worktrees and branches",
+        "clean_clones": "Lane clones",
+        "clean_temp": "Temp files",
+        "clean_transcripts_after": "Subagent transcripts after",
+        "clean_remote_branches": "Branches on GitHub",
+        "clean_keep": "Never remove",
+        "clean_roots": "Also look in",
     ]
 
     /// An enum setting's choices as a person reads them (F1); a choice not
@@ -337,6 +347,7 @@ public enum SettingNames {
         case "percent": return v.isEmpty ? v : v + "%"
         case "list": return v.isEmpty ? "none" : v
         case "enum": return choices[s.key]?[v] ?? v
+        case "bool": return v == "true" ? "on" : v == "false" ? "off" : v
         default: return v
         }
     }

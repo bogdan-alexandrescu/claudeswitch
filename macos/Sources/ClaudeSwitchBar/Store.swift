@@ -234,6 +234,8 @@ final class Store: ObservableObject {
         chromeProfiles = fixtures.chromeProfiles
         next.history = fixtures.history
         next.doctor = fixtures.doctor
+        next.cleanPlan = fixtures.cleanPlan
+        next.cleanRuns = fixtures.cleanRuns
         next.pinLifts = fixtures.pinLifts
     }
 
@@ -689,6 +691,8 @@ struct PreviewData {
     var history: UsageHistory?
     var doctor: DoctorReport?
     var pinLifts: [String: PinLift] = [:]
+    var cleanPlan: CleanPlan?
+    var cleanRuns: [CleanRunSummary]?
 }
 
 /// Watches a directory for entries being written, created or renamed — which

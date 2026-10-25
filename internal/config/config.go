@@ -509,6 +509,18 @@ type Config struct {
 	// and means never. Read it through ReleaseIdle().
 	ReleaseIdleAfter *Duration `toml:"release_idle_after"`
 
+	// Cleaning up after Claude (clean.go). Nil means each one's default.
+	Clean                 *bool     `toml:"clean"`
+	CleanEvery            *Duration `toml:"clean_every"`
+	CleanAfter            *Duration `toml:"clean_after"`
+	CleanKeep             []string  `toml:"clean_keep"`
+	CleanRoots            []string  `toml:"clean_roots"`
+	CleanWorktrees        *bool     `toml:"clean_worktrees"`
+	CleanClones           *bool     `toml:"clean_clones"`
+	CleanTemp             *bool     `toml:"clean_temp"`
+	CleanRemoteBranches   *bool     `toml:"clean_remote_branches"`
+	CleanTranscriptsAfter *Duration `toml:"clean_transcripts_after"`
+
 	// LandingMargin is the room, in points below the session trigger, a switch
 	// target's 5-hour window must have (IMPROVEMENTS A1). Nil means DefaultLandingMargin; zero
 	// is a real value and turns the margin off. Read it through Margin().
@@ -933,6 +945,9 @@ func (c *Config) validateRest() error {
 	if r := c.ReleaseIdle(); r < 0 {
 		return fmt.Errorf("release_idle_after cannot be negative (0 never releases), got %s", r)
 	}
+	if err := c.validateClean(); err != nil {
+		return err
+	}
 	if w := c.Settle(); w < 0 || w > MaxSettleAfterSwap {
 		return fmt.Errorf("settle_after_swap must be between 0s (off) and %s, got %s", MaxSettleAfterSwap, w)
 	}
@@ -1137,6 +1152,33 @@ func (c *Config) Write(path string) error {
 		"calls held back from routine polling for a hot spell")
 	line("unseen_calls_per_hour", c.UnseenCallsPerHour != nil, fmt.Sprintf("%g", c.UnseenPerHour()),
 		"set aside on a live account for Claude Code's own reads")
+	b.WriteString("\n")
+
+	b.WriteString("# Cleaning up after Claude (cs clean): what is merged, unused and unchanged\n")
+	b.WriteString("# goes to the Trash, with a journal; cs clean undo puts it back.\n")
+	kinds := [4]bool{}
+	kinds[0], kinds[1], kinds[2], kinds[3] = c.CleanKinds()
+	line("clean", c.Clean != nil, fmt.Sprintf("%t", c.CleanOn()), "the daemon cleans up every clean_every")
+	line("clean_every", c.CleanEvery != nil, fmt.Sprintf("%q", c.CleanInterval().String()), "")
+	line("clean_after", c.CleanAfter != nil, fmt.Sprintf("%q", c.CleanWindow().String()),
+		"only what has not changed (commit, merge, file write) for this long")
+	line("clean_worktrees", c.CleanWorktrees != nil, fmt.Sprintf("%t", kinds[0]),
+		"merged worktrees and local branches, and git's records of worktrees whose folder is gone")
+	line("clean_clones", c.CleanClones != nil, fmt.Sprintf("%t", kinds[1]),
+		"second clones beside a project with every branch merged")
+	line("clean_temp", c.CleanTemp != nil, fmt.Sprintf("%t", kinds[2]),
+		"ended sessions' scratch, unused plugin versions, old subagent transcripts")
+	line("clean_transcripts_after", c.CleanTranscriptsAfter != nil,
+		fmt.Sprintf("%q", c.CleanTranscripts().String()), "an ended session's subagent transcripts this old; 0 keeps them")
+	line("clean_remote_branches", c.CleanRemoteBranches != nil, fmt.Sprintf("%t", kinds[3]),
+		"also delete a merged pull request's branch on GitHub")
+	if len(c.CleanKeep) > 0 {
+		fmt.Fprintf(&b, "clean_keep      = %s # never removed: globs on paths, folder names and branches\n",
+			tomlStrings(c.CleanKeep))
+	}
+	if len(c.CleanRoots) > 0 {
+		fmt.Fprintf(&b, "clean_roots     = %s # look for repositories here too\n", tomlStrings(c.CleanRoots))
+	}
 	b.WriteString("\n")
 
 	b.WriteString("# Rotation order. Earlier accounts are spent first.\n")

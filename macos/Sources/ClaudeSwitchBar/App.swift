@@ -173,6 +173,8 @@ enum Render {
         fx.recovery = data("cli-recovery.json").flatMap(RecoveryItem.list(data:))
         fx.history = data("cli-history-usage.json").flatMap(UsageHistory.init(data:))
         fx.doctor = data("cli-doctor.json").flatMap(DoctorReport.init(data:))
+        fx.cleanPlan = data("cli-clean-plan.json").flatMap(CleanPlan.init(data:))
+        fx.cleanRuns = data("cli-clean-runs.json").flatMap(CleanRunSummary.list(data:))
         // F3: a set may bring audit log lines, for a lifted pin's notice.
         fx.pinLifts = data("render-audit.jsonl").map(PinLift.latest(jsonl:)) ?? [:]
         let store = Store(preview: snap, binaryPath: "~/.local/bin/claudeswitch", fixtures: fx)

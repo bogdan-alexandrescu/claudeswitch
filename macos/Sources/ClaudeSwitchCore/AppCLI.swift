@@ -192,6 +192,28 @@ public extension CLI {
         }) { $0["path"].string }
     }
 
+    // MARK: clean
+
+    /// `clean --json`: the plan. It runs git in every worktree, so it can
+    /// take a minute or more.
+    func cleanPlan() -> Result<CleanPlan, CallError> {
+        decode(timeout: 900, { ["clean", "--json"] }, CleanPlan.init)
+    }
+
+    /// `clean --apply --json`: judges again, then moves what still passes
+    /// to the Trash.
+    func cleanApply() -> Result<CleanRun, CallError> {
+        decode(timeout: 1800, { ["clean", "--apply", "--json"] }, CleanRun.init)
+    }
+
+    func cleanRuns() -> Result<[CleanRunSummary], CallError> {
+        decode(timeout: 30, { ["clean", "runs", "--json"] }, CleanRunSummary.list)
+    }
+
+    func cleanUndo(_ run: String) -> Result<CleanRun, CallError> {
+        decode(timeout: 600, { ["clean", "undo", try Argv.name(run, "run"), "--json"] }, CleanRun.init)
+    }
+
     func configSchema() -> Result<ConfigSchema, CallError> {
         decode({ ["config", "schema", "--json"] }, ConfigSchema.init)
     }

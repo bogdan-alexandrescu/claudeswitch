@@ -196,6 +196,9 @@ type daemon struct {
 
 	lastReattribute time.Time
 
+	// cleaner is the cleanup schedule (daemon_clean.go).
+	cleaner daemonCleaner
+
 	// reloader and cfgChanged re-read the config when it changes on disk. The
 	// watcher only signals; the reload runs in run's select, on the goroutine
 	// that owns the config, the poller and the state. Both nil disables it.
@@ -1458,6 +1461,7 @@ func (d *daemon) run(ctx context.Context, stop chan struct{}, sig <-chan os.Sign
 			}
 			warnExpiringRefresh(d.st, d.nt)
 			d.maintainVault(ctx)
+			d.maybeClean(ctx)
 		case <-d.cfgChanged:
 			d.reload(ctx)
 		case r := <-d.rej:

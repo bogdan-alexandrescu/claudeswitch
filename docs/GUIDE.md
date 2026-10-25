@@ -541,6 +541,8 @@ release_idle_after = "30m" # the default: a profile idle this long gives up its 
 landing_margin   = 10     # a switch target's session window needs this many points below its trigger
 prefer           = "room" # the default; "expiring" spends the soonest-resetting weekly quota first
 blind_failover_polls = 3  # unreadable polls of the account in use before failing over; 0 holds
+clean            = false  # the default; true: the daemon cleans up after Claude every clean_every (cs clean)
+clean_after      = "72h"  # only what is merged, unused and has not changed for this long goes to the Trash
 
 priority = ["work-a", "work-b", "personal"]
 

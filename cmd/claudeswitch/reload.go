@@ -166,6 +166,15 @@ func configChanges(old, next *config.Config) []string {
 	if old.RefreshEnabled() != next.RefreshEnabled() {
 		out = append(out, fmt.Sprintf("auto_refresh %v → %v", old.RefreshEnabled(), next.RefreshEnabled()))
 	}
+	// The clean settings, through the registry's own reading of each.
+	for _, st := range settings() {
+		if !strings.HasPrefix(st.name, "clean") {
+			continue
+		}
+		if a, b := st.get(old), st.get(next); a != b {
+			out = append(out, fmt.Sprintf("%s %s → %s", st.name, a, b))
+		}
+	}
 	return out
 }
 

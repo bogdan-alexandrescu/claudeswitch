@@ -135,6 +135,8 @@ func main() {
 		err = cmdApp(args)
 	case "chrome":
 		err = cmdChrome(args)
+	case "clean":
+		err = cmdClean(args)
 	case "hook":
 		cmdHook(args)
 	case "version", "-v", "--version":
@@ -162,6 +164,9 @@ func usageText() {
              --usage [--days 30]: each account's utilization over time,
              and the switches
   session    token usage across every account used in a span of work
+  clean      what Claude left behind that is merged, unused and unchanged:
+             worktrees, branches, lane clones, temp folders (changes nothing);
+             --apply moves it to the Trash; clean runs | undo [<run>]
   doctor     check the things that have to be true for this to work
   setup      guided first run: vault your accounts, write the config, install
   config     show the settings in force, or change one: config <name> <value>,
@@ -595,6 +600,13 @@ func cmdAudit(args []string) error {
 		case "error":
 			kind = render.Bad("error")
 			detail = truncateStr(e.Err, 56)
+		case "clean":
+			// The daemon's cleanup after Claude (owner decisions 2026-10-25).
+			kind = render.Dim("clean")
+			detail = e.Reason
+			if e.Err != "" {
+				kind, detail = render.Bad("clean"), truncateStr(e.Err, 56)
+			}
 		case "login":
 			// Claude Code's recorded login lined up with the live account
 			// (IMPROVEMENTS P1, P5): why Claude in Chrome would not connect.

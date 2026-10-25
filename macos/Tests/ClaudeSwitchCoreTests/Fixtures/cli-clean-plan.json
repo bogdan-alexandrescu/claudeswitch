@@ -1,0 +1,20 @@
+{
+  "plan": {
+    "at": "2026-10-25T16:02:12-07:00",
+    "items": [
+      {"kind": "worktree", "path": "/Users/me/src/app/.claude/worktrees/agent-a1", "repo": "/Users/me/src/app",
+       "branch": "lane/a1", "sha": "9c0e1d2f", "remove": true, "why": "PR #212 merged; scratchpad archived",
+       "bytes": 536870912, "archive": ["scratchpad"], "admin": "/Users/me/src/app/.git/worktrees/agent-a1",
+       "state": "9c0e1d2f abc"},
+      {"kind": "worktree", "path": "/Users/me/src/app/.claude/worktrees/agent-e2", "repo": "/Users/me/src/app",
+       "branch": "lane/e2", "sha": "77aa", "remove": false, "why": "2 changed files match no commit"},
+      {"kind": "prune", "path": "/Users/me/src/app/.claude/worktrees/agent-d9", "repo": "/Users/me/src/app",
+       "remove": true, "why": "its folder is gone; git still lists it"},
+      {"kind": "branch", "path": "/Users/me/src/app", "repo": "/Users/me/src/app", "branch": "feat/x",
+       "sha": "11bb", "remove": true, "why": "merged into main", "state": "11bb"},
+      {"kind": "scratch", "path": "/private/tmp/claude-501/-Users-me-src-app/5b1e", "remove": true,
+       "why": "the scratch folder of an ended session", "bytes": 3145728}
+    ]
+  },
+  "kinds": {"worktrees": true, "clones": true, "temp": true, "remote_branches": false}
+}

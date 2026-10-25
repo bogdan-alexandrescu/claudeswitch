@@ -7,7 +7,7 @@ stands, and hot-swaps Claude Code onto a fresh account before the current one
 hits its limit: no restart, no lost session. It ships as a Go CLI plus daemon
 (macOS and Linux), a native macOS menu-bar app and a Claude Code plugin.
 
-Latest release: **v0.8.5**
+Latest release: **v0.8.6**
 ([releases](https://github.com/bogdan-alexandrescu/claudeswitch/releases)).
 
 <p align="center"><img src="docs/images/popover.png" width="384" alt="The ClaudeSwitch menu-bar popover: the daemon is live, the default profile is on work-1 and the work profile is on work-team"></p>
@@ -75,6 +75,11 @@ the full manual. This README covers installing it and finding your way around.
   switching or waiting. `cs audit` shows what it observed, decided and did.
 - **Usage across a session.** `cs session` adds up tokens across every account
   a stretch of work touched.
+- **Cleaning up after Claude.** `cs clean` finds the worktrees, branches, lane
+  clones and temp folders Claude left behind once their work merged, and moves
+  them to the Trash with a journal and `cs clean undo`. Nothing in use,
+  unmerged or recently changed is touched; turn on `clean` and the daemon does
+  it daily ([→ rules](docs/cli/clean.md#the-rules)).
 - **A menu-bar app, a status line and a plugin**, all reading the same state.
   The app draws each account's session and week as dials or bars, follows
   light and dark mode (or stays in one), and shows its state in a live
@@ -136,7 +141,7 @@ arm64, and a `checksums.txt`. The archives are reproducible: the same tag
 always produces the same bytes.
 
 ```sh
-VERSION=v0.8.5
+VERSION=v0.8.6
 TARGET=darwin_arm64            # darwin_amd64, linux_amd64, linux_arm64
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 curl -LO "$BASE/claudeswitch_${VERSION}_${TARGET}.tar.gz"
@@ -162,7 +167,7 @@ cd claudeswitch
 symlink, and installs the daemon in dry-run (see [Daemon](#daemon)). To build
 the binary alone: `go build -o bin/claudeswitch ./cmd/claudeswitch`.
 
-**Verify it worked:** `cs version` prints `claudeswitch v0.8.5` for the release
+**Verify it worked:** `cs version` prints `claudeswitch v0.8.6` for the release
 binary (a build from source prints `claudeswitch dev`). If the shell cannot
 find `cs`, add `~/.local/bin` to your `PATH`.
 
@@ -233,7 +238,7 @@ Re-run it after pulling to update.
 From a release, as a universal build:
 
 ```sh
-VERSION=v0.8.5
+VERSION=v0.8.6
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 ZIP="ClaudeSwitch-${VERSION#v}-macos.zip"
 curl -LO "$BASE/$ZIP"
@@ -259,7 +264,7 @@ to install it. [macos/README.md](macos/README.md) has the details.
 
 **Verify it worked:** the Twin rings glyph with the live account and its
 utilization appears in the menu bar, and **About ClaudeSwitch** in its ⋯ menu
-shows version 0.8.5. If you see nothing on a MacBook with a notch, see
+shows version 0.8.6. If you see nothing on a MacBook with a notch, see
 [Troubleshooting](#troubleshooting).
 
 ### Claude Code plugin
@@ -503,7 +508,7 @@ next rotation.
 
 ### Settings
 
-**Settings...** opens a window with six panes.
+**Settings...** opens a window with a pane for each of these.
 
 <table>
   <tr>
@@ -542,6 +547,15 @@ next rotation.
     validation and the CLI's own error messages. The Daemon pane shows its
     status and switches between live and dry run, restarts, starts, stops,
     installs and uninstalls it, and sets the app to launch at login.</td>
+  </tr>
+  <tr>
+    <td width="440"><img src="docs/images/settings-cleanup.png" width="440" alt="Settings, Cleanup pane: a plan of what would go by kind with counts and sizes, Clean now…, the runs with Undo, and the schedule settings"></td>
+    <td><b>Cleanup.</b> <b>Preview</b> shows what Claude left behind that is
+    merged, unused and unchanged (worktrees, branches, lane clones, temp
+    folders), by kind, with sizes and why. <b>Clean now…</b> moves it to the
+    Trash after a confirmation; each run can be put back with <b>Undo</b>.
+    The switches choose the kinds, and <b>Clean up on a schedule</b> lets
+    the daemon do it daily (<a href="docs/cli/clean.md">cs clean</a>).</td>
   </tr>
   <tr>
     <td width="440"><img src="docs/images/settings-advanced.png" width="440" alt="Settings, Advanced pane: This app (Appearance System/Light/Dark, Usage in the popover Dials/Bars, Open Claude Code in, Icon only in the menu bar, the claudeswitch binary) above the advanced settings"></td>
@@ -747,6 +761,15 @@ command in more depth: [docs/GUIDE.md → Commands](docs/GUIDE.md#commands).
 | `cs chrome profiles [--json]` | your Chrome profiles, and which profiles and accounts use each |
 | `cs profile set <p> chrome <name\|inherit>` | the Chrome profile a profile's accounts use (default: Chrome's last used) |
 | `cs chrome list [--json]` / `cs chrome forget <id>` | which account has its own Chrome profile; drop a mapping |
+
+**Cleaning up after Claude**
+
+| command | what it does |
+|---|---|
+| `cs clean [--all]` | what Claude left behind that is merged, unused and unchanged: worktrees, branches, lane clones, temp files (changes nothing) |
+| `cs clean --apply` | move it to the Trash, keeping branch tips as `refs/archive/<branch>` |
+| `cs clean runs` / `cs clean undo [<run>]` | the runs; put one back |
+| `cs config clean true` | let the daemon do it every `clean_every` (24h) |
 
 ## Inside Claude Code
 

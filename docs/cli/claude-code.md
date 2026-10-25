@@ -393,6 +393,7 @@ Claude picks the matching skill.
 | `/cs switch <id>`, `/cs use <id>` | `cs:switch` | `cs why --json`, then `cs use <id>` | yes, without asking: a swap is hot and reversible |
 | `/cs login <id>`, `/cs add <id>` | `cs:login` | `cs login <id> --direct` | yes, after confirming the account and browser |
 | `/cs pool` | `cs:pool` | `cs pool list`, then `cs pool …` or `cs profile pools` | the config, after confirming; listing changes nothing |
+| `/cs clean` | `cs:clean` | `cs clean`, then `cs clean --apply` | moves to the Trash, after confirming; the plan changes nothing |
 | `/cs setup` | `cs:setup` | checks the binary, `cs statusline install`, `cs doctor` | `settings.json`; asks before replacing a status line |
 
 The commands live under `/cs` because `/status`, `/login` and `/doctor` belong

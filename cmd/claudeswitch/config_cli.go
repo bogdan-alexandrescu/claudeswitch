@@ -22,7 +22,7 @@ type setting struct {
 	help string
 
 	// kind is the value's type in the schema: percent, number, int,
-	// duration, enum or list.
+	// duration, enum, list or bool.
 	kind string
 	// min and max bound it (seconds for a duration); nil is unbounded.
 	// minExclusive makes min itself refused.
@@ -83,6 +83,33 @@ func intSetter(f func(*config.Config) *int) func(*config.Config, string) error {
 			return fmt.Errorf("%q is not a number", v)
 		}
 		*f(c) = n
+		return nil
+	}
+}
+
+// boolSetter reads true or false (on/off, yes/no, 1/0 too).
+func boolSetter(f func(*config.Config) **bool) func(*config.Config, string) error {
+	return func(c *config.Config, v string) error {
+		var b bool
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "true", "on", "yes", "1":
+			b = true
+		case "false", "off", "no", "0":
+		default:
+			return fmt.Errorf("%q is not true or false", v)
+		}
+		*f(c) = &b
+		return nil
+	}
+}
+
+func durPtrSetter(f func(*config.Config) **config.Duration) func(*config.Config, string) error {
+	return func(c *config.Config, v string) error {
+		d, err := time.ParseDuration(strings.TrimSpace(v))
+		if err != nil {
+			return fmt.Errorf("%q is not a duration (try 12h, 72h)", v)
+		}
+		*f(c) = &config.Duration{Duration: d}
 		return nil
 	}
 }
@@ -238,6 +265,47 @@ func settings() []setting {
 			get:  func(c *config.Config) string { return strings.Join(c.Models, ",") },
 			set:  func(c *config.Config, v string) error { c.Models = splitList(v); return nil },
 			help: "models whose weekly limit counts like the weekly window (comma-separated; empty = none)"},
+		// Cleaning up after Claude (owner decisions 2026-10-25). Global only.
+		{name: "clean", kind: "bool",
+			get:  func(c *config.Config) string { return strconv.FormatBool(c.CleanOn()) },
+			set:  boolSetter(func(c *config.Config) **bool { return &c.Clean }),
+			help: "clean up after Claude on a schedule: what is merged, unused and unchanged goes to the Trash (cs clean)"},
+		{name: "clean_every", kind: "duration", min: num(config.MinCleanEvery.Seconds()),
+			get:  func(c *config.Config) string { return c.CleanInterval().String() },
+			set:  durPtrSetter(func(c *config.Config) **config.Duration { return &c.CleanEvery }),
+			help: "how often the scheduled cleanup runs"},
+		{name: "clean_after", kind: "duration", min: num(0),
+			get:  func(c *config.Config) string { return c.CleanWindow().String() },
+			set:  durPtrSetter(func(c *config.Config) **config.Duration { return &c.CleanAfter }),
+			help: "only what has not changed (a commit, a merge, a file written) for this long"},
+		{name: "clean_worktrees", kind: "bool",
+			get:  func(c *config.Config) string { w, _, _, _ := c.CleanKinds(); return strconv.FormatBool(w) },
+			set:  boolSetter(func(c *config.Config) **bool { return &c.CleanWorktrees }),
+			help: "merged worktrees and local branches, and git's records of worktrees whose folder is gone"},
+		{name: "clean_clones", kind: "bool",
+			get:  func(c *config.Config) string { _, k, _, _ := c.CleanKinds(); return strconv.FormatBool(k) },
+			set:  boolSetter(func(c *config.Config) **bool { return &c.CleanClones }),
+			help: "second clones beside a project whose every branch is merged"},
+		{name: "clean_temp", kind: "bool",
+			get:  func(c *config.Config) string { _, _, t, _ := c.CleanKinds(); return strconv.FormatBool(t) },
+			set:  boolSetter(func(c *config.Config) **bool { return &c.CleanTemp }),
+			help: "ended sessions' scratch folders, plugin versions no session uses, old subagent transcripts"},
+		{name: "clean_transcripts_after", kind: "duration", min: num(0),
+			get:  func(c *config.Config) string { return c.CleanTranscripts().String() },
+			set:  durPtrSetter(func(c *config.Config) **config.Duration { return &c.CleanTranscriptsAfter }),
+			help: "with temp files on, an ended session's subagent transcripts this old go (0 keeps them)"},
+		{name: "clean_remote_branches", kind: "bool",
+			get:  func(c *config.Config) string { _, _, _, r := c.CleanKinds(); return strconv.FormatBool(r) },
+			set:  boolSetter(func(c *config.Config) **bool { return &c.CleanRemoteBranches }),
+			help: "also delete a merged pull request's branch on GitHub, when it is exactly the merged tip"},
+		{name: "clean_keep", kind: "list",
+			get:  func(c *config.Config) string { return strings.Join(c.CleanKeep, ",") },
+			set:  func(c *config.Config, v string) error { c.CleanKeep = splitList(v); return nil },
+			help: "globs matched against paths, folder names and branch names; a match is never removed (comma-separated)"},
+		{name: "clean_roots", kind: "list",
+			get:  func(c *config.Config) string { return strings.Join(c.CleanRoots, ",") },
+			set:  func(c *config.Config, v string) error { c.CleanRoots = splitList(v); return nil },
+			help: "more folders to look for repositories in, besides those Claude Code has run in (comma-separated)"},
 	}
 }
 
@@ -499,6 +567,8 @@ func settingRange(s setting) string {
 		return s.name + " is one of: " + strings.Join(s.enum, ", ")
 	case s.kind == "list":
 		return s.name + " is a comma-separated list"
+	case s.kind == "bool":
+		return s.name + " is true or false"
 	case s.min != nil && s.max != nil:
 		lo := "["
 		if s.minExclusive {

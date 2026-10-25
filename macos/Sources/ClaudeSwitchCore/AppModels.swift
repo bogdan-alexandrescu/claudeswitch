@@ -39,7 +39,7 @@ public extension RecoveryItem {
 public struct SettingSchema: Equatable, Identifiable {
     public var id: String { key }
     public var key: String
-    /// percent, number, int, duration, enum or list.
+    /// percent, number, int, duration, enum, list or bool.
     public var type: String
     public var defaultValue: String
     /// Seconds for a duration; nil when unbounded.
@@ -83,6 +83,8 @@ public struct SettingSchema: Equatable, Identifiable {
         switch type {
         case "list":
             return nil
+        case "bool":
+            return ["true", "false"].contains(v) ? nil : "true or false"
         case "enum":
             return enumValues.contains(v) ? nil : "one of: " + enumValues.joined(separator: ", ")
         case "duration":
@@ -116,17 +118,23 @@ public struct SettingSchema: Equatable, Identifiable {
 /// no grouping, so the app assigns one; a key it does not know goes to
 /// Advanced, so a new setting is never hidden.
 public enum SettingsPane: String, CaseIterable {
-    case rotation, polling, advanced
+    case rotation, polling, cleanup, advanced
 
     static let rotationKeys = ["switch_at", "switch_at_weekly", "hard_floor", "landing_margin", "switch_when",
                                "max_switch_wait", "hold_for_claude_ai", "settle_after_swap", "release_idle_after", "cooldown",
                                "models", "prefer"]
     static let pollingKeys = ["hot_threshold", "poll_active", "poll_hot", "poll_idle", "api_budget",
                               "blind_failover_polls"]
+    /// Cleaning up after Claude (owner decisions 2026-10-25): the schedule,
+    /// then what it removes.
+    public static let cleanupScheduleKeys = ["clean", "clean_every", "clean_after"]
+    public static let cleanupKindKeys = ["clean_worktrees", "clean_clones", "clean_temp", "clean_transcripts_after",
+                                         "clean_remote_branches", "clean_keep", "clean_roots"]
 
     public static func of(_ s: SettingSchema) -> SettingsPane {
         if rotationKeys.contains(s.key) { return .rotation }
         if pollingKeys.contains(s.key) { return .polling }
+        if cleanupScheduleKeys.contains(s.key) || cleanupKindKeys.contains(s.key) { return .cleanup }
         return .advanced
     }
 }

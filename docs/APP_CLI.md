@@ -88,6 +88,7 @@ this document's contract. Plain `claudeswitch version` still prints
 | `last_profile` | `profile remove`: the only profile (or the implicit one, with no `[[profile]]` blocks) cannot be removed |
 | `binary_not_durable` | `daemon install` from a temporary, translocated or `go run` path |
 | `exists` | `init`: a config is already at that path; nothing was written |
+| `clean_running` | `clean --apply` / `clean undo`: another cleanup (the CLI, the daemon or the app) holds the lock |
 | `failed` | anything else; `message` says what |
 
 All config edits are textual: only the lines concerned change (comments and
@@ -119,8 +120,9 @@ generated from the same table, in its order:
 ```
 
 `type` is `percent`, `number`, `int`, `duration` (Go syntax: `90s`, `5m`,
-`2h`; `min`/`max` in seconds), `enum` (values in `enum`) or `list`
-(comma-separated). `min`/`max` are `null` when unbounded. Cross-setting
+`2h`; `min`/`max` in seconds), `enum` (values in `enum`), `list`
+(comma-separated) or `bool` (`true`/`false`; additive, the `clean*`
+toggles, owner decisions 2026-10-25). `min`/`max` are `null` when unbounded. Cross-setting
 rules (`hard_floor` at or above `switch_at`; the poll cadence fitting
 `api_budget`) are not in the schema: `set` refuses them with
 `invalid_value`. `scopes` contains `profile` for the six keys
@@ -1153,6 +1155,26 @@ can append to it. The app never writes claudeswitch's files itself.
   `cs setup`.
 - Without `--empty`, `init --json` writes the commented starter template
   and answers the same object.
+
+## clean
+
+`claudeswitch clean [--all] --json` (additive, owner decisions 2026-10-25)
+— the plan; changes nothing. `claudeswitch clean --apply --json` acts on it;
+`clean runs --json` lists the journals; `clean undo [<run>] [--only <text>]
+--json` puts a run back. The shapes, the rules and every item kind are in
+[cli/clean.md](cli/clean.md#json). A plan takes about a minute on a machine
+with hundreds of worktrees (it runs git in each); the app shows it as a
+background task.
+
+The settings (`clean`, `clean_every`, `clean_after`, `clean_worktrees`,
+`clean_clones`, `clean_temp`, `clean_transcripts_after`,
+`clean_remote_branches`, `clean_keep`, `clean_roots`) follow `models` in
+`config schema`, global only; the four kind toggles and `clean` are the
+schema's first `bool` settings. The app shows them in Settings → Cleanup.
+
+Errors: `clean_running`, `not_found` (undo: no such run, or none yet),
+`usage`, `failed` (undo: some entries could not be put back; `message`
+names them).
 
 ## app
 
