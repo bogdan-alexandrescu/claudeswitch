@@ -199,4 +199,3 @@ func sameEmailCause(st *state.State, account string) string {
 		"claude.ai to %s's organization, then open Claude in Chrome again (or give %s a fresh Chrome profile: "+
 		"cs chrome add %s).", st.EmailOf(account), strings.Join(others, ", "), account, account, account, account)
 }
-
