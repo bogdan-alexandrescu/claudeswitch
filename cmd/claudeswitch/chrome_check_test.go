@@ -84,3 +84,37 @@ func TestChromeCheckOpensTheProfileWhenNothingAnswers(t *testing.T) {
 		t.Errorf("launches = %q", l)
 	}
 }
+
+// Owner decision 2026-10-25, after AI-ENG-2-MAX's channel stayed empty: one
+// email with seats in two organizations is the usual reason no browser
+// answers, since the extension stays tied to the organization claude.ai was
+// on when it was first opened. When nothing answers and another account has
+// the live one's email, check says so, and how to give the account a
+// browser on its own organization.
+func TestChromeCheckNamesAnotherSeatOfTheSameEmail(t *testing.T) {
+	cfg, _ := checkWorld(t)
+	st := chromeState(t)
+	st.SetEmail("w2", "pat@example.com")
+	st.SetEmail("w1", "pat@example.com")
+	if err := st.Save(); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := runChrome(&out, &bytes.Buffer{}, []string{"check", "--profile", "work", "--config", cfg}); err != nil {
+		t.Fatal(err)
+	}
+	s := out.String()
+	for _, want := range []string{"pat@example.com is also w1", "another organization", "cs chrome add w2"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("output lacks %q:\n%s", want, s)
+		}
+	}
+	out.Reset()
+	if err := runChrome(&out, &bytes.Buffer{}, []string{"check", "--profile", "work", "--config", cfg, "--json"}); err != nil {
+		t.Fatal(err)
+	}
+	m := decodeJSON(t, out.Bytes())
+	if same, _ := m["same_email"].([]any); len(same) != 1 || same[0] != "w1" {
+		t.Fatalf("same_email = %v", m["same_email"])
+	}
+}

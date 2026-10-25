@@ -155,7 +155,9 @@ When claudeswitch has recorded the same email for another account (the same
 person's seat in another organization, as with alice@example.com in Acme's team
 organization and in its own), `add` also says to switch claude.ai to this
 account's organization before the extension is first opened: the extension
-stays bound to the organization it is first opened in (GROUND_TRUTH §56).
+keeps the organization claude.ai is on when it is opened. If it ends up on
+the other one, switching claude.ai to the account's organization and opening
+the extension again re-ties it (GROUND_TRUTH §56).
   From now on, `cs chrome personal` opens this profile.
 ```
 
@@ -349,9 +351,24 @@ Claude Code run (and one more after opening a profile).
   a session that started before a switch reaches it after /mcp → claude-in-chrome → Reconnect
 ```
 
+When still nothing answers and another account has the live one's email (one
+person with seats in two organizations), it says that is the likely cause: the
+extension keeps the organization claude.ai was on when it was opened, so it
+can be on the other seat's channel. The fix: in the account's Chrome profile,
+switch claude.ai to the account's organization and open Claude in Chrome
+again (or start a fresh Chrome profile with `cs chrome add <id>`). The plugin's failure hint says the
+same, and tells Claude not to retry or switch accounts for it.
+
+```
+  ✗ no browser answers on work-max's channel: its Chrome profile's extension is not signed in as work-max, or the profile is not running
+  pat@example.com is also work-team, in another organization: the extension is likely tied to that one, …
+```
+
 `--json`: `{"profile", "account", "chrome_profile": {"dir", "name"} | null,
 "browsers": [{"device_id", "name", "connected_at", "in_use"}], "reachable",
-"opened"}`.
+"opened", "same_email": [ids]}`. `same_email` (additive, 2026-10-25) lists
+the other accounts with the live one's email when no browser answered, `[]`
+otherwise.
 
 ## cs chrome hint (plugin hook)
 

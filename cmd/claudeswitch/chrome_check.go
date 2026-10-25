@@ -138,8 +138,13 @@ func chromeCheck(stdout, human io.Writer, cfg *config.Config, st *state.State, p
 			list = append(list, map[string]any{"device_id": b.DeviceID, "name": b.Name,
 				"connected_at": b.ConnectedAt, "in_use": b.InUse})
 		}
+		same := []string{}
+		if len(browsers) == 0 {
+			same = append(same, sameEmailAccounts(st, account)...)
+		}
 		return emitJSONTo(stdout, map[string]any{"profile": prof.Name, "account": account,
-			"chrome_profile": chromeProfile, "browsers": list, "reachable": len(browsers) > 0, "opened": opened})
+			"chrome_profile": chromeProfile, "browsers": list, "reachable": len(browsers) > 0, "opened": opened,
+			"same_email": same})
 	}
 	fmt.Fprintf(human, "\n  %s: %s\n", prof.Name, account)
 	for _, b := range browsers {
@@ -162,6 +167,9 @@ func chromeCheck(stdout, human io.Writer, cfg *config.Config, st *state.State, p
 	default:
 		fmt.Fprintf(human, "  ✗ no browser answers on %s's channel: its Chrome profile's extension is not signed in as %s,"+
 			" or the profile is not running\n", account, account)
+		if line := sameEmailCause(st, account); line != "" {
+			fmt.Fprintf(human, "  %s\n", line)
+		}
 	}
 	fmt.Fprintf(human, "  a session that started before a switch reaches it after /mcp → claude-in-chrome → Reconnect\n\n")
 	return nil
@@ -174,3 +182,21 @@ func shortDevice(id string) string {
 	}
 	return id
 }
+
+// sameEmailCause is the likely reason no browser answers for an account
+// whose email has a seat in another organization too (owner decision
+// 2026-10-25): the extension keeps the organization claude.ai was on when it
+// was opened, so it can be on the other seat's channel; switching claude.ai
+// to the account's organization and opening the extension again re-ties it
+// (GROUND_TRUTH §56). "" when no other account has its email.
+func sameEmailCause(st *state.State, account string) string {
+	others := sameEmailAccounts(st, account)
+	if len(others) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s is also %s, in another organization: the extension is likely tied to that one, "+
+		"since it keeps the organization claude.ai was on when it was opened. In %s's Chrome profile, switch "+
+		"claude.ai to %s's organization, then open Claude in Chrome again (or give %s a fresh Chrome profile: "+
+		"cs chrome add %s).", st.EmailOf(account), strings.Join(others, ", "), account, account, account, account)
+}
+

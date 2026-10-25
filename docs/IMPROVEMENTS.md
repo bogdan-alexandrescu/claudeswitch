@@ -1472,3 +1472,38 @@ minute. A sample of 40 removals was checked by hand against git and gh.
   (every item, removed and kept, with its reason); `clean` goes on after it
   checks out (owner decisions 2026-10-25).
 
+**AI-ENG-2-MAX's empty channel (2026-10-25).** After a rotation to
+AI-ENG-2-MAX (lab2@acme.xyz in its Max 20x organization; AI-ENG-2-TEAM is
+the same account in the Acme team organization), a session's Claude in Chrome
+found no browser, and so did a fresh `cs chrome check` after opening the
+account's Chrome profile: its extension, signed in as lab2@acme.xyz, was
+most likely tied to the team organization. The owner chose to leave it; a
+little later the channel had a browser (device 672cf016) with AI-ENG-2-MAX
+still live, after a change of the owner's. Built (owner decision the same
+day): when no browser answers and another account has the live one's email,
+`cs chrome check` (and its `same_email` in JSON) and the plugin's failure hint
+name that as the likely cause and the fix, and tell Claude not to retry or
+switch accounts for it.
+
+
+- **Corrected the same day:** what made the channel work was switching
+  claude.ai in that Chrome profile to the Max 20x organization and opening the
+  extension again (owner). The extension is not bound to its first
+  organization for good (GROUND_TRUTH §56); the hint, `cs chrome add`'s
+  warning and the docs now give that as the fix, with a fresh Chrome profile
+  as the alternative.
+
+**The DEVOPS names (owner decisions, 2026-10-25).** DEVOPS-MAX was the
+devops seat in the Acme team organization and DEVOPS-TEAM the one in devops'
+own Max 20x organization, the reverse of the `-TEAM` / `-MAX` convention the
+other accounts follow. Swapped: the owner renamed them in the app while
+Claude renamed them from the CLI. A swap is three renames, each taking the
+daemon lock on its own, so the two sequences interleaved; the names ended as
+wanted and both credentials stayed vaulted under them, but the Chrome
+mappings followed the names one time too many. Kept as they are (owner):
+DEVOPS-MAX (own org) maps to "Claude-Acme-Devops-Main", whose extension is
+on the own organization; DEVOPS-TEAM (team org) maps to
+"Claude-Acme-Devops-Team", which the owner re-ties to the Acme team
+organization (switch claude.ai there, open the extension again). Each is
+checked with `cs chrome check` the next time its account is live; nothing is
+switched for it. Not built: a single-step swap of two names.

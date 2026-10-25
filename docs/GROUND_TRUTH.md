@@ -1727,3 +1727,19 @@ account's Chrome window untouched:
   Chrome: opened AI-Eng-2's Chrome profile "AI-ENG-2"` each time; a switch to
   AI-Eng-1 around 16:08 that was not the daemon's brought its browser up too.
   Every probe after a switch found the new account's own browser on its channel.
+
+
+**Re-tying an extension to another organization (2026-10-25).** AI-ENG-2-MAX
+and AI-ENG-2-TEAM are one claude.ai account (lab2@acme.xyz) in two
+organizations, the Max 20x one and Acme's team. With AI-ENG-2-MAX live, a
+running session and a fresh `cs chrome check` (after opening the account's
+Chrome profile "AI-ENG-2-MAX") both found no browser on its channel, although
+the owner had signed claude.ai and the extension in as lab2@acme.xyz in that
+profile. The owner then switched claude.ai there to the Max 20x organization
+and opened the extension again; the next probe found a browser (device
+672cf016) on AI-ENG-2-MAX's channel, AI-ENG-2-MAX still live, and the session
+worked. So the extension keeps the organization claude.ai is on when it is
+opened, and a switch on claude.ai followed by opening it again re-ties it: no
+reinstall and no new Chrome profile needed. This corrects the reading of
+2026-10-23 (from a user report, issue 82455) that it stays bound to the first
+organization for good.

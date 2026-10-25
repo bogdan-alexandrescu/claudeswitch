@@ -284,13 +284,14 @@ func chromeAdd(stdout, human io.Writer, cfg *config.Config, st *state.State, id 
 	fmt.Fprintf(human, "    2. in the Web Store tab, add (or enable) Claude in Chrome\n")
 	fmt.Fprintf(human, "    3. open the extension and sign it in, as %s too\n", as)
 	if others := sameEmailAccounts(st, id); email != "" && len(others) > 0 {
-		// The extension stays bound to the organization it is first opened
-		// in (seen 2026-10-23 with alice@example.com, whose extension never
-		// left its own organization; anthropics/claude-code issue 82455).
+		// The extension takes the organization claude.ai is on when it is
+		// opened, and keeps it (alice@example.com, 2026-10-23); switching
+		// claude.ai and opening it again re-ties it (AI-ENG-2-MAX,
+		// 2026-10-25, GROUND_TRUTH §56).
 		fmt.Fprintf(human, "\n  %s is also %s (%s), in another organization. Before the extension is first\n",
 			email, strings.Join(others, ", "), map[bool]string{true: "its other seat", false: "its other seats"}[len(others) == 1])
-		fmt.Fprintf(human, "  opened, switch claude.ai to %s's organization: it stays bound to the one it is\n", id)
-		fmt.Fprintf(human, "  first opened in.\n")
+		fmt.Fprintf(human, "  opened, switch claude.ai to %s's organization: the extension keeps the one\n", id)
+		fmt.Fprintf(human, "  claude.ai is on. If it ends up on the other, switch claude.ai and open it again.\n")
 	}
 	fmt.Fprintf(human, "\n  Chrome names the profile itself; rename it there if you like.\n")
 	fmt.Fprintf(human, "  From now on, `cs chrome %s` opens this profile.\n\n", id)
@@ -523,6 +524,10 @@ func runChromeHint(stdin io.Reader, stdout, stderr io.Writer, cfgPath string) in
 			"fresh process, which always reaches the live account's browser: echo '<the whole browser task>' | "+
 			"claude -p --chrome --allowedTools mcp__claude-in-chrome (`cs chrome check` shows what a fresh "+
 			"connection finds).", id)
+		if line := sameEmailCause(st, id); line != "" {
+			msg += " If no browser answers even then: " + line + " Retrying cannot fix that: do not switch " +
+				"accounts for it; tell the person."
+		}
 	} else {
 		msg += fmt.Sprintf("%s has no Chrome profile of its own, so no browser follows it there. Do not ask the "+
 			"person to sign in to Claude in Chrome; the lasting fix is a Chrome profile for %s, set up once "+

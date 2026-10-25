@@ -203,10 +203,10 @@ func TestChromeHintForAnAccountWithoutAProfileAsksForNoSignIn(t *testing.T) {
 }
 
 // An email with seats in several organizations (work-team and personal
-// are alice@example.com in two): the extension stays bound to the organization
-// it is first opened in (seen 2026-10-23 with alice@example.com; a user report,
-// anthropics/claude-code issue 82455), so `chrome add` says to choose the
-// account's organization on claude.ai before opening the extension.
+// are alice@example.com in two): the extension keeps the organization claude.ai
+// is on when it is opened (alice@example.com, 2026-10-23; re-tied by switching
+// claude.ai and opening it again, AI-ENG-2-MAX, 2026-10-25), so `chrome add`
+// says to choose the account's organization on claude.ai before opening it.
 func TestChromeAddWarnsAboutTheOrganizationForAnEmailInSeveral(t *testing.T) {
 	cfg := chromeWorld(t, "darwin")
 	st := chromeState(t)
@@ -233,3 +233,33 @@ func TestChromeAddWarnsAboutTheOrganizationForAnEmailInSeveral(t *testing.T) {
 		t.Fatalf("warned for an email with one seat:\n%s", out)
 	}
 }
+
+// The failure hint says the same, so Claude does not retry or switch for a
+// browser that is on another seat's channel.
+func TestChromeHintNamesAnotherSeatOfTheSameEmail(t *testing.T) {
+	cfg := chromeWorld(t, "darwin")
+	st := chromeState(t)
+	st.Get("w1")
+	st.Get("w2")
+	st.Profile("work").SetActive("w2")
+	st.Profile("work").LastSwitch = time.Date(2026, 10, 25, 1, 0, 0, 0, time.UTC)
+	st.SetChrome("w2", "claudeswitch-w2", time.Now())
+	st.SetEmail("w2", "pat@example.com")
+	st.SetEmail("w1", "pat@example.com")
+	if err := st.Save(); err != nil {
+		t.Fatal(err)
+	}
+	setCCDir(t, "~/.claude-work")
+	testshim.ResetLaunches()
+	failure := `{"hook_event_name":"PostToolUseFailure","tool_name":"mcp__claude-in-chrome__tabs_context_mcp",` +
+		`"error":"Browser extension is not connected"}`
+	var errOut bytes.Buffer
+	runChromeHint(strings.NewReader(failure), &bytes.Buffer{}, &errOut, cfg)
+	msg := errOut.String()
+	for _, want := range []string{"pat@example.com is also w1", "another organization", "do not switch accounts"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("hint lacks %q: %s", want, msg)
+		}
+	}
+}
+
