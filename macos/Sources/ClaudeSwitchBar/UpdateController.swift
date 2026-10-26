@@ -252,11 +252,21 @@ final class UpdateController: ObservableObject {
         }
     }
 
-    /// Opens the new bundle once this one has quit.
+    /// Opens the new bundle once this one has quit. Sheets and dialogs are
+    /// closed first, since an open one refuses the quit, and the helper ends
+    /// this process if it is still here after a few seconds (Relaunch).
     static func relaunch(_ app: String) {
+        // Innermost first: a sheet can carry a sheet (an alert on an editor).
+        for _ in 0..<4 {
+            let open = NSApp.windows.compactMap { w in w.attachedSheet.map { (w, $0) } }
+            if open.isEmpty { break }
+            for (w, sheet) in open where sheet.attachedSheet == nil { w.endSheet(sheet) }
+        }
+        if NSApp.modalWindow != nil { NSApp.abortModal() }
+        let argv = Relaunch.helper(app: app, pid: ProcessInfo.processInfo.processIdentifier)
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/sh")
-        p.arguments = ["-c", "sleep 1; /usr/bin/open \"$0\"", app]
+        p.executableURL = URL(fileURLWithPath: argv[0])
+        p.arguments = Array(argv.dropFirst())
         try? p.run()
         NSApp.terminate(nil)
     }

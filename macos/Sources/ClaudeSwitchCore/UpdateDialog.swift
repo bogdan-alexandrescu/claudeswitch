@@ -6,7 +6,7 @@ import Foundation
 // tested; the Bar only draws them.
 
 /// Where an install is, for its progress bar.
-public enum UpdateStep: Equatable {
+public enum UpdateStep: Equatable, Sendable {
     case downloading(received: Int64, total: Int64)
     case verifying
     case installingCLI
@@ -108,7 +108,7 @@ extension Release {
 }
 
 /// The update window's state.
-public enum UpdateDialog: Equatable {
+public enum UpdateDialog: Equatable, Sendable {
     case checking
     case upToDate(current: String, latest: String)
     case checkFailed(String)
@@ -173,3 +173,49 @@ public enum UpdateDialog: Equatable {
         return nil
     }
 }
+
+/// Reopening the app after an install. The app asks to quit, but a sheet
+/// or dialog left open can refuse that: a Settings sheet kept 0.8.10
+/// running after 0.8.11 was installed, and opening the bundle only brought
+/// the old process forward (2026-10-26). So a helper waits for this process
+/// to go, ends it when it has not after `grace` seconds (SIGKILL three
+/// seconds later), then opens the new bundle; it gives up waiting after six
+/// seconds more and opens it anyway.
+public enum Relaunch {
+    /// The helper's argument vector: /bin/sh with the script, then the
+    /// bundle ($0), this process's pid ($1) and the opener ($2).
+    public static func helper(app: String, pid: Int32, opener: String = "/usr/bin/open",
+                              grace: Double = 5) -> [String] {
+        let term = max(1, Int(grace * 10)), kill9 = term + 30, giveUp = term + 60
+        let script = """
+            i=0
+            while kill -0 "$1" 2>/dev/null; do
+              i=$((i+1))
+              [ "$i" -eq \(term) ] && kill "$1" 2>/dev/null
+              [ "$i" -eq \(kill9) ] && kill -9 "$1" 2>/dev/null
+              [ "$i" -ge \(giveUp) ] && break
+              sleep 0.1
+            done
+            exec "$2" "$0"
+            """
+        return ["/bin/sh", "-c", script, app, String(pid), opener]
+    }
+}
+
+/// Where a window sits in the middle of a screen's visible area, in whole
+/// points (owner request 2026-10-26). A window taller than the area keeps
+/// its title bar at the top, one wider keeps its left edge on screen.
+public enum ScreenCentre {
+    public static func origin(_ size: CGSize, in area: CGRect) -> CGPoint {
+        var p = origin(size, around: CGPoint(x: area.midX, y: area.midY))
+        p.y = min(p.y, area.maxY - size.height)
+        p.x = max(p.x, area.minX)
+        return p
+    }
+
+    /// The origin that puts the window's middle at `middle`.
+    public static func origin(_ size: CGSize, around middle: CGPoint) -> CGPoint {
+        CGPoint(x: (middle.x - size.width / 2).rounded(), y: (middle.y - size.height / 2).rounded())
+    }
+}
+

@@ -118,8 +118,8 @@ menu, since a live menu cannot be captured off screen.
 | **Quit ClaudeSwitch** (⌘Q) | quits the app. The daemon keeps running | |
 
 A window opened from here (Settings…, Add account, Set up…, Check for
-updates…, Update…, About) comes up in front with the focus, and the
-popover closes.
+updates…, Update…, About) comes up in front with the focus, in the middle
+of the screen the pointer is on, and the popover closes.
 
 ## What it reads
 

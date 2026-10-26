@@ -62,7 +62,10 @@ The progress bar follows each step, and the popover's foot shows it too
 7. restarts the daemon on the new binary (`claudeswitch daemon restart
    --json`; no daemon installed is fine);
 8. relaunches the app, which opens the window once more to say **ClaudeSwitch
-   is now 0.5.6**.
+   is now 0.5.6**. Sheets and dialogs still open (an editor in Settings, an
+   alert) are closed first, dropping what was typed in them, since an open
+   one refuses the quit; a helper waits for the old app to go, ends it if it
+   is still there after five seconds, then opens the new one.
 
 **Cancel** works while it downloads and checks: nothing has been replaced
 yet, and the offer comes back. From step 5 on it is greyed out, since half

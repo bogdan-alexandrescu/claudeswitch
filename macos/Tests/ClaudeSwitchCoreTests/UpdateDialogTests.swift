@@ -130,3 +130,66 @@ extension UpdaterTests {
         #expect(sys.files[Self.binary] == FakeSystem.newBinary)
     }
 }
+
+/// The relaunch after an install (0.8.12): a sheet left open in Settings
+/// blocked the app's quit, so 0.8.10 kept running after 0.8.11 was
+/// installed and the window sat at "Reopening ClaudeSwitch…" (2026-10-26).
+/// The helper now waits for the old app to go, ends it if it will not, then
+/// opens the new one.
+@Suite struct RelaunchTests {
+    @Test func testTheHelperEndsAnAppThatWillNotQuitThenOpensTheNewOne() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("relaunch-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let marker = dir.appendingPathComponent("opened")
+        let opener = dir.appendingPathComponent("open.sh")
+        try "#!/bin/sh\necho \"$1\" > '\(marker.path)'\n".write(to: opener, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: opener.path)
+
+        let old = Process()  // stands in for an app whose quit was refused
+        old.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        old.arguments = ["30"]
+        try old.run()
+        let argv = Relaunch.helper(app: "/Applications/ClaudeSwitch.app", pid: old.processIdentifier,
+                                   opener: opener.path, grace: 0.5)
+        let helper = Process()
+        helper.executableURL = URL(fileURLWithPath: argv[0])
+        helper.arguments = Array(argv.dropFirst())
+        let started = Date()
+        try helper.run()
+        helper.waitUntilExit()
+        #expect(!old.isRunning, "an app that will not quit is ended")
+        #expect(Date().timeIntervalSince(started) < 10)
+        #expect(try String(contentsOf: marker, encoding: .utf8) == "/Applications/ClaudeSwitch.app\n",
+                "then the new bundle is opened")
+    }
+
+    @Test func testTheHelperOpensAtOnceWhenTheAppHasQuit() throws {
+        let argv = Relaunch.helper(app: "/A.app", pid: 999_999, opener: "/usr/bin/true", grace: 5)
+        let helper = Process()
+        helper.executableURL = URL(fileURLWithPath: argv[0])
+        helper.arguments = Array(argv.dropFirst())
+        let started = Date()
+        try helper.run()
+        helper.waitUntilExit()
+        #expect(helper.terminationStatus == 0 && Date().timeIntervalSince(started) < 2)
+    }
+}
+
+/// Windows the app opens sit in the middle of the screen (owner request
+/// 2026-10-26), not where NSWindow.center() puts them, a third of the way down.
+@Suite struct ScreenCentreTests {
+    @Test func testAWindowSitsInTheMiddleOfTheVisibleArea() {
+        // A 1440×900 screen: menu bar 25 points on top, Dock 0.
+        let area = CGRect(x: 0, y: 0, width: 1440, height: 875)
+        #expect(ScreenCentre.origin(CGSize(width: 500, height: 300), in: area) == CGPoint(x: 470, y: 288))
+        // A second screen to the right, and a window taller than it: the top
+        // stays on screen.
+        let right = CGRect(x: 1440, y: 0, width: 1920, height: 1055)
+        #expect(ScreenCentre.origin(CGSize(width: 880, height: 620), in: right) == CGPoint(x: 1960, y: 218))
+        #expect(ScreenCentre.origin(CGSize(width: 500, height: 1200), in: area).y == -325)
+        #expect(ScreenCentre.origin(CGSize(width: 500, height: 300), around: CGPoint(x: 720, y: 438))
+                == CGPoint(x: 470, y: 288))
+    }
+}
+

@@ -1598,3 +1598,25 @@ too, and when pull requests cannot be read the plan says so (`pull requests
 not checked: gh not found`) instead of "in no merged pull request". Under
 launchd's `PATH` the dev build's plan then matched a shell's.
 
+**The relaunch after an update, and windows in the middle (owner requests
+2026-10-26, for 0.8.12).** Updating to 0.8.11 installed the app, the binary
+and the daemon, but the window stayed at "Reopening ClaudeSwitch… 100%": a
+"Pools default uses" sheet open in Settings refused the app's quit, and
+opening the bundle a second later only brought the old 0.8.10 process
+forward. Asked: "make sure this edge case and similar are going to be
+covered and handled properly in the future". Now the app closes every
+sheet (innermost first) and any modal dialog before it quits, and the
+helper that reopens it waits for the old process to exit, ends it after
+five seconds (SIGKILL three seconds later) and opens the new bundle; a
+launch with a pending "just installed" note still says what it became.
+Also asked: "the update window and other windows that the app opens should
+be centered to the middle of the screen". The update, setup, Settings and
+About windows now open in the middle of the visible area of the screen the
+pointer is on (NSWindow.center() left them a third of the way down), and
+the update window keeps its middle as it changes size between states.
+First tried by moving a window once it was up; the owner saw it open where
+it was last closed and jump. Now it is placed before it shows: Settings by
+writing the centred frame where AppKit restores it from (`NSWindow Frame
+settings`, keeping the size the person left), the About panel in the same
+pass that shows it, and the app's own windows before they are ordered in.
+

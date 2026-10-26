@@ -22,7 +22,8 @@ enum WelcomeWindow {
         w.title = title
         w.styleMask = [.titled, .closable]
         w.isReleasedWhenClosed = false
-        w.center()
+        w.setContentSize(host.view.fittingSize)
+        WindowFocus.centre(w, on: WindowFocus.pointerScreen)
         window = w
         closeObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w,
                                                                queue: .main) { _ in

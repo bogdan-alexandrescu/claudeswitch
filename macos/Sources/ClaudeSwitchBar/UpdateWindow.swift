@@ -9,6 +9,7 @@ enum UpdateWindow {
     static let title = "Software Update"
     private static var window: NSWindow?
     private static var closeObserver: NSObjectProtocol?
+    private static var sizeObservers: [NSObjectProtocol] = []
 
     static func show(_ updates: UpdateController) {
         WindowFocus.closePopover()
@@ -23,12 +24,16 @@ enum UpdateWindow {
         w.title = title
         w.styleMask = [.titled, .closable]
         w.isReleasedWhenClosed = false
-        w.center()
+        w.setContentSize(host.view.fittingSize)
+        WindowFocus.centre(w, on: WindowFocus.pointerScreen)
+        sizeObservers = WindowFocus.keepCentred(w)
         window = w
         closeObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w,
                                                                queue: .main) { _ in
             MainActor.assumeIsolated {
                 if let o = closeObserver { NotificationCenter.default.removeObserver(o) }
+                sizeObservers.forEach(NotificationCenter.default.removeObserver)
+                sizeObservers = []
                 closeObserver = nil
                 window = nil
                 AppHub.updates.windowClosed()
