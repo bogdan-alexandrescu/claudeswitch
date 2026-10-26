@@ -12,14 +12,15 @@ These are stored by the app, not in claudeswitch's config.
 
 | row | what it does | default |
 |---|---|---|
-| **Appearance** | System follows your Mac. Light or Dark keeps ClaudeSwitch in one appearance whatever the system uses. Also in the popover's ⋯ menu | System |
-| **Usage in the popover** | Dials or Bars for the session and week. The switch in the popover and **Show usage as** in the ⋯ menu change it too | Dials |
+| **Appearance** | System follows your Mac. Light or Dark keeps ClaudeSwitch in one appearance whatever the system uses. Also in the menu-bar icon's menu (right-click) | System |
+| **Usage in the popover** | Dials or Bars for the session and week. The switch in the popover and **Show usage as** in the icon's menu change it too | Dials |
 | **Open Claude Code in** | the terminal **Open Claude Code** and **▶** use: Terminal, iTerm, Ghostty or Warp. It runs `cs run <profile>` there | Terminal |
 | **Icon only in the menu bar** | hides the profile, account and percentage next to the rings | off |
 | **Check for updates** | once a day, one call to GitHub's latest release; **Check now** checks at once and opens the update window with what it found. Off makes no call. See [Updates](updates.md) | on |
 | **Notifications with actions** | the app's own notifications: Undo and Pin here on a rotation, Sign in when an account needs it. See [Shortcuts → Notifications](shortcuts.md#notifications) | on |
 | **Switch to best hotkey** | a global key for Switch to best on the followed profile; click the key to record another. See [Shortcuts](shortcuts.md#the-hotkey) | off, ⌥⌘S |
 | **claudeswitch** | the binary the app runs, and its version. **Choose...** picks another one. Without a choice the app looks in `~/.local/bin`, then `PATH` and the usual Homebrew and Go locations | found automatically |
+| **Quit** | **Quit ClaudeSwitch** closes the menu-bar app. The daemon keeps switching accounts; open ClaudeSwitch from Applications to bring the icon back. Also in the icon's menu, and ⌘Q in the popover | |
 
 The app needs claudeswitch 0.5.1 or later. The version shown in the
 screenshot is example data.

@@ -229,3 +229,16 @@ private func bitmap(_ img: NSImage, scale: CGFloat) -> NSBitmapImageRep? {
     NSGraphicsContext.restoreGraphicsState()
     return rep
 }
+
+/// The menu-bar icon's menu (right-click) follows the app's Appearance, not
+/// the menu bar's: popped up from the status item it took the menu bar's
+/// dark look in a Light app (owner, 2026-10-26).
+@Suite struct IconMenuAppearanceTests {
+    @Test func testTheIconsMenuFollowsTheAppsAppearance() {
+        #expect(AppearancePref.light.resolved(system: .darkAqua) == .aqua)
+        #expect(AppearancePref.dark.resolved(system: .aqua) == .darkAqua)
+        #expect(AppearancePref.system.resolved(system: .darkAqua) == .darkAqua, "System is the Mac's own setting")
+        #expect(AppearancePref.system.resolved(system: .aqua) == .aqua)
+    }
+}
+

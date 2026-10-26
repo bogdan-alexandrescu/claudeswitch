@@ -115,7 +115,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // SwiftUI may have set its own URL handler since; this one wins.
         listenForURLs()
-        Task { @MainActor in AppHub.start() }
+        Task { @MainActor in
+            AppHub.start()
+            StatusMenu.shared.install()
+        }
         let compact = UserDefaults.standard.bool(forKey: "compactMenuBar")
         menuBarLog.notice("launched \(Bundle.main.bundlePath, privacy: .public); icon only: \(compact, privacy: .public)")
         // SwiftUI makes the status item itself and says nothing when the
@@ -175,6 +178,16 @@ enum Render {
         fx.doctor = data("cli-doctor.json").flatMap(DoctorReport.init(data:))
         fx.cleanPlan = data("cli-clean-plan.json").flatMap(CleanPlan.init(data:))
         fx.cleanRuns = data("cli-clean-runs.json").flatMap(CleanRunSummary.list(data:))
+        // The runs fixture postdates the overlay sets' fixed clock: keep its
+        // runs in the past, the newest two hours before now.
+        if let newest = fx.cleanRuns?.compactMap(\.at).max(), newest > now {
+            let shift = now.addingTimeInterval(-7200).timeIntervalSince(newest)
+            fx.cleanRuns = fx.cleanRuns?.map { r in
+                var r = r
+                r.at = r.at?.addingTimeInterval(shift)
+                return r
+            }
+        }
         // F3: a set may bring audit log lines, for a lifted pin's notice.
         fx.pinLifts = data("render-audit.jsonl").map(PinLift.latest(jsonl:)) ?? [:]
         let store = Store(preview: snap, binaryPath: "~/.local/bin/claudeswitch", fixtures: fx)
@@ -182,6 +195,7 @@ enum Render {
         let missing = Store(preview: nil, problem: .missing)
         let login = LoginItem()
 
+        AppHub.updates.preview(version: "0.8.13", lastCheck: now.addingTimeInterval(-3600), now: now)
         for dark in [false, true] {
             let suffix = dark ? "-dark" : ""
             save(PopoverView().environmentObject(store).environmentObject(login),
@@ -500,10 +514,11 @@ struct AccountMenuFacsimile: View {
     }
 }
 
-/// The popover's ⋯ menu, drawn for the docs: an NSMenu cannot be drawn off
-/// screen, so this lays out the same items (PopoverView's footer menu) with
-/// one submenu open ("Appearance" or "Show usage as"). Render only; the
-/// app never shows it.
+/// The menu-bar icon's menu (right-click or Control-click; it was the
+/// popover's ⋯ menu), drawn for the docs: an NSMenu cannot be drawn off
+/// screen, so this lays out the same items (StatusMenu) with one submenu
+/// open ("Appearance" or "Show usage as"). Render only; the app never
+/// shows it.
 struct MoreMenuFacsimile: View {
     let appearance: AppearancePref
     let usage: UsageMode
@@ -513,7 +528,7 @@ struct MoreMenuFacsimile: View {
 
     var main: [Row] {
         [.item("Refresh now", "⌘R", false), .item("Appearance", nil, true), .item("Show usage as", nil, true),
-         .divider, .item("Settings…", nil, false), .item("Set up…", nil, false), .item("Check for updates…", nil, false),
+         .divider, .item("Settings", "⌘,", false), .item("Set up…", nil, false), .item("Check for updates…", nil, false),
          .item("About ClaudeSwitch", nil, false),
          .divider, .item("Quit ClaudeSwitch", "⌘Q", false)]
     }

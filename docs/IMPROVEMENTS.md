@@ -1620,3 +1620,23 @@ writing the centred frame where AppKit restores it from (`NSWindow Frame
 settings`, keeping the size the person left), the About panel in the same
 pass that shows it, and the app's own windows before they are ordered in.
 
+**Overview, the icon's menu, and Quit (owner requests 2026-10-26, for
+0.8.13).** "We should build a first page for the main app window … like a
+landing page with useful information"; the owner chose status tiles with a
+needs-you strip over a per-profile dashboard and a guide. Settings opens at
+**Overview**: needs-you only when something does (daemon not installed or
+not polling, an account to sign in again, Claude in Chrome not following, an
+update), six tiles that open their panes (Daemon, Profiles, Accounts,
+Rotation, Cleanup, Updates), and recent switches and cleanup. The popover's
+**Settings…** became **Settings**, and its ⋯ menu moved to the menu-bar
+icon's right-click and Control-click ("we can move the menu … and remove
+that icon"); ⌘R and ⌘Q still work in the popover. Settings → Advanced gained
+**Quit ClaudeSwitch**, so quitting does not depend on finding that menu.
+
+The icon's menu takes the app's Appearance (System, Light or Dark) rather
+than the menu bar's ("the control + click menu is dark. it should follow the
+theme of the app"). Settings' sidebar mark grew from 22 to 33 pt ("make the
+app logo on the settings page 50% larger"); the owner then chose the name at
+18 pt (from 14), since at 21 pt it wraps in the 190 pt sidebar, over widening
+the sidebar or letting the name run into its margin. The Updates tile says
+**Not checked yet** before the first check instead of "Up to date".

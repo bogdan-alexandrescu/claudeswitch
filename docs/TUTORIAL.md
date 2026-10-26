@@ -46,7 +46,7 @@ Pick the archive for your machine (`darwin_arm64` for Apple silicon,
 put the binary in `~/.local/bin` with `cs` as a short name for it:
 
 ```sh
-VERSION=v0.8.12
+VERSION=v0.8.13
 TARGET=darwin_arm64
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 curl -LO "$BASE/claudeswitch_${VERSION}_${TARGET}.tar.gz"
@@ -65,7 +65,7 @@ cs version
 ```
 
 ```
-claudeswitch v0.8.12
+claudeswitch v0.8.13
 ```
 
 If your shell says `cs: command not found`, add `~/.local/bin` to your `PATH`
@@ -493,10 +493,10 @@ across every account it touched. The full table:
 
 ### Appearance, dials and bars
 
-The ⋯ menu at the foot of the popover has **Appearance** (System, Light or
-Dark) and **Show usage as** (Dials or Bars).
+Right-click the menu-bar icon (or Control-click it) for its menu, with
+**Appearance** (System, Light or Dark) and **Show usage as** (Dials or Bars).
 
-<p align="center"><img src="images/menu-more.png" width="362" alt="The popover's ⋯ menu with Appearance open: System checked, Light, Dark"></p>
+<p align="center"><img src="images/menu-more.png" width="362" alt="The menu-bar icon's menu with Appearance open: System checked, Light, Dark"></p>
 
 System follows your Mac. Light or Dark keeps the app in one appearance. Bars
 show the same dots in two rows, which takes less height:

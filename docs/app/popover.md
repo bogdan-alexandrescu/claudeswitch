@@ -91,15 +91,23 @@ in place of the cards, with how to install it.
 | control | what it does |
 |---|---|
 | **+ Add account** | opens [Add account](add-account.md) for the followed profile. Greyed out until the binary is found |
-| **Settings...** (⌘,) | opens the Settings window at [Profiles](settings-profiles.md) |
-| ⋯ | the menu below |
+| **Settings** (⌘,) | opens the Settings window at its [Overview](settings-overview.md) |
 
-### The ⋯ menu
+⌘R refreshes and ⌘Q quits while the popover is open.
+
+A window opened from the popover comes up in front with the focus, in the
+middle of the screen the pointer is on, and the popover closes.
+
+### The icon's menu
+
+Right-click the menu-bar icon, or Control-click it, for this menu (until
+0.8.13 it was the ⋯ button at the popover's foot). A plain click opens the
+popover.
 
 <table>
   <tr>
-    <td align="center"><img src="../images/menu-more.png" width="362" alt="The ⋯ menu with Appearance open: System checked, Light, Dark"></td>
-    <td align="center"><img src="../images/menu-more-usage.png" width="362" alt="The ⋯ menu with Show usage as open: Dials checked, Bars"></td>
+    <td align="center"><img src="../images/menu-more.png" width="362" alt="The menu-bar icon's menu with Appearance open: System checked, Light, Dark"></td>
+    <td align="center"><img src="../images/menu-more-usage.png" width="362" alt="The menu-bar icon's menu with Show usage as open: Dials checked, Bars"></td>
   </tr>
 </table>
 
@@ -111,15 +119,11 @@ menu, since a live menu cannot be captured off screen.
 | **Refresh now** (⌘R) | reloads what the app shows: the state file, `cs why`, the Chrome and account lists and the profiles. It does not poll the usage API; the daemon does that | |
 | **Appearance** | System, Light or Dark. System follows your Mac; Light or Dark keeps the popover and Settings in that appearance | System |
 | **Show usage as** | Dials or Bars | Dials |
-| **Settings...** | opens Settings | |
+| **Settings** (⌘,) | opens Settings at its Overview | |
 | **Set up…** | opens the [first-run setup](first-run.md) window again | |
 | **Check for updates…** | checks for a newer release now and opens the update window with what it found (off while the check is off in Advanced). A newer one also shows as **0.5.6 available · Update…** at the foot; see [Updates](updates.md) | |
 | **About ClaudeSwitch** | the app's version | |
-| **Quit ClaudeSwitch** (⌘Q) | quits the app. The daemon keeps running | |
-
-A window opened from here (Settings…, Add account, Set up…, Check for
-updates…, Update…, About) comes up in front with the focus, in the middle
-of the screen the pointer is on, and the popover closes.
+| **Quit ClaudeSwitch** (⌘Q) | quits the app. The daemon keeps running. Also in Settings → Advanced | |
 
 ## What it reads
 

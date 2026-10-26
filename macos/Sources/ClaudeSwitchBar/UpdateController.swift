@@ -48,7 +48,11 @@ final class UpdateController: ObservableObject {
     private var timer: Timer?
     private let queue = DispatchQueue(label: "claudeswitch.bar.update")
 
-    var current: String? { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String }
+    var current: String? { previewVersion ?? Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String }
+    /// --render only: a bare binary has no bundle version.
+    private var previewVersion: String?
+    /// What "checked … ago" counts from; --render fixes it.
+    private(set) var clock: () -> Date = Date.init
 
     init() {
         enabled = defaults.object(forKey: Self.enabledKey) as? Bool ?? true
@@ -68,6 +72,14 @@ final class UpdateController: ObservableObject {
 
     /// --render: the window in a given state.
     func preview(dialog d: UpdateDialog?) { dialog = d }
+
+    /// --render: this app's version, its last check and the render's clock,
+    /// so the screens do not read "Version unknown" or this Mac's defaults.
+    func preview(version: String, lastCheck: Date, now: Date) {
+        previewVersion = version
+        self.lastCheck = lastCheck
+        clock = { now }
+    }
 
     func start() {
         if let v = defaults.string(forKey: Self.installedKey) {
@@ -500,7 +512,7 @@ struct AppFlowsRows: View {
     var checkedLine: String {
         var s = updates.current.map { "This is \($0)" } ?? "Version unknown"
         if let v = updates.available { s += " · \(v) available" }
-        if let d = updates.lastCheck { s += " · checked " + Format.age(d, now: Date()) }
+        if let d = updates.lastCheck { s += " · checked " + Format.age(d, now: updates.clock()) }
         return s
     }
 }

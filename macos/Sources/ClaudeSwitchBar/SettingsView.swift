@@ -3,13 +3,14 @@ import ClaudeSwitchCore
 import SwiftUI
 
 enum Pane: String, CaseIterable, Identifiable {
-    case profiles = "Profiles", accounts = "Accounts", rotation = "Rotation", polling = "Polling",
+    case overview = "Overview", profiles = "Profiles", accounts = "Accounts", rotation = "Rotation", polling = "Polling",
          daemon = "Daemon", cleanup = "Cleanup", history = "History", health = "Health", advanced = "Advanced"
 
     var id: String { rawValue }
 
     var symbol: String {
         switch self {
+        case .overview: return "square.grid.2x2"
         case .profiles: return "person.2"
         case .accounts: return "person.crop.circle"
         case .rotation: return "arrow.triangle.2.circlepath"
@@ -29,7 +30,7 @@ struct SettingsView: View {
     static let windowID = "settings"
     static let windowTitle = "ClaudeSwitch Settings"
     @EnvironmentObject var store: Store
-    @State var pane: Pane? = .profiles
+    @State var pane: Pane? = .overview
     /// --render only: an off-screen capture does not draw the sidebar's
     /// vibrant material, so the render draws a plain copy of it.
     var renderSidebar = false
@@ -39,7 +40,7 @@ struct SettingsView: View {
             if renderSidebar {
                 HStack(spacing: 0) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Wordmark(size: 14, mark: 22).padding(.horizontal, 8).padding(.bottom, 12)
+                        Wordmark(size: 18, mark: 33).fixedSize().padding(.horizontal, 8).padding(.bottom, 12)
                         ForEach(Pane.allCases) { p in
                             Label {
                                 Text(p.rawValue).fontWeight(p == pane ? .semibold : .regular)
@@ -71,7 +72,7 @@ struct SettingsView: View {
                 Label(p.rawValue, systemImage: p.symbol).tag(p)
             }
             .safeAreaInset(edge: .top, spacing: 0) {
-                Wordmark(size: 14, mark: 22)
+                Wordmark(size: 18, mark: 33).fixedSize()
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 18).padding(.top, 4).padding(.bottom, 8)
             }
@@ -103,7 +104,8 @@ struct SettingsView: View {
 
     var detail: some View {
             Group {
-                switch pane ?? .profiles {
+                switch pane ?? .overview {
+                case .overview: OverviewPane(go: { pane = $0 })
                 case .profiles: ProfilesPane()
                 case .accounts: AccountsPane()
                 case .rotation: SchemaPane(pane: .rotation, title: "Rotation",
@@ -452,6 +454,12 @@ struct AdvancedPane: View {
                     }
                 }
                 AppFlowsRows(updates: AppHub.updates, notifier: AppHub.notifier, hotKey: AppHub.hotKey)
+                LabeledContent {
+                    Button("Quit ClaudeSwitch") { NSApp.terminate(nil) }
+                } label: {
+                    described("Quit", "Closes the menu-bar app. The daemon keeps switching accounts; "
+                              + "open ClaudeSwitch from Applications to bring the icon back.")
+                }
             }
             if let schema = store.schema {
                 Section("Settings") {

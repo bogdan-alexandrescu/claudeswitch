@@ -26,7 +26,10 @@ the CLI command it runs, and its default.
 - [Menu bar](app/menu-bar.md): the label, the live glyph's four states, and
   Icon only.
 - [Popover](app/popover.md): the cards, dials and bars, Switch to best, Open
-  Claude Code, the Chrome globe, Pin, banners, and the ⋯ menu.
+  Claude Code, the Chrome globe, Pin, banners, and the menu-bar icon's menu
+  (right-click).
+- [Settings → Overview](app/settings-overview.md): the first page: what needs
+  you, a tile per area, and recent activity.
 - [Settings → Profiles](app/settings-profiles.md): pools, per-profile
   thresholds, the Chrome profile picker, new and removed profiles.
 - [Settings → Accounts](app/settings-accounts.md): accounts grouped by pool,

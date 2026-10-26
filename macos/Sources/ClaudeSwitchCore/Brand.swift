@@ -15,6 +15,13 @@ public enum AppearancePref: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The appearance itself, `system` being the Mac's own Light or Dark:
+    /// for what does not inherit the app's, such as a menu popped up from the
+    /// status item, which otherwise takes the menu bar's look.
+    public func resolved(system: NSAppearance.Name) -> NSAppearance.Name {
+        appearanceName ?? system
+    }
+
     /// What NSApp.appearance is set to; nil follows the system.
     public var appearanceName: NSAppearance.Name? {
         switch self {

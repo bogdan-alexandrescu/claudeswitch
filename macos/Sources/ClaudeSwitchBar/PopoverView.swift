@@ -101,34 +101,22 @@ struct PopoverView: View {
             .foregroundStyle(canAdd ? Color.csAccent : Color.secondary)
             .disabled(!canAdd)
             Spacer()
-            Button("Settings…") { showSettings() }
+            Button("Settings") { showSettings() }
                 .buttonStyle(.borderless)
                 .keyboardShortcut(",", modifiers: .command)
-            Menu {
+        }
+        // The ⋯ menu moved to the menu-bar icon's right-click (StatusMenu,
+        // owner request 2026-10-26); its shortcuts stay here.
+        .background {
+            Group {
                 Button("Refresh now") { store.refresh(full: true, profiles: true) }
                     .keyboardShortcut("r", modifiers: .command)
-                Picker("Appearance", selection: $store.appearance) {
-                    ForEach(AppearancePref.allCases) { Text($0.label).tag($0) }
-                }
-                Picker("Show usage as", selection: $store.usageMode) {
-                    ForEach(UsageMode.allCases) { Text($0.label).tag($0) }
-                }
-                Divider()
-                Button("Settings…") { showSettings() }
-                Button("Set up…") { WelcomeWindow.show(store: store) }
-                Button("Check for updates…") { AppHub.updates.checkNow() }
-                    .disabled(!AppHub.updates.enabled)
-                Button("About ClaudeSwitch") { WindowFocus.about() }
-                Divider()
                 Button("Quit ClaudeSwitch") { NSApp.terminate(nil) }
                     .keyboardShortcut("q", modifiers: .command)
-            } label: {
-                Image(systemName: "ellipsis.circle")
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .accessibilityLabel("More")
+            .opacity(0)
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
         }
     }
 
