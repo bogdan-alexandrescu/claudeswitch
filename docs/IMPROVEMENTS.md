@@ -1576,3 +1576,25 @@ which opens it), Set up…, Check for updates…, Update… and About now close
 the popover first, make the app frontmost and the new window key, looking
 for a SwiftUI window for a few passes after it is asked for.
 
+**A prompt held the daemon's first cleanup (2026-10-26, for 0.8.11).** At
+02:40 the daemon's first scheduled run asked git about every folder Claude
+Code has run in, four of them tax folders on the Desktop, and macOS asked
+"claudeswitch would like to access files in your Desktop folder". The run
+waited on it for twelve minutes. The binary is ad-hoc signed, so every
+update is a new program to macOS and would ask again. The owner answered
+Don't Allow and chose: the scan never looks in Desktop, Documents,
+Downloads or iCloud Drive (not even a stat), and the plan names what it
+left (`not looked in (macOS asks first)`, `plan.guarded`).
+
+**The daemon checked no pull request (found 2026-10-26, for 0.8.11).** Its
+first scheduled run (`20261026-024101`, 198 items, 3.4 GB) removed only
+what had merged into a default branch: launchd starts it with
+`PATH=/usr/bin:/bin:/usr/sbin:/sbin`, `gh` is in `/opt/homebrew/bin`, and a
+missing `gh` read as "no pull requests" without a word. The owner's own run
+from the app had found them because that app was started from a shell. 478
+squash-merged ai-studio branches and three merged acme-prompt-lab
+worktrees (2.7 GB) stayed. `gh` is now looked for where installers put it
+too, and when pull requests cannot be read the plan says so (`pull requests
+not checked: gh not found`) instead of "in no merged pull request". Under
+launchd's `PATH` the dev build's plan then matched a shell's.
+

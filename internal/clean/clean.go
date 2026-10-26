@@ -90,6 +90,29 @@ type Options struct {
 	// TranscriptsAfter is how old an ended session's subagent transcripts
 	// must be to go, with Temp; 0 keeps them.
 	TranscriptsAfter time.Duration
+	// Guarded are folders never looked in: macOS asks the person before a
+	// process reads them, and the daemon has no one to ask (MacGuarded).
+	Guarded []string
+}
+
+// MacGuarded are the folders macOS asks about before a process may read
+// them (Files and Folders): Desktop, Documents, Downloads and iCloud Drive.
+func MacGuarded(home string) []string {
+	var out []string
+	for _, d := range []string{"Desktop", "Documents", "Downloads", "Library/Mobile Documents"} {
+		out = append(out, filepath.Join(home, d))
+	}
+	return out
+}
+
+// guarded reports whether path is in a folder never looked in.
+func (o Options) guarded(path string) bool {
+	for _, g := range o.Guarded {
+		if within(path, g) {
+			return true
+		}
+	}
+	return false
 }
 
 // on reports whether a kind is looked at.
@@ -131,6 +154,9 @@ type Item struct {
 type Plan struct {
 	At    time.Time `json:"at"`
 	Items []Item    `json:"items"`
+	// Guarded are the projects, and folders under a root, left unread
+	// because macOS guards them (Options.Guarded).
+	Guarded []string `json:"guarded,omitempty"`
 }
 
 // Removable is the items Apply would act on.
@@ -149,6 +175,7 @@ func Scan(ctx context.Context, opt Options) (*Plan, error) {
 	s := newScanner(ctx, opt)
 	p := &Plan{At: opt.Now}
 	repos := s.repos()
+	p.Guarded = s.guarded
 	if opt.Worktrees || opt.Remote {
 		byRepo := make([][]Item, len(repos))
 		parallel(len(repos), 3, func(i int) { byRepo[i] = s.scanRepo(repos[i]) })

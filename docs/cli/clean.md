@@ -37,6 +37,12 @@ cs clean undo [<run>] [--only <text>] [--json]
 - **Branches on GitHub**, only with `clean_remote_branches` on: a merged pull
   request's branch on origin.
 
+On a Mac it never looks in the folders macOS asks about before a program
+may read them: Desktop, Documents, Downloads and iCloud Drive. A project
+there is not even opened (that alone brings up "claudeswitch would like to
+access files in your Desktop folder", which the daemon cannot answer); the
+plan names it on a `not looked in (macOS asks first)` line instead.
+
 ## The rules
 
 Something goes only when every one of these holds; the plan says, for each
@@ -44,7 +50,11 @@ thing kept, which one did not.
 
 1. **No unique commits.** Its commits are in the default branch, or in the
    head of a pull request that merged (`gh pr list`), under any branch name,
-   and nothing was committed after. A clone also needs every branch to pass,
+   and nothing was committed after. `gh` is looked for on `PATH`, then in
+   `/opt/homebrew/bin`, `/usr/local/bin`, Linuxbrew, `~/.local/bin` and
+   `~/bin` (the daemon runs with launchd's short `PATH`). Without it, or when
+   it fails, only the default branch counts, and the plan says `pull
+   requests not checked: …`. A clone also needs every branch to pass,
    no stash, no tag the primary lacks, no other refs, and no worktree of its
    own.
 2. **No unique files.** `git status` is clean, or the folder is a *stale
@@ -163,7 +173,8 @@ commit`, or `— a live Claude Code session (app-3f) works in it`.
 
 `kind` is `worktree`, `prune`, `branch`, `remote`, `clone`, `scratch`,
 `plugin` or `transcript`. Kept items have `"remove": false` and the reason in
-`why`.
+`why`. `plan.guarded` (when there are any) lists the projects, and folders
+under `clean_roots`, left unread because macOS guards them.
 
 `cs clean --apply --json`: `{"run": {"id", "at", "done": [entry…],
 "skipped": [item…], "failed": [{…item, "error"}]}, "bytes"}`; an entry is the

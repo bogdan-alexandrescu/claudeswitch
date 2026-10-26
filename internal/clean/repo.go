@@ -163,7 +163,7 @@ func (s *scanner) branchItems(repo string, def defaultRef, checkedOut map[string
 			merged, how, mergedAt = s.mergedByPR(repo, name, sha)
 		}
 		if !merged {
-			it.Why = "commits not in main and in no merged pull request"
+			it.Why = s.noMergeWhy(repo, "commits")
 			items = append(items, it)
 			continue
 		}

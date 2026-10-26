@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -88,6 +89,11 @@ func cleanOptions(cfg *config.Config, now time.Time) (clean.Options, error) {
 	}
 	if d, err := filepath.EvalSymlinks(filepath.Join("/tmp", fmt.Sprintf("claude-%d", os.Getuid()))); err == nil {
 		opt.TempRoot = d
+	}
+	// macOS asks before anything reads these, and the daemon cannot answer
+	// (owner decision 2026-10-26: a prompt held its first run).
+	if home, err := os.UserHomeDir(); err == nil && runtime.GOOS == "darwin" {
+		opt.Guarded = clean.MacGuarded(home)
 	}
 	return opt, nil
 }
@@ -282,6 +288,13 @@ func printCleanPlan(w io.Writer, p *clean.Plan, opt clean.Options, from string, 
 	}
 	if len(off) > 0 {
 		fmt.Fprintf(w, "off: %s\n", strings.Join(off, ", "))
+	}
+	if len(p.Guarded) > 0 {
+		names := make([]string, len(p.Guarded))
+		for i, g := range p.Guarded {
+			names[i] = tilde(g)
+		}
+		fmt.Fprintf(w, "not looked in (macOS asks first): %s\n", strings.Join(names, ", "))
 	}
 	switch {
 	case any && from != "":

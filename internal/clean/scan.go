@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,6 +40,9 @@ type scanner struct {
 
 	mu  sync.Mutex
 	prs map[string]*prList // by repository
+
+	// guarded are the folders repos() left unread (Options.Guarded).
+	guarded []string
 }
 
 // prList is one repository's pull requests, fetched once however many
@@ -45,6 +50,7 @@ type scanner struct {
 type prList struct {
 	once      sync.Once
 	prs       []PR
+	err       error // why the pull requests could not be read
 	headsOnce sync.Once
 	heads     []string
 	merged    []PR
@@ -218,20 +224,36 @@ func (s *scanner) repos() []string {
 			out = append(out, root)
 		}
 	}
+	skip := func(dir string) bool {
+		if !s.opt.guarded(dir) {
+			return false
+		}
+		if !slices.Contains(s.guarded, dir) {
+			s.guarded = append(s.guarded, dir)
+		}
+		return true
+	}
 	for _, p := range s.opt.Projects {
+		if skip(p) {
+			continue // not even a stat: it is what makes macOS ask
+		}
 		if fi, err := os.Stat(p); err == nil && fi.IsDir() {
 			add(p)
 		}
 	}
 	for _, r := range s.opt.Roots {
-		walkRepos(r, 3, add)
+		walkRepos(r, 3, add, skip)
 	}
+	sort.Strings(s.guarded)
 	return out
 }
 
 // walkRepos calls add for every folder holding a .git folder, depth levels
 // down from root.
-func walkRepos(root string, depth int, add func(string)) {
+func walkRepos(root string, depth int, add func(string), skip func(string) bool) {
+	if skip(root) {
+		return
+	}
 	if fi, err := os.Stat(filepath.Join(root, ".git")); err == nil && fi.IsDir() {
 		add(root)
 	}
@@ -244,7 +266,7 @@ func walkRepos(root string, depth int, add func(string)) {
 	}
 	for _, e := range ents {
 		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") && e.Name() != "node_modules" {
-			walkRepos(filepath.Join(root, e.Name()), depth-1, add)
+			walkRepos(filepath.Join(root, e.Name()), depth-1, add, skip)
 		}
 	}
 }
@@ -263,9 +285,7 @@ func (s *scanner) prList(repo string) *prList {
 func (s *scanner) pullRequests(repo string) []PR {
 	l := s.prList(repo)
 	l.once.Do(func() {
-		if prs, err := forge.PRs(s.ctx, repo); err == nil {
-			l.prs = prs
-		}
+		l.prs, l.err = forge.PRs(s.ctx, repo)
 	})
 	return l.prs
 }
@@ -360,6 +380,15 @@ func (s *scanner) unmergedWhy(repo string, def defaultRef, tip string) string {
 				n = out + " commits"
 			}
 		}
+	}
+	return s.noMergeWhy(repo, n)
+}
+
+// noMergeWhy keeps n commits that are in no merge; when the repository's
+// pull requests could not be read, it says that instead of "in none".
+func (s *scanner) noMergeWhy(repo, n string) string {
+	if err := s.prList(repo).err; err != nil {
+		return n + " not in main; pull requests not checked: " + err.Error()
 	}
 	return n + " not in main and in no merged pull request"
 }

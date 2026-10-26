@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -507,6 +508,76 @@ func TestABranchMovedRecentlyWaits(t *testing.T) {
 	w.mergeNoFF("feat/moved")
 	w.opt.Now = time.Now().Add(time.Hour)
 	mustKeep(t, w.branchItem(w.scan(), "feat/moved"), "changed")
+}
+
+// macOS asks the person before a process reads Desktop, Documents,
+// Downloads or iCloud Drive, and the daemon's scan has no one to ask: four
+// projects on the Desktop held its first run on a prompt (2026-10-26). A
+// project or a root in a guarded folder is never looked in; the plan names
+// it instead.
+func TestFoldersMacOSGuardsAreNeverLookedIn(t *testing.T) {
+	w := newWorld(t)
+	desktop := filepath.Join(w.root, "Desktop")
+	inside := filepath.Join(desktop, "proj2")
+	w.git(w.root, "clone", "-q", w.origin, inside)
+	w.git(inside, "worktree", "add", "-q", "-b", "lane/g1", filepath.Join(inside, ".claude", "worktrees", "agent-g1"))
+	w.opt.Projects = append(w.opt.Projects, inside)
+	w.opt.Roots = []string{w.root}
+	w.opt.Guarded = []string{desktop}
+	p := w.scan()
+	for _, it := range p.Items {
+		if within(it.Path, desktop) || within(it.Repo, desktop) {
+			t.Fatalf("looked inside a guarded folder: %+v", it)
+		}
+	}
+	if strings.Join(p.Guarded, ",") != desktop+","+inside {
+		t.Fatalf("guarded %v, want the folder the walk met and the project", p.Guarded)
+	}
+	if got := MacGuarded("/Users/me"); strings.Join(got, ",") != "/Users/me/Desktop,/Users/me/Documents,"+
+		"/Users/me/Downloads,/Users/me/Library/Mobile Documents" {
+		t.Fatalf("MacGuarded = %v", got)
+	}
+}
+
+// The daemon runs under launchd's PATH (/usr/bin:/bin:/usr/sbin:/sbin),
+// where gh is not, so its first run checked no pull request and kept every
+// squash-merged branch (2026-10-26). gh is looked for where installers put
+// it too.
+func TestGHIsFoundOffThePath(t *testing.T) {
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "a"), filepath.Join(dir, "b")
+	w := newWorld(t)
+	w.write(filepath.Join(b, "gh"), "#!/bin/sh\n")
+	if err := os.Chmod(filepath.Join(b, "gh"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := findGH(a, []string{a, b}); got != filepath.Join(b, "gh") {
+		t.Fatalf("found %q", got)
+	}
+	if got := findGH(a, []string{a}); got != "" {
+		t.Fatalf("found %q where there is none", got)
+	}
+	if !slices.Contains(ghDirs("/Users/me"), "/opt/homebrew/bin") ||
+		!slices.Contains(ghDirs("/Users/me"), "/Users/me/.local/bin") {
+		t.Fatalf("dirs %v", ghDirs("/Users/me"))
+	}
+}
+
+type failingForge struct{}
+
+func (failingForge) PRs(context.Context, string) ([]PR, error) { return nil, errNoGH }
+
+// When pull requests could not be read, a branch outside the default
+// branch is kept and the plan says why, rather than "in no merged pull
+// request".
+func TestABranchSaysWhenPullRequestsWereNotChecked(t *testing.T) {
+	w := newWorld(t)
+	w.git(w.repo, "checkout", "-q", "-b", "feat/sq")
+	w.commit(w.repo, "sq.txt", "sq\n", "sq")
+	w.git(w.repo, "checkout", "-q", "main")
+	w.squash("feat/sq", 7)
+	forge = failingForge{}
+	mustKeep(t, w.branchItem(w.scan(), "feat/sq"), "pull requests not checked: gh not found")
 }
 
 // A saved plan is applied with the settings of now: an item whose kind was

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -189,5 +190,33 @@ func TestCleanRefusesAPlanFileThatIsNotOne(t *testing.T) {
 		if !errors.As(err, &ae) || ae.Code != codeUsage {
 			t.Fatalf("%s: %v, want a usage error", path, err)
 		}
+	}
+}
+
+// On a Mac the scan never looks in the folders macOS guards, and the plan
+// says which projects it left alone.
+func TestCleanLeavesTheFoldersMacOSGuards(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	setCCDir(t, "")
+	cfg, err := config.Load(writeConfig(t, "priority = [\"a\"]\n\n[[account]]\nid = \"a\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opt, err := cleanOptions(cfg, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS == "darwin" {
+		if len(opt.Guarded) == 0 || opt.Guarded[0] != filepath.Join(home, "Desktop") {
+			t.Fatalf("guarded %v", opt.Guarded)
+		}
+	} else if len(opt.Guarded) != 0 {
+		t.Fatalf("guarded %v off macOS", opt.Guarded)
+	}
+	var out bytes.Buffer
+	printCleanPlan(&out, &clean.Plan{Guarded: []string{filepath.Join(home, "Desktop", "taxes")}}, opt, "", false)
+	if !strings.Contains(out.String(), "not looked in (macOS asks first): ~/Desktop/taxes") {
+		t.Fatalf("plan said:\n%s", out.String())
 	}
 }
