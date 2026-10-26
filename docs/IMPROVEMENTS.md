@@ -1645,3 +1645,13 @@ the sidebar or letting the name run into its margin. The Updates tile says
 logo and text a little closer together": the gap between the rings and the
 name in Settings' sidebar went from 8.5 pt (0.47 of the name's size) to 4 pt,
 chosen over 6 and 2 pt. The popover's wordmark is unchanged.
+
+**Short browser names (public PR #4 by ssbarbee, 2026-10-26, for 0.8.15).**
+`cs login`, setup and `--browser` take Chrome, Safari, Brave, Firefox, Edge
+or Arc in any case (or any application's full name), and `cs login` offers
+Chrome first. The owner merged it and had two changes made on top: setup's
+"Add another account" step still suggests **Safari** (else the first browser
+that is not Chrome), since its own text asks for a browser the person is NOT
+signed into and Enter on Chrome would bring back the account already vaulted;
+and the messages name the application ("opened in Google Chrome"), not the
+name as typed.

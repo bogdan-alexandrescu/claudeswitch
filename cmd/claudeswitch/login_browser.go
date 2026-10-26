@@ -130,10 +130,10 @@ func openBrowser(w io.Writer, browser string) func(string) error {
 			cmd = exec.Command("open", u)
 		}
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("%s did not open: %w", nonEmpty(browser, "the default browser"), err)
+			return fmt.Errorf("%s did not open: %w", nonEmpty(browserApp(browser), "the default browser"), err)
 		}
 		fmt.Fprintf(w, "    opened in %s — sign in as the account you want, and approve\n",
-			nonEmpty(browser, "your default browser"))
+			nonEmpty(browserApp(browser), "your default browser"))
 		return nil
 	}
 }
@@ -190,7 +190,7 @@ func signInHere(ctx context.Context, extra oauth.Extra, browser string) (*oauth.
 		return nil, err
 	}
 	if browser != "" && exec.Command("open", "-a", browserApp(browser), flow.URL).Run() == nil {
-		fmt.Printf("    opened in %s — sign in as the account you want, approve it\n", browser)
+		fmt.Printf("    opened in %s — sign in as the account you want, approve it\n", browserApp(browser))
 	} else {
 		fmt.Printf("\n%s\n\n", flow.URL)
 	}

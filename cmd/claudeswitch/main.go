@@ -3557,9 +3557,9 @@ func loginDirect(cfg *config.Config, st *state.State, v *vault.Vault, id, wantOr
 		// Opening it ourselves removes the step that kept going wrong: pasting
 		// the URL from an older attempt, whose state no longer matches.
 		if err := exec.Command("open", "-a", browserApp(browser), flow.URL).Run(); err != nil {
-			fmt.Printf("\n  could not open %s (%v) — open this by hand:\n\n%s\n\n", browser, err, flow.URL)
+			fmt.Printf("\n  could not open %s (%v) — open this by hand:\n\n%s\n\n", browserApp(browser), err, flow.URL)
 		} else {
-			fmt.Printf("\n  Opened in %s. Approve it there, then copy the code it gives you.\n\n", browser)
+			fmt.Printf("\n  Opened in %s. Approve it there, then copy the code it gives you.\n\n", browserApp(browser))
 		}
 	} else {
 		fmt.Printf("\n  Open this, approve it, and copy the code it gives you:\n\n")
@@ -4131,6 +4131,25 @@ func installedBrowsers(installed func(app string) bool) []string {
 	return out
 }
 
+// setupBrowser is the browser setup offers for a further account, which
+// needs one the person is NOT signed into: Safari, then any but Chrome, the
+// browser most people are signed into. Enter on Chrome would bring back the
+// account already vaulted.
+func setupBrowser(installed []string) string {
+	if slices.Contains(installed, "Safari") {
+		return "Safari"
+	}
+	for _, b := range installed {
+		if b != "Chrome" {
+			return b
+		}
+	}
+	if len(installed) == 0 {
+		return ""
+	}
+	return installed[0]
+}
+
 // browserApp is the application a typed browser name opens with `open -a`:
 // its short name or the application's own, in any case. A name not listed
 // is passed on as typed, so any other application still works.
@@ -4248,7 +4267,7 @@ func cmdSetup(args []string) error {
 			fmt.Printf("  add the same person in another organization, run\n")
 			fmt.Printf("  `claudeswitch login <name> --direct --org <org-id>` once setup is done.\n")
 			fmt.Printf("  Installed: %s\n", strings.Join(bl, ", "))
-			browser = ask("  Open in which browser", bl[0])
+			browser = ask("  Open in which browser", setupBrowser(bl))
 		}
 
 		tok, xerr := signInHere(ctx, oauth.Extra{Prompt: "login"}, browser)

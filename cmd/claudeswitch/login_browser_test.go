@@ -136,6 +136,40 @@ func TestAShortBrowserNameOpensItsApplication(t *testing.T) {
 	}
 }
 
+// Setup's further accounts need a browser the person is NOT signed into, as
+// its own text says, so it suggests Safari over Chrome, the one most people
+// are signed into: Enter there would bring back the account already vaulted.
+func TestSetupSuggestsABrowserNotUsuallySignedInto(t *testing.T) {
+	for _, c := range []struct {
+		installed []string
+		want      string
+	}{
+		{[]string{"Chrome", "Safari", "Brave"}, "Safari"},
+		{[]string{"Chrome", "Brave", "Edge"}, "Brave"},
+		{[]string{"Chrome"}, "Chrome"},
+		{nil, ""},
+	} {
+		if got := setupBrowser(c.installed); got != c.want {
+			t.Errorf("setupBrowser(%q) = %q, want %q", c.installed, got, c.want)
+		}
+	}
+}
+
+// The message names the application that opened, not the name as typed.
+func TestTheBrowserMessageNamesTheApplication(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("the login opens a named browser with macOS's open -a")
+	}
+	testshim.ResetLaunches()
+	var out strings.Builder
+	if err := openBrowser(&out, "chrome")("https://example.test/authorize"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "opened in Google Chrome") {
+		t.Errorf("said %q, want it to name Google Chrome", out.String())
+	}
+}
+
 // `--browser edge` on the two-step login opens Microsoft Edge too.
 func TestATwoStepLoginOpensAShortNamedBrowser(t *testing.T) {
 	cfg := loadOrFail(t, writeConfig(t, strings.Replace(poolConfig, `name = "default"`, `name = "home"`, 1)))

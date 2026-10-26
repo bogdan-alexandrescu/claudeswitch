@@ -34,8 +34,9 @@ It asks, in order:
 2. **The account signed in now.** It names it (`Signed in now: <email> · ...`)
    and asks **Vault it** and **Name it**, suggesting a name.
 3. **Add another account (N vaulted so far)**, repeated. For each: **Name
-   it** and **Open in which browser** (Chrome is offered first when
-   installed; a short name such as Chrome, Brave or Edge is enough), then
+   it** and **Open in which browser** (it suggests Safari, a browser you
+   are probably not signed into, or else the first that is not Chrome; a
+   short name such as Chrome, Brave or Edge is enough), then
    waits for the sign-in: the browser comes back to setup by itself, so
    there is no code to paste
    (only if nothing can listen on this machine does it ask to **Paste the
@@ -184,7 +185,7 @@ cs -v
 cs --version
 ```
 
-Prints the build: `claudeswitch v0.8.14` for a release binary,
+Prints the build: `claudeswitch v0.8.15` for a release binary,
 `claudeswitch dev` for a build from source (fixture `version.txt`). With no
 command at all, `cs` prints the version line and every command with a
 one-line description, and exits 2:
