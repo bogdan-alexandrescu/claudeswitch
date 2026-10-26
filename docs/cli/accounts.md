@@ -135,7 +135,7 @@ for the name first. Ctrl-C stops it, with nothing stored.
 $ cs login
   Name it: research
   Pool it joins (work, home) [work]:
-  Open in which browser (Safari, Firefox) [Safari]: Firefox
+  Open in which browser (Chrome, Safari, Firefox) [Chrome]: Firefox
     opened in Firefox — sign in as the account you want, and approve
     waiting for the browser to come back… (Ctrl-C to stop)
 
@@ -167,7 +167,7 @@ another profile; the message suggests `--direct`.
 |---|---|---|
 | `--direct` | off | obtain the credential without touching the live session |
 | `--code CODE` | none | finish a `--direct` login started earlier, with the code from the callback page |
-| `--browser APP` | your default browser; at a terminal, asked from those installed | open the authorize URL in this browser application, such as `Safari` or `"Brave Browser"`. A browser you do not normally use has its own cookies, which is how you get a different account |
+| `--browser APP` | your default browser; at a terminal, asked from those installed | open the authorize URL in this browser: `Chrome`, `Safari`, `Brave`, `Firefox`, `Edge` or `Arc`, in any case, or any other application by its full name. A full name such as `"Google Chrome"` works too. A browser you do not normally use has its own cookies, which is how you get a different account |
 | `--no-open` | off | with `--direct`: print the URL, open nothing, and finish with `--code` |
 | `--profile NAME` | this shell's profile; with `--direct`, none | without `--direct`, the profile to sign in through; with `--direct`, the profile whose pool a new account joins (its own pool, or the first it lists). With `--direct` and none of `--profile`, `--pool` and `--no-pool`, a new account is in no pool, which the profile named `default` uses last |
 | `--keep` | off | without `--direct`: stay on the newly signed-in account instead of switching back |

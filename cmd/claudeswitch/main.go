@@ -3218,7 +3218,8 @@ func cmdLogin(args []string) error {
 		"profile's own pool by the profile's name); instead of --profile")
 	noPool := fs.Bool("no-pool", false, "with --direct: put a new account in no pool (default uses it last)")
 	browser := fs.String("browser", "",
-		"open the authorize URL in this browser application, e.g. Safari or \"Brave Browser\". "+
+		"open the authorize URL in this browser: Chrome, Safari, Brave, Firefox, Edge, Arc, "+
+			"or any other application by its full name. "+
 			"A browser you are not normally signed into has its own cookie jar, which is what "+
 			"gets you a different account")
 	keep := fs.Bool("keep", false, "stay on the newly signed-in account instead of switching back")
@@ -3555,7 +3556,7 @@ func loginDirect(cfg *config.Config, st *state.State, v *vault.Vault, id, wantOr
 	if browser != "" {
 		// Opening it ourselves removes the step that kept going wrong: pasting
 		// the URL from an older attempt, whose state no longer matches.
-		if err := exec.Command("open", "-a", browser, flow.URL).Run(); err != nil {
+		if err := exec.Command("open", "-a", browserApp(browser), flow.URL).Run(); err != nil {
 			fmt.Printf("\n  could not open %s (%v) — open this by hand:\n\n%s\n\n", browser, err, flow.URL)
 		} else {
 			fmt.Printf("\n  Opened in %s. Approve it there, then copy the code it gives you.\n\n", browser)
@@ -4097,16 +4098,49 @@ func askYes(prompt string, def bool) bool {
 	return a == "y" || a == "yes"
 }
 
-// browsers lists installed applications, so setup can suggest one the user is
-// probably not signed into rather than describing the idea abstractly.
+// knownBrowsers are the browsers setup and login offer, in the order offered:
+// the name to type, and the application it opens. Chrome comes first, as the
+// browser most people have, and nobody should have to type "Google Chrome".
+var knownBrowsers = []struct{ name, app string }{
+	{"Chrome", "Google Chrome"},
+	{"Safari", "Safari"},
+	{"Brave", "Brave Browser"},
+	{"Firefox", "Firefox"},
+	{"Edge", "Microsoft Edge"},
+	{"Arc", "Arc"},
+}
+
+// browsers lists installed applications, by the names to type, so setup can
+// suggest one the user is probably not signed into rather than describing the
+// idea abstractly.
 func browsers() []string {
+	return installedBrowsers(func(app string) bool {
+		_, err := os.Stat("/Applications/" + app + ".app")
+		return err == nil
+	})
+}
+
+// installedBrowsers is browsers, asking installed whether an application is.
+func installedBrowsers(installed func(app string) bool) []string {
 	var out []string
-	for _, b := range []string{"Safari", "Google Chrome", "Brave Browser", "Firefox", "Microsoft Edge", "Arc"} {
-		if _, err := os.Stat("/Applications/" + b + ".app"); err == nil {
-			out = append(out, b)
+	for _, b := range knownBrowsers {
+		if installed(b.app) {
+			out = append(out, b.name)
 		}
 	}
 	return out
+}
+
+// browserApp is the application a typed browser name opens with `open -a`:
+// its short name or the application's own, in any case. A name not listed
+// is passed on as typed, so any other application still works.
+func browserApp(name string) string {
+	for _, b := range knownBrowsers {
+		if strings.EqualFold(name, b.name) || strings.EqualFold(name, b.app) {
+			return b.app
+		}
+	}
+	return name
 }
 
 func cmdSetup(args []string) error {
