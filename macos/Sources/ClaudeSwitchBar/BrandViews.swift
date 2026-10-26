@@ -132,9 +132,11 @@ struct MiniRings: View {
 struct Wordmark: View {
     var size: CGFloat = 15
     var mark: CGFloat = 20
+    /// Between the mark and the name; nil is 0.47 of the name's size.
+    var gap: CGFloat?
 
     var body: some View {
-        HStack(spacing: size * 0.47) {
+        HStack(spacing: gap ?? size * 0.47) {
             TwinRingsView(week: 0.3, session: 0.62, dotRadius: 2.6)
                 .frame(width: mark, height: mark)
             Text("claudeswitch")

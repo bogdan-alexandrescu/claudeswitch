@@ -40,7 +40,7 @@ struct SettingsView: View {
             if renderSidebar {
                 HStack(spacing: 0) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Wordmark(size: 18, mark: 33).fixedSize().padding(.horizontal, 8).padding(.bottom, 12)
+                        Wordmark(size: 18, mark: 33, gap: 4).fixedSize().padding(.horizontal, 8).padding(.bottom, 12)
                         ForEach(Pane.allCases) { p in
                             Label {
                                 Text(p.rawValue).fontWeight(p == pane ? .semibold : .regular)
@@ -72,7 +72,7 @@ struct SettingsView: View {
                 Label(p.rawValue, systemImage: p.symbol).tag(p)
             }
             .safeAreaInset(edge: .top, spacing: 0) {
-                Wordmark(size: 18, mark: 33).fixedSize()
+                Wordmark(size: 18, mark: 33, gap: 4).fixedSize()
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 18).padding(.top, 4).padding(.bottom, 8)
             }

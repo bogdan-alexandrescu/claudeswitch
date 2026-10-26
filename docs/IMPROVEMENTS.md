@@ -1640,3 +1640,8 @@ app logo on the settings page 50% larger"); the owner then chose the name at
 18 pt (from 14), since at 21 pt it wraps in the 190 pt sidebar, over widening
 the sidebar or letting the name run into its margin. The Updates tile says
 **Not checked yet** before the first check instead of "Up to date".
+
+**Settings logo gap (owner request 2026-10-26, for 0.8.14).** "I would get the
+logo and text a little closer together": the gap between the rings and the
+name in Settings' sidebar went from 8.5 pt (0.47 of the name's size) to 4 pt,
+chosen over 6 and 2 pt. The popover's wordmark is unchanged.
