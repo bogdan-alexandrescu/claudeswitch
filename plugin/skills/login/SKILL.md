@@ -51,6 +51,9 @@ Always use `--direct`: it leaves the live session untouched.
 claudeswitch login <id> --direct --browser "<Browser Name>"
 ```
 
+`--browser` takes a short name (Chrome, Safari, Brave, Firefox, Edge, Arc) or any
+application's full name.
+
 For a new account, add the pool chosen: `--pool <pool>`, or `--no-pool`.
 
 Add `--sso` for an SSO-backed organization. Without `--browser` it prints a URL

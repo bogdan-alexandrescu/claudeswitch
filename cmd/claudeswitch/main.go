@@ -3218,7 +3218,8 @@ func cmdLogin(args []string) error {
 		"profile's own pool by the profile's name); instead of --profile")
 	noPool := fs.Bool("no-pool", false, "with --direct: put a new account in no pool (default uses it last)")
 	browser := fs.String("browser", "",
-		"open the authorize URL in this browser application, e.g. Safari or \"Brave Browser\". "+
+		"open the authorize URL in this browser: Chrome, Safari, Brave, Firefox, Edge, Arc, "+
+			"or any other application by its full name. "+
 			"A browser you are not normally signed into has its own cookie jar, which is what "+
 			"gets you a different account")
 	keep := fs.Bool("keep", false, "stay on the newly signed-in account instead of switching back")

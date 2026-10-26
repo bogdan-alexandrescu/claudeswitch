@@ -34,8 +34,10 @@ It asks, in order:
 2. **The account signed in now.** It names it (`Signed in now: <email> · ...`)
    and asks **Vault it** and **Name it**, suggesting a name.
 3. **Add another account (N vaulted so far)**, repeated. For each: **Name
-   it** and **Open in which browser**, then waits for the sign-in: the
-   browser comes back to setup by itself, so there is no code to paste
+   it** and **Open in which browser** (Chrome is offered first when
+   installed; a short name such as Chrome, Brave or Edge is enough), then
+   waits for the sign-in: the browser comes back to setup by itself, so
+   there is no code to paste
    (only if nothing can listen on this machine does it ask to **Paste the
    code**). Ctrl-C skips that account. The default answer is yes until two
    are vaulted.
