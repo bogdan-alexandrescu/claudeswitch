@@ -263,9 +263,40 @@ enum Render {
             AppHub.updates.preview(available: "0.5.6")
             save(PopoverView().environmentObject(store).environmentObject(login),
                  size: nil, dark: dark, to: out + "/popover-update\(sfx).png")
+            AppHub.updates.preview(available: "0.5.6", phase: .updating("0.5.6"))
+            AppHub.updates.preview(dialog: .installing(version: "0.5.6",
+                                                       step: .downloading(received: 4_400_000, total: 11_300_000)))
+            save(PopoverView().environmentObject(store).environmentObject(login),
+                 size: nil, dark: dark, to: out + "/popover-updating\(sfx).png")
             AppHub.updates.preview(available: nil)
+            for (name, d) in updateDialogs {
+                AppHub.updates.preview(dialog: d)
+                save(UpdateDialogView(updates: AppHub.updates), size: nil, dark: dark,
+                     to: out + "/update-\(name)\(sfx).png")
+            }
+            AppHub.updates.preview(dialog: nil)
         }
     }
+
+    /// Every state of the update window (fixture versions; no call is made).
+    static let updateDialogs: [(String, UpdateDialog)] = [
+        ("checking", .checking),
+        ("up-to-date", .upToDate(current: "0.5.6", latest: "0.5.6")),
+        ("check-failed", .checkFailed(UpdateError.noRelease("The Internet connection appears to be offline")
+            .message)),
+        ("available", .available(version: "0.5.6", current: "0.5.5",
+                                 notes: "**Cleanup**\n• `cs clean --apply --plan <file>` removes only what you read\n"
+                                     + "• A branch's last change is read from its reflog, which `git gc` does not move\n\n"
+                                     + "**The app**\n• Check for updates opens this window, with a progress bar",
+                                 bytes: 11_300_000, page: URL(string: UpdateSource.home + "/releases/tag/v0.5.6"))),
+        ("available-plain", .available(version: "0.5.6", current: "0.5.5", notes: nil, bytes: 11_300_000,
+                                       page: URL(string: UpdateSource.home + "/releases/tag/v0.5.6"))),
+        ("downloading", .installing(version: "0.5.6", step: .downloading(received: 4_400_000, total: 11_300_000))),
+        ("installing", .installing(version: "0.5.6", step: .installingApp)),
+        ("failed", .failed(version: "0.5.6", message: UpdateError.checksumMismatch("ClaudeSwitch-0.5.6-macos.zip")
+            .message)),
+        ("installed", .installed(version: "0.5.6")),
+    ]
 
     /// The states the base set does not reach: every card expanded, the
     /// profile editors, and the other sheets (from QA's render extras).
@@ -482,7 +513,7 @@ struct MoreMenuFacsimile: View {
 
     var main: [Row] {
         [.item("Refresh now", "⌘R", false), .item("Appearance", nil, true), .item("Show usage as", nil, true),
-         .divider, .item("Settings…", nil, false), .item("Set up…", nil, false), .item("Check for updates", nil, false),
+         .divider, .item("Settings…", nil, false), .item("Set up…", nil, false), .item("Check for updates…", nil, false),
          .item("About ClaudeSwitch", nil, false),
          .divider, .item("Quit ClaudeSwitch", "⌘Q", false)]
     }

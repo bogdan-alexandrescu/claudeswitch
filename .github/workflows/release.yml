@@ -86,9 +86,19 @@ jobs:
             exit 1
           fi
           echo "reproducible: $a"
+      # The release's notes are the tag's message (git tag -a), which the
+      # app's update window shows as What's new; GitHub's generated list
+      # follows it.
+      - name: Release notes from the tag
+        run: |
+          set -eu
+          git fetch --force --depth=1 origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+          git tag -l --format='%(contents)' "${GITHUB_REF_NAME}" > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md"
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
+          body_path: ${{ runner.temp }}/notes.md
           generate_release_notes: true
 
       # The upload races GitHub making the release discoverable by its tag. On

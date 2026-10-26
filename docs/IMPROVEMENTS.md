@@ -1534,3 +1534,37 @@ on the own organization; DEVOPS-TEAM (team org) maps to
 organization (switch claude.ai there, open the extension again). Each is
 checked with `cs chrome check` the next time its account is live; nothing is
 switched for it. Not built: a single-step swap of two names.
+
+## Updates: a window, a progress bar, and a check that works from any build (owner request, 2026-10-25)
+
+**Asked:** after 0.8.8, see whether Check for updates works; then "fix it
+and also make sure there is a proper dialogue and install progress bar etc
+for the update".
+
+**Found.** The app on this Mac was built from the private tree, where the
+update address is the sync's placeholder: it asked
+`api.github.com/repos/<placeholder>/claudeswitch/releases/latest`, got HTTP
+404 and logged it quietly, so it could never offer 0.8.8. Check for updates
+gave no answer either way: no "up to date", no error. Update installed at
+once behind a spinner. Releases' notes were only GitHub's "Full Changelog"
+link.
+
+**Built (for 0.8.9):**
+- The update address is the public repository in every tree;
+  `scripts/sync-public.sh` maps it to the placeholder first, so the name
+  rules leave it whole and the module-path rule turns it back.
+- **The update window:** Check for updates… and Check now open it and it
+  says what the check found (checking, up to date, could not check with
+  Try Again, or the offer). The offer shows the version and the one you
+  have, What's new from the release's notes, the download size, Release
+  Notes on GitHub, Later and Install Update. The popover's foot offer is
+  now Update…, which opens the same window.
+- **The install's progress:** a bar and a line for each step (downloading
+  with bytes, checking checksums, installing claudeswitch, installing
+  ClaudeSwitch, restarting the daemon, reopening), also at the popover's
+  foot. Cancel works until the first file is replaced, then greys out. A
+  failure says why with Try Again; after the relaunch the window says what
+  it became.
+- Release notes come from the tag's message (release.yml, public-only), so
+  a release's What's new is written with the tag.
+

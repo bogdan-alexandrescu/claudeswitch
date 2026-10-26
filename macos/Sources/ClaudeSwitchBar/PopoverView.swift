@@ -116,7 +116,7 @@ struct PopoverView: View {
                 Divider()
                 Button("Settings…") { showSettings() }
                 Button("Set up…") { WelcomeWindow.show(store: store) }
-                Button("Check for updates") { AppHub.updates.check() }
+                Button("Check for updates…") { AppHub.updates.checkNow() }
                     .disabled(!AppHub.updates.enabled)
                 Button("About ClaudeSwitch") {
                     NSApp.activate(ignoringOtherApps: true)

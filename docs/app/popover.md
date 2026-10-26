@@ -113,7 +113,7 @@ menu, since a live menu cannot be captured off screen.
 | **Show usage as** | Dials or Bars | Dials |
 | **Settings...** | opens Settings | |
 | **Set up…** | opens the [first-run setup](first-run.md) window again | |
-| **Check for updates** | checks for a newer release now (off while the check is off in Advanced). A newer one shows as **0.5.6 available · Update** at the foot; see [Updates](updates.md) | |
+| **Check for updates…** | checks for a newer release now and opens the update window with what it found (off while the check is off in Advanced). A newer one also shows as **0.5.6 available · Update…** at the foot; see [Updates](updates.md) | |
 | **About ClaudeSwitch** | the app's version | |
 | **Quit ClaudeSwitch** (⌘Q) | quits the app. The daemon keeps running | |
 

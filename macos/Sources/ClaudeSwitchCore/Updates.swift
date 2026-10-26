@@ -11,8 +11,10 @@ import Foundation
 
 /// Where releases come from: one constant.
 public enum UpdateSource {
-    /// The project's GitHub address, written as a full github.com URL so the
-    /// public sync rewrites it like every other one (scripts/sync-public.sh).
+    /// The public repository, where releases are published. Written out as
+    /// itself, so that a build from any tree asks it: scripts/sync-public.sh
+    /// keeps this one address as it is (a build from the private tree asked
+    /// its placeholder, which does not exist, and never offered an update).
     public static let home = "https://github.com/bogdan-alexandrescu/claudeswitch"
     /// owner/repo on GitHub, from `home`.
     public static let repo: String = {
@@ -84,6 +86,8 @@ public struct Release: Equatable {
     public var draft: Bool
     public var prerelease: Bool
     public var assets: [ReleaseAsset]
+    /// The release's description (Markdown), from the tag's message.
+    public var notes: String
 
     public var version: SemVer? { SemVer(tag) }
 
@@ -95,6 +99,7 @@ public struct Release: Equatable {
         htmlURL = j["html_url"].string.flatMap(URL.init(string:))
         draft = j["draft"].bool ?? false
         prerelease = j["prerelease"].bool ?? false
+        notes = j["body"].string ?? ""
         assets = j["assets"].array.compactMap { a in
             guard let n = a["name"].string, let u = a["browser_download_url"].string.flatMap(URL.init(string:)) else {
                 return nil
@@ -136,6 +141,8 @@ public enum UpdateError: Error, Equatable {
     case download(String)
     case install(String)
     case daemon(String)
+    /// Cancel, while nothing had been replaced yet.
+    case cancelled
 
     /// What went wrong and that nothing changed.
     public var message: String {
@@ -148,6 +155,7 @@ public enum UpdateError: Error, Equatable {
         case .download(let s): return "A download failed (\(s))." + kept
         case .install(let s): return "Could not install the update: \(s)." + kept
         case .daemon(let s): return "The daemon did not restart on the new binary (\(s)), so both were put back." + kept
+        case .cancelled: return "Cancelled before anything was installed." + kept
         }
     }
 }
@@ -228,6 +236,18 @@ public enum UpdateSchedule {
 public protocol UpdateNetwork {
     /// The body of a GET, or a thrown UpdateError.download.
     func data(from url: URL) throws -> Data
+    /// The same, telling `received` how many bytes have come so far as they
+    /// arrive; when it answers false the download stops with
+    /// UpdateError.cancelled.
+    func data(from url: URL, received: @escaping (Int64) -> Bool) throws -> Data
+}
+
+public extension UpdateNetwork {
+    func data(from url: URL, received: @escaping (Int64) -> Bool) throws -> Data {
+        let d = try data(from: url)
+        guard received(Int64(d.count)) else { throw UpdateError.cancelled }
+        return d
+    }
 }
 
 public protocol UpdateSystem {
@@ -261,8 +281,12 @@ public struct Updater {
 
     public func latest() -> Result<Release, UpdateError> {
         let data: Data
-        do { data = try network.data(from: UpdateSource.latestURL(repo: repo)) } catch {
-            return .failure(.noRelease(Self.describe(error)))
+        let url = UpdateSource.latestURL(repo: repo)
+        do { data = try network.data(from: url) } catch {
+            // "latest: HTTP 404" reads as "Could not read the latest release: HTTP 404".
+            var why = Self.describe(error)
+            if why.hasPrefix(url.lastPathComponent + ": ") { why.removeFirst(url.lastPathComponent.count + 2) }
+            return .failure(.noRelease(why))
         }
         guard let r = Release(data: data) else { return .failure(.noRelease("GitHub answered with no release")) }
         return .success(r)
@@ -282,9 +306,14 @@ public struct Updater {
     /// itself) and the bundle at `app`, then restarts the daemon on the
     /// binary. Returns the version installed. On any failure both are put
     /// back as they were (and the daemon restarted on the old binary when
-    /// the new one had been put in place).
+    /// the new one had been put in place). `progress` hears each step;
+    /// `isCancelled` is asked while downloading and once more before the
+    /// first file is replaced, and not after: half an update is worse than
+    /// a whole one.
     public func install(_ release: Release, binary: String, app: String,
-                        restartDaemon: (String) -> Result<Void, UpdateError>) -> Result<String, UpdateError> {
+                        restartDaemon: (String) -> Result<Void, UpdateError>,
+                        progress: @escaping (UpdateStep) -> Void = { _ in },
+                        isCancelled: @escaping () -> Bool = { false }) -> Result<String, UpdateError> {
         let plan: UpdatePlan
         switch release.plan(arch: arch) {
         case .success(let p): plan = p
@@ -298,12 +327,26 @@ public struct Updater {
         // 1. Download and verify everything before touching anything.
         let tarPath = tmp + "/" + plan.tarball.name
         let zipPath = tmp + "/" + plan.appZip.name
+        let total = Int64((plan.tarball.size ?? 0) + (plan.appZip.size ?? 0))
+        var done: Int64 = 0
+        func fetch(_ asset: ReleaseAsset) throws -> Data {
+            let before = done
+            let d = try network.data(from: asset.url) { got in
+                progress(.downloading(received: before + got, total: max(total, before + got)))
+                return !isCancelled()
+            }
+            done += Int64(d.count)
+            return d
+        }
         do {
+            progress(.downloading(received: 0, total: total))
             let sums = Checksums.parse(String(decoding: try network.data(from: plan.checksums.url), as: UTF8.self))
             let appSums = Checksums.parse(String(decoding: try network.data(from: plan.appSHA.url), as: UTF8.self))
-            let tar = try network.data(from: plan.tarball.url)
+            let tar = try fetch(plan.tarball)
+            let zip = try fetch(plan.appZip)
+            if isCancelled() { return .failure(.cancelled) }
+            progress(.verifying)
             try Checksums.verify(tar, name: plan.tarball.name, sums: sums).get()
-            let zip = try network.data(from: plan.appZip.url)
             try Checksums.verify(zip, name: plan.appZip.name, sums: appSums).get()
             try system.write(tar, to: tarPath)
             try system.write(zip, to: zipPath)
@@ -330,7 +373,10 @@ public struct Updater {
             return .failure(.install("the zip holds no ClaudeSwitch.app"))
         }
 
-        // 3. The binary, where the current one is, keeping a copy.
+        // 3. The binary, where the current one is, keeping a copy. The last
+        // moment Cancel can still leave everything as it was.
+        if isCancelled() { return .failure(.cancelled) }
+        progress(.installingCLI)
         let target = system.resolve(binary)
         let backup = tmp + "/claudeswitch.previous"
         do {
@@ -347,6 +393,7 @@ public struct Updater {
         }
 
         // 4. The app: the old bundle aside, the new one in its place.
+        progress(.installingApp)
         let aside = app + ".previous"
         system.remove(aside)
         do {
@@ -368,6 +415,7 @@ public struct Updater {
         }
 
         // 5. The daemon on the new binary; if it will not start, both go back.
+        progress(.restartingDaemon)
         if case .failure(let e) = restartDaemon(target) {
             restoreApp()
             restoreBinary()

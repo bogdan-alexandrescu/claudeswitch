@@ -196,7 +196,7 @@ public struct CLI {
     public static let supportedContracts = 2...2
     public static let installSteps = """
         Install or update it from a source checkout:
-          git clone https://github.com/bogdan-alexandrescu/claudeswitch
+          git clone \(UpdateSource.home)
           cd claudeswitch && ./install.sh
         or download a release binary into ~/.local/bin/claudeswitch.
         If it lives elsewhere, choose it in Settings → Advanced → Choose….

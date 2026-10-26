@@ -4,9 +4,11 @@ import SwiftUI
 
 /// The update checker (F10): one unauthenticated call to GitHub's latest
 /// release a day, none when Advanced → Check for updates is off. When the
-/// release is newer, the popover's foot offers it; Update downloads,
-/// verifies and installs both the binary and the app (ClaudeSwitchCore's
-/// Updater), restarts the daemon and relaunches.
+/// release is newer, the popover's foot offers it. Check for updates, and
+/// the offer's Update…, open the update window (0.8.9): what was found, what
+/// is new, and Install, which downloads, verifies and installs both the
+/// binary and the app (ClaudeSwitchCore's Updater) under a progress bar,
+/// restarts the daemon and relaunches; the reopened app says what it became.
 @MainActor
 final class UpdateController: ObservableObject {
     enum Phase: Equatable {
@@ -19,6 +21,8 @@ final class UpdateController: ObservableObject {
     static let enabledKey = "checkForUpdates"
     static let lastCheckKey = "updateLastCheck"
     static let availableKey = "updateAvailable"
+    /// The version an install relaunched into, for the window that says so.
+    static let installedKey = "updateJustInstalled"
 
     @Published var enabled: Bool {
         didSet {
@@ -30,8 +34,15 @@ final class UpdateController: ObservableObject {
     @Published private(set) var available: String?
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var lastCheck: Date?
+    /// The update window's state; nil while it is closed.
+    @Published private(set) var dialog: UpdateDialog?
     /// The binary to update beside the app: the path the app runs.
     var binary: () -> String? = { nil }
+    /// The release the last check read.
+    private var release: Release?
+    /// Whether the open window asked for the check under way.
+    private var asked = false
+    private let cancelFlag = CancelFlag()
 
     private let defaults = UserDefaults.standard
     private var timer: Timer?
@@ -55,7 +66,14 @@ final class UpdateController: ObservableObject {
         phase = p
     }
 
+    /// --render: the window in a given state.
+    func preview(dialog d: UpdateDialog?) { dialog = d }
+
     func start() {
+        if let v = defaults.string(forKey: Self.installedKey) {
+            defaults.removeObject(forKey: Self.installedKey)
+            if v == current { show(.installed(version: v)) }
+        }
         checkIfDue()
         // Hourly, so a Mac that sleeps through the day still checks once.
         timer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in
@@ -88,13 +106,61 @@ final class UpdateController: ObservableObject {
         defaults.set(lastCheck, forKey: Self.lastCheckKey)
         switch r {
         case .success(let release):
+            self.release = release
             available = UpdateOffer.available(current: current, latest: release)
             defaults.set(available, forKey: Self.availableKey)
         case .failure(let e):
-            // Quietly: a failed check is not worth an interruption; the
-            // next one is tomorrow, or Check now.
+            // Quietly unless the window asked: a failed daily check is not
+            // worth an interruption; the next one is tomorrow.
             flowsLog.error("update check: \(e.message, privacy: .public)")
         }
+        if asked, dialog == .checking {
+            dialog = UpdateDialog.checked(r, current: current, arch: .current)
+        }
+        asked = false
+    }
+
+    /// Check for updates, from the ⋯ menu or Check now: the window opens and
+    /// says what the check found, whatever it was.
+    func checkNow() {
+        if case .installing = dialog { show(dialog!); return }
+        show(.checking)
+        asked = true
+        if phase == .checking { return } // the daily check under way answers it
+        check()
+    }
+
+    /// The popover's Update…: the offer in the window, from the release the
+    /// check read, or a fresh check when this launch has not read one.
+    func showOffer() {
+        if case .installing = dialog { show(dialog!); return }
+        if let r = release, UpdateOffer.available(current: current, latest: r) != nil {
+            show(UpdateDialog.checked(.success(r), current: current, arch: .current))
+        } else {
+            checkNow()
+        }
+    }
+
+    /// Install, Cancel, Try Again and the window's other buttons.
+    func cancelInstall() {
+        if case .installing(_, let step) = dialog, step.cancellable { cancelFlag.set(true) }
+    }
+
+    func closeDialog() {
+        if case .installing = dialog { return } // it goes on; the popover's foot shows it
+        dialog = nil
+        UpdateWindow.close()
+    }
+
+    /// The window was closed with its close button.
+    func windowClosed() {
+        if case .installing = dialog { return }
+        dialog = nil
+    }
+
+    private func show(_ d: UpdateDialog) {
+        dialog = d
+        UpdateWindow.show(self)
     }
 
     /// Downloads, verifies and installs the latest release, then restarts
@@ -103,20 +169,38 @@ final class UpdateController: ObservableObject {
     func update() {
         guard let version = available else { return }
         if case .updating = phase { return }
+        let offer = dialog
+        func refuse(_ message: String) {
+            phase = .failed(message)
+            show(.failed(version: version, message: message))
+        }
         let app = Bundle.main.bundlePath
         guard app.hasSuffix(".app") else {
-            phase = .failed("This copy is not an app bundle (swift run), so it cannot update itself.")
+            refuse("This copy is not an app bundle (swift run), so it cannot update itself. Nothing was changed.")
             return
         }
         guard let bin = binary() else {
-            phase = .failed("claudeswitch was not found, so it cannot be updated beside the app. Nothing was changed.")
+            refuse("claudeswitch was not found, so it cannot be updated beside the app. Nothing was changed.")
             return
         }
+        var total: Int64 = 0
+        if case .available(_, _, _, let bytes, _)? = offer { total = bytes }
         phase = .updating(version)
+        cancelFlag.set(false)
+        show(.installing(version: version, step: .downloading(received: 0, total: total)))
+        let gate = UpdateProgressGate()
+        let cancel = cancelFlag
         queue.async {
             let updater = Self.updater()
             let r = updater.latest().flatMap { release in
-                updater.install(release, binary: bin, app: app, restartDaemon: Self.restartDaemon)
+                updater.install(release, binary: bin, app: app, restartDaemon: Self.restartDaemon,
+                                progress: { step in
+                                    guard gate.pass(step) else { return }
+                                    DispatchQueue.main.async {
+                                        MainActor.assumeIsolated { self.progressed(version, step) }
+                                    }
+                                },
+                                isCancelled: { cancel.get() })
             }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
@@ -124,13 +208,30 @@ final class UpdateController: ObservableObject {
                     case .success(let v):
                         flowsLog.notice("updated to \(v, privacy: .public); relaunching")
                         self.defaults.removeObject(forKey: Self.availableKey)
+                        self.defaults.set(v, forKey: Self.installedKey)
+                        self.show(.installing(version: v, step: .relaunching))
                         Self.relaunch(app)
+                    case .failure(.cancelled):
+                        self.phase = .idle
+                        if let o = offer { self.show(o) } else { self.dialog = nil }
                     case .failure(let e):
                         self.phase = .failed(e.message)
+                        self.show(.failed(version: version, message: e.message))
                     }
                 }
             }
         }
+    }
+
+    private func progressed(_ version: String, _ step: UpdateStep) {
+        guard case .installing = dialog else { return }
+        dialog = .installing(version: version, step: step)
+    }
+
+    /// The step under way, for the popover's foot.
+    var installStep: UpdateStep? {
+        if case .installing(_, let s) = dialog { return s }
+        return nil
     }
 
     func dismissFailure() { if isFailed { phase = .idle } }
@@ -161,15 +262,72 @@ final class UpdateController: ObservableObject {
     }
 }
 
+/// Cancel, set on the main thread and read by the install's queue.
+final class CancelFlag: @unchecked Sendable {
+    private var value = false
+    private let lock = NSLock()
+    func set(_ v: Bool) { lock.lock(); value = v; lock.unlock() }
+    func get() -> Bool { lock.lock(); defer { lock.unlock() }; return value }
+}
+
 /// GETs through URLSession, synchronously (the updater runs off the main
 /// thread). GitHub's API asks for a User-Agent.
 struct URLSessionNetwork: UpdateNetwork {
     final class Box: @unchecked Sendable { var result: Result<Data, Error> = .failure(UpdateError.download("no answer")) }
 
-    func data(from url: URL) throws -> Data {
+    /// One download that says how far it has come, and stops when told.
+    final class Progressing: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+        let url: URL
+        let received: (Int64) -> Bool
+        let done = DispatchSemaphore(value: 0)
+        var data = Data()
+        var result: Result<Data, Error> = .failure(UpdateError.download("no answer"))
+        var cancelled = false
+
+        init(url: URL, received: @escaping (Int64) -> Bool) {
+            self.url = url
+            self.received = received
+        }
+
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive d: Data) {
+            data.append(d)
+            if !received(Int64(data.count)) {
+                cancelled = true
+                dataTask.cancel()
+            }
+        }
+
+        func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+            defer { done.signal() }
+            let name = url.lastPathComponent
+            if cancelled { result = .failure(UpdateError.cancelled); return }
+            if let error { result = .failure(UpdateError.download("\(name): \(error.localizedDescription)")); return }
+            let code = (task.response as? HTTPURLResponse)?.statusCode ?? 0
+            result = code == 200 ? .success(data) : .failure(UpdateError.download("\(name): HTTP \(code)"))
+        }
+    }
+
+    func data(from url: URL, received: @escaping (Int64) -> Bool) throws -> Data {
+        let req = Self.request(url)
+        let p = Progressing(url: url, received: received)
+        let queue = OperationQueue()
+        queue.maxConcurrentOperationCount = 1
+        let session = URLSession(configuration: .default, delegate: p, delegateQueue: queue)
+        defer { session.finishTasksAndInvalidate() }
+        session.dataTask(with: req).resume()
+        p.done.wait()
+        return try p.result.get()
+    }
+
+    static func request(_ url: URL) -> URLRequest {
         var req = URLRequest(url: url, timeoutInterval: 120)
         req.setValue("ClaudeSwitch", forHTTPHeaderField: "User-Agent")
         if url.host == "api.github.com" { req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept") }
+        return req
+    }
+
+    func data(from url: URL) throws -> Data {
+        let req = Self.request(url)
         let box = Box()
         let done = DispatchSemaphore(value: 0)
         URLSession.shared.dataTask(with: req) { data, response, error in
@@ -241,20 +399,29 @@ struct LocalUpdateSystem: UpdateSystem {
     }
 }
 
-/// The popover's offer: "0.5.6 available · Update", the progress, or why
-/// it failed.
+/// The popover's offer: "0.5.6 available · Update…", the progress, or why
+/// it failed. Update… and the progress open the update window.
 struct UpdateLine: View {
     @ObservedObject var updates: UpdateController
 
     var body: some View {
         switch updates.phase {
         case .updating(let v):
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Updating to \(v)…").foregroundStyle(.secondary)
-                Spacer()
+            Button { updates.showOffer() } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(updates.installStep.map { "Updating to \(v): \($0.label)" } ?? "Updating to \(v)…")
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    ProgressView(value: updates.installStep?.fraction ?? 0)
+                        .progressViewStyle(.linear)
+                        .tint(Color.csAccent)
+                        .controlSize(.small)
+                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
             .font(.callout)
+            .help("Shows the update window.")
         case .failed(let message):
             InlineErrorView(title: "Could not update", message: message, hint: "", retryLine: nil) {
                 updates.dismissFailure()
@@ -265,12 +432,13 @@ struct UpdateLine: View {
                     Image(systemName: "arrow.down.circle.fill").foregroundStyle(Color.csAccent)
                     Text(UpdateOffer.footer(v))
                     Text("·").foregroundStyle(.secondary)
-                    Button("Update") { updates.update() }
+                    Button("Update…") { updates.showOffer() }
                         .buttonStyle(.borderless)
                         .foregroundStyle(Color.csAccent)
                         .fontWeight(.semibold)
-                        .help("Downloads ClaudeSwitch and claudeswitch \(v), checks them against the release's "
-                              + "checksums, installs both, restarts the daemon and relaunches.")
+                        .help("Shows what is new in \(v), and Install, which downloads ClaudeSwitch and "
+                              + "claudeswitch, checks them against the release's checksums, installs both, "
+                              + "restarts the daemon and relaunches.")
                     Spacer()
                 }
                 .font(.callout)
@@ -301,7 +469,7 @@ struct AppFlowsRows: View {
                 Text(checkedLine).font(.caption).foregroundStyle(.tertiary)
                 if updates.phase == .checking { ProgressView().controlSize(.mini) }
                 Spacer()
-                Button("Check now") { updates.check() }
+                Button("Check now") { updates.checkNow() }
                     .controlSize(.small)
                     .disabled(!updates.enabled || updates.phase == .checking)
             }
