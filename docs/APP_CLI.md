@@ -1159,7 +1159,10 @@ can append to it. The app never writes claudeswitch's files itself.
 ## clean
 
 `claudeswitch clean [--all] --json` (additive, owner decisions 2026-10-25)
-— the plan; changes nothing. `claudeswitch clean --apply --json` acts on it;
+— the plan; changes nothing. `claudeswitch clean --apply --plan=<file>
+--json` (0.8.8) acts on that saved plan alone, each item judged again; the
+app writes the plan it showed to a file of its own and removes it after.
+`claudeswitch clean --apply --json` makes a new plan and acts on it;
 `clean runs --json` lists the journals; `clean undo [<run>] [--only <text>]
 --json` puts a run back. The shapes, the rules and every item kind are in
 [cli/clean.md](cli/clean.md#json). A plan takes about a minute on a machine
@@ -1173,8 +1176,10 @@ The settings (`clean`, `clean_every`, `clean_after`, `clean_worktrees`,
 schema's first `bool` settings. The app shows them in Settings → Cleanup.
 
 Errors: `clean_running`, `not_found` (undo: no such run, or none yet),
-`usage`, `failed` (undo: some entries could not be put back; `message`
-names them).
+`usage` (also: a `--plan` file that cannot be read or holds no plan),
+`failed` (undo: some entries could not be put back; `message` names them).
+A CLI older than 0.8.8 refuses `--plan` (`flag provided but not defined`),
+which the app reads as too old.
 
 ## app
 

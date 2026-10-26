@@ -341,6 +341,45 @@ func touch(t *testing.T, path string, at time.Time) {
 	}
 }
 
+// Claude Code locks an agent's worktree while the agent runs, naming its
+// process ("claude agent <name> (pid N start <time>)"), and a session that
+// ends without cleaning up leaves the lock behind. A lock whose process is
+// gone, or whose pid now belongs to a later process, is not a use (found
+// 2026-10-25: eight such locks from September and October on this Mac). Any
+// other lock still keeps a worktree.
+func TestALockLeftByAnEndedClaudeSessionIsNotAUse(t *testing.T) {
+	w := newWorld(t)
+	ended := w.worktree("agent-k1", "lane/k1")
+	reused := w.worktree("agent-k2", "lane/k2")
+	running := w.worktree("agent-k3", "lane/k3")
+	theirs := w.worktree("agent-k4", "lane/k4")
+	for _, b := range []string{"lane/k1", "lane/k2", "lane/k3", "lane/k4"} {
+		w.mergeNoFF(b)
+	}
+	const start = "Fri Sep  4 06:39:38 2026"
+	w.git(w.repo, "worktree", "lock", "--reason", "claude agent agent-k1 (pid 4001 start "+start+")", ended)
+	w.git(w.repo, "worktree", "lock", "--reason", "claude agent agent-k2 (pid 4002 start "+start+")", reused)
+	w.git(w.repo, "worktree", "lock", "--reason", "claude agent agent-k3 (pid 4003 start "+start+")", running)
+	w.git(w.repo, "worktree", "lock", "--reason", "pinned for the demo", theirs)
+	oldAlive, oldStart := alive, processStart
+	t.Cleanup(func() { alive, processStart = oldAlive, oldStart })
+	alive = func(pid int) bool { return pid == 4002 || pid == 4003 }
+	processStart = func(pid int) string {
+		if pid == 4003 {
+			return "Fri Sep 4 06:39:38 2026" // the same start, spaced as ps prints it
+		}
+		return "Sun Oct 25 09:00:00 2026"
+	}
+	p := w.scan()
+	mustRemove(t, w.item(p, KindWorktree, ended))
+	mustRemove(t, w.item(p, KindWorktree, reused))
+	mustKeep(t, w.item(p, KindWorktree, running), "locked")
+	mustKeep(t, w.item(p, KindWorktree, theirs), "locked")
+	if why := w.item(p, KindWorktree, ended).Why; !strings.Contains(why, "ended") {
+		t.Fatalf("the plan does not say the lock was left by an ended session: %q", why)
+	}
+}
+
 func TestProtectedWorktreesAreNeverRemoved(t *testing.T) {
 	w := newWorld(t)
 	kept := w.worktree("release-rel", "lane/rel")
@@ -430,6 +469,69 @@ func TestApplyJudgesEachItemOnceMoreBeforeRemoving(t *testing.T) {
 	}
 	if len(run.Skipped) != 1 {
 		t.Fatalf("skipped %v", run.Skipped)
+	}
+}
+
+// git gc rewrites every reflog (reflog expire), which moves the files' times
+// but not the entries' own: a branch or worktree it touched has not changed
+// (measured 2026-10-25: 619 ai-studio branches waited three more days after
+// one gc).
+func TestAReflogRewrittenByGCIsNotAChange(t *testing.T) {
+	w := newWorld(t)
+	w.git(w.repo, "checkout", "-q", "-b", "feat/gc")
+	w.commit(w.repo, "gc.txt", "gc\n", "gc")
+	w.git(w.repo, "checkout", "-q", "main")
+	w.mergeNoFF("feat/gc")
+	wt := w.worktree("agent-gc", "lane/gc")
+	w.mergeNoFF("lane/gc")
+	gcAt := w.opt.Now.Add(-time.Hour)
+	common := filepath.Join(w.repo, ".git")
+	for _, f := range []string{filepath.Join(common, "logs", "refs", "heads", "feat", "gc"),
+		filepath.Join(common, "worktrees", "agent-gc", "logs", "HEAD"), filepath.Join(common, "logs", "HEAD")} {
+		if err := os.Chtimes(f, gcAt, gcAt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p := w.scan()
+	mustRemove(t, w.branchItem(p, "feat/gc"))
+	mustRemove(t, w.item(p, KindWorktree, wt))
+}
+
+// A reflog entry is a change: a branch moved within the window (git branch
+// -f, a reset) waits, even when its commits are old.
+func TestABranchMovedRecentlyWaits(t *testing.T) {
+	w := newWorld(t)
+	w.git(w.repo, "checkout", "-q", "-b", "feat/moved")
+	w.commit(w.repo, "m.txt", "m\n", "m")
+	w.git(w.repo, "checkout", "-q", "main")
+	w.mergeNoFF("feat/moved")
+	w.opt.Now = time.Now().Add(time.Hour)
+	mustKeep(t, w.branchItem(w.scan(), "feat/moved"), "changed")
+}
+
+// A saved plan is applied with the settings of now: an item whose kind was
+// turned off after the plan was made is left alone.
+func TestApplyLeavesAKindTurnedOffSinceThePlan(t *testing.T) {
+	w := newWorld(t)
+	wt := w.worktree("agent-j1", "lane/j1")
+	w.mergeNoFF("lane/j1")
+	p := w.scan()
+	mustRemove(t, w.item(p, KindWorktree, wt))
+	w.opt.Worktrees = false
+	run, err := Apply(context.Background(), p, w.opt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists(wt) {
+		t.Fatal("removed with worktrees turned off")
+	}
+	if len(run.Done) != 0 || len(run.Skipped) == 0 {
+		t.Fatalf("done %v skipped %v", run.Done, run.Skipped)
+	}
+	for _, it := range run.Skipped {
+		if !strings.Contains(it.Why, "turned off") {
+			t.Fatalf("skipped for %q", it.Why)
+		}
 	}
 }
 

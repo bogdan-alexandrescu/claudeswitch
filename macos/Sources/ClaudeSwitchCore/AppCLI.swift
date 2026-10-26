@@ -200,10 +200,21 @@ public extension CLI {
         decode(timeout: 900, { ["clean", "--json"] }, CleanPlan.init)
     }
 
-    /// `clean --apply --json`: judges again, then moves what still passes
-    /// to the Trash.
-    func cleanApply() -> Result<CleanRun, CallError> {
-        decode(timeout: 1800, { ["clean", "--apply", "--json"] }, CleanRun.init)
+    /// `clean --apply --plan=<file> --json` (0.8.8): moves what the plan
+    /// shown marks, each item judged again first, and nothing found since.
+    /// The plan goes through a file of its own, removed once the run answers.
+    func cleanApply(_ plan: CleanPlan) -> Result<CleanRun, CallError> {
+        guard let saved = plan.saved else {
+            return .failure(.refused("usage", "Look again before cleaning: this plan did not come from claudeswitch."))
+        }
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("claudeswitch-clean-plan-\(UUID().uuidString).json")
+        do { try saved.write(to: file, options: .atomic) } catch {
+            return .failure(.cli(.failed("Could not save the plan for the run: \(error.localizedDescription)")))
+        }
+        defer { try? FileManager.default.removeItem(at: file) }
+        return decode(timeout: 1800, { ["clean", "--apply", try Argv.flag("plan", file.path, "plan file"), "--json"] },
+                      CleanRun.init)
     }
 
     func cleanRuns() -> Result<[CleanRunSummary], CallError> {

@@ -67,12 +67,16 @@ func (s *scanner) worktreeItem(repo string, def defaultRef, wt worktree) Item {
 	gd := gitDir(s.ctx, wt.path)
 	it.Admin = gd
 	keep := func(why string) Item { it.Why = why; return it }
+	stale := ""
+	if wt.locked {
+		stale = staleLock(wt.lockReason)
+	}
 	switch {
 	case def.short != "" && wt.branch == def.short:
 		return keep("on the default branch, " + def.short)
 	case s.opt.kept(wt.path, wt.branch) != "":
 		return keep("matches clean_keep " + strconv.Quote(s.opt.kept(wt.path, wt.branch)))
-	case wt.locked:
+	case wt.locked && stale == "":
 		return keep("locked (git worktree lock)")
 	case gd == "":
 		return keep("git cannot read it")
@@ -92,12 +96,15 @@ func (s *scanner) worktreeItem(repo string, def defaultRef, wt worktree) Item {
 		return keep(d.keep)
 	}
 	touched := latest(commitTime(s.ctx, repo, wt.head), mergedAt, d.newest,
-		mtime(filepath.Join(gd, "HEAD")), mtime(filepath.Join(gd, "index")), mtime(filepath.Join(gd, "logs", "HEAD")))
+		mtime(filepath.Join(gd, "HEAD")), mtime(filepath.Join(gd, "index")), reflogTime(filepath.Join(gd, "logs", "HEAD")))
 	if why := s.opt.recent(touched, s.opt.After); why != "" {
 		return keep(why)
 	}
 	it.Remove, it.Archive, it.State = true, d.archive, wt.head+" "+d.state
 	it.Why = how
+	if stale != "" {
+		it.Why += "; " + stale
+	}
 	if d.note != "" {
 		it.Why += "; " + d.note
 	}
@@ -164,7 +171,7 @@ func (s *scanner) branchItems(repo string, def defaultRef, checkedOut map[string
 		if n, err := strconv.ParseInt(f[2], 10, 64); err == nil {
 			committed = time.Unix(n, 0)
 		}
-		touched := latest(committed, mergedAt, mtime(filepath.Join(common, "logs", "refs", "heads", name)))
+		touched := latest(committed, mergedAt, reflogTime(filepath.Join(common, "logs", "refs", "heads", name)))
 		if why := s.opt.recent(touched, s.opt.After); why != "" {
 			it.Why = why
 			items = append(items, it)

@@ -538,7 +538,7 @@ func cmdWatch(args []string) error {
 func cmdAudit(args []string) error {
 	fs := flag.NewFlagSet("audit", flag.ExitOnError)
 	n := fs.Int("n", 30, "how many events")
-	kind := fs.String("kind", "", "only this kind: decision|switch|rejection|unpin|severity|error")
+	kind := fs.String("kind", "", "only this kind: decision|switch|rejection|unpin|severity|error|login|clean")
 	since := fs.Duration("since", 0, "only events newer than this (e.g. 24h)")
 	fs.String("config", "", "accepted as by every command; audit reads no config")
 	parseInterleaved(fs, args)

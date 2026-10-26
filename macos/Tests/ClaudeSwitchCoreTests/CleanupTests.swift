@@ -51,6 +51,7 @@ import Testing
         #expect(c.message.hasPrefix("1 worktrees, 1 records of worktrees whose folder is gone, 1 local branches, "
                                     + "1 ended sessions' scratch."))
         #expect(c.message.contains("Undo") && c.destructive)
+        #expect(c.message.contains("Only these move"))
     }
 }
 
@@ -92,11 +93,15 @@ import Testing
 
     @Test func testThePlanApplyRunsAndUndoCalls() throws {
         try FakeAppCLI.reply(dir, fixture: "cli-clean-plan")
-        _ = try cli.cleanPlan().get()
+        let plan = try cli.cleanPlan().get()
         #expect(lastCall() == ["clean", "--json"])
         try FakeAppCLI.reply(dir, fixture: "cli-clean-apply")
-        _ = try cli.cleanApply().get()
-        #expect(lastCall() == ["clean", "--apply", "--json"])
+        _ = try cli.cleanApply(plan).get()
+        let call = lastCall()
+        #expect(Array(call.prefix(2)) == ["clean", "--apply"] && call.last == "--json" && call.count == 4)
+        let flag = try #require(call.first { $0.hasPrefix("--plan=") })
+        #expect(!FileManager.default.fileExists(atPath: String(flag.dropFirst("--plan=".count))),
+                "the plan file is removed once the run answers")
         try FakeAppCLI.reply(dir, fixture: "cli-clean-runs")
         #expect(try cli.cleanRuns().get().count == 2)
         #expect(lastCall() == ["clean", "runs", "--json"])
@@ -107,10 +112,33 @@ import Testing
 
     @Test func testAnotherCleanupRunningIsTheCLIsOwnError() throws {
         try FakeAppCLI.reply(dir, text: #"{"error": {"code": "clean_running", "message": "another cleanup is running", "hint": "wait for it to finish, then run this again"}}"#, exit: 1)
-        guard case .failure(.app(let e)) = cli.cleanApply() else {
+        let plan = try #require(CleanPlan(JSON(data: try fixture("cli-clean-plan.json"))!))
+        guard case .failure(.app(let e)) = cli.cleanApply(plan) else {
             Issue.record("not an app error")
             return
         }
         #expect(e.code == "clean_running" && e.hint.hasPrefix("wait"))
+    }
+
+    /// Clean now acts on the plan the person saw (0.8.8): the CLI gets those
+    /// items, and nothing found since.
+    @Test func testCleanNowSendsThePlanThatWasShown() throws {
+        try FakeAppCLI.reply(dir, fixture: "cli-clean-plan")
+        let plan = try cli.cleanPlan().get()
+        try FakeAppCLI.reply(dir, fixture: "cli-clean-apply")
+        _ = try cli.cleanApply(plan).get()
+        let sent = try #require(CleanPlan(JSON(data: try Data(contentsOf: dir.appendingPathComponent("plan.json")))!))
+        #expect(sent.items == plan.items)
+    }
+
+    /// A plan that did not come from the CLI (a preview's) is never applied.
+    @Test func testAPlanWithoutTheCLIsAnswerIsRefused() {
+        let before = FakeAppCLI.calls(dir).count
+        let plan = CleanPlan(items: [CleanItem(kind: "worktree", path: "/w", remove: true, why: "merged")])
+        guard case .failure(.app(let e)) = cli.cleanApply(plan) else {
+            Issue.record("applied a plan the CLI did not make")
+            return
+        }
+        #expect(e.code == "usage" && FakeAppCLI.calls(dir).count == before)
     }
 }

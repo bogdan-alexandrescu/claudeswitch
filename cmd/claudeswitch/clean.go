@@ -24,8 +24,8 @@ import (
 // back. The kinds and the window are the clean_* settings; clean itself
 // only turns on the daemon's runs.
 
-const cleanUsage = "usage: claudeswitch clean [--apply] [--all] [--json] | clean undo [<run>] [--only <text>] [--json] | " +
-	"clean runs [--json]"
+const cleanUsage = "usage: claudeswitch clean [--apply] [--plan <file>] [--all] [--json] | " +
+	"clean undo [<run>] [--only <text>] [--json] | clean runs [--json]"
 
 func cmdClean(args []string) error {
 	fs := appFlags("clean")
@@ -33,6 +33,7 @@ func cmdClean(args []string) error {
 	asJSON := fs.Bool("json", false, "machine-readable output")
 	apply := fs.Bool("apply", false, "move what the plan marks to the Trash")
 	all := fs.Bool("all", false, "also list what is kept, and why")
+	from := fs.String("plan", "", "a plan saved from clean --json (- for stdin): show it, or with --apply act on it alone")
 	only := fs.String("only", "", "undo: only entries whose path or branch contains this")
 	positional, err := parseApp(fs, args, cleanUsage)
 	if err != nil {
@@ -49,7 +50,7 @@ func cmdClean(args []string) error {
 	ctx := context.Background()
 	switch {
 	case len(positional) == 0:
-		return runClean(ctx, os.Stdout, opt, *apply, *all, *asJSON)
+		return runClean(ctx, os.Stdout, opt, *from, *apply, *all, *asJSON)
 	case positional[0] == "runs" && len(positional) == 1:
 		return cleanRuns(os.Stdout, opt, *asJSON)
 	case positional[0] == "undo" && len(positional) <= 2:
@@ -118,8 +119,17 @@ func cleanErr(err error) error {
 	return err
 }
 
-func runClean(ctx context.Context, w io.Writer, opt clean.Options, apply, all, asJSON bool) error {
-	plan, err := clean.Scan(ctx, opt)
+// runClean makes a plan, or reads the one saved at from, and shows it or
+// applies it. A saved plan is applied as it was read: each item judged once
+// more, and nothing it does not list, so what goes is what was looked at.
+func runClean(ctx context.Context, w io.Writer, opt clean.Options, from string, apply, all, asJSON bool) error {
+	var plan *clean.Plan
+	var err error
+	if from != "" {
+		plan, err = readCleanPlan(from)
+	} else {
+		plan, err = clean.Scan(ctx, opt)
+	}
 	if err != nil {
 		return err
 	}
@@ -127,7 +137,7 @@ func runClean(ctx context.Context, w io.Writer, opt clean.Options, apply, all, a
 		if asJSON {
 			return emitTo(w, map[string]any{"plan": plan, "kinds": cleanKinds(opt)})
 		}
-		printCleanPlan(w, plan, opt, all)
+		printCleanPlan(w, plan, opt, from, all)
 		return nil
 	}
 	run, err := clean.Apply(ctx, plan, opt)
@@ -139,6 +149,33 @@ func runClean(ctx context.Context, w io.Writer, opt clean.Options, apply, all, a
 	}
 	printCleanRun(w, run)
 	return nil
+}
+
+// readCleanPlan reads a plan as clean --json prints it ({"plan": …}), or a
+// bare one; "-" is stdin.
+func readCleanPlan(path string) (*clean.Plan, error) {
+	var b []byte
+	var err error
+	if path == "-" {
+		b, err = io.ReadAll(os.Stdin)
+	} else {
+		b, err = os.ReadFile(path)
+	}
+	if err != nil {
+		return nil, appErr(codeUsage, "save one with: cs clean --json > <file>", "cannot read the plan: %v", err)
+	}
+	var f struct {
+		Plan  *clean.Plan  `json:"plan"`
+		At    time.Time    `json:"at"`
+		Items []clean.Item `json:"items"`
+	}
+	if err := json.Unmarshal(b, &f); err != nil || (f.Plan == nil && f.At.IsZero()) {
+		return nil, appErr(codeUsage, "save one with: cs clean --json > <file>", "%s holds no cleanup plan", path)
+	}
+	if f.Plan != nil {
+		return f.Plan, nil
+	}
+	return &clean.Plan{At: f.At, Items: f.Items}, nil
 }
 
 func cleanKinds(opt clean.Options) map[string]bool {
@@ -167,8 +204,13 @@ var kindOrderCLI = []clean.Kind{clean.KindWorktree, clean.KindPrune, clean.KindB
 // grouped kinds list a line per repository or project unless --all.
 var grouped = map[clean.Kind]bool{clean.KindBranch: true, clean.KindRemote: true, clean.KindTranscript: true}
 
-func printCleanPlan(w io.Writer, p *clean.Plan, opt clean.Options, all bool) {
-	fmt.Fprintln(w, "cs clean: what would go to the Trash (nothing is removed without --apply)")
+func printCleanPlan(w io.Writer, p *clean.Plan, opt clean.Options, from string, all bool) {
+	if from == "" {
+		fmt.Fprintln(w, "cs clean: what would go to the Trash (nothing is removed without --apply)")
+	} else {
+		fmt.Fprintf(w, "cs clean: the plan in %s, made %s (nothing is removed without --apply)\n", tilde(from),
+			p.At.Local().Format("Jan 2 15:04"))
+	}
 	var total int64
 	var kept []clean.Item
 	byKind := map[clean.Kind][]clean.Item{}
@@ -241,7 +283,11 @@ func printCleanPlan(w io.Writer, p *clean.Plan, opt clean.Options, all bool) {
 	if len(off) > 0 {
 		fmt.Fprintf(w, "off: %s\n", strings.Join(off, ", "))
 	}
-	if any {
+	switch {
+	case any && from != "":
+		fmt.Fprintf(w, "cs clean --apply --plan %s moves %s to the Trash, each item judged once more; "+
+			"cs clean undo puts a run back\n", from, clean.Human(total))
+	case any:
 		fmt.Fprintf(w, "cs clean --apply moves %s to the Trash; cs clean undo puts a run back\n", clean.Human(total))
 	}
 }

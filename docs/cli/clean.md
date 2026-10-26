@@ -9,6 +9,8 @@ journal, so a run can be put back.
 ```
 cs clean [--all] [--json]          the plan: what would go, and why (changes nothing)
 cs clean --apply [--json]          move it to the Trash
+cs clean --plan <file> [--all]     show a plan saved with cs clean --json
+cs clean --apply --plan <file>     move what that plan marks, and nothing else
 cs clean runs [--json]             the runs, newest first
 cs clean undo [<run>] [--only <text>] [--json]
                                    put a run back (the newest by default)
@@ -56,13 +58,36 @@ thing kept, which one did not.
    profile's `sessions/<pid>.json`, its process alive), no process has its
    working directory there, it is not locked (`git worktree lock`), no
    merge, rebase, cherry-pick, revert or bisect is in progress, and nothing
-   in it changed (a commit, a merge, a file written) within `clean_after`
-   (72 hours).
+   in it changed (a commit, a merge, a file written, the branch moved)
+   within `clean_after` (72 hours). A branch moving is read from its
+   reflog's newest entry, not the file's time, which `git gc` rewrites.
+   The lock Claude Code puts on an agent's worktree (`claude agent <name>
+   (pid N start <time>)`) stops counting once that process has ended, or
+   its pid belongs to a process started at another time; any other lock
+   keeps the worktree.
 4. **Not protected.** Not a repository's main worktree, not the default
    branch, not a primary clone, not matched by `clean_keep`.
 
 `--apply` judges each item again just before acting on it, and leaves one
 that changed since the plan (`skipped`).
+
+## Reading a plan before it runs
+
+`cs clean --apply` makes a new plan and acts on it, so it also removes what
+became removable since you last looked. To remove exactly what you read,
+save the plan and apply that file:
+
+```bash
+cs clean --json > plan.json          # one scan
+cs clean --plan plan.json --all      # read it: every item, removed and kept
+cs clean --apply --plan plan.json    # acts on that plan's items alone
+```
+
+Each item is still judged again just before it moves: one that changed, is
+gone, or whose kind was turned off since stays (`skipped`). Nothing the
+plan does not list is touched. `--plan -` reads the plan from stdin. The
+app's **Clean now…** works this way with the plan it shows. The daemon's
+runs make their own plan each time.
 
 ## What --apply does
 
@@ -147,8 +172,12 @@ item plus `trash`, `admin_to`, `archive_to`, `ref` and `undone`.
 `cs clean runs --json`: `{"runs": [{"id", "at", "removed", "undone",
 "bytes"}]}`. `cs clean undo --json`: `{"run": {…}}`.
 
+`--plan` takes the `cs clean --json` answer as printed, or the bare
+`{"at", "items"}` object inside it.
+
 Errors: `clean_running` (another cleanup holds the lock), `not_found` (no
-such run, or none yet), `usage`.
+such run, or none yet), `usage` (also: a `--plan` file that cannot be read
+or holds no plan).
 
 ## Settings
 

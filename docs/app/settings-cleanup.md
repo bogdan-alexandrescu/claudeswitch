@@ -16,9 +16,10 @@ kind, with counts and sizes; **Each item, and why** opens the list (the first
 or changed recently. `cs clean --all` in a terminal says why for each one.
 
 **Clean now…** asks first, with the total and the counts, then runs
-`cs clean --apply --json`, which judges each item again before it moves:
-anything that changed since the preview stays. The result says what moved,
-what stayed and what failed.
+`cs clean --apply --plan=<the preview> --json`: only the items the preview
+shows move, each judged again just before it does, so anything that changed
+since stays, and anything found since waits for the next preview. The
+result says what moved, what stayed and what failed.
 
 **Runs** lists the last five runs, newest first, with what each removed and
 what has been put back. **Undo** runs `cs clean undo <run> --json`: branches

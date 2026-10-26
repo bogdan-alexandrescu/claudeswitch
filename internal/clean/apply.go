@@ -176,6 +176,10 @@ func newRunID(opt Options) string {
 // recheck judges an item again as a fresh scan would; still reports it is
 // still removable and unchanged since the plan.
 func (s *scanner) recheck(it Item) (Item, bool) {
+	if !s.opt.on(it.Kind) {
+		it.Why = "its kind was turned off since the plan"
+		return it, false
+	}
 	var now Item
 	switch it.Kind {
 	case KindWorktree:

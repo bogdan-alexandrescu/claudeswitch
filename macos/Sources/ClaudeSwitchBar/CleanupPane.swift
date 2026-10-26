@@ -117,7 +117,7 @@ struct CleanupPane: View {
                     .font(.caption).foregroundStyle(.tertiary)
                 Spacer()
                 Button("Clean now…") {
-                    pending = PendingAction(confirmation: Confirm.cleanApply(p)) { store.applyClean() }
+                    pending = PendingAction(confirmation: Confirm.cleanApply(p)) { store.applyClean(p) }
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(store.isBusy("clean:apply"))

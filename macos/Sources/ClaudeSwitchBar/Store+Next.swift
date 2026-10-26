@@ -246,11 +246,11 @@ extension Store {
         }
     }
 
-    /// `clean --apply --json`, after the person confirmed the plan.
-    func applyClean() {
+    /// `clean --apply --plan`, after the person confirmed this plan.
+    func applyClean(_ plan: CleanPlan) {
         guard !preview else { return }
         Task {
-            switch await call("clean:apply", { $0.cleanApply() }) {
+            switch await call("clean:apply", { $0.cleanApply(plan) }) {
             case .success(let r):
                 next.cleanRun = r
                 next.cleanRunError = nil

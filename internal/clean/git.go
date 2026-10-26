@@ -56,12 +56,14 @@ func gitOK(ctx context.Context, dir string, args ...string) bool {
 
 // worktree is one entry of `git worktree list --porcelain`.
 type worktree struct {
-	path     string
-	head     string
-	branch   string // short name; "" when detached
-	bare     bool
-	locked   bool
-	prunable bool
+	path   string
+	head   string
+	branch string // short name; "" when detached
+	bare   bool
+	locked bool
+	// lockReason is what `git worktree lock --reason` recorded, if anything.
+	lockReason string
+	prunable   bool
 }
 
 func listWorktrees(ctx context.Context, repo string) ([]worktree, error) {
@@ -91,7 +93,7 @@ func listWorktrees(ctx context.Context, repo string) ([]worktree, error) {
 			}
 		case "locked":
 			if cur != nil {
-				cur.locked = true
+				cur.locked, cur.lockReason = true, val
 			}
 		case "prunable":
 			if cur != nil {

@@ -10,7 +10,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -106,6 +108,46 @@ func procCwds() []string {
 }
 
 // alive reports whether a process exists; tests replace it.
+// processStart is when a process started, as ps prints it ("Fri Sep  4
+// 06:39:38 2026"); "" when it cannot be read.
+var processStart = func(pid int) string {
+	cmd := exec.Command("ps", "-o", "lstart=", "-p", strconv.Itoa(pid))
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// claudeLock is the reason Claude Code gives its lock on an agent's
+// worktree: the agent, and the process holding it with when it started (so
+// that a pid used again is told apart).
+var claudeLock = regexp.MustCompile(`^claude agent \S+ \(pid (\d+) start (.+)\)$`)
+
+// staleLock says why a worktree's lock no longer means it is in use, "" when
+// it still does. Only Claude Code's own lock can be stale: its process has
+// ended, or its pid now belongs to a process that started at another time.
+// Any other lock is someone's, and a start time that cannot be read or
+// compared counts as the same process.
+func staleLock(reason string) string {
+	m := claudeLock.FindStringSubmatch(strings.TrimSpace(reason))
+	if m == nil {
+		return ""
+	}
+	pid, _ := strconv.Atoi(m[1])
+	if !alive(pid) {
+		return fmt.Sprintf("its lock is a Claude Code session's that ended (pid %d)", pid)
+	}
+	const layout = "Mon Jan _2 15:04:05 2006"
+	locked, err1 := time.ParseInLocation(layout, m[2], time.Local)
+	now, err2 := time.ParseInLocation(layout, processStart(pid), time.Local)
+	if err1 != nil || err2 != nil || now.Equal(locked) {
+		return ""
+	}
+	return fmt.Sprintf("its lock is a Claude Code session's that ended (pid %d is another process now)", pid)
+}
+
 var alive = func(pid int) bool {
 	if pid <= 0 {
 		return false

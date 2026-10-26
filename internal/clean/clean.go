@@ -20,9 +20,11 @@ package clean
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -88,6 +90,21 @@ type Options struct {
 	// TranscriptsAfter is how old an ended session's subagent transcripts
 	// must be to go, with Temp; 0 keeps them.
 	TranscriptsAfter time.Duration
+}
+
+// on reports whether a kind is looked at.
+func (o Options) on(k Kind) bool {
+	switch k {
+	case KindWorktree, KindBranch, KindPrune:
+		return o.Worktrees
+	case KindClone:
+		return o.Clones
+	case KindScratch, KindPlugin, KindTranscript:
+		return o.Temp
+	case KindRemote:
+		return o.Remote
+	}
+	return false
 }
 
 // Item is one candidate.
@@ -213,6 +230,39 @@ func mtime(path string) time.Time {
 	fi, err := os.Lstat(path)
 	if err != nil {
 		return time.Time{}
+	}
+	return fi.ModTime()
+}
+
+// reflogTime is when a reflog's newest entry was written, read from the
+// entry: git gc rewrites every reflog (reflog expire), which moves the
+// file's time while nothing changed. An empty reflog is no change; one
+// whose last entry cannot be read counts by its file's time.
+func reflogTime(path string) time.Time {
+	f, err := os.Open(path)
+	if err != nil {
+		return time.Time{}
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return time.Time{}
+	}
+	off := max(fi.Size()-8<<10, 0)
+	buf := make([]byte, fi.Size()-off)
+	if _, err := f.ReadAt(buf, off); err != nil && err != io.EOF {
+		return fi.ModTime()
+	}
+	tail := strings.TrimRight(string(buf), "\n")
+	if strings.TrimSpace(tail) == "" {
+		return time.Time{}
+	}
+	// <old> <new> <name> <<email>> <unix time> <zone>\t<message>
+	head, _, _ := strings.Cut(tail[strings.LastIndexByte(tail, '\n')+1:], "\t")
+	if fields := strings.Fields(head); len(fields) >= 2 {
+		if n, err := strconv.ParseInt(fields[len(fields)-2], 10, 64); err == nil {
+			return time.Unix(n, 0)
+		}
 	}
 	return fi.ModTime()
 }

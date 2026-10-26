@@ -12,6 +12,7 @@ enum FakeAppCLI {
         try FakeBinary.write(in: dir, script: """
             D="$(dirname "$0")"
             for a in "$@"; do printf '%s\\t' "$a" >> "$D/args.log"; done
+            for a in "$@"; do case "$a" in --plan=*) cp "${a#--plan=}" "$D/plan.json";; esac; done
             printf '\\n' >> "$D/args.log"
             if [ "$1" = version ] && [ "$2" = --json ]; then echo '{"version": "\(version)", "contract": 2}'; exit 0; fi
             if [ "$1" = version ]; then echo "claudeswitch \(version)"; exit 0; fi

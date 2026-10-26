@@ -1743,3 +1743,15 @@ opened, and a switch on claude.ai followed by opening it again re-ties it: no
 reinstall and no new Chrome profile needed. This corrects the reading of
 2026-10-23 (from a user report, issue 82455) that it stays bound to the first
 organization for good.
+
+## 57. A process without Full Disk Access can move a folder into ~/.Trash, not list it (observed 2026-10-25)
+
+`cs clean` moves folders to ~/.Trash by rename, and the daemon runs under
+launchd without Full Disk Access, so whether macOS's privacy protection (TCC)
+lets it was an open question. From a shell that lacks it (`ls ~/.Trash`:
+"Operation not permitted"), renaming a folder into ~/.Trash and back both
+worked, and a stat of a path inside it answers: all 162 folders of the owner's
+first run (`20261025-023645`, made from the app) were still there by name.
+`toTrash` needs only those (a stat for a free name, `MkdirAll` of an existing
+folder, `rename`), never a listing, so the daemon's runs are not blocked by
+it. Undo finds its folders the same way, by the paths in the journal.

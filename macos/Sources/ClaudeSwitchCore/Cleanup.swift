@@ -71,6 +71,9 @@ public struct CleanGroup: Equatable, Identifiable {
 public struct CleanPlan: Equatable {
     public var items: [CleanItem]
     public var kinds: [String: Bool]
+    /// The CLI's answer as it came, which `clean --apply --plan` takes back
+    /// so that what goes is what was shown (0.8.8); nil for a plan made here.
+    public var saved: Data?
 
     public init(items: [CleanItem], kinds: [String: Bool] = [:]) {
         self.items = items
@@ -88,6 +91,9 @@ public struct CleanPlan: Equatable {
         var k: [String: Bool] = [:]
         for (name, v) in j["kinds"].object { if let b = v.bool { k[name] = b } }
         kinds = k
+        if let answer = j.raw as? [String: Any], JSONSerialization.isValidJSONObject(answer) {
+            saved = try? JSONSerialization.data(withJSONObject: answer)
+        }
     }
 
     public var removable: [CleanItem] { items.filter(\.remove) }
@@ -177,8 +183,8 @@ public extension Confirm {
         let n = plan.removable.count
         let parts = plan.groups.map { "\($0.items.count) \($0.title.lowercased())" }
         return Confirmation(title: "Move \(n) item\(n == 1 ? "" : "s") (\(Format.bytes(plan.bytes))) to the Trash?",
-                            message: parts.joined(separator: ", ") + ". Each is judged again just before it moves; "
-                                + "branch tips are kept as refs/archive, and Undo puts the run back.",
+                            message: parts.joined(separator: ", ") + ". Only these move, each judged again just "
+                                + "before it does; branch tips are kept as refs/archive, and Undo puts the run back.",
                             action: "Move to the Trash", destructive: true)
     }
 }

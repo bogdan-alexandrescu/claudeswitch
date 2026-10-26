@@ -11,10 +11,12 @@ allowed-tools:
 
 ## 1. Show the plan
 
-Run the plan first. It only reads; nothing is removed:
+Make the plan first and save it, so that what is applied later is exactly
+what the user agreed to. It only reads; nothing is removed:
 
 ```bash
-claudeswitch clean
+claudeswitch clean --json > "${TMPDIR:-/tmp}/cs-clean-plan.json"
+claudeswitch clean --plan "${TMPDIR:-/tmp}/cs-clean-plan.json"
 ```
 
 It lists, by kind, what would go to the Trash, with why and how big, and how
@@ -41,8 +43,11 @@ request already said to apply it. Never apply on your own initiative, and
 never because a plan looks small.
 
 ```bash
-claudeswitch clean --apply
+claudeswitch clean --apply --plan "${TMPDIR:-/tmp}/cs-clean-plan.json"
 ```
+
+It acts on that plan's items alone, each judged again just before it moves.
+If the user asks to apply much later, make and show a new plan first.
 
 Report the run id it prints, what moved, and anything skipped (changed since
 the plan) or failed. Deleted branches' tips are kept as

@@ -1471,6 +1471,33 @@ minute. A sample of 40 removals was checked by hand against git and gh.
 - **The first run on this Mac** waits for the owner to read the whole plan
   (every item, removed and kept, with its reason); `clean` goes on after it
   checks out (owner decisions 2026-10-25).
+- **What goes is what was read (found and built 2026-10-25, for 0.8.8).**
+  `--apply` made a new plan, so it could also remove what became removable
+  after the plan the owner read, and the app's **Clean now…** confirmed one
+  plan and applied a newer one. `cs clean --apply --plan <file>` acts on a
+  saved plan (`cs clean --json > <file>`) alone, each item judged again; an
+  item whose kind was turned off since stays. The app passes the plan it
+  showed. The daemon's runs still make their own plan: what `clean` turns
+  on is the rules, not a list.
+- **A gc is not a change (found and built 2026-10-25, for 0.8.8).** "Changed
+  recently" read a branch's reflog file time, and `git gc` rewrites every
+  reflog (`reflog expire`): one gc in ai-studio at 17:47 on 2026-10-24 kept
+  619 merged branches back for three more days, and in a repository busy
+  enough to gc every few days they would never go. It now reads the newest
+  entry's own time (worktrees' and clones' `logs/HEAD` too). On this Mac
+  that made 618 more branches removable; 12 were checked by hand against
+  origin/main and `gh pr view`.
+- **A lock left by an ended session (found and built 2026-10-25, for
+  0.8.8).** Claude Code locks an agent's worktree as `claude agent <name>
+  (pid N start <time>)` and a session that ends without cleaning up leaves
+  the lock behind; eight such worktrees (5.4 GB, from sessions started 4 Sep
+  and 1 Oct) stayed for good. Such a lock no longer counts once its process
+  has ended or its pid is another process (the start time, from `ps -o
+  lstart`, differs); a start that cannot be read counts as the same process,
+  and any other lock still keeps a worktree. All eight are merged and
+  unchanged; two were checked by hand. The owner's standing rule for
+  sessions already says to unlock agent worktrees when cleaning up. Kept,
+  and released in 0.8.8 (owner decisions 2026-10-25).
 
 **AI-ENG-2-MAX's empty channel (2026-10-25).** After a rotation to
 AI-ENG-2-MAX (lab2@acme.xyz in its Max 20x organization; AI-ENG-2-TEAM is

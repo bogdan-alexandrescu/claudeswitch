@@ -99,7 +99,7 @@ func (s *scanner) cloneItem(dir, primary, name string) Item {
 		return keep("git cannot list its refs")
 	}
 	def := defaultBranch(s.ctx, dir)
-	touched := latest(mtime(filepath.Join(common, "logs", "HEAD")), mtime(filepath.Join(common, "index")))
+	touched := latest(reflogTime(filepath.Join(common, "logs", "HEAD")), mtime(filepath.Join(common, "index")))
 	var branches int
 	for _, line := range strings.Split(refs, "\n") {
 		ref, sha, ok := strings.Cut(line, " ")
