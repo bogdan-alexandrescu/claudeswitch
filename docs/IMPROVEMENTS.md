@@ -1568,3 +1568,11 @@ link.
 - Release notes come from the tag's message (release.yml, public-only), so
   a release's What's new is written with the tag.
 
+**Windows opened from the popover (owner request 2026-10-25, for 0.8.10).**
+"When an app window pops up by clicking one of the options on the window
+shown when clicking on the taskbar icon, the new window is in focus and
+potentially the original window is closed." Settings… (and Add account,
+which opens it), Set up…, Check for updates…, Update… and About now close
+the popover first, make the app frontmost and the new window key, looking
+for a SwiftUI window for a few passes after it is asked for.
+

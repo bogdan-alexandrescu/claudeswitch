@@ -11,9 +11,10 @@ enum UpdateWindow {
     private static var closeObserver: NSObjectProtocol?
 
     static func show(_ updates: UpdateController) {
+        WindowFocus.closePopover()
         NSApp.activate(ignoringOtherApps: true)
         if let w = window {
-            w.makeKeyAndOrderFront(nil)
+            WindowFocus.bringForward { w }
             return
         }
         let host = NSHostingController(rootView: UpdateDialogView(updates: updates))
@@ -33,7 +34,7 @@ enum UpdateWindow {
                 AppHub.updates.windowClosed()
             }
         }
-        w.makeKeyAndOrderFront(nil)
+        WindowFocus.bringForward { w }
     }
 
     static func close() { window?.close() }

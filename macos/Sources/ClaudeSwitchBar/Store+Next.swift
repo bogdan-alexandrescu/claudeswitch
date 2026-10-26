@@ -222,8 +222,7 @@ struct SettingsOpener: View {
         Color.clear.frame(width: 0, height: 0)
             .onChange(of: store.next.settingsRequest) { r in
                 guard r != nil else { return }
-                NSApp.activate(ignoringOtherApps: true)
-                openWindow(id: SettingsView.windowID)
+                WindowFocus.openSettings(openWindow)
             }
     }
 }

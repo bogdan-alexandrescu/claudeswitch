@@ -11,9 +11,10 @@ enum WelcomeWindow {
     private static var closeObserver: NSObjectProtocol?
 
     static func show(store: Store) {
+        WindowFocus.closePopover()
         NSApp.activate(ignoringOtherApps: true)
         if let w = window {
-            w.makeKeyAndOrderFront(nil)
+            WindowFocus.bringForward { w }
             return
         }
         let host = NSHostingController(rootView: WelcomeView(close: { window?.close() }).environmentObject(store))
@@ -31,7 +32,7 @@ enum WelcomeWindow {
                 window = nil
             }
         }
-        w.makeKeyAndOrderFront(nil)
+        WindowFocus.bringForward { w }
     }
 }
 

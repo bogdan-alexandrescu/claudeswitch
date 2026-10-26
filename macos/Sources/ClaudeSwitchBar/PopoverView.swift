@@ -118,10 +118,7 @@ struct PopoverView: View {
                 Button("Set up…") { WelcomeWindow.show(store: store) }
                 Button("Check for updates…") { AppHub.updates.checkNow() }
                     .disabled(!AppHub.updates.enabled)
-                Button("About ClaudeSwitch") {
-                    NSApp.activate(ignoringOtherApps: true)
-                    NSApp.orderFrontStandardAboutPanel(nil)
-                }
+                Button("About ClaudeSwitch") { WindowFocus.about() }
                 Divider()
                 Button("Quit ClaudeSwitch") { NSApp.terminate(nil) }
                     .keyboardShortcut("q", modifiers: .command)
@@ -135,10 +132,7 @@ struct PopoverView: View {
         }
     }
 
-    func showSettings() {
-        NSApp.activate(ignoringOtherApps: true)
-        openWindow(id: SettingsView.windowID)
-    }
+    func showSettings() { WindowFocus.openSettings(openWindow) }
 }
 
 private struct CardsHeight: PreferenceKey {

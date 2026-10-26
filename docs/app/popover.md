@@ -117,6 +117,10 @@ menu, since a live menu cannot be captured off screen.
 | **About ClaudeSwitch** | the app's version | |
 | **Quit ClaudeSwitch** (⌘Q) | quits the app. The daemon keeps running | |
 
+A window opened from here (Settings…, Add account, Set up…, Check for
+updates…, Update…, About) comes up in front with the focus, and the
+popover closes.
+
 ## What it reads
 
 The popover reads `~/.local/state/claudeswitch/state.json` on every save, and
