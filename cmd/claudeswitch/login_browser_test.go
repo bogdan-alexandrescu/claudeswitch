@@ -6,11 +6,16 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/oauth"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/state"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/testshim"
 )
 
 // `cs login` with no name, at a terminal, asks for one rather than refusing:
@@ -87,6 +92,65 @@ func TestTheBrowserIsChosenFromThoseInstalled(t *testing.T) {
 	}
 	if got := chooseLoginBrowser(nil, noPrompt(t)); got != "" {
 		t.Errorf("with none installed got %q, want the default browser", got)
+	}
+}
+
+// Chrome is offered first when it is installed, as the browser most people
+// have; the rest keep the order they always had.
+func TestChromeIsOfferedFirst(t *testing.T) {
+	has := map[string]bool{"Safari": true, "Google Chrome": true, "Brave Browser": true, "Microsoft Edge": true}
+	got := installedBrowsers(func(app string) bool { return has[app] })
+	if want := []string{"Chrome", "Safari", "Brave", "Edge"}; !slices.Equal(got, want) {
+		t.Errorf("offered %q, want %q", got, want)
+	}
+}
+
+// Nobody should have to type "Google Chrome": a short name opens its
+// application, in any case. Full names keep working, and a name the list
+// does not know reaches `open -a` as typed.
+func TestABrowserIsTypedByItsShortName(t *testing.T) {
+	for typed, app := range map[string]string{
+		"Chrome": "Google Chrome", "chrome": "Google Chrome", "Google Chrome": "Google Chrome",
+		"brave": "Brave Browser", "Brave Browser": "Brave Browser",
+		"Edge": "Microsoft Edge", "microsoft edge": "Microsoft Edge",
+		"Safari": "Safari", "firefox": "Firefox",
+		"Chrome Beta": "Chrome Beta",
+	} {
+		if got := browserApp(typed); got != app {
+			t.Errorf("%q opens %q, want %q", typed, got, app)
+		}
+	}
+}
+
+func TestAShortBrowserNameOpensItsApplication(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("the login opens a named browser with macOS's open -a")
+	}
+	testshim.ResetLaunches()
+	if err := openBrowser(io.Discard, "chrome")("https://example.test/authorize"); err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{{"open", "-a", "Google Chrome", "https://example.test/authorize"}}
+	if got := testshim.Launches(); !slices.EqualFunc(got, want, slices.Equal) {
+		t.Errorf("launches = %q\nwant       %q", got, want)
+	}
+}
+
+// `--browser edge` on the two-step login opens Microsoft Edge too.
+func TestATwoStepLoginOpensAShortNamedBrowser(t *testing.T) {
+	cfg := loadOrFail(t, writeConfig(t, strings.Replace(poolConfig, `name = "default"`, `name = "home"`, 1)))
+	st, err := state.Load(filepath.Join(t.TempDir(), "state.json"), cfg.ProfileNames()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = oauth.ClearPending() })
+	testshim.ResetLaunches()
+	if err := loginDirect(cfg, st, nil, "w2", "", false, oauth.Extra{}, "edge", "work", joinTarget{}); err != nil {
+		t.Fatal(err)
+	}
+	got := testshim.Launches()
+	if len(got) != 1 || !slices.Equal(got[0][:3], []string{"open", "-a", "Microsoft Edge"}) {
+		t.Errorf("launches = %q, want one open -a \"Microsoft Edge\"", got)
 	}
 }
 

@@ -125,7 +125,7 @@ func openBrowser(w io.Writer, browser string) func(string) error {
 		case runtime.GOOS != "darwin":
 			cmd = exec.Command("xdg-open", u)
 		case browser != "":
-			cmd = exec.Command("open", "-a", browser, u)
+			cmd = exec.Command("open", "-a", browserApp(browser), u)
 		default:
 			cmd = exec.Command("open", u)
 		}
@@ -189,7 +189,7 @@ func signInHere(ctx context.Context, extra oauth.Extra, browser string) (*oauth.
 	if err != nil {
 		return nil, err
 	}
-	if browser != "" && exec.Command("open", "-a", browser, flow.URL).Run() == nil {
+	if browser != "" && exec.Command("open", "-a", browserApp(browser), flow.URL).Run() == nil {
 		fmt.Printf("    opened in %s — sign in as the account you want, approve it\n", browser)
 	} else {
 		fmt.Printf("\n%s\n\n", flow.URL)
