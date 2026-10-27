@@ -363,6 +363,41 @@ func TestTheWindowsAreJudgedByTheirOwnTriggers(t *testing.T) {
 	}
 }
 
+// The projection moves the window being judged, never swaps in the other one.
+// At 80% of the session and 90% of the week the session is nearest its line,
+// but the weekly 90% was put in its place and judged against the session's
+// 85%, which rotated an account with room in both (seen 2026-10-26 as "at
+// 16%, under the 85% trigger" with the session at 3%).
+func TestTheProjectionMovesTheWindowBeingJudged(t *testing.T) {
+	later := now.Add(time.Hour)
+	c := cfg()
+	c.SwitchAtWeekly = 98
+	c.HardFloor = 99
+	in := Input{Cfg: c, Now: now, St: st("work-a", map[string]*state.Account{
+		"work-a": reading(80, 90, later),
+		"work-b": reading(10, 10, later),
+	})}
+	d := Decide(in)
+	if d.Kind != Stay {
+		t.Fatalf("80%% of the session and 90%% of the week are both under their triggers: %v -> %s (%s)",
+			d.Kind, d.Target, d.Reason)
+	}
+	if !contains(d.Reason, "at 80%, under the 85% trigger") {
+		t.Errorf("the reason must give the session's own figure against its trigger, got: %s", d.Reason)
+	}
+
+	// Spending still counts: what has probably gone since the reading is
+	// carried onto the session window.
+	burning := reading(80, 90, later)
+	burning.PrevWorst, burning.PrevAt = 88, now.Add(-2*time.Minute)
+	in.St = st("work-a", map[string]*state.Account{"work-a": burning, "work-b": reading(10, 10, later)})
+	in.Lookahead = 6 * time.Minute
+	if d := Decide(in); d.Kind != Switch || d.Target != "work-b" {
+		t.Fatalf("a point a minute for six minutes takes the session past 85%%: %v -> %s (%s)",
+			d.Kind, d.Target, d.Reason)
+	}
+}
+
 // A Config built in code has no defaults applied. A zero weekly threshold must
 // not mean "trigger at 0%", which would put every account over the line at once
 // and leave nothing to rotate to.

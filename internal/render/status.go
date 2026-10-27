@@ -618,8 +618,9 @@ func headline(o Options) string {
 	// A model the config counts stands in for the weekly window where higher
 	// (IMPROVEMENTS I6), as the policy judges it; with none, acct as it is.
 	acct, model, _ := acct.WithModels(cfg.Models)
-	which, _ := acct.Last.Worst()
-	proj := acct.Projected(time.Now())
+	// The window nearest its own trigger, as the policy judges it.
+	which, _, _ := acct.Last.WorstAgainst(cfg.TriggerFor(usage.FiveHourKey), cfg.TriggerFor(usage.SevenDayKey))
+	proj := acct.ProjectedIn(which, time.Now())
 	window := "5-hour"
 	if which == "seven_day" {
 		window = "weekly"

@@ -1655,3 +1655,15 @@ that is not Chrome), since its own text asks for a browser the person is NOT
 signed into and Enter on Chrome would bring back the account already vaulted;
 and the messages name the application ("opened in Google Chrome"), not the
 name as typed.
+
+**The projection moves the window being judged (found 2026-10-26).** The
+policy picks the window nearest its own trigger, then carried the active
+account forward with `Projected`, which starts from the HIGHER window. So at
+80% of the session and 90% of the week (triggers 85 and 98) it judged the
+session at 90% and rotated an account with room in both; the audit log showed
+it as "at 16%, under the 85% trigger" with the session at 3%. Now only the
+growth since the reading is carried onto the judged window
+(`state.Account.ProjectedIn`), and `cs status`'s headline names the same
+window ("80% of its 5-hour · 5 points before it rotates", not "90% of its
+weekly · 8 points"). The "58%" in a stay reason beside a stored 57% is not
+this: the reason gives the projection, the field the reading.

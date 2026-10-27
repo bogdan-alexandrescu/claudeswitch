@@ -153,6 +153,27 @@ func (a *Account) Projected(now time.Time) float64 {
 	return p
 }
 
+// ProjectedIn is window key's utilization now, carried forward like
+// Projected. The burn rate is measured on the higher window, so what moves
+// onto key is the growth, never the other window's figure: at 80% of the
+// session and 90% of the week the session is not at 90%.
+func (a *Account) ProjectedIn(key string, now time.Time) float64 {
+	if a.Last == nil {
+		return 0
+	}
+	var w usage.Window
+	switch key {
+	case usage.FiveHourKey:
+		w = a.Last.FiveHour
+	case usage.SevenDayKey:
+		w = a.Last.SevenDay
+	default:
+		return 0
+	}
+	_, worst := a.Last.Worst()
+	return min(w.Pct()+max(a.Projected(now)-worst, 0), 100)
+}
+
 // Projects reports whether account id's figure may be shown carried forward
 // by its burn rate: only when it is some profile's live account, or was read
 // within pollActive. An idle account is not being spent; its readings come

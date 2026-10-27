@@ -137,3 +137,19 @@ func TestWhyShowsPaceAndModels(t *testing.T) {
 		}
 	}
 }
+
+// The headline names the window nearest its own trigger, as the policy judges
+// it. At 80% of the session and 90% of the week, against 85 and 98, the
+// session has 5 points left; the week's 90% is the higher figure but has 8.
+func TestTheHeadlineNamesTheWindowNearestItsTrigger(t *testing.T) {
+	cfg, st := modelsWorld()
+	cfg.SwitchAtWeekly, cfg.HardFloor = 98, 99
+	a := st.Accounts["work-a"]
+	a.Last.FiveHour.Utilization, a.Last.SevenDay.Utilization = ptr(80), ptr(90)
+	a.Last.Limits = nil
+	var b bytes.Buffer
+	Status(&b, Options{Cfg: cfg, St: st, DaemonOwns: true, Decision: &policy.Decision{Kind: policy.Stay}})
+	if out := b.String(); !strings.Contains(out, "work-a at 80% of its 5-hour · 5 points before it rotates") {
+		t.Errorf("the headline must give the session against its own trigger:\n%s", out)
+	}
+}

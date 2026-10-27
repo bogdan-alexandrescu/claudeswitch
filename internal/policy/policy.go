@@ -643,7 +643,7 @@ func gather(in Input) []candidate {
 					in.Cfg.TriggerFor(usage.FiveHourKey), in.Cfg.TriggerFor(usage.SevenDayKey))
 				// The projection applies to the window we are judging, so carry
 				// the same amount of growth onto the exceedance.
-				if proj := obs.Projected(in.Now.Add(in.Lookahead)); proj > c.worst {
+				if proj := obs.ProjectedIn(c.window, in.Now.Add(in.Lookahead)); proj > c.worst {
 					c.exceedance += proj - c.worst
 					c.worst = proj
 				}
