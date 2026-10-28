@@ -19,12 +19,12 @@ import Testing
         #expect(run.failure(.move("team-2", to: "lab"), "the config changed meanwhile")
                 == "The pool “lab” was created, but “team-2” could not be moved in: the config changed meanwhile")
         #expect(run.steps == [.move("team-2", to: "lab"), .move("ops-1", to: "lab")], "never created twice")
-        #expect(run.action == "Move the rest in")
+        #expect(run.action == "Move the Rest In")
         #expect(run.cancel == "Close", "the pool stays either way")
 
         run.done(.move("team-2", to: "lab"))
         #expect(run.steps == [.move("ops-1", to: "lab")])
-        #expect(run.action == "Move “ops-1” in")
+        #expect(run.action == "Move “ops-1” In")
     }
 
     /// Checked accounts stop rotating where they do now: a new pool is one

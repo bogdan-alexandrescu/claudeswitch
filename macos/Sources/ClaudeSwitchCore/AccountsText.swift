@@ -133,7 +133,7 @@ public extension AddForm {
     /// sign-in's is appHint's.
     static func duplicateHint(saving: Bool, asked: String?) -> String? {
         guard saving else { return appHint(code: "already_vaulted", asked: asked) }
-        return "Save current login saves the account Claude Code is signed in to. To add another, choose Sign in with browser."
+        return "Save Current Login saves the account Claude Code is signed in to. To add another, choose Sign In with Browser."
     }
 
     /// Whether a new account can go nowhere but no pool: no pools, and a

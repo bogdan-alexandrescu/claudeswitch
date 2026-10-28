@@ -273,7 +273,7 @@ enum Render {
                    out: out)
             save(MoreMenuFacsimile(appearance: store.appearance, usage: store.usageMode, open: "Appearance"),
                  size: nil, dark: dark, to: out + "/menu-more\(suffix).png")
-            save(MoreMenuFacsimile(appearance: store.appearance, usage: store.usageMode, open: "Show usage as"),
+            save(MoreMenuFacsimile(appearance: store.appearance, usage: store.usageMode, open: "Show Usage As"),
                  size: nil, dark: dark, to: out + "/menu-more-usage\(suffix).png")
         }
         for dark in [false, true] {
@@ -649,7 +649,7 @@ struct AccountMenuFacsimile: View {
 struct PinMenuFacsimile: View {
     var body: some View {
         HStack(spacing: 0) {
-            Text("Keep the pin even if it runs out…").lineLimit(1).fixedSize()
+            Text("Keep the Pin Even If It Runs Out…").lineLimit(1).fixedSize()
         }
         .font(.system(size: 13))
         .padding(.horizontal, 6 + 18).frame(height: 22, alignment: .leading)

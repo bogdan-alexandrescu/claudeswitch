@@ -10,7 +10,7 @@ See also: [Popover](popover.md) · [Settings → Advanced](settings-advanced.md)
 
 | URL | what it does | same as |
 |---|---|---|
-| `claudeswitch://switch-best?profile=work` | switches the profile to its best account, unless it is already on it | **Switch to best** |
+| `claudeswitch://switch-best?profile=work` | switches the profile to its best account, unless it is already on it | **Switch to Best** |
 | `claudeswitch://pin?profile=work` | pins the profile to its live account | **Pin** (`account pin <live> --json`) |
 | `claudeswitch://unpin?profile=work` | lets rotation move it again | **Pin** off (`account unpin --profile work --json`) |
 | `claudeswitch://status?profile=work` | shows a notification: `work · work-1 · session 18%, week 41%` | |
@@ -23,7 +23,7 @@ Anything the app cannot do comes back as a notification, saying why:
 
 - `work is already on its best account.`
 - `work has no account to switch to: work-2 is in use by default` (the
-  reason **Switch to best** gives under the button), or `…to switch to.`
+  reason **Switch to Best** gives under the button), or `…to switch to.`
   when there is none to give;
 - `There is no profile called lab.`
 - `work has no live account to pin.`
@@ -95,9 +95,9 @@ buttons. The app posts its own notification when it sees the change in
 
 | notification | buttons | runs |
 |---|---|---|
-| **work → work-2** (a rotation) | **Undo**, **Pin here** | `use <previous> --profile work --json`; `account pin work-2 --json` |
-| **work-1 needs sign-in**, **work-1 was refused** (the live account) | **Sign in** | opens Add account for that account |
-| **Sign personal in again** (its login expires within 5 days) | **Sign in…** | opens Add account for that account |
+| **work → work-2** (a rotation) | **Undo**, **Pin Here** | `use <previous> --profile work --json`; `account pin work-2 --json` |
+| **work-1 needs sign-in**, **work-1 was refused** (the live account) | **Sign In** | opens Add Account for that account |
+| **Sign personal in again** (its login expires within 5 days) | **Sign In…** | opens Add Account for that account |
 
 A switch you made in the app (the popover, a shortcut, Undo) is not
 announced back, unless the CLI refused it: a refused switch is forgotten, so
@@ -105,7 +105,7 @@ it does not hide the next real rotation. An idle account that is refused is
 not announced; one that can no longer sign in is. Each appears once per
 change.
 
-**Undo** and **Pin here** act from the notification, so when the CLI
+**Undo** and **Pin Here** act from the notification, so when the CLI
 refuses one, the app says so in another notification (`Could not switch
 work to work-1: …`, `Could not pin work-2: …`) rather than only on a
 popover card you may not open for a while.

@@ -93,7 +93,7 @@ public struct ChromeSignInNotice: Equatable {
     public var text: String { "Claude in Chrome in \"\(chromeName)\" does not follow switches to \(account)" }
     /// The way out (P2, C4): a Chrome profile of the account's own, which
     /// claudeswitch opens after every switch and the bridge then finds.
-    public var ownButton: String { "Give \(account) its own Chrome profile" }
+    public var ownButton: String { "Give \(account) Its Own Chrome Profile" }
 }
 
 /// An account's Chrome choice (Settings → Accounts).

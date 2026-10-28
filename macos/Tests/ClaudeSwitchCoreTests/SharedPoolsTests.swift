@@ -264,7 +264,7 @@ func sharedProfiles() throws -> ProfileList { try #require(ProfileList(data: try
         #expect(intoTeam.message == "The account “loose-1” joins the pool “team”. From now on “default” and “work” may use it.")
         let out = Confirm.poolDrop(.remove(account: "ops-1", from: "ops"), pools: pools)
         #expect(out.title == "Take “ops-1” out of “ops”?")
-        #expect(out.action == "Take out")
+        #expect(out.action == "Take Out")
         #expect(out.message == "The account “ops-1” is then in no pool, where “default” uses it after its pools; “work” no longer can.")
         #expect(Notes.poolDrop(.move(account: "team-2", from: "team", to: "ops")) == "The account “team-2” is now in “ops”")
         #expect(Notes.poolDrop(.remove(account: "ops-1", from: "ops")) == "The account “ops-1” is in no pool now")

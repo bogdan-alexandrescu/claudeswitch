@@ -43,7 +43,7 @@ public enum Confirm {
         Confirmation(title: install ? "Install the daemon live?" : "Turn the daemon live?",
                      message: "Live, the daemon switches accounts for real when one nears its limit, "
                         + "in every profile. Dry run only reports what it would do.",
-                     action: install ? "Install live" : "Go live", destructive: false)
+                     action: install ? "Install Live" : "Go Live", destructive: false)
     }
 }
 

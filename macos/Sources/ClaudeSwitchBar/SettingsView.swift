@@ -237,7 +237,7 @@ struct SettingRow: View {
                 if store.isBusy("set:\(setting.key)") { ProgressView().controlSize(.mini) }
             }
             if !edited, let c = current, let why = SettingNames.outOfRange(setting, c) {
-                Label(why, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+                Label(why, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(Color.csWarn)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let e = local {
@@ -246,9 +246,9 @@ struct SettingRow: View {
                 InlineError(message: e.message, hint: e.hint)
             } else if let s = saved {
                 Text("Saved: \(SettingNames.value(setting, s.previous)) → \(SettingNames.value(setting, s.value))" + (s.daemonRunning ? " · the running daemon picks it up" : ""))
-                    .font(.caption).foregroundStyle(.green)
+                    .font(.caption).foregroundStyle(Color.csGood)
                 ForEach(s.warnings, id: \.self) { w in
-                    Label(w, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+                    Label(w, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(Color.csWarn)
                 }
             }
         }
@@ -332,7 +332,7 @@ struct InlineError: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Label(message, systemImage: "xmark.octagon.fill").foregroundStyle(.red)
+            Label(message, systemImage: "xmark.octagon.fill").foregroundStyle(Color.csBad)
             if !hint.isEmpty { Text(hint).foregroundStyle(.secondary) }
         }
         .font(.caption)
@@ -377,7 +377,7 @@ struct DaemonPane: View {
                     if let s = stale {
                         Label("Not polling for \(s): its readings are old and nothing rotates. Restart it.",
                               systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption).foregroundStyle(.orange)
+                            .font(.caption).foregroundStyle(Color.csWarn)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if d.installed {
@@ -405,7 +405,7 @@ struct DaemonPane: View {
                         LabeledContent("Binary", value: (b as NSString).abbreviatingWithTildeInPath)
                         if !d.binaryIsThis {
                             Label("The service runs another build than this app uses (\(d.thisBinary ?? "?")).",
-                                  systemImage: "exclamationmark.triangle").foregroundStyle(.orange).font(.caption)
+                                  systemImage: "exclamationmark.triangle").foregroundStyle(Color.csWarn).font(.caption)
                         }
                     }
                     if let f = d.file { LabeledContent("Service file", value: (f as NSString).abbreviatingWithTildeInPath) }
@@ -429,10 +429,10 @@ struct DaemonPane: View {
                             Spacer()
                             // Red, as destructive: the Form's accent tint drew it blue.
                             Button("Uninstall…", role: .destructive) { confirmUninstall = true }
-                                .tint(.red).foregroundStyle(.red)
+                                .tint(.red).foregroundStyle(Color.csBad)
                         } else {
-                            Button("Install (dry run)") { store.setDaemon(.install(live: false), title: "Could not install the daemon") }
-                            Button("Install live…") { goLive(install: true) }
+                            Button("Install (Dry Run)") { store.setDaemon(.install(live: false), title: "Could not install the daemon") }
+                            Button("Install Live…") { goLive(install: true) }
                                 .buttonStyle(PrimaryButtonStyle())
                         }
                         if store.isBusy("daemon") { ProgressView().controlSize(.small) }
@@ -457,8 +457,8 @@ struct DaemonPane: View {
                         Text("The daemon service is not installed.")
                             .foregroundStyle(.secondary)
                         Spacer()
-                        Button("Install (dry run)") { store.setDaemon(.install(live: false), title: "Could not install the daemon") }
-                        Button("Install live…") { goLive(install: true) }
+                        Button("Install (Dry Run)") { store.setDaemon(.install(live: false), title: "Could not install the daemon") }
+                        Button("Install Live…") { goLive(install: true) }
                             .buttonStyle(PrimaryButtonStyle())
                     }
                     .disabled(store.isBusy("daemon") || store.binaryUnusable)
@@ -538,7 +538,7 @@ struct AdvancedPane: View {
                 // With the app's other preferences (it sat under Daemon).
                 if login.available {
                     Toggle("Open ClaudeSwitch at login", isOn: Binding(get: { login.enabled }, set: { login.set($0) }))
-                    if let e = login.error { Text(e).font(.caption).foregroundStyle(.red) }
+                    if let e = login.error { Text(e).font(.caption).foregroundStyle(Color.csBad) }
                 } else {
                     Text("Open at login is available once the app is installed in Applications.")
                         .font(.caption).foregroundStyle(.secondary)
@@ -559,7 +559,7 @@ struct AdvancedPane: View {
                 // Overview's need sends people.
                 if store.binaryUnusable, let p = store.problem {
                     VStack(alignment: .leading, spacing: 4) {
-                        Label(p.message, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                        Label(p.message, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.csWarn)
                         Text(CLI.installIntro).foregroundStyle(.secondary)
                         ForEach(CLI.installCommands, id: \.self) { c in
                             Text(c).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
@@ -576,7 +576,7 @@ struct AdvancedPane: View {
                     Label("The chosen \((store.configuredBinary as NSString).abbreviatingWithTildeInPath) cannot be run; "
                           + (store.binaryPath.map { "using \(($0 as NSString).abbreviatingWithTildeInPath)." } ?? "none found."),
                           systemImage: "exclamationmark.triangle")
-                        .font(.caption).foregroundStyle(.orange)
+                        .font(.caption).foregroundStyle(Color.csWarn)
                 }
                 AppFlowsRows(updates: AppHub.updates, notifier: AppHub.notifier, hotKey: AppHub.hotKey)
                 LabeledContent {

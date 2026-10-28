@@ -75,12 +75,25 @@ public enum Palette {
     public static let glacierInk = rgb(0x2a9fe0)
     public static let meltwater = rgb(0xb6f0dc)
 
-    // The UI tokens, light / dark.
-    public static let accent = dynamic("csAccent", light: 0x2a9fe0, dark: 0x8fd3ff)
+    // The UI tokens, light / dark. The light accent is deeper than the
+    // brand's glacier ink so white text on it, and the accent as text on
+    // white, read at 4.5:1 (owner's pick B1 A, 2026-10-28: #2a9fe0 measured
+    // 2.9:1). The dark tick is frost, as the light one is graphite, so the
+    // switch point never reads as a lit dot (B3 A).
+    public static let accent = dynamic("csAccent", light: 0x1872a5, dark: 0x8fd3ff)
     public static let accent2 = dynamic("csAccent2", light: 0x3fbf98, dark: 0xb6f0dc)
     public static let track = dynamic("csTrack", light: 0xe1e7ed, dark: 0x31363d)
-    public static let tick = dynamic("csTick", light: 0x17181b, dark: 0xb6f0dc)
+    public static let tick = dynamic("csTick", light: 0x17181b, dark: 0xf4f7fa)
     public static let onAccent = dynamic("csOnAccent", light: 0xffffff, dark: 0x0d1b24)
+    /// Warning, good and bad text and icons: deeper inks in light mode, so
+    /// they read at 4.5:1 on white where the system colours measure 2.1 to
+    /// 3.6:1 (B2 A); the system colours in dark mode.
+    public static let warn = ink("csWarn", light: 0xa85400, dark: .systemOrange)
+    public static let good = ink("csGood", light: 0x157a32, dark: .systemGreen)
+    public static let bad = ink("csBad", light: 0xc2261c, dark: .systemRed)
+    /// History's session line, the brand green in both appearances: in dark
+    /// mode the second accent sat too close to the week's pale blue (B3 A).
+    public static let sessionLine = rgb(0x3fbf98)
 
     /// The rings' usage ramp (revised 2026-10-21): a ring's lit dots go from
     /// green at 0% used through amber at 50% to red at 100%. These stops are
@@ -114,6 +127,18 @@ public enum Palette {
     public static func rgb(_ hex: UInt32, alpha: CGFloat = 1) -> NSColor {
         NSColor(srgbRed: CGFloat((hex >> 16) & 0xff) / 255, green: CGFloat((hex >> 8) & 0xff) / 255,
                 blue: CGFloat(hex & 0xff) / 255, alpha: alpha)
+    }
+
+    /// A fixed colour for light appearances, a system colour (resolved for
+    /// the appearance asked about) for dark ones.
+    static func ink(_ name: String, light: UInt32, dark: NSColor) -> NSColor {
+        let l = rgb(light)
+        return NSColor(name: NSColor.Name(name)) { ap in
+            guard isDark(ap) else { return l }
+            var out = dark
+            ap.performAsCurrentDrawingAppearance { out = dark.usingColorSpace(.sRGB) ?? dark }
+            return out
+        }
     }
 
     public static func dynamic(_ name: String, light: UInt32, dark: UInt32) -> NSColor {

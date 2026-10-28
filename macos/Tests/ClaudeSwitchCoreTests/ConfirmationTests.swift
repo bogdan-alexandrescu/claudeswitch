@@ -37,8 +37,8 @@ import Testing
             #expect(c.message.contains("switches"))
             #expect(!c.destructive)
         }
-        #expect(Confirm.daemonLive(install: true).action == "Install live")
-        #expect(Confirm.daemonLive(install: false).action == "Go live")
+        #expect(Confirm.daemonLive(install: true).action == "Install Live")
+        #expect(Confirm.daemonLive(install: false).action == "Go Live")
     }
 }
 

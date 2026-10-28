@@ -122,7 +122,7 @@ struct PopoverView: View {
                 store.addAccount = AddAccountRequest(profile: store.snapshot?.followed(store.menuProfile))
                 showSettings()
             } label: {
-                Label("Add account", systemImage: "plus")
+                Label("Add Account", systemImage: "plus")
             }
             .buttonStyle(.borderless)
             // Accent only when it can be used: a disabled link in the accent
@@ -144,7 +144,7 @@ struct PopoverView: View {
         // owner request 2026-10-26); its shortcuts stay here.
         .background {
             Group {
-                Button("Refresh now") { store.refresh(full: true, profiles: true) }
+                Button("Refresh Now") { store.refresh(full: true, profiles: true) }
                     .keyboardShortcut("r", modifiers: .command)
                 Button("Quit ClaudeSwitch") { AppQuit.quit() }
                     .keyboardShortcut("q", modifiers: .command)
@@ -210,8 +210,8 @@ struct DaemonBadge: View {
 
     var color: Color {
         switch daemon.health {
-        case .never, .stale: return .red
-        case .polling: return daemon.live ? .green : .orange
+        case .never, .stale: return .csBad
+        case .polling: return daemon.live ? .csGood : .csWarn
         }
     }
 }
@@ -265,17 +265,17 @@ struct ProfileCardView: View {
                         HStack(spacing: 8) {
                             Label("needs sign-in · last read " + Format.age(a.lastAt, now: now),
                                   systemImage: "exclamationmark.triangle.fill")
-                                .font(.caption).foregroundStyle(.red).lineLimit(2)
+                                .font(.caption).foregroundStyle(Color.csBad).lineLimit(2)
                                 .help(a.lastError ?? "needs sign-in")
                             Spacer(minLength: 4)
-                            Button("Sign in…") { store.beginSignIn(a.id) }.controlSize(.small)
+                            Button("Sign In…") { store.beginSignIn(a.id) }.controlSize(.small)
                         }
                     } else if case .refused = a.status {
                         Label(Format.status(a.status, now: now), systemImage: "nosign")
-                            .font(.caption).foregroundStyle(.red).lineLimit(2)
+                            .font(.caption).foregroundStyle(Color.csBad).lineLimit(2)
                     } else if let e = a.lastError {
                         Label(e, systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption).foregroundStyle(.red).lineLimit(2).help(e)
+                            .font(.caption).foregroundStyle(Color.csBad).lineLimit(2).help(e)
                     }
                 }
                 .padding(.top, 4)
@@ -305,7 +305,7 @@ struct ProfileCardView: View {
                     .fixedSize(horizontal: false, vertical: true)
             } else if let warn = card.bestWarning {
                 Label(warn, systemImage: "exclamationmark.triangle")
-                    .font(.caption).foregroundStyle(.orange).lineLimit(2).help(warn)
+                    .font(.caption).foregroundStyle(Color.csWarn).lineLimit(2).help(warn)
                     .fixedSize(horizontal: false, vertical: true)
             }
             // The first line of Next, Pin and ⋯ on one baseline.
@@ -340,7 +340,7 @@ struct ProfileCardView: View {
                 if followed {
                     MenuBarBadge()
                 } else {
-                    Button("Show in menu bar") { store.menuProfile = card.name }
+                    Button("Show in Menu Bar") { store.menuProfile = card.name }
                         .buttonStyle(.borderless).font(.caption)
                         .foregroundStyle(Color.csAccent)
                         .fixedSize()
@@ -432,7 +432,7 @@ struct OpenBlockedLine: View {
 
     var body: some View {
         Label(text, systemImage: "person.crop.circle.badge.exclamationmark")
-            .font(.caption).foregroundStyle(.orange)
+            .font(.caption).foregroundStyle(Color.csWarn)
             .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -480,8 +480,8 @@ struct ModelLimitRow: View {
 func levelColor(_ l: Level?) -> Color {
     switch l {
     case .ok?: return .csAccent
-    case .near?: return .orange
-    case .over?: return .red
+    case .near?: return .csWarn
+    case .over?: return .csBad
     case nil: return .clear
     }
 }
@@ -556,7 +556,7 @@ struct PinToggle: View {
     var body: some View {
         Toggle(isOn: Binding(get: { card.isPinned },
                              set: { store.setPinned($0, profile: card.name, account: card.active?.id) })) {
-            Label(card.isPinned ? (store.pinIsHard(card) == true ? "Pinned (hard)" : "Pinned") : "Pin",
+            Label(card.isPinned ? (store.pinIsHard(card) == true ? "Pinned (Hard)" : "Pinned") : "Pin",
                   systemImage: card.isPinned ? "pin.fill" : "pin")
                 .font(.caption)
         }
@@ -636,7 +636,7 @@ struct CompactCardView: View {
                     }
                 }
                 .font(.caption)
-                .foregroundStyle(trouble ? Color.red : Color.secondary)
+                .foregroundStyle(trouble ? Color.csBad : Color.secondary)
                 .help(Format.cardSummary(card))
             }
             Spacer(minLength: 8)
@@ -736,7 +736,7 @@ struct AmberBannerLine: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: symbol).foregroundStyle(.orange).accessibilityHidden(true)
+            Image(systemName: symbol).foregroundStyle(Color.csWarn).accessibilityHidden(true)
             Text(text).font(.caption).foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -756,7 +756,7 @@ struct ProblemBanner: View {
             Label {
                 Text(problem.message).foregroundStyle(.primary)
             } icon: {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color.csWarn)
             }
             .fixedSize(horizontal: false, vertical: true)
             if problem == .missing || isTooOld {
@@ -835,7 +835,7 @@ struct InlineErrorView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "exclamationmark.octagon.fill").foregroundStyle(.red)
+            Image(systemName: "exclamationmark.octagon.fill").foregroundStyle(Color.csBad)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title).font(.caption.weight(.semibold))
                 Text(message).font(.caption)
@@ -867,7 +867,7 @@ struct NoteBanner: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.csGood)
             // Up to four lines across the width it is given, not fixed to its
             // ideal height: in Settings the banner sits in the window's
             // bottom inset, where the window asks for an ideal size with no

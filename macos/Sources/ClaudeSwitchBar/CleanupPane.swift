@@ -90,15 +90,15 @@ struct CleanupPane: View {
             } else if let e = store.next.cleanPlanError {
                 InlineError(message: "Could not make the plan: " + e.message, hint: e.hint)
             } else {
-                Text("Preview shows what would go and why. Nothing moves until Clean now, and Undo puts a run back.")
+                Text("Preview shows what would go and why. Nothing moves until Clean Now, and Undo puts a run back.")
                     .foregroundStyle(.secondary)
             }
             if let r = store.next.cleanRun {
                 Label(r.summary, systemImage: r.kind == .undone ? "arrow.uturn.backward.circle" : "checkmark.circle")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Color.csGood)
                     .fixedSize(horizontal: false, vertical: true)
                 ForEach(r.failures, id: \.self) { f in
-                    Label(f, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+                    Label(f, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(Color.csWarn)
                 }
             }
             if let e = store.next.cleanRunError {
@@ -144,7 +144,7 @@ struct CleanupPane: View {
                      + (store.next.cleanPlanAt.map { " Looked " + Format.age($0, now: store.now) + "." } ?? ""))
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button("Clean now…") {
+                Button("Clean Now…") {
                     pending = PendingAction(confirmation: Confirm.cleanApply(p)) { store.applyClean(p) }
                 }
                 .buttonStyle(PrimaryButtonStyle())
@@ -158,7 +158,7 @@ struct CleanupPane: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         ForEach(p.warnings, id: \.self) { w in
-            Label(w, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+            Label(w, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(Color.csWarn)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }

@@ -6,7 +6,7 @@ reversibly.
 
 See also: [cs clean](../cli/clean.md) · [cs clean → the rules](../cli/clean.md#the-rules) · [Settings → Daemon](settings-daemon.md)
 
-<p align="center"><img src="../images/settings-cleanup.png" width="880" alt="Settings, Cleanup pane: Now, a plan with Worktrees 1 · 512 MB, Records of worktrees whose folder is gone 1, Local branches 1, Ended sessions' scratch 1 · 3 MB, Each item, and why, 1 kept: unmerged, in use, protected or changed recently, and Clean now…; Runs with two runs, the first with Undo; then Schedule, with Clean up on a schedule off"></p>
+<p align="center"><img src="../images/settings-cleanup.png" width="880" alt="Settings, Cleanup pane: Now, a plan with Worktrees 1 · 512 MB, Records of worktrees whose folder is gone 1, Local branches 1, Ended sessions' scratch 1 · 3 MB, Each item, and why, 1 kept: unmerged, in use, protected or changed recently, and Clean Now…; Runs with two runs, the first with Undo; then Schedule, with Clean up on a schedule off"></p>
 
 The pane has four sections: **Now** (the plan and its result), **Runs**,
 **Schedule** and **What it removes**.
@@ -26,7 +26,7 @@ could not be read, how many items it kept that may be merged already
 (`Pull requests not checked: gh not found, so 3 kept may be merged
 already.`).
 
-**Clean now…** asks first, with the total and the counts, then runs
+**Clean Now…** asks first, with the total and the counts, then runs
 `cs clean --apply --plan=<the preview> --json`: only the items the preview
 shows move, each judged again just before it does, so anything that changed
 since stays, and anything found since waits for the next preview. The

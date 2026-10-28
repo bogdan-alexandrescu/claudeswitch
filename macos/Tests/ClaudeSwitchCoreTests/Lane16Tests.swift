@@ -393,11 +393,11 @@ final class Box<T>: @unchecked Sendable {
         // The fixture's why names personal, which is live in review: the
         // card never offers what the switch would refuse (D34).
         #expect(d.best == nil)
-        #expect(d.bestLabel == "Switch to best")
+        #expect(d.bestLabel == "Switch to Best")
         #expect(d.bestUnavailable == "personal is in use by review")
         let rv = try #require(s.card("review"))
         #expect(rv.best == nil)
-        #expect(rv.bestLabel == "Switch to best")
+        #expect(rv.bestLabel == "Switch to Best")
         #expect(rv.bestUnavailable == "review has no other account")
     }
 

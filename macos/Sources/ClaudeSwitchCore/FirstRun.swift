@@ -45,18 +45,18 @@ public enum SetupStep: Int, CaseIterable, Identifiable {
     /// The step's button.
     public var action: String {
         switch self {
-        case .saveLogin: return "Save current login…"
-        case .addAccounts: return "Add account…"
-        case .workProfile: return "New profile…"
-        case .daemon: return "Install (dry run)"
+        case .saveLogin: return "Save Current Login…"
+        case .addAccounts: return "Add Account…"
+        case .workProfile: return "New Profile…"
+        case .daemon: return "Install (Dry Run)"
         }
     }
 
     /// The link on a step that is done or skipped, which opens it again.
     public func reopen(_ status: StepStatus) -> String {
-        if status == .skipped { return "Do it now" }
+        if status == .skipped { return "Do It Now" }
         switch self {
-        case .addAccounts, .workProfile: return "Add another"
+        case .addAccounts, .workProfile: return "Add Another"
         case .saveLogin, .daemon: return "Open"
         }
     }
@@ -285,10 +285,10 @@ public enum FirstRun {
     /// The window's foot, and its checkbox's label and help: where it opens
     /// again. Short enough to stay on one line beside the window's button;
     /// every step shows its own Skip.
-    public static let reopenHint = "Right-click the menu-bar icon → Set up… opens this again."
+    public static let reopenHint = "Right-click the menu-bar icon → Set Up… opens this again."
     public static let dontShowLabel = "Don’t show this again"
     public static let dontShowHelp = "Stop opening this window by itself at launch. Right-click the menu-bar icon → "
-        + "Set up… still opens it."
+        + "Set Up… still opens it."
 
     public static func banner(_ problem: CLIError?) -> SetupBanner? {
         switch problem {

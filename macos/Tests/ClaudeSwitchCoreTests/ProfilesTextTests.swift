@@ -49,7 +49,7 @@ func sentences(_ s: String) -> [String] {
     // Change…: whose pools, and sharing in plain words.
 
     @Test func testChangePoolsSaysWhoseAndHowTheyAreShared() {
-        #expect(ProfilesText.changeTitle("default") == "Choose the pools “default” uses")
+        #expect(ProfilesText.changeTitle("default") == "Choose the Pools “default” Uses")
         #expect(ProfilesText.changeHelp("default") == "Choose the pools “default” uses, and their order")
         #expect(ProfilesText.sharing == "Profiles that use the same pool share its accounts; each account is live "
                 + "in one profile at a time. No account moves.")

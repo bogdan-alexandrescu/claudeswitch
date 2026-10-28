@@ -22,14 +22,14 @@ A Chrome profile shared this way needs one sign-in after each rotation.
 ## A Chrome profile per account
 
 In [Settings → Accounts](settings-accounts.md), an account's ⋯ menu has
-**Chrome profile: …**:
+**Chrome Profile: …**:
 
 | choice | what it does | CLI |
 |---|---|---|
-| **Same as its profile** | the account has none of its own (the default) | `cs chrome forget <id>` |
-| one of **Your Chrome profiles** | the account uses that Chrome profile | `cs chrome add <id> --existing <name>` |
-| **Its own (…)** | shown, checked, when claudeswitch made one for it | |
-| **Create a new one** | makes a new Chrome profile for the account and opens it at the claude.ai sign-in and the extension's page | `cs chrome add <id>` |
+| **Same as Its Profile** | the account has none of its own (the default) | `cs chrome forget <id>` |
+| one of **Your Chrome Profiles** | the account uses that Chrome profile | `cs chrome add <id> --existing <name>` |
+| **Its Own (…)** | shown, checked, when claudeswitch made one for it | |
+| **Create a New One** | makes a new Chrome profile for the account and opens it at the claude.ai sign-in and the extension's page | `cs chrome add <id>` |
 
 An account with its own Chrome profile, signed in as that account, routes by
 itself: browser tasks follow every rotation to it.
@@ -39,7 +39,7 @@ account, each signed in once to claude.ai and to Claude in Chrome as its
 account. claudeswitch cannot move the extension's login from one account to
 another; with a profile per account it never has to. `cs setup` offers to
 make one for each account at the end, and the sign-in banner below has
-**Give \<account\> its own Chrome profile** for the account it names.
+**Give \<account\> Its Own Chrome Profile** for the account it names.
 
 ## Opening Chrome
 
@@ -53,13 +53,13 @@ CLI: `cs chrome open <id>`.
 
 ## The Chrome banner
 
-<p align="center"><img src="../images/popover-chrome-signin.png" width="384" alt="The popover with the work card open: Claude in Chrome in &quot;Work&quot; does not follow switches to work-team, with a Give work-team its own Chrome profile button and a close button"></p>
+<p align="center"><img src="../images/popover-chrome-signin.png" width="384" alt="The popover with the work card open: Claude in Chrome in &quot;Work&quot; does not follow switches to work-team, with a Give work-team Its Own Chrome Profile button and a close button"></p>
 
 An account with a Chrome profile of its own needs nothing here: after every
 switch to it, claudeswitch opens that profile in the background and Claude in
 Chrome follows (C4). When a profile's accounts share a Chrome profile and
 rotation moved the profile to another account, the shared profile cannot
-follow, and its card says so. **Give work-team its own Chrome profile**
+follow, and its card says so. **Give work-team Its Own Chrome Profile**
 creates one and opens it at the claude.ai and Claude in Chrome sign-in pages
 (`cs chrome add work-team`): sign in to both as work-team, once. It never asks
 for a sign-in after a rotation. The banner goes once that worked; if it

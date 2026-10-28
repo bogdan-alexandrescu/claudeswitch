@@ -172,8 +172,8 @@ public struct ProfileCard: Equatable, Identifiable {
 
     /// "Switch to best: w02 12%", or the bare verb when there is none.
     public var bestLabel: String {
-        guard let b = best else { return "Switch to best" }
-        return "Switch to best: \(b.id) \(Format.pct(b.bindingPct))"
+        guard let b = best else { return "Switch to Best" }
+        return "Switch to Best: \(b.id) \(Format.pct(b.bindingPct))"
     }
 
     /// M12: the best other account has no more room than the active one.
@@ -190,7 +190,7 @@ public struct ProfileCard: Equatable, Identifiable {
     }
 
     /// The button's first line.
-    public var bestTitle: String { alreadyOnBest ? "Already on the best" : "Switch to best" }
+    public var bestTitle: String { alreadyOnBest ? "Already on the Best" : "Switch to Best" }
 
     /// The button's second line: the best account and its utilization,
     /// "next: …" when the card is already on the best (M12).

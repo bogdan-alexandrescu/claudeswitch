@@ -173,7 +173,7 @@ would make, and changes nothing. Run it that way until `cs audit --kind
 decision` matches your judgement, then `cs daemon live` (or the **Live**
 switch in Settings → Daemon). `cs daemon dry-run` goes back. Credential
 renewal runs in both modes. Hand-made switches (`cs use`, the account picker,
-**Switch to best**) always act.
+**Switch to Best**) always act.
 [GUIDE → Running as a daemon](GUIDE.md#running-as-a-daemon).
 
 ## Credentials and recovery

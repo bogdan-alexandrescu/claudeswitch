@@ -14,8 +14,8 @@ acts on it or goes where it is fixed:
 |---|---|
 | `claudeswitch is not installed, or not where this app looks.`, or that it is too old for this app (or too new) | **Open Advanced**, where the binary is chosen |
 | `The daemon is not installed: nothing switches by itself`, or `The daemon has not polled for 21m` | **Open Daemon** |
-| `work-1 needs sign-in` | **Sign in…**: starts that account's sign-in, as the popover's does ([Add account](add-account.md), over Settings → Accounts) |
-| `Claude in Chrome in "Work" does not follow switches to work-team` | **Give work-team its own Chrome profile**: creates one and opens it at the sign-in pages, as the [popover's banner](popover.md#banners) does |
+| `work-1 needs sign-in` | **Sign In…**: starts that account's sign-in, as the popover's does ([Add account](add-account.md), over Settings → Accounts) |
+| `Claude in Chrome in "Work" does not follow switches to work-team` | **Give work-team Its Own Chrome Profile**: creates one and opens it at the sign-in pages, as the [popover's banner](popover.md#banners) does |
 | `2 health checks fail` (in the last `cs doctor` run) | **Open Health** |
 | `ClaudeSwitch 0.5.6 is available` | **Update…** (the [update window](updates.md)) |
 

@@ -33,7 +33,7 @@ import Testing
         let failed = UpdateDialog.failed(version: "0.5.6",
                                          message: UpdateError.checksumMismatch("ClaudeSwitch-0.5.6-macos.zip").message)
         #expect(failed.message.hasSuffix(Self.advice))
-        #expect(failed.pageLabel == "Release page on GitHub", "the page it is downloaded from, by its name")
+        #expect(failed.pageLabel == "Release Page on GitHub", "the page it is downloaded from, by its name")
         #expect(failed.page == URL(string: UpdateSource.home + "/releases/tag/v0.5.6"))
         let offer = UpdateDialog.available(version: "0.5.6", current: "0.5.5", notes: nil, bytes: 0,
                                            page: URL(string: UpdateSource.home + "/releases/tag/v0.5.6"))

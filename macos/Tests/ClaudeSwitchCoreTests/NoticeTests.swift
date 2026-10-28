@@ -95,8 +95,8 @@ import Testing
 
     @Test func testCategoriesHaveTheirActions() {
         #expect(NoticeCategory.actions(NoticeCategory.rotation).map(\.id) == [NoticeAction.undo, NoticeAction.pinHere])
-        #expect(NoticeCategory.actions(NoticeCategory.rotation).map(\.title) == ["Undo", "Pin here"])
-        #expect(NoticeCategory.actions(NoticeCategory.signIn).map(\.title) == ["Sign in"])
+        #expect(NoticeCategory.actions(NoticeCategory.rotation).map(\.title) == ["Undo", "Pin Here"])
+        #expect(NoticeCategory.actions(NoticeCategory.signIn).map(\.title) == ["Sign In"])
     }
 }
 
@@ -109,7 +109,7 @@ import Testing
         #expect(NoticeCategory.all == [NoticeCategory.rotation, NoticeCategory.signIn, NoticeCategory.relogin])
         #expect(NoticeCategory.relogin == "xyz.claudeswitch.relogin", "F5's identifier, unchanged")
         #expect(NoticeCategory.actions(NoticeCategory.relogin).map(\.id) == [NoticeAction.reloginSignIn])
-        #expect(NoticeCategory.actions(NoticeCategory.relogin).map(\.title) == ["Sign in…"])
+        #expect(NoticeCategory.actions(NoticeCategory.relogin).map(\.title) == ["Sign In…"])
         for c in NoticeCategory.all { #expect(!NoticeCategory.actions(c).isEmpty, "\(c) has its actions") }
     }
 

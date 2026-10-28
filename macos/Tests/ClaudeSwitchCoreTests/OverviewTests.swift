@@ -52,7 +52,7 @@ import Testing
         let o = Overview.build(i)
         #expect(o.needs.map(\.target) == [.daemon, .signIn, .accounts, .update])
         #expect(o.needs[0].text.contains("not installed"))
-        #expect(o.needs[1].text == "\(s.accounts[0].id) needs sign-in" && o.needs[1].action == "Sign in…")
+        #expect(o.needs[1].text == "\(s.accounts[0].id) needs sign-in" && o.needs[1].action == "Sign In…")
         #expect(o.needs[3].text == "ClaudeSwitch 0.9.0 is available" && o.needs[3].action == "Update…")
         let accounts = try #require(o.tiles.first { $0.title == "Accounts" })
         #expect(accounts.attention && accounts.secondary.hasPrefix("1 needs sign-in"))

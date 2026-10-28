@@ -31,7 +31,7 @@ import Testing
 
     @Test func testADuplicatesHintFitsTheRoute() {
         #expect(AddForm.duplicateHint(saving: true, asked: nil)
-                == "Save current login saves the account Claude Code is signed in to. To add another, choose Sign in with browser.")
+                == "Save Current Login saves the account Claude Code is signed in to. To add another, choose Sign In with Browser.")
         #expect(AddForm.duplicateHint(saving: false, asked: nil) == AddForm.appHint(code: "already_vaulted", asked: nil))
         #expect(AddForm.duplicateHint(saving: false, asked: "org-2") == nil, "it was asked for: the CLI's own")
     }

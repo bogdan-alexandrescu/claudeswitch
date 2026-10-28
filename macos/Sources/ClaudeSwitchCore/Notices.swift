@@ -95,9 +95,9 @@ public enum NoticeCategory {
 
     public static func actions(_ category: String) -> [Action] {
         switch category {
-        case rotation: return [Action(id: NoticeAction.undo, title: "Undo"), Action(id: NoticeAction.pinHere, title: "Pin here")]
-        case signIn: return [Action(id: NoticeAction.signIn, title: "Sign in")]
-        case relogin: return [Action(id: NoticeAction.reloginSignIn, title: "Sign in…")]
+        case rotation: return [Action(id: NoticeAction.undo, title: "Undo"), Action(id: NoticeAction.pinHere, title: "Pin Here")]
+        case signIn: return [Action(id: NoticeAction.signIn, title: "Sign In")]
+        case relogin: return [Action(id: NoticeAction.reloginSignIn, title: "Sign In…")]
         default: return []
         }
     }
@@ -165,7 +165,7 @@ public enum Notices {
                !appSwitches.made(profile: p.name, to: to, now: now) {
                 out.append(Notice(id: "rotation:\(p.name):\(to):\(Int(now.timeIntervalSince1970))",
                                   category: NoticeCategory.rotation, title: "\(p.name) → \(to)",
-                                  body: "Rotated from \(from). Undo switches back; Pin here keeps \(to).",
+                                  body: "Rotated from \(from). Undo switches back; Pin Here keeps \(to).",
                                   info: ["kind": "rotation", "profile": p.name, "from": from, "to": to]))
             }
             for (account, status) in p.status.sorted(by: { $0.key < $1.key }) {

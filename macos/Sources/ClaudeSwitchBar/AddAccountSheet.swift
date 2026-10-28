@@ -14,7 +14,7 @@ struct AddAccountSheet: View {
     @Environment(\.dismiss) private var dismiss
     let request: AddAccountRequest
 
-    enum Route: String, CaseIterable { case browser = "Sign in with browser", current = "Save current login" }
+    enum Route: String, CaseIterable { case browser = "Sign In with Browser", current = "Save Current Login" }
 
     @State var route: Route = .browser
     @State var name = ""
@@ -44,7 +44,7 @@ struct AddAccountSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(request.relogin ? "Sign in to \(inQuotes(request.account ?? "")) again" : "Add an account")
+            Text(request.relogin ? "Sign In to \(inQuotes(request.account ?? "")) Again" : "Add an Account")
                 .font(.title3.bold())
             if let a = added {
                 AddedView(added: a)
@@ -243,7 +243,7 @@ struct AddAccountSheet: View {
                     } else {
                         // Not colour alone: the mark says it too.
                         Label(problem, systemImage: "exclamationmark.triangle").font(.caption)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Color.csWarn)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 } else {
@@ -297,14 +297,14 @@ struct AddAccountSheet: View {
             }
             .opacity(started == nil ? 0.45 : 1)
             if let s = started, let m = AddForm.mismatch(chosen: profile, start: s) {
-                Label(m, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+                Label(m, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(Color.csWarn)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Text(AddForm.signInNote(place))
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             if let s = started {
-                Button("Open the page again") { Launcher.open(s.url, in: browser) }.buttonStyle(.link).font(.caption)
+                Button("Open the Page Again") { Launcher.open(s.url, in: browser) }.buttonStyle(.link).font(.caption)
             }
         }
         .padding(16)
@@ -318,7 +318,7 @@ struct AddAccountSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
             if let n = crossNote {
                 Label(n.prefix(1).uppercased() + n.dropFirst() + ".", systemImage: "exclamationmark.triangle")
-                    .font(.caption).foregroundStyle(.orange)
+                    .font(.caption).foregroundStyle(Color.csWarn)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -360,7 +360,7 @@ struct AddAccountSheet: View {
                 Button("Cancel") { life.closed = true; dismiss() }.keyboardShortcut(.cancelAction)
                 if route == .browser {
                     if started == nil {
-                        Button("Open sign-in page", action: start).keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
+                        Button("Open Sign-In Page", action: start).keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
                             .disabled(!canStart)
                     } else {
                         Button("Finish", action: finish).keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
@@ -506,9 +506,9 @@ struct SheetError: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: "xmark.octagon.fill").foregroundStyle(.red).accessibilityHidden(true)
+            Image(systemName: "xmark.octagon.fill").foregroundStyle(Color.csBad).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(message).foregroundStyle(.red)
+                Text(message).foregroundStyle(Color.csBad)
                 if !hint.isEmpty { Text(hint).foregroundStyle(.secondary) }
             }
         }
@@ -548,7 +548,7 @@ struct AddedView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label("The account \(inQuotes(added.account)) is stored and verified", systemImage: "checkmark.seal.fill")
-                .foregroundStyle(.green).font(.headline)
+                .foregroundStyle(Color.csGood).font(.headline)
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
                 row("Email", added.email)
                 row("Plan", added.plan)
@@ -566,7 +566,7 @@ struct AddedView: View {
             .font(.callout)
             if let n = added.note {
                 Label(n.prefix(1).uppercased() + n.dropFirst() + ".", systemImage: "exclamationmark.triangle")
-                    .font(.caption).foregroundStyle(.orange)
+                    .font(.caption).foregroundStyle(Color.csWarn)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }

@@ -38,13 +38,14 @@ the rings alone, because a satellite that small reads as noise.
 | Frost | `#f4f7fa` | light backgrounds; primary text on dark |
 | Slate | `#5f6670` | secondary text and unlit dots on light; quiet chrome on dark |
 | Glacier | `#8fd3ff` | the accent on dark: the mark, the live account, healthy bars |
-| Glacier ink | `#2a9fe0` | the accent on light, where Glacier lacks contrast |
+| Glacier ink | `#2a9fe0` | the app icon and brand art on light |
+| Deep glacier | `#1872a5` | the app's accent on light: white on it, and it on white, read at 5.3:1 |
 | Meltwater | `#b6f0dc` | the second accent: healthy figures and good outcomes |
 | Amber | `#f0c75e` | warning: usage is climbing |
 | Red | `#ff7a7a` | warning: refused, over the limit, act now |
 
-Light and dark pairs: on light use Glacier ink for the accent, Slate for
-secondary text and Graphite for primary text. On dark use Glacier, a light grey
+Light and dark pairs: on light use Deep glacier for the app's accent (Glacier
+ink in brand art), Slate for secondary text and Graphite for primary text. On dark use Glacier, a light grey
 for secondary text and Frost for primary text. Amber and red stay the same in
 both, because they carry meaning.
 
@@ -57,6 +58,26 @@ to build; the app builds with the Command Line Tools alone (decided
 
 The warnings are semantic. Outside the rings, amber and red appear only when
 something needs attention, and nothing else is ever drawn in them.
+
+### Contrast in the app (owner's picks, 2026-10-28)
+
+Text the app draws in a colour reads at 4.5:1 or more, the least small text
+needs:
+
+| Token | Light | Dark | Why |
+|---|---|---|---|
+| Accent | `#1872a5` Deep glacier | `#8fd3ff` Glacier | white text on `#2a9fe0` measured 2.9:1 |
+| Text on the accent | white | `#0d1b24` | |
+| Warning text and icons | `#a85400` | system orange | system orange measured 2.2:1 on white |
+| Good text, the available chip | `#157a32` | system green | system green measured 2.1:1 |
+| Bad text, refused and needs sign-in chips | `#c2261c` | system red | system red measured 3.6:1 |
+| Switch-point dot (tick) | Graphite | Frost | in dark it was Meltwater, which read as a lit dot |
+| History's session line | `#3fbf98` | `#3fbf98` | in dark Meltwater sat too close to the week's Glacier |
+
+Status chips keep the bright system colour as their tint and take the deeper
+ink only for their text. Dark mode keeps the system colours, so they follow
+Increase Contrast. Buttons and menu items use title case, as on macOS;
+switches, checkboxes and sentences use sentence case.
 
 ### The usage ramp
 
@@ -86,7 +107,7 @@ popover or a light menu bar. The app icon uses the dark stops.
 - **Dials and bars.** The popover shows the session and the week as two dot
   dials. A switch in the popover changes them to dot bars, and the same choice
   is a setting. Both forms use the same dots, the usage ramp and the threshold
-  dot.
+  dot, which is Graphite on light and Frost on dark.
 - **Appearance.** System, Light or Dark. It is set in Advanced → This app and
   in the popover's ⋯ menu.
 - **The live glyph.** The menu-bar glyph is the live rings, in colour: each

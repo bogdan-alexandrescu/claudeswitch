@@ -96,7 +96,7 @@ cs clean --apply --plan plan.json    # acts on that plan's items alone
 Each item is still judged again just before it moves: one that changed, is
 gone, or whose kind was turned off since stays (`skipped`). Nothing the
 plan does not list is touched. `--plan -` reads the plan from stdin. The
-app's **Clean now…** works this way with the plan it shows. The daemon's
+app's **Clean Now…** works this way with the plan it shows. The daemon's
 runs make their own plan each time.
 
 ## What --apply does

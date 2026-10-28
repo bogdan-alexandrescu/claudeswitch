@@ -24,7 +24,7 @@ settings and the daemon (IMPROVEMENTS M1, M3-M7).
   Terminal, iTerm, Ghostty or Warp), **Switch account**, Open Chrome for the
   account (`chrome open`, or `chrome add` the first time), Pin (`account pin` /
   `account unpin --profile`), and what rotation will do next and why. The
-  other profiles are compact rows that expand. **+ Add account** and
+  other profiles are compact rows that expand. **+ Add Account** and
   **Settings…** at the foot.
 - **Settings window:** Profiles (create with a directory, accounts of its
   own, the pools it uses and a seed account; choose and order each

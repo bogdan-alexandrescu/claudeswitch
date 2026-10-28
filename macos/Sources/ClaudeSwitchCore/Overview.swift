@@ -181,7 +181,7 @@ public struct Overview: Equatable {
             break
         }
         for a in i.accounts where a.status == .needsLogin {
-            needs.append(OverviewNeed(text: "\(a.id) needs sign-in", action: "Sign in…", target: .signIn, account: a.id))
+            needs.append(OverviewNeed(text: "\(a.id) needs sign-in", action: "Sign In…", target: .signIn, account: a.id))
         }
         if i.chromeNotices.isEmpty {
             for c in i.chrome {

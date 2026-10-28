@@ -144,7 +144,7 @@ final class Notifier: NSObject, ObservableObject, UNUserNotificationCenterDelega
                                    actions: NoticeCategory.actions(id).map {
                                        // A sign-in opens Settings: bring the app forward.
                                        UNNotificationAction(identifier: $0.id, title: $0.title,
-                                                            options: $0.title.hasPrefix("Sign in") ? [.foreground] : [])
+                                                            options: $0.title.hasPrefix("Sign In") ? [.foreground] : [])
                                    },
                                    intentIdentifiers: [], options: [])
         }

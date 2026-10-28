@@ -31,7 +31,7 @@ and paths are example data.
 ## Not installed, or not read
 
 The pane says **The daemon service is not installed.** only when the CLI
-says so. It then offers **Install (dry run)** and **Install live…**, which
+says so. It then offers **Install (Dry Run)** and **Install Live…**, which
 install the service for the binary the app uses; Live asks first
 (`cs daemon install --dry-run` / `cs daemon install --live`).
 

@@ -98,7 +98,7 @@ struct WelcomeView: View {
                 Label {
                     Text(b.line).foregroundStyle(.secondary)
                 } icon: {
-                    Image(systemName: "exclamationmark.octagon.fill").foregroundStyle(.red)
+                    Image(systemName: "exclamationmark.octagon.fill").foregroundStyle(Color.csBad)
                 }
                 .font(.caption)
             }
@@ -129,7 +129,7 @@ struct WelcomeView: View {
                         .background(Button("", action: close).keyboardShortcut(.cancelAction)
                             .opacity(0).accessibilityHidden(true))
                 } else {
-                    Button("Finish later") { close() }.keyboardShortcut(.cancelAction)
+                    Button("Finish Later") { close() }.keyboardShortcut(.cancelAction)
                 }
             }
         }

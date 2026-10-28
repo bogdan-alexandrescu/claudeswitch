@@ -19,7 +19,7 @@ import Testing
         var i = try input()
         i.accounts[0].status = .needsLogin
         let n = try #require(Overview.build(i).needs.first)
-        #expect(n.action == "Sign in…" && n.target == .signIn && n.account == i.accounts[0].id)
+        #expect(n.action == "Sign In…" && n.target == .signIn && n.account == i.accounts[0].id)
     }
 
     @Test func testTheChromeNeedOffersTheChromeProfileOfItsOwn() throws {
@@ -27,7 +27,7 @@ import Testing
         i.chromeNotices = [ChromeSignInNotice(profile: "work", chromeName: "Work", old: "a", account: "work-team",
                                               key: "k")]
         let n = try #require(Overview.build(i).needs.first)
-        #expect(n.action == "Give work-team its own Chrome profile" && n.target == .chromeOwn && n.account == "work-team")
+        #expect(n.action == "Give work-team Its Own Chrome Profile" && n.target == .chromeOwn && n.account == "work-team")
     }
 
     @Test func testFailingHealthChecksAndAMissingBinaryAreNeeds() throws {

@@ -4,15 +4,15 @@ The sheet that adds an account, or signs in to one again: through a browser, or 
 
 See also: [cs accounts → login, add](../cli/accounts.md) · [GUIDE → Adding an account](../GUIDE.md#adding-an-account) · [Settings → Accounts](settings-accounts.md)
 
-It opens from **+ Add account** in the popover (for the followed profile),
-**Add account** in [Settings → Accounts](settings-accounts.md) (for the
-first profile), and **Sign in…** in an account's ⋯ menu, the popover's and
-Overview's **Sign in…**, a Health fix or a re-login notification (that
+It opens from **+ Add Account** in the popover (for the followed profile),
+**Add Account** in [Settings → Accounts](settings-accounts.md) (for the
+first profile), and **Sign In…** in an account's ⋯ menu, the popover's and
+Overview's **Sign In…**, a Health fix or a re-login notification (that
 account, in its profile).
 
 ## Sign in with browser
 
-<p align="center"><img src="../images/add-account.png" width="520" alt="Add an account, Sign in with browser: Name, Pool (“default”, the profile’s own pool), Organization (The one your browser is in), Browser, then step 1 Open the sign-in page and step 2 Paste the code it shows, dimmed until the page is open, a sentence on where the account is stored, and Enter a name to continue beside a greyed Open sign-in page"></p>
+<p align="center"><img src="../images/add-account.png" width="520" alt="Add an Account, Sign In with Browser: Name, Pool (“default”, the profile’s own pool), Organization (The one your browser is in), Browser, then step 1 Open the sign-in page and step 2 Paste the code it shows, dimmed until the page is open, a sentence on where the account is stored, and Enter a name to continue beside a greyed Open Sign-In Page"></p>
 
 | field | what it is | default |
 |---|---|---|
@@ -21,7 +21,7 @@ account, in its profile).
 | **Organization** | the organization to sign in to: one an account here is already in (`Same organization as “personal”, “work-1” +2`), another pasted by id (**Another organization…**), or whichever the browser is in. Choose one to add a person in a second organization. An id that cannot be asked for is marked with a warning sign (`Paste the organization’s id: letters, digits and dashes.`). An account signing in again asks for its own | The one your browser is in |
 | **Browser** | the browser the sign-in page opens in. A browser signs in as the account it already holds, so pick one signed in to this account | Default browser |
 
-**Open sign-in page** runs `cs login <name> --direct --no-open`, with
+**Open Sign-In Page** runs `cs login <name> --direct --no-open`, with
 `--pool <pool>` or `--no-pool` for the pool chosen (`--profile <profile>`
 with an older claudeswitch), and `--browser` and `--org` when set, then
 opens the page. The button waits for a name, and says so (`Enter a name to
@@ -49,7 +49,7 @@ next step under it.
 
 ## Save current login
 
-<p align="center"><img src="../images/add-account-current.png" width="520" alt="Add an account, Save current login: Save login from default, Name with the suggested person4, Add it to pool (“default”, the profile’s own pool), a sentence on what Save does, then Cancel and Save"></p>
+<p align="center"><img src="../images/add-account-current.png" width="520" alt="Add an Account, Save Current Login: Save login from default, Name with the suggested person4, Add it to pool (“default”, the profile’s own pool), a sentence on what Save does, then Cancel and Save"></p>
 
 | field | what it is | default |
 |---|---|---|

@@ -837,7 +837,7 @@ entry also carries `active_in`, the profile state records it live in, when
 there is one. `best_why` gives such an account as `"<id>: in use by
 <profile>"` (it read `"live in <profile>"` before).
 
-`best` (lane 16, owner decision) is the account the app's "Switch to best"
+`best` (lane 16, owner decision) is the account the app's "Switch to Best"
 moves the profile to now: of the profile's pools, the account other than the
 live one that automatic rotation would pick — readable, not refused, not
 over its `reserve`, clear of the landing margin, pool by pool and ranked by
@@ -855,7 +855,7 @@ offered:`). `best_why` is `null` when `best` is set with room to spare.
 
 `on_best`, `active_room` and `best_room` (contract 2, additive, IMPROVEMENTS
 M12, owner decision 2026-10-08) are the measure behind the app's "Already
-on the best". A room is the points an account sits below the trigger of its
+on the Best". A room is the points an account sits below the trigger of its
 binding window (the one closest to its own trigger: session against
 `switch_at`, week against `switch_at_weekly`), negative past it: the figure
 `best` is ranked by, the live account's carrying its projection.

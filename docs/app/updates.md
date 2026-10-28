@@ -27,13 +27,13 @@ says **Last check failed** instead of **Up to date**.
 | control | where | what it does | default |
 |---|---|---|---|
 | **Check for updates** | Settings → Advanced → This app | off makes no call at all, and hides an offer already found, and one a check still under way finds after it is turned off; turned on again, it shows what the last check found. The line under it gives this version, a newer one found, and when it last checked (`This is 0.8.18 · checked 2h ago`), or `Version unknown` for a build with no version | on |
-| **Check now** | under it | checks at once and opens the update window. Greyed out while the check is off | |
-| **Check for updates…** | the menu-bar icon's menu (right-click or Control-click the icon) | the same. Greyed out while the check is off | |
+| **Check Now** | under it | checks at once and opens the update window. Greyed out while the check is off | |
+| **Check for Updates…** | the menu-bar icon's menu (right-click or Control-click the icon) | the same. Greyed out while the check is off | |
 | the **Updates** tile | [Settings → Overview](settings-overview.md) | opens the offer, or checks. While the check is off it opens Settings → Advanced instead, where it is turned on | |
 
 ## The update window
 
-**Check for updates…** and **Check now** open it, and it says what the
+**Check for Updates…** and **Check Now** open it, and it says what the
 check found:
 
 - **Checking for updates…**, with a spinner beside `Asking GitHub for the
@@ -106,7 +106,7 @@ in.**). Closing the window does not stop an install.
 
 **Any failure leaves both as they were** and says why in the window (**The
 update did not install**), ending `The app and the claudeswitch command were
-not changed.`, with **Release page on GitHub** (the release's page, where
+not changed.`, with **Release Page on GitHub** (the release's page, where
 it can be downloaded by hand), **Close** and **Try Again**. When the
 release itself is at fault (a file missing from it, a checksum it does not
 list, a download that does not match its checksum), **Try Again** fails the

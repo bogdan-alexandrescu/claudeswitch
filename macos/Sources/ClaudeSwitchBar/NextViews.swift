@@ -21,7 +21,7 @@ struct PoolLine: View {
             // Urgent says so with its symbol too, not by colour alone.
             Label(line, systemImage: urgent ? "exclamationmark.triangle.fill" : "hourglass")
                 .font(.caption)
-                .foregroundStyle(urgent ? Color.orange : Color.secondary)
+                .foregroundStyle(urgent ? Color.csWarn : Color.secondary)
                 .lineLimit(1).truncationMode(.tail)
                 .help(line)
         }
@@ -63,7 +63,7 @@ struct HardPinMenu: View {
                 // popover was never put on screen by macOS and left the
                 // popover blocked (M11).
                 HStack(spacing: 6) {
-                    Button("Pin hard") {
+                    Button("Pin Hard") {
                         confirming = false
                         store.pinHard(profile: card.name, account: a.id)
                     }
@@ -77,7 +77,7 @@ struct HardPinMenu: View {
                 .fixedSize()
             } else {
                 Menu {
-                    Button(card.isPinned ? "Keep the pin even if it runs out…" : "Pin, even if it runs out…") {
+                    Button(card.isPinned ? "Keep the Pin Even If It Runs Out…" : "Pin, Even If It Runs Out…") {
                         confirming = true
                     }
                 } label: {
@@ -264,7 +264,7 @@ struct HistoryLegend: View {
     var body: some View {
         HStack(spacing: 16) {
             item(Rectangle().fill(Color.csAccent).frame(width: 14, height: 3), "Week")
-            item(Rectangle().fill(Color.csAccent2).frame(width: 14, height: 2), "Session")
+            item(Rectangle().fill(Color.csSessionLine).frame(width: 14, height: 2), "Session")
             item(Rectangle().fill(Color.secondary).frame(width: 1.5, height: 12), "Switched to it")
             item(DashedRule().stroke(Color.secondary, style: StrokeStyle(lineWidth: 1.5, dash: [3, 2]))
                     .frame(width: 2, height: 12), "Switched away")
@@ -316,7 +316,7 @@ struct AccountHistoryChart: View {
                 ForEach(session) { p in
                     LineMark(x: .value("Time", p.at), y: .value("Used", p.value),
                              series: .value("Line", "session-\(p.segment)"))
-                        .foregroundStyle(Color.csAccent2)
+                        .foregroundStyle(Color.csSessionLine)
                         .lineStyle(StrokeStyle(lineWidth: 1))
                         .interpolationMethod(.linear)
                 }
@@ -391,7 +391,7 @@ struct HealthPane: View {
                     if store.isBusy("doctor") {
                         ProgressView().controlSize(.small)
                     } else {
-                        Label("Run again", systemImage: "arrow.clockwise")
+                        Label("Run Again", systemImage: "arrow.clockwise")
                     }
                 }
                 .disabled(store.binaryPath == nil || store.isBusy("doctor"))
@@ -483,9 +483,9 @@ struct CheckRow: View {
         case .ok:
             Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.csAccent2).accessibilityLabel("ok")
         case .warn:
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).accessibilityLabel("warning")
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color.csWarn).accessibilityLabel("warning")
         case .fail:
-            Image(systemName: "xmark.octagon.fill").foregroundStyle(.red).accessibilityLabel("failing")
+            Image(systemName: "xmark.octagon.fill").foregroundStyle(Color.csBad).accessibilityLabel("failing")
         case .unknown:
             Image(systemName: "questionmark.circle").foregroundStyle(.secondary).accessibilityLabel("unknown")
         }

@@ -49,8 +49,8 @@ public struct NewPoolRun: Equatable {
     public var action: String {
         guard created else { return plan.confirmation == nil ? "Create" : "Create…" }
         let left = steps
-        if left.count == 1, case .move(let a, _) = left[0] { return "Move \(inQuotes(a)) in" }
-        return "Move the rest in"
+        if left.count == 1, case .move(let a, _) = left[0] { return "Move \(inQuotes(a)) In" }
+        return "Move the Rest In"
     }
 
     /// Once the pool exists there is nothing to cancel: it stays.

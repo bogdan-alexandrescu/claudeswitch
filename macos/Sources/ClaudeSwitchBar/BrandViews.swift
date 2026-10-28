@@ -10,6 +10,10 @@ extension Color {
     static let csTrack = Color(nsColor: Palette.track)
     static let csTick = Color(nsColor: Palette.tick)
     static let csOnAccent = Color(nsColor: Palette.onAccent)
+    static let csWarn = Color(nsColor: Palette.warn)
+    static let csGood = Color(nsColor: Palette.good)
+    static let csBad = Color(nsColor: Palette.bad)
+    static let csSessionLine = Color(nsColor: Palette.sessionLine)
 }
 
 /// The tokens resolved for a colour scheme, for Canvas drawing.
@@ -138,7 +142,7 @@ struct MiniRings: View {
                 if trouble {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: size * 0.42, weight: .bold))
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Color.csBad)
                         .background(Circle().fill(Color(nsColor: .controlBackgroundColor)).padding(-1))
                         .accessibilityLabel("needs you")
                 }

@@ -71,7 +71,7 @@ import Testing
     @Test func testShownWhenOnlyTheProfileApplies() throws {
         let n = try #require(live().signInNotice(dismissed: []))
         #expect(n.text == "Claude in Chrome in \"Work\" does not follow switches to work-team")
-        #expect(n.ownButton == "Give work-team its own Chrome profile")
+        #expect(n.ownButton == "Give work-team Its Own Chrome Profile")
         #expect(!n.text.lowercased().contains("sign"))
         #expect(n.account == "work-team" && n.profile == "work")
     }

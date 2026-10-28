@@ -36,7 +36,7 @@ public enum ProfilesText {
 
     /// The menu under a profile that needs sign-in (`profile seed`); the
     /// badge says the state, so the row says only the action.
-    public static let signInAction = "Sign in…"
+    public static let signInAction = "Sign In…"
 
     /// One of its accounts in that menu; one live in another profile cannot
     /// sign this one in (§3, one profile at a time).
@@ -78,7 +78,7 @@ public enum ProfilesText {
     /// The one profile of a config with no [[profile]] blocks; New profile
     /// is the pane's own button, above it.
     public static let implicitNote = "Every account belongs to this one setup. To split them, create a profile with "
-        + "New profile above."
+        + "New Profile above."
 
     /// "Shown in menu bar": checked on the profile the menu bar follows. On
     /// default it cannot be unchecked, since the menu bar would follow
@@ -142,8 +142,8 @@ public enum ProfilesText {
 
     // MARK: Change… and New profile
 
-    public static func changeTitle(_ name: String) -> String { "Choose the pools \(q(name)) uses" }
-    public static func changeHelp(_ name: String) -> String { changeTitle(name) + ", and their order" }
+    public static func changeTitle(_ name: String) -> String { "Choose the Pools \(q(name)) Uses" }
+    public static func changeHelp(_ name: String) -> String { "Choose the pools \(q(name)) uses, and their order" }
 
     /// Shared pools in one line (§3: one profile at a time).
     public static let sharing = "Profiles that use the same pool share its accounts; each account is live in one "
@@ -269,11 +269,11 @@ public struct NewProfileRun: Equatable {
         var h = hint
         switch s {
         case .seed where code == "daemon_not_loaded":
-            h = "Retry once the daemon runs, or Close and sign it in later from its card in Profiles (Sign in…)."
+            h = "Retry once the daemon runs, or Close and sign it in later from its card in Profiles (Sign In…)."
         case .pools where hint.isEmpty:
             h = "Retry, or Close and choose them later from its card in Profiles (Change…)."
         case .seed where hint.isEmpty:
-            h = "Retry, or Close and sign it in later from its card in Profiles (Sign in…)."
+            h = "Retry, or Close and sign it in later from its card in Profiles (Sign In…)."
         default: break
         }
         failure = Failure(step: s, message: message, hint: h)

@@ -204,7 +204,7 @@ vaulted account: `account`, `email`, `plan`, `seat`, `org_id`, `profile`,
 `--json` without `--direct` or `--code` is a `usage` error. `--code` with no
 attempt pending, or an expired one, is `no_pending_login`.
 
-The [Add account sheet](../app/add-account.md) runs
+The [Add Account sheet](../app/add-account.md) runs
 `login <id> --direct --json --no-open` and then `login <id> --code <code> --json`.
 
 ## cs add
@@ -222,7 +222,7 @@ stored credential in place.
 |---|---|---|
 | `<id>` | asks, suggesting a name from the account | the name to file it under |
 | `--profile NAME` | this shell's profile | the profile whose pool the account joins and, without `--from`, whose live credential is read |
-| `--from PROFILE` | `--profile` | the profile whose live credential to vault, when it is not `--profile` (the app's "Save current login") |
+| `--from PROFILE` | `--profile` | the profile whose live credential to vault, when it is not `--profile` (the app's "Save Current Login") |
 | `--pool NAME` | `--profile`'s pool | the pool a new account goes into: a `[[pool]]`, or a profile's own pool by its profile's name (D37) |
 | `--no-pool` | off | put a new account in no pool; the profile named `default` uses it last |
 | `--force` | off | re-add even when the live credential looks staler than the one already vaulted under that name |

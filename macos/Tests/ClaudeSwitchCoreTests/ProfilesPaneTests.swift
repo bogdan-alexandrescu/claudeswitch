@@ -25,14 +25,14 @@ import Testing
     }
 
     @Test func testSigningInSaysWhoAndWhere() {
-        #expect(ProfilesText.signInAction == "Sign in…")
+        #expect(ProfilesText.signInAction == "Sign In…")
         #expect(ProfilesText.signInWith("work-1", elsewhere: "work") == "work-1 — in use by “work”")
         #expect(ProfilesText.signInWith("work-1", elsewhere: nil) == "work-1")
         #expect(ProfilesText.noAccountToSignIn("review") == "Add an account to “review” first")
         #expect(ProfilesText.signedIn(profile: "review", account: "personal")
                 == "The profile “review” is signed in with “personal”")
         #expect(ProfilesText.signInFailed("review") == "Could not sign “review” in")
-        #expect(ProfilesText.openHelp("review", signedIn: "no") == "The profile “review” needs sign-in: Sign in… first")
+        #expect(ProfilesText.openHelp("review", signedIn: "no") == "The profile “review” needs sign-in: Sign In… first")
         #expect(ProfilesText.openHelp("review", signedIn: "yes") == "Open Claude Code in “review”")
     }
 
@@ -42,7 +42,7 @@ import Testing
             """#.utf8)))
         #expect(ProfileText.badge(one.profiles[0]) == "the only profile")
         #expect(ProfilesText.implicitNote
-                == "Every account belongs to this one setup. To split them, create a profile with New profile above.")
+                == "Every account belongs to this one setup. To split them, create a profile with New Profile above.")
     }
 
     @Test func testTheMenuBarCheckboxSaysWhatItFollows() {

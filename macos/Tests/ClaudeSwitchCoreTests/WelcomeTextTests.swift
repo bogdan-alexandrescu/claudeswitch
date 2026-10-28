@@ -56,19 +56,19 @@ import Testing
     }
 
     @Test func testADoneStepReopensByWhatItDoes() {
-        #expect(SetupStep.addAccounts.reopen(.done) == "Add another")
-        #expect(SetupStep.workProfile.reopen(.done) == "Add another")
+        #expect(SetupStep.addAccounts.reopen(.done) == "Add Another")
+        #expect(SetupStep.workProfile.reopen(.done) == "Add Another")
         #expect(SetupStep.saveLogin.reopen(.done) == "Open")
         #expect(SetupStep.daemon.reopen(.done) == "Open")
-        for s in SetupStep.allCases { #expect(s.reopen(.skipped) == "Do it now") }
+        for s in SetupStep.allCases { #expect(s.reopen(.skipped) == "Do It Now") }
     }
 
     /// Second pass: the hint's "this again." wrapped onto a line of its own
     /// beside the window's button. Every step shows its Skip.
     @Test func testItReopensFromTheIconsMenu() {
-        #expect(FirstRun.reopenHint == "Right-click the menu-bar icon → Set up… opens this again.")
+        #expect(FirstRun.reopenHint == "Right-click the menu-bar icon → Set Up… opens this again.")
         #expect(FirstRun.dontShowHelp
-                == "Stop opening this window by itself at launch. Right-click the menu-bar icon → Set up… still opens it.")
+                == "Stop opening this window by itself at launch. Right-click the menu-bar icon → Set Up… still opens it.")
     }
 
     @Test func testABinaryTooOldIsFlaggedLikeAMissingOne() {

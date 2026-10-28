@@ -437,7 +437,7 @@ account. Then:
 - to one that uses its profile's Chrome profile, they say
   `Claude in Chrome in "Work" does not follow switches: give work-b a Chrome
   profile of its own (cs chrome add work-b)`, and the app's card shows the
-  same with a **Give work-b its own Chrome profile** button (dismissable until
+  same with a **Give work-b Its Own Chrome Profile** button (dismissable until
   the next rotation);
 - to one with neither, once you have set up a Chrome profile for any account,
   they say `Claude in Chrome: work-b has no Chrome profile — cs chrome add
@@ -490,7 +490,7 @@ because the pinned account was refused, ran out or needs sign-in
 (`pin on work-1 lifted: it was refused`; `cs account pin --hard` keeps a pin
 even then). Nothing else notifies; `--quiet` disables them. While the
 macOS app is running and posting its own rotation notifications (with
-Undo and Pin here), the daemon leaves the switch notice to the app, so a
+Undo and Pin Here), the daemon leaves the switch notice to the app, so a
 rotation is announced once; every other notice stays the daemon's.
 
 ## Running as a daemon
@@ -559,7 +559,7 @@ refills the same afternoon, while 85% of a weekly one still holds days of work.
 | setting | default | what it does |
 |---|---|---|
 | `landing_margin` | `10` (0–50) | A switch only lands on an account whose **session (5-hour)** window has at least this many points of room below `switch_at`, so it never lands on one it must leave again at once. The weekly window has no margin: any account under `switch_at_weekly` qualifies. When every account with room is inside the margin, an ordinary rotation holds until `hard_floor`; past it, or after a refusal, it takes the best of them anyway. Settable per profile. `0` turns it off. Written to the file only once set. |
-| `prefer` | `"room"` | Which eligible account a rotation (and **Switch to best**) takes. `"room"`: the one with the most room, priority breaking ties. `"expiring"`: the one whose **weekly** window resets soonest while it still has quota unused, so quota that would expire unused is spent first; room breaks ties (resets in the same minute), and an account whose weekly reset is unknown comes after every one whose is known. Eligibility is unchanged: under its triggers, clear of the landing margin, not refused, reserved or needing a sign-in. `cs why` says when it decided (`work-team resets in 9h with 40% unused, so it goes first`). Settable per profile. Written to the file only once set. |
+| `prefer` | `"room"` | Which eligible account a rotation (and **Switch to Best**) takes. `"room"`: the one with the most room, priority breaking ties. `"expiring"`: the one whose **weekly** window resets soonest while it still has quota unused, so quota that would expire unused is spent first; room breaks ties (resets in the same minute), and an account whose weekly reset is unknown comes after every one whose is known. Eligibility is unchanged: under its triggers, clear of the landing margin, not refused, reserved or needing a sign-in. `cs why` says when it decided (`work-team resets in 9h with 40% unused, so it goes first`). Settable per profile. Written to the file only once set. |
 | `models` | `[]` | Model names (as `cs status --detail` shows them) whose **per-model weekly limit** counts like the weekly window: when one is higher than the account's weekly figure it is what `switch_at_weekly` triggers on and what eligibility judges, and a counted limit the API reports without a figure makes the account unknown (never a target). Empty: per-model limits are shown, never acted on. Settable per profile; `models = []` in a profile turns the global list off there. |
 | `hold_for_claude_ai` | `"5m"` | Rotating a profile in the middle of a browser task breaks Claude in Chrome's bridge, and an artifact or Doc belongs to the account live when it was made, so a rotation between two such calls leaves the second acting as another account. A session that called a Claude in Chrome, Artifact or Claude Docs tool within this long counts as busy, between turns too, so a due switch waits until this long after its last call. `max_switch_wait` does not cut that wait short; past `hard_floor` the switch goes at once, as it does mid-turn, and a switch off a refused account keeps its usual timing. The daemon logs `switch wanted, session busy (claude.ai work 2m ago) — waiting for an idle gap`, and `cs why` says the same. A switch that goes during the hold anyway prefers an account with a Chrome profile of its own (`cs chrome add`), where a new Claude in Chrome connection finds a browser, short of the landing margin if need be; when none has room it goes to the best account anywhere and its reason says a new connection needs a browser signed in as that account. Global only. `"0s"` turns it off. Written to the file only once set. 0.7.8 and 0.7.9 called it `hold_for_browser`; a file that still does is read as before, and `cs config set` rewrites the line under the new name. |
 | `settle_after_swap` | `"45s"` | After a switch, Claude Code's claude.ai tools act as the previous account for up to about half a minute. The plugin's hook holds a Claude in Chrome, Artifact or Claude Docs call until this long after the session's profile last switched, so the call acts as the new account; a call long after a switch does not wait. Read by the plugin, not the daemon. Global only. `"0s"` turns it off; at most `"5m"`. Written to the file only once set ([cs and Claude Code → The plugin](cli/claude-code.md#claudeai-calls-across-a-switch)). |
@@ -777,12 +777,12 @@ Sharing an account that is live in a profile with another profile is fine:
 the one it is live in keeps it until its own rotation moves on.
 
 **In the app.** Settings → Accounts lists the accounts by pool, each header
-naming the profiles that use it. **New pool** makes one (a name, and accounts
+naming the profiles that use it. **New Pool** makes one (a name, and accounts
 to start with); drag a row onto another pool to move it there, after a
 confirmation; a pool's ⋯ menu has **Rename…** and **Delete…** (which asks
 where its accounts go). In Settings → Profiles, **Change…** beside a
 profile's **POOLS** chooses and orders the pools it uses; checking one that
-another profile uses shares it. The Add account sheet's **Pool** row puts a
+another profile uses shares it. The Add Account sheet's **Pool** row puts a
 new account straight into a pool.
 
 ### Which profile a command acts on

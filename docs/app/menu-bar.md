@@ -32,7 +32,7 @@ Other forms:
   Open the popover for how to install it.
 
 The menu bar follows the profile marked **Menu bar** in the
-[popover](popover.md#cards). **Show in menu bar** on another card, or
+[popover](popover.md#cards). **Show in Menu Bar** on another card, or
 **Shown in menu bar** in [Settings → Profiles](settings-profiles.md), changes
 it. With no choice made, it follows `default`.
 

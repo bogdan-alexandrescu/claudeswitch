@@ -25,7 +25,7 @@ the CLI command it runs, and its default.
 
 - [Menu bar](app/menu-bar.md): the label, the live glyph's four states, and
   Icon only.
-- [Popover](app/popover.md): the cards, dials and bars, Switch to best, Open
+- [Popover](app/popover.md): the cards, dials and bars, Switch to Best, Open
   Claude Code, the Chrome globe, Pin, banners, and the menu-bar icon's menu
   (right-click).
 - [Settings → Overview](app/settings-overview.md): the first page: what needs
@@ -33,7 +33,7 @@ the CLI command it runs, and its default.
 - [Settings → Profiles](app/settings-profiles.md): pools, per-profile
   thresholds, the Chrome profile picker, new and removed profiles.
 - [Settings → Accounts](app/settings-accounts.md): accounts grouped by pool,
-  dragging to reorder or to move between pools, New pool, a pool's Rename
+  dragging to reorder or to move between pools, New Pool, a pool's Rename
   and Delete, each account's menu, recovery copies.
 - [Settings → Rotation](app/settings-rotation.md): when and where rotation
   moves a profile.
@@ -55,12 +55,12 @@ the CLI command it runs, and its default.
 - [Claude in Chrome in the app](app/chrome.md): Chrome profiles per profile
   and per account, and the sign-in banner.
 - [First-run setup](app/first-run.md): the welcome window's four steps, and
-  Set up… to open it again.
+  Set Up… to open it again.
 - [Updates](app/updates.md): the daily check, and Update, which verifies and
   installs the app and the binary together.
 - [Shortcuts, Raycast and the hotkey](app/shortcuts.md): the
   `claudeswitch://` URLs, the Switch to best hotkey, and the notifications'
-  Undo, Pin here and Sign in.
+  Undo, Pin Here and Sign In.
 
 ## The cs CLI
 

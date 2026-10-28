@@ -257,7 +257,7 @@ public enum UpdateDialog: Equatable, Sendable {
     public var pageLabel: String? {
         switch self {
         case .available: return "Release Notes on GitHub"
-        case .failed: return "Release page on GitHub"
+        case .failed: return "Release Page on GitHub"
         default: return nil
         }
     }

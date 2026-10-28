@@ -48,7 +48,7 @@ import Testing
         r.failed(.seed, code: "daemon_not_loaded", message: "the daemon did not load it in time", hint: "cs daemon status")
         #expect(r.headline == "The profile \(x) was created, but signing it in failed.")
         #expect(r.failure?.hint == "Retry once the daemon runs, or Close and sign it in later from its card in "
-                + "Profiles (Sign in…).")
+                + "Profiles (Sign In…).")
         #expect(r.remaining == [.seed])
         r.succeeded(.seed)
         #expect(r.finished)

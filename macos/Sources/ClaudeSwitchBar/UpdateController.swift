@@ -545,7 +545,7 @@ struct AppFlowsRows: View {
                     .help(updates.lastFailure?.message ?? "")
                 if updates.phase == .checking { ProgressView().controlSize(.mini) }
                 Spacer()
-                Button("Check now") { updates.checkNow() }
+                Button("Check Now") { updates.checkNow() }
                     .controlSize(.small)
                     .disabled(!updates.enabled || updates.phase == .checking)
             }
@@ -553,7 +553,7 @@ struct AppFlowsRows: View {
         Toggle(isOn: $notifier.enabled) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Notifications with actions")
-                Text("Undo and Pin here when rotation switches, in place of the daemon’s notice; Sign in when an "
+                Text("Undo and Pin Here when rotation switches, in place of the daemon’s notice; Sign In when an "
                      + "account needs it. The daemon’s other notices still appear.")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -562,7 +562,7 @@ struct AppFlowsRows: View {
                 if notifier.enabled && notifier.answered && !notifier.granted {
                     Label("Not allowed in System Settings → Notifications; the daemon’s own notices appear instead.",
                           systemImage: "bell.slash")
-                        .font(.caption).foregroundStyle(.orange)
+                        .font(.caption).foregroundStyle(Color.csWarn)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }

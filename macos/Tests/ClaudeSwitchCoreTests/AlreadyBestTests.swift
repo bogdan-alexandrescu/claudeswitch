@@ -24,7 +24,7 @@ import Testing
     @Test func testABetterAccountKeepsTheButton() throws {
         let c = try card(active: 80, best: 12)
         #expect(!c.alreadyOnBest)
-        #expect(c.bestTitle == "Switch to best")
+        #expect(c.bestTitle == "Switch to Best")
         #expect(c.bestSubtitle == "work-2 · 12%")
     }
 
@@ -32,7 +32,7 @@ import Testing
         for (active, best) in [(30.0, 30.0), (30.0, 55.0)] {
             let c = try card(active: active, best: best)
             #expect(c.alreadyOnBest, "best \(best) vs active \(active)")
-            #expect(c.bestTitle == "Already on the best")
+            #expect(c.bestTitle == "Already on the Best")
             #expect(c.bestSubtitle == "next: work-2 · \(Int(best))%")
         }
     }
@@ -46,7 +46,7 @@ import Testing
         var c = try card(active: 10, best: 20)
         c.best = nil
         #expect(!c.alreadyOnBest)
-        #expect(c.bestTitle == "Switch to best")
+        #expect(c.bestTitle == "Switch to Best")
         #expect(c.bestSubtitle == nil)
     }
 
@@ -60,7 +60,7 @@ import Testing
         #expect(c.alreadyOnBest, "the fallback compares raw percentages")
         c.onBest = false
         #expect(!c.alreadyOnBest)
-        #expect(c.bestTitle == "Switch to best")
+        #expect(c.bestTitle == "Switch to Best")
         #expect(c.bestSubtitle == "work-2 · 85%")
     }
 
@@ -69,7 +69,7 @@ import Testing
         #expect(!c.alreadyOnBest)
         c.onBest = true
         #expect(c.alreadyOnBest)
-        #expect(c.bestTitle == "Already on the best")
+        #expect(c.bestTitle == "Already on the Best")
     }
 
     /// No best account is never "already on the best", whatever on_best says.
@@ -101,7 +101,7 @@ import Testing
         c.active = a
         c.best = b
         #expect(!c.alreadyOnBest)
-        #expect(c.bestTitle == "Switch to best")
+        #expect(c.bestTitle == "Switch to Best")
     }
 
     /// An older binary has no on_best: the card falls back.

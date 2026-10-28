@@ -42,12 +42,12 @@ final class StatusMenu: NSObject {
 
         var title: String {
             switch self {
-            case .refresh: "Refresh now"
+            case .refresh: "Refresh Now"
             case .appearance: "Appearance"
-            case .usage: "Show usage as"
+            case .usage: "Show Usage As"
             case .settings: "Settings"
-            case .setup: "Set up…"
-            case .updates: "Check for updates…"
+            case .setup: "Set Up…"
+            case .updates: "Check for Updates…"
             case .about: "About ClaudeSwitch"
             case .quit: "Quit ClaudeSwitch"
             }

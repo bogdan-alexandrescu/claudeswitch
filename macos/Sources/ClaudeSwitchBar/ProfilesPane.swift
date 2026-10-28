@@ -14,7 +14,7 @@ struct ProfilesPane: View {
             VStack(alignment: .leading, spacing: 16) {
                 PaneHeader(title: "Profiles",
                            subtitle: "Each profile is a Claude Code setup with its own login and pools it can share.") {
-                    Button("New profile") { creating = true }
+                    Button("New Profile") { creating = true }
                         .disabled(store.binaryPath == nil)
                 }
                 if let e = store.profilesError {
@@ -181,8 +181,8 @@ struct ProfileEditor: View {
 
     @ViewBuilder var removeButton: some View {
         if removable {
-            Button("Remove profile…", role: .destructive) { removing = true }
-                .foregroundStyle(.red)
+            Button("Remove Profile…", role: .destructive) { removing = true }
+                .foregroundStyle(Color.csBad)
                 .fixedSize()
                 .disabled(store.binaryPath == nil)
         }
@@ -259,7 +259,7 @@ struct RemoveProfileSheet: View {
             // A pool only this profile uses is left to no profile.
             if let w = ProfileRemoval.unusedAfter(profile, pools: store.pools) {
                 Label(w, systemImage: "exclamationmark.triangle")
-                    .font(.callout).foregroundStyle(.orange)
+                    .font(.callout).foregroundStyle(Color.csWarn)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let e = error { InlineError(message: e.message, hint: e.hint) }
@@ -320,7 +320,7 @@ struct SignInBadge: View {
 
     var text: String { ProfilesText.signIn(signedIn, live: live) }
 
-    var color: Color { signedIn == "yes" ? .green : signedIn == "no" ? .red : .gray }
+    var color: Color { signedIn == "yes" ? .csGood : signedIn == "no" ? .csBad : .gray }
 }
 
 /// The pools a profile uses, numbered in the order it uses them (D33: an
@@ -793,7 +793,7 @@ struct NewProfileSheet: View {
 
     var form: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("New profile").font(.title3.bold())
+            Text("New Profile").font(.title3.bold())
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 12) {
                 GridRow {
                     Text("Name").frame(width: Self.labelWidth, alignment: .leading)
@@ -839,7 +839,7 @@ struct NewProfileSheet: View {
                             // Full width: measured narrower, the wrapped
                             // text reserved an empty second line.
                             Text(store.poolsUnsupported ? "Update claudeswitch to choose its pools here."
-                                 : "No pools yet. To share accounts between profiles, make one in Accounts (New pool).")
+                                 : "No pools yet. To share accounts between profiles, make one in Accounts (New Pool).")
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: .infinity, alignment: .leading)

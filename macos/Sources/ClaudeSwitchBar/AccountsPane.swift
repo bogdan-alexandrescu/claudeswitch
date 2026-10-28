@@ -41,7 +41,7 @@ struct AccountsPane: View {
             PaneHeader(title: "Accounts",
                        subtitle: grouped ? "Drag to reorder within a pool, or onto another pool to move it there."
                                          : "Drag to change the order rotation spends them in.") {
-                Button("Add account") {
+                Button("Add Account") {
                     store.addAccount = AddAccountRequest(profile: AddForm.initialTarget(requested: nil, list: store.profiles))
                 }
                 .buttonStyle(PrimaryButtonStyle())
@@ -59,7 +59,7 @@ struct AccountsPane: View {
                         .onMove { from, to in moved(rows, all: all, from: from, to: to) }
                     HStack {
                         Spacer()
-                        Button("New pool") { creatingPool = true }
+                        Button("New Pool") { creatingPool = true }
                             .disabled(store.binaryPath == nil)
                             .help("A pool groups accounts; profiles list the pools they use")
                     }
@@ -381,8 +381,8 @@ struct AccountRow: View {
         }
         .padding(.vertical, 4)
         .contextMenu { actions }
-        .accessibilityAction(named: "Move up") { shift(-1) }
-        .accessibilityAction(named: "Move down") { shift(1) }
+        .accessibilityAction(named: "Move Up") { shift(-1) }
+        .accessibilityAction(named: "Move Down") { shift(1) }
     }
 
     /// Its state, and where it is live: "in use: work" takes the place of
@@ -405,34 +405,34 @@ struct AccountRow: View {
     @ViewBuilder var actions: some View {
         Button("Rename…", action: rename)
         if !targets.isEmpty || canLeave {
-            Menu("Move to pool") {
+            Menu("Move to Pool") {
                 ForEach(targets) { s in
                     Button((s.name ?? s.title) + "…") { moveTo(s) }
                 }
                 if canLeave {
                     if !targets.isEmpty { Divider() }
-                    Button("In no pool…", action: leave)
+                    Button("In No Pool…", action: leave)
                 }
             }
             .disabled(store.binaryPath == nil)
         }
-        Button("Sign in…") { store.addAccount = AddAccountRequest(account: id, profile: store.profile(of: id)) }
+        Button("Sign In…") { store.addAccount = AddAccountRequest(account: id, profile: store.profile(of: id)) }
         Divider()
         // One `priority` call at a time: two quick moves started two.
-        Button("Move up") { shift(-1) }
+        Button("Move Up") { shift(-1) }
             .disabled(moved(-1) == nil || store.isBusy("priority"))
-        Button("Move down") { shift(1) }
+        Button("Move Down") { shift(1) }
             .disabled(moved(1) == nil || store.isBusy("priority"))
         Divider()
         Button("Open Chrome") { store.openChrome(id) }
             .disabled(store.chrome?.supported == false || store.isBusy("chrome:\(id)"))
-        Menu("Chrome profile: " + chromeLabel) {
-            choiceItem("Same as its profile", selected: chromeChoice == .sameAsProfile) {
+        Menu("Chrome Profile: " + chromeLabel) {
+            choiceItem("Same as Its Profile", selected: chromeChoice == .sameAsProfile) {
                 store.setAccountChrome(id, .sameAsProfile)
             }
             let mine = store.chromeProfiles?.pickable ?? []
             if !mine.isEmpty {
-                Section("Your Chrome profiles") {
+                Section("Your Chrome Profiles") {
                     ForEach(mine) { p in
                         choiceItem(p.label, selected: usesExisting(p.folder)) {
                             store.setAccountChrome(id, .existing(p.folder))
@@ -441,10 +441,10 @@ struct AccountRow: View {
                 }
             }
             if case .created(let f) = chromeChoice {
-                choiceItem("Its own (\(store.chromeProfiles?.label(f) ?? f))", selected: true) {}
+                choiceItem("Its Own (\(store.chromeProfiles?.label(f) ?? f))", selected: true) {}
             }
             Divider()
-            Button("Create a new one") { store.setAccountChrome(id, .createNew) }
+            Button("Create a New One") { store.setAccountChrome(id, .createNew) }
         }
         .disabled(store.binaryPath == nil || store.chrome?.supported == false)
         Divider()
@@ -467,7 +467,7 @@ struct AccountRow: View {
 
     var chromeLabel: String {
         switch chromeChoice {
-        case .sameAsProfile: return "same as its profile"
+        case .sameAsProfile: return "Same as Its Profile"
         case .existing(let f, let n): return n ?? store.chromeProfiles?.label(f) ?? f
         case .created(let f): return store.chromeProfiles?.label(f) ?? f
         }
@@ -530,7 +530,7 @@ struct NewPoolSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("New pool").font(.title3.bold())
+            Text("New Pool").font(.title3.bold())
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 8) {
                 GridRow {
                     Text("Name").frame(width: NewProfileSheet.labelWidth, alignment: .leading)
@@ -549,7 +549,7 @@ struct NewPoolSheet: View {
             if !created, let s = NewPoolPlan.stops(name: name, selected: selected, pools: store.pools,
                                                    defaultExists: store.profiles.map { $0.profile(StateFile.defaultProfile) != nil } ?? true) {
                 Label(s, systemImage: "exclamationmark.triangle")
-                    .font(.caption).foregroundStyle(.orange)
+                    .font(.caption).foregroundStyle(Color.csWarn)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let e = error { SheetError(message: e.message, hint: e.hint) }
@@ -650,12 +650,14 @@ struct AccountColumns: View {
 struct Badge: View {
     let text: String
     let color: Color
+    /// The fill behind the text, when it is not the text's own colour.
+    var tint: Color? = nil
 
     var body: some View {
         Text(text).lineLimit(1).truncationMode(.tail)
             .font(.caption2)
             .padding(.horizontal, 6).padding(.vertical, 1)
-            .background(PillShape().fill(color.opacity(0.18)))
+            .background(PillShape().fill((tint ?? color).opacity(0.18)))
             .foregroundStyle(color)
     }
 }
@@ -665,10 +667,21 @@ struct StatusChip: View {
     let now: Date
 
     var body: some View {
-        Badge(text: Format.status(status, now: now), color: color)
+        Badge(text: Format.status(status, now: now), color: color, tint: tint)
     }
 
     var color: Color {
+        switch status {
+        case .available: return .csGood
+        case .noHeadroom, .windowReset: return .csWarn
+        case .refused, .needsLogin: return .csBad
+        case .unknown: return .secondary
+        }
+    }
+
+    /// The chip's fill keeps the bright system colour; only its text is the
+    /// deeper ink, so the chips read at 4.5:1 in light mode.
+    var tint: Color {
         switch status {
         case .available: return .green
         case .noHeadroom, .windowReset: return .orange
@@ -691,7 +704,7 @@ struct RenameSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Rename the account \(inQuotes(old))").font(.title3.bold())
+            Text("Rename the Account \(inQuotes(old))").font(.title3.bold())
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16) {
                 GridRow {
                     Text("New name")
@@ -754,7 +767,7 @@ struct RecoverySection: View {
                     HStack(spacing: 12) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(item.slot).bold() + Text(item.account.map { " · " + $0 } ?? "").foregroundColor(.secondary)
-                            Text(describe(item)).font(.caption).foregroundStyle(item.error == nil ? Color.secondary : Color.red)
+                            Text(describe(item)).font(.caption).foregroundStyle(item.error == nil ? Color.secondary : Color.csBad)
                         }
                         Spacer()
                         Menu("Restore") {
@@ -852,7 +865,7 @@ struct RenamePoolSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Rename the pool \(inQuotes(name))").font(.title3.bold())
+            Text("Rename the Pool \(inQuotes(name))").font(.title3.bold())
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16) {
                 GridRow {
                     Text("New name")

@@ -4,7 +4,7 @@ Every stored account, grouped by the pool it is in and in rotation order within 
 
 See also: [cs accounts](../cli/accounts.md) · [cs pool](../cli/profiles.md#pool) · [Settings → Profiles](settings-profiles.md) · [Add account](add-account.md) · [Claude in Chrome in the app](chrome.md) · [GUIDE → Recovery copies](../GUIDE.md#recovery-copies)
 
-<p align="center"><img src="../images/settings-accounts-pools.png" width="880" alt="Settings, Accounts pane grouped by pool: PERSONAL used by default (1st), personal in use by default; TEAM used by default (2nd) and work (2nd), team-1 needing sign-in, team-2 in use by work, team-3 available; OPS used by work (1st), ops-1 available; SPARE, which no profile uses, empty; and loose-1 in no pool, which default uses last. Each row has its rings, its state, a line with who uses it, its figure and its login, and its plan; each pool header has a ⋯ menu, and New pool is at the foot"></p>
+<p align="center"><img src="../images/settings-accounts-pools.png" width="880" alt="Settings, Accounts pane grouped by pool: PERSONAL used by default (1st), personal in use by default; TEAM used by default (2nd) and work (2nd), team-1 needing sign-in, team-2 in use by work, team-3 available; OPS used by work (1st), ops-1 available; SPARE, which no profile uses, empty; and loose-1 in no pool, which default uses last. Each row has its rings, its state, a line with who uses it, its figure and its login, and its plan; each pool header has a ⋯ menu, and New Pool is at the foot"></p>
 
 ## Pools
 
@@ -41,8 +41,8 @@ capitals, semibold, inside the pane's margins, with no rule under it.
 | drag a row within its pool | changes the rotation order: within a pool, the order rotation tries them | `cs priority <ids...>` |
 | drag a row onto another pool | moves the account there, after a confirmation saying which profiles gain and lose it | `cs pool move <id> --to <pool>` |
 | drag a row onto **In no pool** | takes the account out of its pool: `default` uses it, after its pools | `cs pool remove <pool> <id>` |
-| **New pool** | a name, and accounts to start with. Each account says the pool it is in (`in “team”`, `in no pool`), and once checked, that it leaves it (`leaves “team”`) or joins the new one (`joins “lab”`); a line with a warning sign then says which profiles stop rotating it until one uses the new pool, and the button is **Create…**, which asks first (**Create** when no account leaves a pool). No profile uses a new pool until you add it to one ([Profiles → Change…](settings-profiles.md)). When the pool is made but an account cannot be moved in, the sheet says so ("The pool “ops” was created, but “team-2” could not be moved in: …"), keeps its name and accounts, and its button moves only the accounts still to come (**Move “team-2” in**); **Cancel** becomes **Close**, since the pool stays | `cs pool create <name> [<ids>]`, then `cs pool move <id> --to <name>` for each that was in a pool |
-| **Rename…** (a pool's ⋯ menu) | a sheet, **Rename the pool “team”**, with a new name. Profiles that use it keep it, in the same place in their order. A profile's own pool becomes a separate pool with the same accounts, which that profile keeps using; the sheet says so ("Renamed to “laptop”, it becomes a separate pool with the same accounts, which “default” keeps using.") | `cs pool rename <pool> <new>` |
+| **New Pool** | a name, and accounts to start with. Each account says the pool it is in (`in “team”`, `in no pool`), and once checked, that it leaves it (`leaves “team”`) or joins the new one (`joins “lab”`); a line with a warning sign then says which profiles stop rotating it until one uses the new pool, and the button is **Create…**, which asks first (**Create** when no account leaves a pool). No profile uses a new pool until you add it to one ([Profiles → Change…](settings-profiles.md)). When the pool is made but an account cannot be moved in, the sheet says so ("The pool “ops” was created, but “team-2” could not be moved in: …"), keeps its name and accounts, and its button moves only the accounts still to come (**Move “team-2” In**); **Cancel** becomes **Close**, since the pool stays | `cs pool create <name> [<ids>]`, then `cs pool move <id> --to <name>` for each that was in a pool |
+| **Rename…** (a pool's ⋯ menu) | a sheet, **Rename the Pool “team”**, with a new name. Profiles that use it keep it, in the same place in their order. A profile's own pool becomes a separate pool with the same accounts, which that profile keeps using; the sheet says so ("Renamed to “laptop”, it becomes a separate pool with the same accounts, which “default” keeps using.") | `cs pool rename <pool> <new>` |
 | **Delete…** (a pool's ⋯ menu) | a sheet, **Delete the pool “team”?**, that asks where its accounts go (it starts on a pool the same profiles use, or No pool for default's) and says what happens: only the pool is deleted, where its accounts go and that no account is deleted, then what each profile that used it is left using ("The profile “work” then uses only “ops”."). Its **Delete “team”** button deletes it | `cs pool delete <name> --to <pool>` or `--no-pool` |
 
 ## The list
@@ -76,19 +76,19 @@ that uses it, with that profile's own thresholds: an account live in a
 profile that switches at 75% reads `no headroom` at 80%, not `available`.
 The figure is the window nearest its own trigger, as the daemon judges it.
 
-**Add account** at the top right opens [Add account](add-account.md) for
+**Add Account** at the top right opens [Add account](add-account.md) for
 the first profile.
 
 ## An account's ⋯ menu
 
 | item | what it does | CLI |
 |---|---|---|
-| **Rename…** | a sheet, **Rename the account “personal”**: renames it everywhere (config, vault, state, Chrome mapping). A running daemon is stopped for a moment and started again; if it does not start, an alert says so, else a note says it was done (`Renamed “personal” to “home”`). Return renames only when the button would: the name changed and not empty | `cs account rename <old> <new>` |
-| **Move to pool** → **ops…** | moves it to another pool, after a confirmation, as a drag onto that pool does. **In no pool…** takes it out of its pool | `cs pool move <id> --to <pool>`, `cs pool remove <pool> <id>` |
-| **Sign in…** | opens [Add account](add-account.md) for this account, to replace a dead credential | `cs login <id> --direct` |
-| **Move up** / **Move down** | one step in the rotation order, within the account's pool: it swaps places with the account above or below it there, the others keeping theirs, as a drag does. Greyed out at the pool's ends, and while the order is being saved, so two quick moves never start two calls. VoiceOver's Move up and Move down actions do the same | `cs priority` |
+| **Rename…** | a sheet, **Rename the Account “personal”**: renames it everywhere (config, vault, state, Chrome mapping). A running daemon is stopped for a moment and started again; if it does not start, an alert says so, else a note says it was done (`Renamed “personal” to “home”`). Return renames only when the button would: the name changed and not empty | `cs account rename <old> <new>` |
+| **Move to Pool** → **ops…** | moves it to another pool, after a confirmation, as a drag onto that pool does. **In No Pool…** takes it out of its pool | `cs pool move <id> --to <pool>`, `cs pool remove <pool> <id>` |
+| **Sign In…** | opens [Add account](add-account.md) for this account, to replace a dead credential | `cs login <id> --direct` |
+| **Move Up** / **Move Down** | one step in the rotation order, within the account's pool: it swaps places with the account above or below it there, the others keeping theirs, as a drag does. Greyed out at the pool's ends, and while the order is being saved, so two quick moves never start two calls. VoiceOver's Move Up and Move Down actions do the same | `cs priority` |
 | **Open Chrome** | opens the Chrome profile this account uses; greyed out while it opens | `cs chrome open <id>` |
-| **Chrome profile: …** | which Chrome profile Claude in Chrome uses for this account: **Same as its profile** (the default), one of **Your Chrome profiles**, or **Create a new one** | `cs chrome forget <id>`, `cs chrome add <id> --existing <name>`, `cs chrome add <id>` |
+| **Chrome Profile: …** | which Chrome profile Claude in Chrome uses for this account: **Same as Its Profile** (the default), one of **Your Chrome Profiles**, or **Create a New One** | `cs chrome forget <id>`, `cs chrome add <id> --existing <name>`, `cs chrome add <id>` |
 | **Delete…** | removes the account and its stored credential, after a confirmation ("Delete the account “team-3”?") that gives the CLI's own text, naming the account and seat | `cs account delete <id>` |
 
 ## Recovery copies
@@ -112,7 +112,7 @@ that cannot be read says so in red and cannot be restored.
 When an account's sign-in expires within 5 days (its `refresh_expires_at` in
 `cs account list --json`), the app posts a notification once a day for that
 account, **Sign personal in again**: "personal needs sign-in within 2 days",
-or "personal needs sign-in: its login has expired" once it has. **Sign in…** on the notification, or clicking it, opens Settings
+or "personal needs sign-in: its login has expired" once it has. **Sign In…** on the notification, or clicking it, opens Settings
 with [Add account](add-account.md) signing that account in again. An account
 whose expiry is unknown, or that is disabled, is never reminded. macOS asks
 once whether ClaudeSwitch may post notifications.

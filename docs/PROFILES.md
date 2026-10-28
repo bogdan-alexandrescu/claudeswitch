@@ -630,7 +630,7 @@ decision depends on it. A pool no profile lists is a warning, not an error.
 - D33: `policy.Input.Tiers` is the profile's `Tiers`. Of the candidates
   passing the test at hand, the earliest pool's are preferred and today's
   ranking (room, priority, `prefer`) picks among them, so `Decide`, blind
-  failover, `Choose` (Best and "Already on the best"), `why`'s order and the
+  failover, `Choose` (Best and "Already on the Best"), `why`'s order and the
   runway all go pool by pool. The landing margin is part of the test: an
   earlier pool's account short of it is passed over for a later pool's that
   clears it, and a profile holds until the hard floor only when no pool has

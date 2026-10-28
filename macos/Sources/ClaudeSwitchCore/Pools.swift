@@ -266,7 +266,7 @@ public extension Confirm {
             let after = defaultExists ? [StateFile.defaultProfile] : []
             let lost = before.filter { !after.contains($0) }
             m += lost.isEmpty ? "." : "; \(spoken(lost.map(q))) no longer can."
-            return Confirmation(title: "Take \(q(a)) out of \(q(from))?", message: m, action: "Take out",
+            return Confirmation(title: "Take \(q(a)) out of \(q(from))?", message: m, action: "Take Out",
                                 destructive: false)
         }
     }
@@ -358,7 +358,7 @@ public struct NewPoolPlan: Equatable {
         return Confirmation(title: "Create \(inQuotes(name)) and move \(spoken(moved.map { inQuotes($0.0) }))?",
                             message: moved.map { "The account \(inQuotes($0.0)) leaves the pool \(inQuotes($0.1))." }
                                 .joined(separator: " "),
-                            action: "Create and move", destructive: false)
+                            action: "Create and Move", destructive: false)
     }
 }
 

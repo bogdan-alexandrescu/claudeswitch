@@ -46,7 +46,7 @@ Pick the archive for your machine (`darwin_arm64` for Apple silicon,
 put the binary in `~/.local/bin` with `cs` as a short name for it:
 
 ```sh
-VERSION=v0.8.18
+VERSION=v0.8.19
 TARGET=darwin_arm64
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 curl -LO "$BASE/claudeswitch_${VERSION}_${TARGET}.tar.gz"
@@ -65,7 +65,7 @@ cs version
 ```
 
 ```
-claudeswitch v0.8.18
+claudeswitch v0.8.19
 ```
 
 If your shell says `cs: command not found`, add `~/.local/bin` to your `PATH`
@@ -163,13 +163,13 @@ that one under its own name with `--org` and the organization's id:
 cs login research-2 --direct --org 11111111-1111-1111-1111-111111111111
 ```
 
-Or do it from the app: **+ Add account** at the foot of the popover opens
+Or do it from the app: **+ Add Account** at the foot of the popover opens
 this sheet.
 
-<p align="center"><img src="images/add-account.png" width="520" alt="The Add account sheet: Sign in with browser or Save current login; a name, the pool it joins, the organization, the browser, then open the sign-in page and paste the code"></p>
+<p align="center"><img src="images/add-account.png" width="520" alt="The Add Account sheet: Sign In with Browser or Save Current Login; a name, the pool it joins, the organization, the browser, then open the sign-in page and paste the code"></p>
 
-Type the name, pick the browser, click **Open sign-in page**, sign in, and
-paste the code into the sheet. The app runs both `cs login` steps for you. **Save current login** is the other route: run `/login` in
+Type the name, pick the browser, click **Open Sign-In Page**, sign in, and
+paste the code into the sheet. The app runs both `cs login` steps for you. **Save Current Login** is the other route: run `/login` in
 Claude Code as the new account, then save that login under a name
 (`cs add` in a terminal).
 
@@ -234,7 +234,7 @@ account:
 
 Click the rings in the menu bar.
 
-<p align="center"><img src="images/popover-dials.png" width="384" alt="The popover: daemon live; the default profile on personal with a session dial at 24% and a week dial at 44%, each with a larger dark threshold dot; Switch to best is disabled with No account to switch to; the work profile below as a compact row on work-team"></p>
+<p align="center"><img src="images/popover-dials.png" width="384" alt="The popover: daemon live; the default profile on personal with a session dial at 24% and a week dial at 44%, each with a larger dark threshold dot; Switch to Best is disabled with No account to switch to; the work profile below as a compact row on work-team"></p>
 
 The top line is the daemon: **Live** (green) or **Dry run** (orange), and when
 it last polled. Below it, one card per profile. The card for the profile the
@@ -247,7 +247,7 @@ menu bar follows is open and marked **Menu bar**:
   dot is the threshold**: on the session dial it sits at 85%, on the week
   dial at 98%. When the blue dots reach it, rotation moves the profile to
   another account.
-- **Switch to best** names the account it would move to. Here it is greyed
+- **Switch to Best** names the account it would move to. Here it is greyed
   out with "No account to switch to", because research is refused.
 - **Next:** is the same decision `cs why` gives.
 
@@ -306,7 +306,7 @@ cs profile create work --pool work-1,work-team --seed work-1
 This makes `~/.claude-work`, links your `settings.json`, `CLAUDE.md`,
 skills, commands and agents from `~/.claude` so one edit serves both, copies
 your MCP servers, and writes the profile to the config. Your other accounts
-stay in `default`. **New profile** in **Settings → Profiles** does the same.
+stay in `default`. **New Profile** in **Settings → Profiles** does the same.
 
 Start Claude Code in it:
 
@@ -346,7 +346,7 @@ cs profile seed review work-team   # sign it in with the account work is not on
 The two profiles take those accounts one at a time. While `work` is on
 `work-1`, the `review` blocks of `cs status` and `cs why` show `work-1` as
 `in use by work`, rotation in `review` passes over it, and the account picker
-on the `review` card shows it without offering it. In the app, **New profile**
+on the `review` card shows it without offering it. In the app, **New Profile**
 in **Settings → Profiles** does the same: check `work` under **Pools** and
 choose `work-team` under **Sign in with**. Named pools of any accounts you
 choose, and a profile that uses several pools in order:
@@ -355,7 +355,7 @@ choose, and a profile that uses several pools in order:
 ### Follow a profile in the menu bar
 
 The menu bar follows one profile at a time. Open the `work` row's chevron in
-the popover and click **Show in menu bar** next to its name. The glyph and
+the popover and click **Show in Menu Bar** next to its name. The glyph and
 text switch to `work · work-team 7%`, and the work card becomes the open one
 marked **Menu bar**. **Settings → Profiles** has the same choice as
 **Shown in menu bar** on each profile.
@@ -396,7 +396,7 @@ cs chrome add personal                         # a new Chrome profile for person
 `cs chrome add` without `--existing` opens the new profile at the claude.ai
 sign-in and the extension's Web Store page. Sign in to claude.ai as that
 account, add Claude in Chrome, and sign the extension in as the same account.
-In the app, the same choice is **Chrome profile** in an account's ⋯ menu in
+In the app, the same choice is **Chrome Profile** in an account's ⋯ menu in
 **Settings → Accounts**: the same as its profile's, one of your Chrome
 profiles, or a new one.
 
@@ -412,9 +412,9 @@ work-1 to work-team. A shared Chrome profile's extension stays signed in as
 one account, so Claude in Chrome there cannot follow the switch, and the work
 card says so:
 
-<p align="center"><img src="images/popover-chrome-signin.png" width="384" alt="The work card: an amber banner says Claude in Chrome in &quot;Work&quot; does not follow switches to work-team, with a Give work-team its own Chrome profile button and a close button"></p>
+<p align="center"><img src="images/popover-chrome-signin.png" width="384" alt="The work card: an amber banner says Claude in Chrome in &quot;Work&quot; does not follow switches to work-team, with a Give work-team Its Own Chrome Profile button and a close button"></p>
 
-Click **Give work-team its own Chrome profile**. It creates a Chrome profile
+Click **Give work-team Its Own Chrome Profile**. It creates a Chrome profile
 for work-team and opens it at the claude.ai and Claude in Chrome sign-in
 pages: sign in to both as work-team, once. From then on claudeswitch opens
 that profile in the background after every switch to work-team, and Claude in
@@ -494,7 +494,7 @@ across every account it touched. The full table:
 ### Appearance, dials and bars
 
 Right-click the menu-bar icon (or Control-click it) for its menu, with
-**Appearance** (System, Light or Dark) and **Show usage as** (Dials or Bars).
+**Appearance** (System, Light or Dark) and **Show Usage As** (Dials or Bars).
 
 <p align="center"><img src="images/menu-more.png" width="362" alt="The menu-bar icon's menu with Appearance open: System checked, Light, Dark"></p>
 
@@ -570,7 +570,7 @@ live one, and `cs doctor` names it. Sign in again:
 cs login work-1 --direct
 ```
 
-or **Sign in again** in the account's ⋯ menu in **Settings → Accounts**. The
+or **Sign In…** in the account's ⋯ menu in **Settings → Accounts**. The
 daemon renews credentials before they expire and tests idle ones once a day,
 so this is rare, and it tells you days ahead when a refresh token is about
 to expire. If a swap ever kept a login aside, `cs recovery` lists it

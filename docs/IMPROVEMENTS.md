@@ -1701,7 +1701,9 @@ on the current claudeswitch app", the owner chose all three groups:
   rotates", shortened in the QA pass so it no longer wraps a two-word line),
   from the daemon's own figures, instead of "stay — active account at 41%,
   under the 98% trigger"; **D3** Switch to best is the filled button only
-  when the daemon would switch or wait, and a quiet one while it stays.
+  when the daemon would switch or wait, and a quiet one while it stays. After
+  0.8.18 shipped, the owner reviewed the picks page (real renders of each
+  option) and confirmed A for all three.
 
 **The QA pass (owner request 2026-10-28, for 0.8.18).** Before going to bed
 the owner asked: "perform a full exhaustive in detail visual qa of the
@@ -1740,3 +1742,26 @@ test first, then its fix. By area:
   lifted pin), and `docs/app` follows the code again.
 
 And the CLI's output, see docs/cli: that work lands separately.
+
+**The brand pass (owner's picks, 2026-10-28).** After the QA pass the owner
+asked to see the colour and capitalisation calls CLD had left open, as a
+picks page of real renders (`.claude/mockups/brand-pass/`, local), and
+picked A on all four:
+- **B1 light-mode blue:** the app's accent on light becomes `#1872a5`
+  (Deep glacier). White text on `#2a9fe0` measured 2.9:1; on `#1872a5` it is
+  5.3:1, as is the accent as text on white. Rejected: navy text on the brand
+  blue (links stayed 2.9:1), and leaving it. The app icon keeps `#2a9fe0`.
+- **B2 warnings and status chips:** in light mode warning, good and bad text
+  and icons take deeper inks (`#a85400`, `#157a32`, `#c2261c`) where the
+  system colours measured 2.1 to 3.6:1; chips keep the system colour as their
+  tint. Dark mode keeps the system colours. (The page showed the red as
+  `#c4271d`; it went one shade deeper when a test measured its chip at 4.497:1.)
+- **B3 dark-mode marks:** the switch-point dot is Frost on dark (it was
+  Meltwater, which read as a lit dot), and History's session line is the
+  brand green `#3fbf98` in both appearances (in dark, Meltwater sat too close
+  to the week's Glacier).
+- **B4 capitals:** buttons, menu items, menu titles and sheet headings take
+  title case, as on macOS ("Switch to Best", "Sign In…", "Check for
+  Updates…"); switches, checkboxes and sentences keep sentence case.
+`BrandContrastTests` holds the light-mode figures at 4.5:1 or more, and
+docs/BRAND.md lists the tokens.

@@ -448,10 +448,10 @@ public enum FixAction: Equatable, Hashable {
     /// The button.
     public var title: String {
         switch self {
-        case .signin(let a): return "Sign \(a) in…"
-        case .daemonRestart: return "Restart the daemon"
-        case .statuslineInstall: return "Install the status line"
-        case .keychainAllow: return "Allow keychain access"
+        case .signin(let a): return "Sign \(a) In…"
+        case .daemonRestart: return "Restart the Daemon"
+        case .statuslineInstall: return "Install the Status Line"
+        case .keychainAllow: return "Allow Keychain Access"
         }
     }
 

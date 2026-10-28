@@ -7,8 +7,8 @@
 For every app image in docs/images it finds the render it comes from (SOURCE,
 or the same name in any set when it is not listed) and prints the mean pixel
 difference, 0 to 1. Two runs of the same code render alike (0.0000); a
-changed line of small text scores about 0.006, a new layout 0.02 or more, and
-a change of size always counts. --write copies every render that changed past
+changed line of small text scores about 0.006, one capital letter 0.0008, a
+new layout 0.02 or more, and a change of size always counts. --write copies every render that changed past
 NOISE over its docs image. Needs Pillow.
 """
 import os
@@ -59,9 +59,10 @@ SOURCE = {
 }
 # Settings panes not listed above come from the tutorial set.
 SETTINGS_SET = "tutorial"
-# Renders are deterministic now (unchanged frames score 0.0000); a changed
-# line of small text scores as little as 0.006, so the cut sits well below.
-NOISE = 0.001
+# Renders are deterministic now (unchanged frames score 0.0000), so any
+# difference is a change: a changed line of small text scores about 0.006, but
+# a capital letter on one button only 0.0008 and a shade of one colour 0.0001.
+NOISE = 0.00005
 
 
 def diff(a, b):

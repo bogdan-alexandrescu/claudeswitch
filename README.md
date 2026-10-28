@@ -7,7 +7,7 @@ stands, and hot-swaps Claude Code onto a fresh account before the current one
 hits its limit: no restart, no lost session. It ships as a Go CLI plus daemon
 (macOS and Linux), a native macOS menu-bar app and a Claude Code plugin.
 
-Latest release: **v0.8.18**
+Latest release: **v0.8.19**
 ([releases](https://github.com/bogdan-alexandrescu/claudeswitch/releases)).
 
 <p align="center"><img src="docs/images/popover.png" width="384" alt="The ClaudeSwitch menu-bar popover: the daemon is live, the default profile is on work-1 and the work profile is on work-team"></p>
@@ -141,7 +141,7 @@ arm64, and a `checksums.txt`. The archives are reproducible: the same tag
 always produces the same bytes.
 
 ```sh
-VERSION=v0.8.18
+VERSION=v0.8.19
 TARGET=darwin_arm64            # darwin_amd64, linux_amd64, linux_arm64
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 curl -LO "$BASE/claudeswitch_${VERSION}_${TARGET}.tar.gz"
@@ -167,7 +167,7 @@ cd claudeswitch
 symlink, and installs the daemon in dry-run (see [Daemon](#daemon)). To build
 the binary alone: `go build -o bin/claudeswitch ./cmd/claudeswitch`.
 
-**Verify it worked:** `cs version` prints `claudeswitch v0.8.18` for the release
+**Verify it worked:** `cs version` prints `claudeswitch v0.8.19` for the release
 binary (a build from source prints `claudeswitch dev`). If the shell cannot
 find `cs`, add `~/.local/bin` to your `PATH`.
 
@@ -238,7 +238,7 @@ Re-run it after pulling to update.
 From a release, as a universal build:
 
 ```sh
-VERSION=v0.8.18
+VERSION=v0.8.19
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 ZIP="ClaudeSwitch-${VERSION#v}-macos.zip"
 curl -LO "$BASE/$ZIP"
@@ -264,7 +264,7 @@ to install it. [macos/README.md](macos/README.md) has the details.
 
 **Verify it worked:** the Twin rings glyph with the live account and its
 utilization appears in the menu bar, and **About ClaudeSwitch** in its ⋯ menu
-shows version 0.8.18. If you see nothing on a MacBook with a notch, see
+shows version 0.8.19. If you see nothing on a MacBook with a notch, see
 [Troubleshooting](#troubleshooting).
 
 ### Claude Code plugin
@@ -359,7 +359,7 @@ The two profiles take those accounts one at a time: while work is on work-1,
 review shows it as "in use by work" and does not take it. `cs pool create`
 and `cs pool move` make named pools of any accounts you choose
 ([→ Sharing accounts between profiles](docs/GUIDE.md#sharing-accounts-between-profiles)).
-In the app, **New profile** in Settings → Profiles does the same: check work
+In the app, **New Profile** in Settings → Profiles does the same: check work
 under **Pools** and choose work-team under **Sign in with**.
 
 Then check on it, and make it act when you trust its decisions:
@@ -447,13 +447,13 @@ small buttons at the top right, the ⋯ menu, or Settings → Advanced. The
 choice is remembered.
 
 The card's buttons are **Open Claude Code** (your terminal running
-`cs run <profile>`: Terminal, iTerm, Ghostty or Warp), **Switch to best**
+`cs run <profile>`: Terminal, iTerm, Ghostty or Warp), **Switch to Best**
 (which names the account it would move to and its utilization, or says there
 is none), the globe that opens the account's Chrome profile, and **Pin**,
 which keeps the profile on its account until you unpin it. The other profiles
 are compact rows with their own small rings, a play button for Claude Code and
-a chevron that expands them. **Show in menu bar** on an expanded card makes
-the menu bar follow that profile. **+ Add account**, **Settings...** and the
+a chevron that expands them. **Show in Menu Bar** on an expanded card makes
+the menu bar follow that profile. **+ Add Account**, **Settings...** and the
 ⋯ menu are at the foot.
 
 Dark mode, with the same data:
@@ -464,18 +464,18 @@ Dark mode, with the same data:
 
 <table>
   <tr>
-    <td align="center"><img src="docs/images/menu-more.png" width="362" alt="The popover's ⋯ menu: Refresh now, Appearance (open, with System checked, Light and Dark), Show usage as, Settings, About and Quit"></td>
-    <td align="center"><img src="docs/images/menu-more-usage.png" width="362" alt="The same menu with Show usage as open: Dials checked, and Bars"></td>
+    <td align="center"><img src="docs/images/menu-more.png" width="362" alt="The popover's ⋯ menu: Refresh Now, Appearance (open, with System checked, Light and Dark), Show Usage As, Settings, About and Quit"></td>
+    <td align="center"><img src="docs/images/menu-more-usage.png" width="362" alt="The same menu with Show Usage As open: Dials checked, and Bars"></td>
   </tr>
 </table>
 
-The ⋯ menu at the foot of the popover has **Refresh now** (⌘R), which reloads
-what the app shows from the state file and the CLI, **Appearance**, **Show usage as**,
+The ⋯ menu at the foot of the popover has **Refresh Now** (⌘R), which reloads
+what the app shows from the state file and the CLI, **Appearance**, **Show Usage As**,
 **Settings...**, **About ClaudeSwitch** and **Quit ClaudeSwitch** (⌘Q).
 
 **Appearance** is System, Light or Dark. System follows your Mac. Light or
 Dark keeps the popover and Settings in that appearance whatever the system
-uses. **Show usage as** is Dials or Bars. Both are also in Settings →
+uses. **Show Usage As** is Dials or Bars. Both are also in Settings →
 Advanced → This app.
 
 ### Warnings
@@ -495,14 +495,14 @@ to, so nothing can rotate there until you sign in to it again
 
 ### Claude in Chrome on the card
 
-<p align="center"><img src="docs/images/popover-chrome-signin.png" width="384" alt="The work profile's card after a rotation from work-1 to work-team: an amber banner says Claude in Chrome in &quot;Work&quot; does not follow switches to work-team, with a Give work-team its own Chrome profile button and a close button"></p>
+<p align="center"><img src="docs/images/popover-chrome-signin.png" width="384" alt="The work profile's card after a rotation from work-1 to work-team: an amber banner says Claude in Chrome in &quot;Work&quot; does not follow switches to work-team, with a Give work-team Its Own Chrome Profile button and a close button"></p>
 
 An account with a Chrome profile of its own is followed: after every switch
 to it, claudeswitch opens that Chrome profile in the background, so Claude in
 Chrome finds the right browser, and nothing asks you to sign in again (see
 [Claude in Chrome](#claude-in-chrome)). When a profile's accounts share one
 Chrome profile instead, that can't follow a rotation. The card says so in
-amber, with a **Give ... its own Chrome profile** button that sets one up
+amber, with a **Give ... Its Own Chrome Profile** button that sets one up
 (`cs chrome add <id>`, one sign-in, once). The × hides the banner until the
 next rotation.
 
@@ -531,11 +531,11 @@ next rotation.
     rings for its week and session, its state (available, in use by a
     profile, no headroom, refused and when it clears), who uses it, plan and
     login expiry. Drag within a pool to set the rotation order; drag onto
-    another pool to move it there, after a confirmation. <b>New pool</b>
+    another pool to move it there, after a confirmation. <b>New Pool</b>
     makes a pool, and a pool's ⋯ menu has <b>Rename…</b> and
     <b>Delete…</b>, which asks where its accounts go. From an account's ⋯
     menu: rename it, move it to another pool or up and down the order, sign
-    in to it again, open Chrome, choose its <b>Chrome profile</b> (the same
+    in to it again, open Chrome, choose its <b>Chrome Profile</b> (the same
     as its profile's, one of yours, or a new one), or delete it after a
     confirmation that names the account and seat. Recovery copies (logins a
     swap kept aside) are listed here to restore or clear.</td>
@@ -549,10 +549,10 @@ next rotation.
     installs and uninstalls it, and sets the app to launch at login.</td>
   </tr>
   <tr>
-    <td width="440"><img src="docs/images/settings-cleanup.png" width="440" alt="Settings, Cleanup pane: a plan of what would go by kind with counts and sizes, Clean now…, the runs with Undo, and the schedule settings"></td>
+    <td width="440"><img src="docs/images/settings-cleanup.png" width="440" alt="Settings, Cleanup pane: a plan of what would go by kind with counts and sizes, Clean Now…, the runs with Undo, and the schedule settings"></td>
     <td><b>Cleanup.</b> <b>Preview</b> shows what Claude left behind that is
     merged, unused and unchanged (worktrees, branches, lane clones, temp
-    folders), by kind, with sizes and why. <b>Clean now…</b> moves it to the
+    folders), by kind, with sizes and why. <b>Clean Now…</b> moves it to the
     Trash after a confirmation; each run can be put back with <b>Undo</b>.
     The switches choose the kinds, and <b>Clean up on a schedule</b> lets
     the daemon do it daily (<a href="docs/cli/clean.md">cs clean</a>).</td>
@@ -568,12 +568,12 @@ next rotation.
 
 ### Add account
 
-<p align="center"><img src="docs/images/add-account.png" width="520" alt="The Add account sheet: sign in with a browser, or save the login Claude Code is using now"></p>
+<p align="center"><img src="docs/images/add-account.png" width="520" alt="The Add Account sheet: sign in with a browser, or save the login Claude Code is using now"></p>
 
-**+ Add account** in the popover, or **Add account** in Settings → Accounts,
+**+ Add Account** in the popover, or **Add Account** in Settings → Accounts,
 offers two ways:
 
-- **Sign in with browser.** Name the account, then pick its **Pool** (every
+- **Sign In with Browser.** Name the account, then pick its **Pool** (every
   pool, named with the profiles that use it, or No pool; it starts on a pool
   only the profile you opened it from uses, so nothing is shared unless you
   choose), the **Organization** to sign in to (the one your browser is in,
@@ -581,7 +581,7 @@ offers two ways:
   opens the sign-in page, and you paste back the code it shows. Your live
   session is not touched (`cs login <id> --direct --no-open`, with `--pool`
   or `--no-pool`, and `--org`).
-- **Save current login.** After `/login` in Claude Code, save that credential
+- **Save Current Login.** After `/login` in Claude Code, save that credential
   under the name it suggests, into the pool you pick (`cs add`).
 
 ## The cs CLI

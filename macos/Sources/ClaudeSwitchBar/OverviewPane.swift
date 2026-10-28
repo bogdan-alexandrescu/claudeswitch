@@ -74,7 +74,7 @@ struct OverviewPane: View {
             Text("NEEDS YOU").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             ForEach(list) { n in
                 HStack(spacing: 10) {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color.csWarn)
                     Text(n.text).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
                     Button(n.action) { open(n.target, account: n.account) }.controlSize(.small)
@@ -103,7 +103,7 @@ struct OverviewPane: View {
                     .foregroundStyle(.secondary)
                 Text(t.primary)
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(t.attention ? Color.orange : Color.primary)
+                    .foregroundStyle(t.attention ? Color.csWarn : Color.primary)
                     .lineLimit(1)
                 Text(t.secondary.isEmpty ? " " : t.secondary)
                     .font(.caption)

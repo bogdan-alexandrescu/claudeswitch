@@ -108,7 +108,7 @@ struct HotKeyRow: View {
                 Text(r).font(.caption).foregroundStyle(.secondary)
             }
             if let p = hotKey.problem {
-                Label(p, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+                Label(p, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(Color.csWarn)
             }
         }
         .onDisappear { stop() }
