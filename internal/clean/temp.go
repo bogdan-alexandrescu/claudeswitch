@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"time"
 )
@@ -33,14 +34,24 @@ func (s *scanner) liveID(id string) bool {
 	return false
 }
 
-// scratchItems are the session folders in TempRoot: <project>/<session>.
+// sessionID is the shape of a Claude Code session id.
+var sessionID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+// scratchItems are the session folders in TempRoot: <project>/<session>,
+// a project being its path with / as - ("-Users-…") and a session its id.
+// Nothing else there is a session's: a virtualenv made at the top lost its
+// bin/ and lib/ as two (run 20261027-024145), and Claude Code keeps folders
+// of its own there.
 func (s *scanner) scratchItems() []Item {
 	if s.opt.TempRoot == "" {
 		return nil
 	}
-	dirs, _ := filepath.Glob(filepath.Join(s.opt.TempRoot, "*", "*"))
+	dirs, _ := filepath.Glob(filepath.Join(s.opt.TempRoot, "-*", "*"))
 	var items []Item
 	for _, d := range dirs {
+		if !sessionID.MatchString(filepath.Base(d)) {
+			continue
+		}
 		if fi, err := os.Stat(d); err != nil || !fi.IsDir() {
 			continue
 		}

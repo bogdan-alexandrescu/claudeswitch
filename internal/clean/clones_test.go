@@ -112,13 +112,13 @@ func TestTempFilesOfEndedSessionsAreRemovedAndALiveOnesAreKept(t *testing.T) {
 	w.opt.TempRoot = filepath.Join(w.root, "tmp-claude")
 	old := w.opt.Now.Add(-40 * 24 * time.Hour)
 
-	ended := filepath.Join(w.opt.TempRoot, "-proj", "s-ended")
-	live := filepath.Join(w.opt.TempRoot, "-proj", "s-live")
+	ended := filepath.Join(w.opt.TempRoot, "-proj", endedID)
+	live := filepath.Join(w.opt.TempRoot, "-proj", liveID)
 	for _, d := range []string{ended, live} {
 		w.write(filepath.Join(d, "scratchpad", "f"), "x\n")
 		touch(t, filepath.Join(d, "scratchpad", "f"), old)
 	}
-	sess, _ := json.Marshal(map[string]any{"pid": os.Getpid(), "sessionId": "s-live", "cwd": w.repo,
+	sess, _ := json.Marshal(map[string]any{"pid": os.Getpid(), "sessionId": liveID, "cwd": w.repo,
 		"startedAt": w.opt.Now.Add(-2 * time.Hour).UnixMilli()})
 	w.write(filepath.Join(w.cfg, "sessions", fmt.Sprint(os.Getpid())+".json"), string(sess))
 
@@ -159,6 +159,53 @@ func TestTempFilesOfEndedSessionsAreRemovedAndALiveOnesAreKept(t *testing.T) {
 	}
 	if !exists(filepath.Join(w.cfg, "projects", "-proj", "s-old")) {
 		t.Fatal("the session folder went too; only its subagents/ should")
+	}
+}
+
+// Session ids as Claude Code writes them; the scanner takes nothing else.
+const (
+	endedID = "aaaaaaaa-aaaa-4aaa-8aaa-000000000001"
+	liveID  = "aaaaaaaa-aaaa-4aaa-8aaa-000000000002"
+)
+
+// Only <project>/<session> is a session's scratch folder. Anything else in
+// the temp folder belongs to someone else: a virtualenv a session made at the
+// top level lost its bin/ and lib/ as two "scratch folders of an ended
+// session" (run 20261027-024145), and Claude Code keeps folders of its own
+// there.
+func TestOnlySessionFoldersInTheTempFolderAreScratch(t *testing.T) {
+	w := newWorld(t)
+	w.opt.Worktrees = false
+	w.opt.Temp = true
+	w.opt.TempRoot = filepath.Join(w.root, "tmp-claude")
+	old := w.opt.Now.Add(-40 * 24 * time.Hour)
+
+	session := filepath.Join(w.opt.TempRoot, "-proj", endedID)
+	others := []string{
+		filepath.Join(w.opt.TempRoot, "venv-908", "bin"),
+		filepath.Join(w.opt.TempRoot, "venv-908", "lib"),
+		filepath.Join(w.opt.TempRoot, "bundled-skills", "skill"),
+		filepath.Join(w.opt.TempRoot, "-proj", "not-a-session"),
+	}
+	for _, d := range append([]string{session}, others...) {
+		w.write(filepath.Join(d, "f"), "x\n")
+		touch(t, filepath.Join(d, "f"), old)
+	}
+
+	p := w.scan()
+	mustRemove(t, w.item(p, KindScratch, session))
+	for _, it := range p.Items {
+		if it.Kind == KindScratch && it.Path != session {
+			t.Errorf("%s is not a session's scratch folder: %s", it.Path, it.Why)
+		}
+	}
+	if _, err := Apply(context.Background(), p, w.opt); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range others {
+		if !exists(d) {
+			t.Errorf("%s was removed", d)
+		}
 	}
 }
 

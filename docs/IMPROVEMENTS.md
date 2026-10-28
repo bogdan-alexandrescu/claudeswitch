@@ -1667,3 +1667,11 @@ growth since the reading is carried onto the judged window
 window ("80% of its 5-hour · 5 points before it rotates", not "90% of its
 weekly · 8 points"). The "58%" in a stay reason beside a stored 57% is not
 this: the reason gives the projection, the field the reading.
+
+**Only session folders are scratch (found 2026-10-27, in run 20261027-024145).**
+Temp cleanup took every folder two levels under Claude's temp folder for a
+session's scratch: a virtualenv a session made at `/tmp/claude-501/venv-908`
+lost its `bin/` and `lib/` (121 MB) as "the scratch folder of an ended
+session", and Claude Code's own `bundled-skills/<version>` would have gone
+next. Now only `-<project path>/<session id>` is judged; everything else in
+the temp folder is left alone.
