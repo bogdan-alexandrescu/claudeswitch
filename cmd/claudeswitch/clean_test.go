@@ -157,7 +157,7 @@ func TestCleanApplyActsOnTheSavedPlanOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	if text := out.String(); !strings.Contains(text, "agent-x") || strings.Contains(text, "agent-y") ||
-		!strings.Contains(text, "cs clean --apply --plan "+saved) {
+		!strings.Contains(text, "claudeswitch clean --apply --plan "+saved) {
 		t.Fatalf("the saved plan printed as:\n%s", text)
 	}
 

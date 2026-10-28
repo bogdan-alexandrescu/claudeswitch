@@ -34,7 +34,7 @@ func Why(out io.Writer, o WhyOptions) {
 		verb := "rotating to"
 		switch {
 		case o.Decision.Forced:
-			verb = "switching immediately to"
+			verb = "rotating now, mid-turn, to"
 		case o.Decision.Held != "":
 			verb = "waiting to rotate to"
 		}
@@ -50,19 +50,21 @@ func Why(out io.Writer, o WhyOptions) {
 	// daemon's words, and until when.
 	if o.Decision.Held != "" {
 		fmt.Fprintf(out, "  %s\n", paint(amber, policy.WaitingFor(o.Decision.Held)))
-		fmt.Fprintf(out, "  %s\n", paint(grey, fmt.Sprintf(
+		for _, l := range Wrap(paint(grey, fmt.Sprintf(
 			"held until %s, %s after the last Claude in Chrome, artifact or Docs call (hold_for_claude_ai); past the %.0f%% hard floor it goes at once",
-			o.Decision.HeldUntil.Local().Format("15:04"), shortDur(o.Cfg.ClaudeAIHold()), o.Cfg.HardFloor)))
+			When(o.Decision.HeldUntil, time.Now()), shortDur(o.Cfg.ClaudeAIHold()), o.Cfg.HardFloor)), terminalWidth()-2) {
+			fmt.Fprintf(out, "  %s\n", l)
+		}
 	}
 
 	if !o.Decision.RecoversAt.IsZero() {
-		fmt.Fprintf(out, "  %s\n", paint(grey, fmt.Sprintf("%s frees up in %s, at %s",
+		fmt.Fprintf(out, "  %s\n", paint(grey, fmt.Sprintf("%s frees up in %s, %s",
 			o.Decision.RecoversAccount, shortDur(time.Until(o.Decision.RecoversAt)),
-			o.Decision.RecoversAt.Local().Format("15:04"))))
+			When(o.Decision.RecoversAt, time.Now()))))
 	}
 
 	fmt.Fprintf(out, "\n  %s\n", paint(dim, "CONSIDERED, in order"))
-	t := &table{}
+	t := (&table{}).Wrap(terminalWidth())
 	for _, v := range o.Verdicts {
 		v = InUseVerdict(o.Cfg, o.St, o.Profile, v)
 		mark, name := " ", v.ID
@@ -71,6 +73,10 @@ func Why(out io.Writer, o WhyOptions) {
 			mark, name = paint(glacier, "▸"), paint(bold, v.ID)
 		case v.Eligible:
 			mark = paint(meltwater, "✓")
+		case strings.HasPrefix(v.Why, "in use by"), strings.HasPrefix(v.Why, "may still be signed in"):
+			// Another profile's for now (D34), as status greys it:
+			// nothing to act on.
+			mark, v.Why = paint(grey, "✗"), paint(grey, v.Why)
 		default:
 			mark = paint(red, "✗")
 		}
@@ -106,14 +112,14 @@ func InUseVerdict(cfg *config.Config, st *state.State, self string, v policy.Ver
 // changes the decision above, except a model the config counts, which the
 // verdicts already reflect.
 func weeklySection(out io.Writer, o WhyOptions) {
-	t := &table{}
+	t := (&table{}).Wrap(terminalWidth())
 	now := time.Now()
 	for _, v := range o.Verdicts {
 		acct := o.St.Accounts[v.ID]
 		if !acct.HasReading() {
 			continue
 		}
-		p, ok := acct.WeeklyPace(now)
+		p, ok := acct.WeeklyPace(now, o.St.Projects(v.ID, now, o.Cfg.PollActive.Duration))
 		models := modelLimitsText(acct.Last)
 		if !ok && models == "" {
 			continue
@@ -130,6 +136,6 @@ func weeklySection(out io.Writer, o WhyOptions) {
 	if len(t.rows) == 0 {
 		return
 	}
-	fmt.Fprintf(out, "\n  %s\n", paint(dim, "WEEKLY, at the pace so far"))
+	fmt.Fprintf(out, "\n  %s\n", paint(dim, "WEEK, at the pace so far"))
 	fmt.Fprint(out, t.render("  "))
 }

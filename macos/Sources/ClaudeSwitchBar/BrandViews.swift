@@ -123,8 +123,33 @@ struct MiniRings: View {
     var body: some View {
         let w = (account?.sevenDay?.utilization ?? 0) / 100
         let s = (account?.fiveHour?.utilization ?? 0) / 100
-        TwinRingsView(week: w, session: s, satellite: w > 0, dotRadius: dotRadius, satelliteRadius: 5.2)
+        Group {
+            if account == nil {
+                // No account live: one plain ring that shows in both
+                // themes, not the dot rings under it as well.
+                Circle().strokeBorder(Color.secondary.opacity(0.6), lineWidth: 1.5)
+            } else {
+                TwinRingsView(week: w, session: s, satellite: w > 0, dotRadius: dotRadius, satelliteRadius: 5.2)
+            }
+        }
             .frame(width: size, height: size)
+            // Trouble draws the menu-bar glyph's mark: needs sign-in, refused.
+            .overlay(alignment: .bottomTrailing) {
+                if trouble {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: size * 0.42, weight: .bold))
+                        .foregroundStyle(.red)
+                        .background(Circle().fill(Color(nsColor: .controlBackgroundColor)).padding(-1))
+                        .accessibilityLabel("needs you")
+                }
+            }
+    }
+
+    var trouble: Bool {
+        guard let a = account else { return false }
+        if a.status == .needsLogin { return true }
+        if case .refused = a.status { return true }
+        return false
     }
 }
 
@@ -212,6 +237,9 @@ struct DialView: View {
     let trigger: Double
     let now: Date
     var size: CGFloat = 96
+    /// The reading is old (its account needs sign-in): the dots and the
+    /// figure dimmed, the label and reset left legible.
+    var dimmed = false
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -244,6 +272,7 @@ struct DialView: View {
                     .offset(y: size * 1.5 / 64)
             }
             .frame(width: size, height: size)
+            .opacity(dimmed ? 0.45 : 1)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.35), value: pct)
             Text(title).font(.caption.weight(.semibold))
             Text(Format.resets(window?.resetsAt, now: now).ifEmpty("–"))
@@ -272,6 +301,8 @@ struct DotBarView: View {
     let window: WindowReading?
     let trigger: Double
     let now: Date
+    /// As DialView's: the dots and the figure dimmed, the rest legible.
+    var dimmed = false
     @Environment(\.colorScheme) private var scheme
 
     var pct: Double? { window?.utilization }
@@ -281,10 +312,15 @@ struct DotBarView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
+            HStack(spacing: 0) {
                 Text(title)
                 Spacer()
-                Text(detail).foregroundStyle(.secondary).monospacedDigit()
+                Group {
+                    Text(Format.pct(pct)).opacity(dimmed ? 0.45 : 1)
+                    let r = Format.resets(window?.resetsAt, now: now)
+                    if !r.isEmpty { Text(" · " + r) }
+                }
+                .foregroundStyle(.secondary).monospacedDigit()
             }
             .font(.caption)
             let n = Dots.barCount
@@ -303,6 +339,7 @@ struct DotBarView: View {
                 }
             }
             .frame(height: Self.dot * 1.3)
+            .opacity(dimmed ? 0.45 : 1)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title): \(detail), switches at \(Int(trigger))%")
@@ -327,18 +364,22 @@ struct UsageView: View {
     let account: AccountView
     let card: ProfileCard
     let now: Date
+    /// Old figures (the account needs sign-in): dots and figures dimmed.
+    var dimmed = false
 
     var body: some View {
         switch store.usageMode {
         case .dials:
             HStack(spacing: 0) {
-                DialView(title: "Session", window: account.fiveHour, trigger: card.switchAt, now: now)
-                DialView(title: "Week", window: account.sevenDay, trigger: card.switchAtWeekly, now: now)
+                DialView(title: "Session", window: account.fiveHour, trigger: card.switchAt, now: now, dimmed: dimmed)
+                DialView(title: "Week", window: account.sevenDay, trigger: card.switchAtWeekly, now: now, dimmed: dimmed)
             }
         case .bars:
             VStack(alignment: .leading, spacing: 9) {
-                DotBarView(title: "Session", window: account.fiveHour, trigger: card.switchAt, now: now)
-                DotBarView(title: "Week", window: account.sevenDay, trigger: card.switchAtWeekly, now: now)
+                DotBarView(title: "Session", window: account.fiveHour, trigger: card.switchAt, now: now,
+                           dimmed: dimmed)
+                DotBarView(title: "Week", window: account.sevenDay, trigger: card.switchAtWeekly, now: now,
+                           dimmed: dimmed)
             }
         }
     }

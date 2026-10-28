@@ -24,6 +24,7 @@ import (
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/ccdir"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/policy"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/render"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/state"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/usage"
 )
@@ -117,7 +118,7 @@ func renderContextIn(w io.Writer, cfg *config.Config, st *state.State, view *pro
 		a.Last.FiveHour.Pct(), slUntil(a.Last.FiveHour.ResetsAt, now),
 		a.Last.SevenDay.Pct(), slUntil(a.Last.SevenDay.ResetsAt, now))
 	if age := now.Sub(a.LastAt); !a.LastAt.IsZero() && age > staleReadingAfter {
-		line += fmt.Sprintf(" · reading %s old", age.Round(time.Minute))
+		line += fmt.Sprintf(" · reading %s old", render.Duration(age))
 	}
 	fmt.Fprintln(w, p+line)
 

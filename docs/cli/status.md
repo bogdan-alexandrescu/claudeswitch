@@ -19,10 +19,13 @@ The same for every command on this page:
 |---|---|
 | `0` | success |
 | `1` | the command failed; the message is on stderr as `claudeswitch: <message>`. With `--json` the error is one object on stdout instead: `{"error": {"code", "message", "hint"}}` ([error codes](../APP_CLI.md#error-codes)) |
-| `2` | an unknown command, no command, or a flag the command does not know (Go's flag package prints the usage) |
+| `2` | an unknown command (one line naming it), no command, an argument the command takes none of (`status`, `top`, `why` and `plan` take none), or a flag it does not know (the error and the command's usage go to stderr) |
+
+`help` (or `--help`, `-h`) on a command, or `cs help <command>`, prints its
+synopsis and flags on stdout and exits 0.
 
 `--profile NAME` with a name that is not a configured profile fails with
-status 1.
+status 1 (`not_found` with `--json`).
 
 ## cs status
 
@@ -30,8 +33,8 @@ status 1.
 cs status [--profile NAME] [--detail] [--json] [--refresh=false] [--max-age DURATION] [--config PATH] [-v]
 ```
 
-Shows every profile and every account: session (5-hour) and weekly
-utilization, when each window clears, each account's state, the recent
+Shows every profile and every account: the session (the five-hour window)
+and the week, as the app names them, when each window clears, each account's state, the recent
 switches, and the call budget.
 
 | flag | default | meaning |
@@ -54,23 +57,44 @@ same one the daemon uses, so it cannot overspend
 
 Each profile block shows:
 
-- the profile, its thresholds (`switch ≥85% / ≥98%`), and its
+- the profile, its thresholds (`rotates at session ≥85% / week ≥98%`), and its
   `CLAUDE_CONFIG_DIR`;
-- its pool and hard floor: `pool personal, research` for a profile with its
+- its pool and hard floor (`past 99% (the hard floor), mid-turn at once`):
+  `pool personal, research` for a profile with its
   own pool, or, for one that lists pools, each pool with its accounts in the
   order the profile uses them, `pools mine (personal), then team (work-1,
   work-2)` (`default` ends with `in no pool (…)` when some account is in
   none);
 - the live account, its binding window, and how many points are left before
-  it rotates, or what happens next (`rotating to work-team`);
-- one row per account. `▸` marks the live one. **5H** and **7D** are the two
-  windows, with a dot bar and a larger dot at the threshold. **CLEARS** is
-  when the binding window resets. **STATE** is the account's state
-  (`available`, `refused · five_hour`, `no headroom · 5h`, and so on). An
+  it rotates, or what happens next: `rotating to work-team` under a live
+  daemon, `would rotate to work-team (the daemon is in dry-run)` or `(no
+  daemon running)` otherwise, `waiting to rotate to work-team while
+  claude.ai work goes on` while that work holds the switch, and `pinned;
+  automatic rotation is off` for a pinned profile. Without a live daemon
+  the room reads `N points before its trigger`, since nothing rotates;
+- one row per account. `▸` marks the live one. **SESSION** and **WEEK** are the two
+  windows, each figure with a dot bar: `●` used, `◉` the trigger. A
+  figure the API flags carries `!` in a column of its own after it, so the
+  figures stay lined up; one the API grades critical while it is under its
+  trigger is red, and a warning says rotation goes by the trigger. An account is
+  judged as the daemon judges it: by the window nearest its own trigger,
+  which is not always the higher figure (at 90% of the session and 95% of
+  the week, against 85 and 98, it is the session). For the live account
+  that window's figure is carried forward by its burn rate and marked `~`
+  when that changes it; the same figure is the one STATE and the headline
+  use. **CLEARS** is when that window resets (for a refused account, when
+  the refusal lifts). **STATE** is the account's state
+  (`available`, `refused · session`, `no headroom · week`, `needs sign-in`
+  for a credential only a sign-in brings back (a warning gives the command,
+  `claudeswitch login <id> --direct`, which leaves the live session alone),
+  `short of margin`
+  for an account under its triggers but with less than `landing_margin`
+  points of session room, so rotation will not land on it, and so on). An
   account live in another profile that shares its pool reads
   `in use by <profile>` there, never available;
 - the pool's runway, when there is a forecast (IMPROVEMENTS F2):
-  `work pool: runs dry Thu 14:00 at this pace`, or, when a window resets
+  `work pool: runs dry Thu 14:00 at this pace` (`default's pools: run dry
+  …` for a profile that lists several), or, when a window resets
   first and gives the pool room back (an account rotation cannot use, or
   one already being spent),
   `work pool: does not run dry before work-team resets today 15:30 at this pace`.
@@ -83,15 +107,28 @@ Each profile block shows:
   `--detail` says so (`work pool: runway unknown (too few recent readings)`,
   `not being spent`, `no eligible account left`) and adds, under each
   account, `↳ reaches its trigger Thu 13:10 at this pace`;
-- **RECENT SWITCHES**, the last five, with the reason for each.
+- **RECENT SWITCHES**, the profile's last five, with the reason for each,
+  dated `today 15:01`, a weekday within six days, or `18 Oct 09:12` further
+  off (`forced` ahead of the reason for a mid-turn switch).
 
-The footer says where the readings came from, the idle-swap setting, how many
-API calls are spare, and the legend: `!` means flagged by the API, `~` means
-projected from an older reading.
+The footer says what the daemon does with these readings (`daemon live: it
+polls and rotates`, `daemon in dry-run: it rotates nothing, only logs`, or
+`no daemon running: nothing rotates`; piped output has no header, so this
+line is where it says so), the triggers and when a rotation goes (`at an
+idle gap, or mid-turn after 30s`, and at once past the hard floor), how
+many API calls are spare,
+and the legend: `▸` the live account, `●` used, `◉` its trigger, `!`
+flagged by the API, `~` carried forward from the last reading.
 
 On a terminal the output starts with the `◎ claudeswitch` header (version,
 daemon, last poll); piped, it does not. `NO_COLOR` turns colour off and
 `CLICOLOR_FORCE` turns it on when piped.
+
+Every view here is laid out for the terminal's width (`COLUMNS` when set,
+80 when it cannot be measured): optional columns are dropped and bars
+shortened before anything runs past the edge, and long lines wrap, between
+` · ` phrases where there are some, never inside a `claudeswitch …`
+command. A switch's reason is cut with `…` to the width there is.
 
 With `--json` the output is one object: the default profile's `active`
 account, `accounts` (each with `id`, `vaulted`, `active`, `state`,
@@ -106,6 +143,27 @@ the `thresholds`, `daemon_running`,
 each `profiles` entry with several. An account's `trigger_at` is when it
 reaches its trigger at this pace, `null` when not forecast. The app reads `account list --json` and `why --json` instead
 ([accounts](accounts.md#cs-account-list), [why](#cs-why)).
+
+Each account is judged against the thresholds of the profile it is live
+in, else of the first profile that may use it. `binding_window`
+(`five_hour` or `seven_day`) is the window nearest its own trigger,
+`utilization` that window's figure, and `projected` the same figure carried
+forward by the burn rate (equal to `utilization` for an account not being
+spent). `state` is one of:
+
+| state | meaning |
+|---|---|
+| `available` | under its triggers; `usable` is `true` for this state alone |
+| `no_headroom` | `projected` is at or over the trigger of `binding_window` |
+| `reserved` | over its configured `reserve` |
+| `burnt` | refused by the API, until its window resets |
+| `window_reset` | the reading describes a window that has since reset; it is being re-read |
+| `unknown` | never read |
+
+`thresholds` holds `switch_at`, `switch_at_weekly`, `hard_floor`,
+`switch_when` and `max_switch_wait`. `--profile NAME` keeps that profile
+alone: `accounts` lists its pool, `profiles` its entry, `active` its live
+account and `thresholds` its own.
 
 Exit status: as above. A config that fails to load is a failure; a missing
 config file is not (it shows what it can).
@@ -126,8 +184,8 @@ state only and never takes a reading itself.
 | `--config PATH` | the default config | the config to read |
 
 It draws to a terminal (alternate screen, hidden cursor, both restored on
-exit). Piped, it fails with "``cs top` draws to a terminal; use `cs status`
-when piping``" and status 1. The last line reads
+exit). Piped, it fails with "`claudeswitch top draws to a terminal; use
+claudeswitch status when piping`" and status 1. The last line reads
 `refreshed HH:MM:SS · every 2s · ctrl-c to leave`.
 
 ## cs why
@@ -158,12 +216,14 @@ Each profile block gives:
 - **CONSIDERED, in order**: every account in the profile's pools, pool by
   pool in the order the profile lists them and in rotation order within
   each, `▸` for the live one, `✓` for an eligible target, `✗` for one that
-  cannot be used, with why (`refused on its five_hour window · clears in
-  37m`, `at 88%, over the 85% session trigger`, or `in use by work` for one
+  cannot be used, with why, naming the window it is judged on (`refused on
+  its session window · clears in 37m`, `at 88% of its session, over the 85%
+  trigger`, `at 20% of its week, ready`, or `in use by work` for one
   live in another profile that shares its pool);
-- **WEEKLY, at the pace so far**: each account's weekly use against how much
-  of the week has gone, and whether it is on pace to use it all or how much
-  would expire unused.
+- **WEEK, at the pace so far**: each account's use of its week against how much
+  of the week has gone, and whether it is on pace to use it all, how much
+  would expire unused, or, ahead of pace, when it runs out (`on pace to run
+  out Fri 14:00, before it resets Sun 09:00`).
 
 `--json` gives one object per profile, with `decision` (`kind`, `reason`,
 `target` for a switch, `unpin` when it lifts a pin, and `held` with

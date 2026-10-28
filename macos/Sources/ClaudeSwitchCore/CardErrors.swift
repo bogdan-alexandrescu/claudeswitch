@@ -25,10 +25,12 @@ public struct CardError: Identifiable, Equatable {
         self.init(title: title, message: e.message, hint: e.hint, retryAt: e.retryAt)
     }
 
-    /// "Try again at HH:MM:SS" in the given zone, or nil without retry_at.
-    public func retryLine(timeZone: TimeZone = .current) -> String? {
-        guard let at = retryAt else { return nil }
-        return "Try again at " + Self.clock(at, timeZone: timeZone)
+    /// "Try again at HH:MM:SS" in the given zone; nil without retry_at,
+    /// once that time has passed, or when the message already says it.
+    public func retryLine(now: Date, timeZone: TimeZone = .current) -> String? {
+        guard let at = retryAt, at > now else { return nil }
+        let clock = Self.clock(at, timeZone: timeZone)
+        return message.contains(clock) ? nil : "Try again at " + clock
     }
 
     /// HH:MM:SS, as the CLI's R1 message writes a time.

@@ -158,7 +158,7 @@ func TestAccountListIsKeychainFree(t *testing.T) {
 	if err := accountList(&buf, path, false); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(buf.String(), "Max 20x") || !strings.Contains(buf.String(), "needs login") {
+	if !strings.Contains(buf.String(), "Max 20x") || !strings.Contains(buf.String(), "needs sign-in") {
 		t.Errorf("human form:\n%s", buf.String())
 	}
 	if after := testshim.Invocations(); after != before {

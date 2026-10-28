@@ -246,25 +246,28 @@ public extension Confirm {
     /// and which profiles gain or lose it.
     static func poolDrop(_ d: PoolDrop, pools: PoolList, defaultExists: Bool = true) -> Confirmation {
         let before = pools.profiles(of: d.account, defaultExists: defaultExists)
+        let q = inQuotes
         switch d {
         case .move(let a, let from, let to):
             let after = pools.pool(to)?.profiles ?? []
-            var m = from.map { "\(a) leaves \($0) and joins \(to)." } ?? "\(a) joins \(to)."
+            var m = "The account \(q(a)) " + (from.map { "leaves the pool \(q($0)) and joins \(q(to))." }
+                                               ?? "joins the pool \(q(to)).")
             if after.isEmpty {
-                m += " No profile uses \(to), so \(a) rotates nowhere until one does."
+                m += " No profile uses \(q(to)), so \(q(a)) rotates nowhere until one does."
             } else {
-                m += " From now on \(spoken(after)) may use it"
+                m += " From now on \(spoken(after.map(q))) may use it"
                 let lost = before.filter { !after.contains($0) }
-                m += lost.isEmpty ? "." : "; \(spoken(lost)) no longer can."
+                m += lost.isEmpty ? "." : "; \(spoken(lost.map(q))) no longer can."
             }
-            return Confirmation(title: "Move \(a) to \(to)?", message: m, action: "Move", destructive: false)
+            return Confirmation(title: "Move \(q(a)) to \(q(to))?", message: m, action: "Move", destructive: false)
         case .remove(let a, let from):
-            var m = "\(a) is then in no pool"
-            m += defaultExists ? ": \(StateFile.defaultProfile) uses it, after its pools." : ", and no profile uses it."
+            var m = "The account \(q(a)) is then in no pool, where "
+            m += defaultExists ? "\(q(StateFile.defaultProfile)) uses it after its pools" : "no profile uses it"
             let after = defaultExists ? [StateFile.defaultProfile] : []
             let lost = before.filter { !after.contains($0) }
-            if !lost.isEmpty { m += " \(spoken(lost)) no longer can." }
-            return Confirmation(title: "Take \(a) out of \(from)?", message: m, action: "Take out", destructive: false)
+            m += lost.isEmpty ? "." : "; \(spoken(lost.map(q))) no longer can."
+            return Confirmation(title: "Take \(q(a)) out of \(q(from))?", message: m, action: "Take out",
+                                destructive: false)
         }
     }
 }
@@ -273,8 +276,8 @@ public extension Notes {
     /// The success note of a drop or a move.
     static func poolDrop(_ d: PoolDrop) -> String {
         switch d {
-        case .move(let a, _, let to): return "\(a) is now in \(to)"
-        case .remove(let a, _): return "\(a) is in no pool now"
+        case .move(let a, _, let to): return "The account \(inQuotes(a)) is now in \(inQuotes(to))"
+        case .remove(let a, _): return "The account \(inQuotes(a)) is in no pool now"
         }
     }
 }
@@ -324,9 +327,25 @@ public struct NewPoolPlan: Equatable {
         return NewPoolPlan(name: name, create: create, moves: moves)
     }
 
-    /// Beside an account in the sheet: the pool it would leave.
-    public static func note(for account: String, pools: PoolList?) -> String? {
-        pools?.pool(of: account).map { "leaves pool \($0.name)" }
+    /// Beside an account in the sheet: the pool it is in, or, checked, the
+    /// pool it would leave. Nil for one in no pool.
+    public static func note(for account: String, checked: Bool, pools: PoolList?) -> String? {
+        pools?.pool(of: account).map { (checked ? "leaves " : "in ") + inQuotes($0.name) }
+    }
+
+    /// Under the accounts once any is checked: the profiles that rotate
+    /// them now stop, since no profile uses a new pool yet. Nil when none
+    /// does.
+    public static func stops(name: String, selected: [String], pools: PoolList?, defaultExists: Bool) -> String? {
+        var users: [String] = []
+        for id in selected {
+            let now = pools?.profiles(of: id, defaultExists: defaultExists) ?? []
+            for u in now where !users.contains(u) { users.append(u) }
+        }
+        guard !users.isEmpty else { return nil }
+        let who = selected.count == 1 ? "The account \(inQuotes(selected[0])) then stops" : "The accounts checked then stop"
+        let pool = name.isEmpty ? "the new pool" : inQuotes(name)
+        return who + " rotating in \(spoken(users.map(inQuotes))) until a profile uses \(pool)."
     }
 
     /// Asked before creating when accounts leave their pools.
@@ -336,8 +355,9 @@ public struct NewPoolPlan: Equatable {
             return nil
         }
         guard !moved.isEmpty else { return nil }
-        return Confirmation(title: "Create \(name) and move \(moved.map(\.0).joined(separator: ", "))?",
-                            message: moved.map { "\($0.0) leaves \($0.1)" }.joined(separator: "; ") + ".",
+        return Confirmation(title: "Create \(inQuotes(name)) and move \(spoken(moved.map { inQuotes($0.0) }))?",
+                            message: moved.map { "The account \(inQuotes($0.0)) leaves the pool \(inQuotes($0.1))." }
+                                .joined(separator: " "),
                             action: "Create and move", destructive: false)
     }
 }
@@ -380,18 +400,27 @@ public enum ProfilePools {
         return [[profile] + chosen, chosen]
     }
 
-    /// What the change does beyond the order, said before saving; nil when
-    /// nothing else happens.
+    /// What the change does beyond the order, said before saving (a note,
+    /// not a warning); nil when nothing else happens.
     public static func note(profile: String, pools: PoolList?, chosen: [String]) -> String? {
+        let q = ProfilesText.q
         var notes: [String] = []
         if let own = pools?.pool(profile), own.own, !own.accounts.isEmpty, !chosen.contains(profile) {
-            notes.append("\(profile)'s own accounts (\(own.accounts.joined(separator: ", "))) become the pool "
-                + "\(profile), which no profile uses then: they rotate nowhere until a profile lists it or you move them.")
+            notes.append("Its own accounts (\(own.accounts.map(q).joined(separator: ", "))) become the pool "
+                + "\(q(profile)), which no profile uses then: they rotate nowhere until a profile lists it or you "
+                + "move them.")
         }
-        for name in chosen where name != profile {
-            if let p = pools?.pool(name), p.own {
-                notes.append("\(name)'s own pool becomes shared: \(name) keeps using it.")
-            }
+        // Another profile's own pool goes by that profile's name: one
+        // sentence for all of them, each name said once.
+        let others = chosen.filter { $0 != profile && pools?.pool($0)?.own == true }
+        switch others.count {
+        case 0: break
+        case 1:
+            notes.append("The pool \(q(others[0])) belongs to the profile of the same name: checked, it becomes "
+                + "shared, and that profile keeps using it.")
+        default:
+            notes.append("The pools \(spoken(others.map(q))) belong to the profiles of the same name: checked, each "
+                + "becomes shared, and its profile keeps using it.")
         }
         return notes.isEmpty ? nil : notes.joined(separator: " ")
     }
@@ -416,6 +445,11 @@ public struct PoolChoice: Equatable {
 
     /// 1 for the first pool used; nil when unchecked.
     public func position(of name: String) -> Int? { order.firstIndex(of: name).map { $0 + 1 } }
+
+    /// The order's numbers show once a pool is checked; ↑ and ↓ only when
+    /// there are two to order.
+    public var numbered: Bool { !order.isEmpty }
+    public var reorderable: Bool { order.count > 1 }
 
     /// Checks a pool (it joins last) or unchecks one.
     public mutating func toggle(_ name: String) {
@@ -448,19 +482,36 @@ public struct PoolOption: Equatable, Hashable {
 
 public enum NewAccountPool {
     /// Every pool, labelled with who uses it, then "No pool" when there is a
-    /// profile named default to use it.
+    /// profile named default to use it: last, after its pools, when it has
+    /// pools with accounts (as `describe` says).
     public static func options(pools: PoolList?, profiles: ProfileList?) -> [PoolOption] {
         var out = (pools?.pools ?? []).map { p in
-            PoolOption(pick: .pool(p.name), label: p.name + " — " + (p.own
-                ? "\(p.profiles.first ?? p.name)'s own"
-                : p.profiles.isEmpty ? "no profile uses it" : "used by " + p.profiles.joined(separator: ", ")))
+            PoolOption(pick: .pool(p.name), label: inQuotes(p.name) + ", " + (p.own
+                ? "a profile’s own pool"
+                : p.profiles.isEmpty ? "which no profile uses" : "used by " + spoken(p.profiles.map(inQuotes))))
         }
         let defaultExists = profiles.map { $0.profile(StateFile.defaultProfile) != nil }
             ?? (pools?.pools.contains { $0.profiles.contains(StateFile.defaultProfile) } ?? true)
         if defaultExists {
-            out.append(PoolOption(pick: .none, label: "No pool — \(StateFile.defaultProfile) uses it last"))
+            out.append(PoolOption(pick: .none, label: "No pool, which \(inQuotes(StateFile.defaultProfile)) uses"
+                                    + (defaultUsesPools(pools) ? " last" : "")))
         }
         return out
+    }
+
+    /// The one place a new account can go, when there is no other: the
+    /// sheet then needs no pop-up (with one profile and no pools, No pool;
+    /// the footnote, `describe`, says where it goes). Nil when there is a
+    /// choice, or none.
+    public static func onlyChoice(pools: PoolList?, profiles: ProfileList?) -> PoolPick? {
+        let o = options(pools: pools, profiles: profiles)
+        return o.count == 1 ? o[0].pick : nil
+    }
+
+    /// Whether default uses a pool with accounts, before the accounts in
+    /// no pool (D6); unknown counts as yes.
+    static func defaultUsesPools(_ pools: PoolList?) -> Bool {
+        pools?.pools.contains { $0.profiles.contains(StateFile.defaultProfile) && !$0.accounts.isEmpty } ?? true
     }
 
     /// Where the sheet starts: the last pool the profile it was opened from
@@ -485,13 +536,23 @@ public enum NewAccountPool {
         }
     }
 
-    /// The sheet's words for where it goes.
+    /// The sheet's words for where it goes, after "stored": "in the pool
+    /// “team”, which the profiles “default” and “work” use". In no pool it
+    /// is default's, after the pools default uses (D6).
     public static func describe(_ p: PoolPick, pools: PoolList?) -> String {
         switch p {
-        case .none: return "no pool (\(StateFile.defaultProfile) uses it last)"
+        case .none:
+            return "in no pool, where \(inQuotes(StateFile.defaultProfile)) uses it"
+                + (defaultUsesPools(pools) ? " after its pools" : "")
         case .pool(let n):
-            guard let info = pools?.pool(n), !info.profiles.isEmpty else { return "the pool \(n)" }
-            return "the pool \(n), which " + info.profiles.joined(separator: " and ") + (info.profiles.count == 1 ? " uses" : " use")
+            guard let info = pools?.pool(n), !info.profiles.isEmpty else {
+                return "in the pool \(inQuotes(n))" + (pools?.pool(n) != nil ? ", which no profile uses yet" : "")
+            }
+            // "the profile": a profile's own pool goes by its name, and
+            // "the pool “default”, which “default” uses" read as a slip.
+            let one = info.profiles.count == 1
+            return "in the pool \(inQuotes(n)), which the \(one ? "profile" : "profiles") "
+                + spoken(info.profiles.map(inQuotes)) + (one ? " uses" : " use")
         }
     }
 }
@@ -576,27 +637,48 @@ public struct PoolDeletePlan: Equatable {
     /// The profiles' pools, each in its order, for the summary.
     var listed: [String: [String]]
 
-    /// "default and work stop using team. default then uses only personal;
-    /// work then uses only ops.", with its accounts going where it starts.
+    /// "Deletes the pool “team”. Its 3 accounts move to the pool “personal”;
+    /// no account is deleted. The profile “default” then uses only
+    /// “personal”. …", with its accounts going where it starts.
     public var summary: String { summary(to: initial) }
 
-    /// The same, with its accounts going to `to`: the accounts in no pool
-    /// are default's, last (D6).
+    /// The same, with its accounts going to `to`: only the pool goes, and
+    /// the accounts in no pool are default's, last (D6).
     public func summary(to: PoolPick?) -> String {
-        guard !users.isEmpty else { return "No profile uses it." }
-        let left = users.map { u -> String in
-            var rest = (listed[u] ?? [name]).filter { $0 != name }
+        var out = ["Deletes the pool \(inQuotes(name))."]
+        if accounts.isEmpty {
+            out.append(users.isEmpty ? "It has no accounts and no profile uses it, so nothing else changes."
+                                     : "It has no accounts.")
+        } else {
+            let one = accounts.count == 1
+            let its = one ? "Its account \(inQuotes(accounts[0]))" : "Its \(accounts.count) accounts"
+            switch to {
+            case .pool(let n)?: out.append(its + (one ? " moves" : " move") + " to the pool \(inQuotes(n)); no account is deleted.")
+            case .none?: out.append(its + (one ? " is" : " are") + " then in no pool; no account is deleted.")
+            case nil: out.append("No account is deleted.")
+            }
+            if users.isEmpty { out.append("No profile uses it, so no profile changes.") }
+        }
+        for u in users {
+            var rest = (listed[u] ?? [name]).filter { $0 != name }.map(inQuotes)
             if to == PoolPick.none, u == StateFile.defaultProfile, !accounts.isEmpty {
                 rest.append("the accounts in no pool")
             }
+            let uses: String
             switch rest.count {
-            case 0: return "\(u) then uses no pool"
-            case 1: return "\(u) then uses only \(rest[0])"
-            default: return "\(u) then uses " + rest.joined(separator: ", then ")
+            case 0: uses = "no pool"
+            case 1: uses = "only " + rest[0]
+            default: uses = rest.joined(separator: ", then ")
             }
+            out.append("The profile \(inQuotes(u)) then uses \(uses).")
         }
-        return PoolDeletePlan.joined(users) + " stop" + (users.count == 1 ? "s" : "")
-            + " using \(name). " + left.joined(separator: "; ") + "."
+        return out.joined(separator: " ")
+    }
+
+    /// Under the picker: the accounts that move. Nil for an empty pool.
+    public var caption: String? {
+        guard !accounts.isEmpty else { return nil }
+        return (accounts.count == 1 ? "Its account: " : "Its accounts: ") + accounts.joined(separator: ", ")
     }
 
     public static func make(_ name: String, pools: PoolList, profiles: ProfileList?) -> PoolDeletePlan {
@@ -618,11 +700,6 @@ public struct PoolDeletePlan: Equatable {
         let same = destinations.first { Set(usersOf($0.pick)) == Set(users) && !users.isEmpty }
         return PoolDeletePlan(name: name, accounts: accounts, users: users, destinations: destinations,
                               initial: accounts.isEmpty ? nil : (same ?? destinations.first)?.pick, listed: listed)
-    }
-
-    /// "a", "a and b", "a, b and c".
-    static func joined(_ v: [String]) -> String {
-        v.count <= 2 ? v.joined(separator: " and ") : v.dropLast().joined(separator: ", ") + " and " + v.last!
     }
 }
 

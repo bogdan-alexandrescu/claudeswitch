@@ -273,8 +273,11 @@ type Pace struct {
 // A short-term burn rate (BurnRate, points a minute) describes the current
 // session and would project one hot hour across days; the average is what the
 // week has actually been. The figure for now does use the existing projection,
-// when the weekly window is the one the burn rate measures.
-func (a *Account) WeeklyPace(now time.Time) (Pace, bool) {
+// when the weekly window is the one the burn rate measures and project says
+// the account may be carried forward (State.Projects): an idle account's
+// burn rate was measured while it was last in use, and carrying it over
+// showed a week climbing that nobody was spending.
+func (a *Account) WeeklyPace(now time.Time, project bool) (Pace, bool) {
 	if a == nil || a.Last == nil || !a.Last.SevenDay.Known() {
 		return Pace{}, false
 	}
@@ -291,7 +294,7 @@ func (a *Account) WeeklyPace(now time.Time) (Pace, bool) {
 	}
 	frac := float64(elapsed) / float64(WeekLength)
 	actual := a.Last.SevenDay.Pct()
-	if which, _ := a.Last.Worst(); which == usage.SevenDayKey {
+	if which, _ := a.Last.Worst(); project && which == usage.SevenDayKey {
 		if p := a.Projected(now); p > actual {
 			actual = p
 		}

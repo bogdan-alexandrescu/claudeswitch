@@ -108,7 +108,7 @@ func TestStatusShowsOneBlockPerProfile(t *testing.T) {
 	if !strings.Contains(bl["work"], "75%") || !strings.Contains(bl["default"], "85%") {
 		t.Fatalf("blocks must show each profile's effective switch_at:\n%s", b.String())
 	}
-	if !strings.Contains(bl["work"], "w1 at 80%") || !strings.Contains(bl["work"], "rotating to w2") {
+	if !strings.Contains(bl["work"], "w1 at 80%") || !strings.Contains(bl["work"], "would rotate to w2") {
 		t.Fatalf("work's headline must be its own active account and decision:\n%s", bl["work"])
 	}
 }
@@ -120,7 +120,7 @@ func TestStatusMultiProfileFooterOnce(t *testing.T) {
 	var b bytes.Buffer
 	renderStatus(&b, cfg, st, render.Options{}, nil, time.Now(), "")
 	out := b.String()
-	for _, once := range []string{"! flagged by the API", "swap idle, forced after"} {
+	for _, once := range []string{"! flagged by the API", "at an idle gap"} {
 		if n := strings.Count(out, once); n != 1 {
 			t.Fatalf("%q appears %d times, want once:\n%s", once, n, out)
 		}
@@ -129,8 +129,8 @@ func TestStatusMultiProfileFooterOnce(t *testing.T) {
 		t.Fatalf("the legend must come after the last block:\n%s", out)
 	}
 	bl := blocks(t, out)
-	if !strings.Contains(bl["default"], "profile default (switch ≥85% / ≥98%)") ||
-		!strings.Contains(bl["work"], "profile work (switch ≥75% / ≥98%)") {
+	if !strings.Contains(bl["default"], "profile default (rotates at session ≥85% / week ≥98%)") ||
+		!strings.Contains(bl["work"], "profile work (rotates at session ≥75% / week ≥98%)") {
 		t.Fatalf("each block header must carry its thresholds:\n%s", out)
 	}
 }

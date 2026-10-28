@@ -10,6 +10,9 @@ struct NextState {
     /// F7: `history --usage --days 30 --json`.
     var history: UsageHistory?
     var historyError: CallError?
+    /// When `history` was read: Overview's Recent and History reread it
+    /// once it is a few minutes old, so today's switches show.
+    var historyAt: Date?
     /// F12: `doctor --json`.
     var doctor: DoctorReport?
     var doctorError: CallError?
@@ -34,7 +37,7 @@ struct NextState {
 
 struct SettingsRequest: Equatable {
     let id = UUID()
-    var pane: Pane
+    var pane: Pane?
 }
 
 extension Store {
@@ -47,10 +50,18 @@ extension Store {
             case .success(let h):
                 next.history = h
                 next.historyError = nil
+                next.historyAt = Date()
             case .failure(let e):
                 next.historyError = e
             }
         }
+    }
+
+    /// Reads the history unless a read from the last five minutes is held.
+    func loadHistoryIfStale() {
+        if let at = next.historyAt, next.history != nil, Date().timeIntervalSince(at) < 300 { return }
+        if isBusy("load:history") { return }
+        loadHistory()
     }
 
     // MARK: F12 health
@@ -108,7 +119,7 @@ extension Store {
 
     func pinLiftNotice(_ card: ProfileCard) -> PinLift? {
         PinLift.notice(profile: card.name, lifts: next.pinLifts, pinned: card.isPinned,
-                       dismissed: next.dismissedLifts, now: snapshot?.now ?? Date())
+                       dismissed: next.dismissedLifts, now: now)
     }
 
     func dismissPinLift(_ l: PinLift) {
@@ -147,7 +158,8 @@ extension Store {
     // MARK: opening Settings from outside a window
 
     /// Opens Settings on `pane` (and Add account, when set first).
-    func openSettings(_ pane: Pane) {
+    /// nil keeps the pane an open window shows.
+    func openSettings(_ pane: Pane?) {
         next.settingsRequest = SettingsRequest(pane: pane)
     }
 
@@ -261,13 +273,17 @@ extension Store {
         }
     }
 
+    /// `clean undo <run> --json`, under a key that names the run (it can
+    /// take minutes). The last result goes meanwhile: it was another call's.
     func undoClean(_ run: String) {
         guard !preview else { return }
+        next.cleanRun = nil
+        next.cleanRunError = nil
         Task {
-            switch await call("clean:undo", { $0.cleanUndo(run) }) {
-            case .success(let r):
+            switch await call(CleanUndo.key(run), { $0.cleanUndo(run) }) {
+            case .success(var r):
+                r.kind = .undone
                 next.cleanRun = r
-                next.cleanRunError = nil
             case .failure(let e):
                 next.cleanRunError = e
             }

@@ -14,16 +14,18 @@ public enum UpdateStep: Equatable, Sendable {
     case restartingDaemon
     case relaunching
 
-    /// How far along, 0…1. The downloads take most of the bar: everything
-    /// after them is quick.
+    /// How full the bar is, 0…1. While downloading, the download's own
+    /// share, so the bar agrees with the figure beside it (it was the whole
+    /// install's, a third full beside "38%", second-pass QA 2026-10-28);
+    /// then a fifth for each quick step after it.
     public var fraction: Double {
         switch self {
         case .downloading(let got, let total):
-            return total > 0 ? 0.85 * min(1, Double(got) / Double(total)) : 0
-        case .verifying: return 0.88
-        case .installingCLI: return 0.91
-        case .installingApp: return 0.94
-        case .restartingDaemon: return 0.97
+            return total > 0 ? min(1, max(0, Double(got) / Double(total))) : 0
+        case .verifying: return 0.2
+        case .installingCLI: return 0.4
+        case .installingApp: return 0.6
+        case .restartingDaemon: return 0.8
         case .relaunching: return 1
         }
     }
@@ -31,13 +33,21 @@ public enum UpdateStep: Equatable, Sendable {
     public var label: String {
         switch self {
         case .downloading(let got, let total):
-            return total > 0 ? "Downloading… \(Format.bytes(got)) of \(Format.bytes(total))" : "Downloading…"
-        case .verifying: return "Checking the downloads against the release's checksums…"
+            return total > 0 ? "Downloading… \(Self.size(got)) of \(Self.size(total))" : "Downloading…"
+        case .verifying: return "Checking the downloads against the release’s checksums…"
         case .installingCLI: return "Installing claudeswitch…"
         case .installingApp: return "Installing ClaudeSwitch…"
         case .restartingDaemon: return "Restarting the daemon on the new claudeswitch…"
         case .relaunching: return "Reopening ClaudeSwitch…"
         }
+    }
+
+    /// The figure beside the bar: the download's own share, as the bar is,
+    /// so it agrees with "4.2 MB of 10.8 MB". 100% only once it is all
+    /// there; none for the quick steps after the downloads.
+    public var percent: String? {
+        guard case .downloading(let got, let total) = self, total > 0 else { return nil }
+        return "\(min(100, max(0, got) * 100 / total))%"
     }
 
     /// Whether Cancel still leaves everything as it was.
@@ -46,6 +56,24 @@ public enum UpdateStep: Equatable, Sendable {
         case .downloading, .verifying: return true
         default: return false
         }
+    }
+
+    /// The line under the bar once Cancel is greyed, which said why only in
+    /// its tooltip.
+    public var note: String? {
+        switch self {
+        case .downloading, .verifying: return nil
+        case .installingCLI, .installingApp: return "Too late to cancel: the new files are going in."
+        case .restartingDaemon, .relaunching: return "Too late to cancel: the new files are in."
+        }
+    }
+
+    /// A download's size: tenths of a megabyte under 100 MB ("4.2 MB of
+    /// 10.8 MB"), where whole megabytes hid the progress.
+    static func size(_ n: Int64) -> String {
+        let mb: Int64 = 1 << 20
+        guard n >= mb, n < 100 * mb else { return Format.bytes(n) }
+        return String(format: "%.1f MB", Double(n) / Double(mb))
     }
 
     var kind: Int {
@@ -107,15 +135,51 @@ extension Release {
     }
 }
 
+/// One line of What's new: a bullet's text without its "• ", so the window
+/// can hang its wrapped lines under the text rather than the bullet.
+public struct UpdateNoteLine: Equatable, Sendable {
+    public var text: String
+    public var bullet: Bool
+
+    public init(text: String, bullet: Bool) {
+        self.text = text
+        self.bullet = bullet
+    }
+}
+
+public enum UpdateNotes {
+    /// What's new (Release.whatsNew), line by line.
+    public static func lines(_ notes: String) -> [UpdateNoteLine] {
+        notes.components(separatedBy: "\n").map { line in
+            line.hasPrefix("• ") ? UpdateNoteLine(text: String(line.dropFirst(2)), bullet: true)
+                : UpdateNoteLine(text: line, bullet: false)
+        }
+    }
+}
+
 /// The update window's state.
 public enum UpdateDialog: Equatable, Sendable {
     case checking
+    /// Check for updates while Advanced → Check for updates is off: no call
+    /// is made, so the window says it is off rather than checking forever.
+    case checkOff
     case upToDate(current: String, latest: String)
+    /// The check read the release, but this copy has no version to compare
+    /// it with (swift run): not "up to date".
+    case versionUnknown(latest: String)
     case checkFailed(String)
     case available(version: String, current: String, notes: String?, bytes: Int64, page: URL?)
     case installing(version: String, step: UpdateStep)
     case failed(version: String, message: String)
     case installed(version: String)
+
+    /// What Check for updates opens the window on: an install under way
+    /// stays in view; with the check off, that it is off, since no call is
+    /// made then; otherwise the check.
+    public static func checkNow(enabled: Bool, showing: UpdateDialog?) -> UpdateDialog {
+        if case .installing? = showing, let d = showing { return d }
+        return enabled ? .checking : .checkOff
+    }
 
     /// What a check found, for the window.
     public static func checked(_ r: Result<Release, UpdateError>, current: String?, arch: UpdateArch) -> UpdateDialog {
@@ -124,6 +188,7 @@ public enum UpdateDialog: Equatable, Sendable {
             return .checkFailed(e.message)
         case .success(let release):
             let latest = release.version?.description ?? release.tag
+            guard current.flatMap(SemVer.init) != nil else { return .versionUnknown(latest: latest) }
             guard let v = UpdateOffer.available(current: current, latest: release) else {
                 return .upToDate(current: current ?? latest, latest: latest)
             }
@@ -136,7 +201,9 @@ public enum UpdateDialog: Equatable, Sendable {
     public var title: String {
         switch self {
         case .checking: return "Checking for updates…"
+        case .checkOff: return "Checking for updates is off"
         case .upToDate: return "ClaudeSwitch is up to date"
+        case .versionUnknown: return "This copy’s version is unknown"
         case .checkFailed: return "Could not check for updates"
         case .available(let v, _, _, _, _): return "ClaudeSwitch \(v) is available"
         case .installing(let v, _): return "Updating to \(v)"
@@ -148,17 +215,23 @@ public enum UpdateDialog: Equatable, Sendable {
     public var message: String {
         switch self {
         case .checking:
-            return "Asking GitHub for the latest release."
+            return "Asking GitHub for the latest release…"
+        case .checkOff:
+            // Not the title again, nor "off makes no call at all".
+            return "While it is off, the app never contacts GitHub. Turn On checks now, then once a day."
         case .upToDate(let current, let latest):
             if let c = SemVer(current), let l = SemVer(latest), c > l {
                 return "This is \(current), newer than the latest release, \(latest)."
             }
             return "\(current) is the latest version."
+        case .versionUnknown(let latest):
+            return "\(latest) is the latest release. This copy has no version of its own (a build from swift run), "
+                + "so there is nothing to compare it with."
         case .checkFailed(let m), .failed(_, let m):
             return m
         case .available(_, let current, _, _, _):
             return "You have \(current). Installing checks the app and the claudeswitch command against the "
-                + "release's checksums, replaces both, restarts the daemon on the new claudeswitch and reopens "
+                + "release’s checksums, replaces both, restarts the daemon on the new claudeswitch and reopens "
                 + "ClaudeSwitch."
         case .installing(_, let step):
             return step.label
@@ -167,10 +240,32 @@ public enum UpdateDialog: Equatable, Sendable {
         }
     }
 
+    /// The link under the text: the offer's release notes, and the failed
+    /// release's page, a way out when Try Again fails the same way (a
+    /// checksum mismatch).
+    public var page: URL? {
+        switch self {
+        case .available(_, _, _, _, let page): return page
+        case .failed(let version, _): return UpdateSource.releasePage(version)
+        default: return nil
+        }
+    }
+
+    /// The link's name. After a failure it is the page the message sends
+    /// you to, to download the release by hand: "Release Notes on GitHub"
+    /// did not read as a way out (second-pass QA 2026-10-28).
+    public var pageLabel: String? {
+        switch self {
+        case .available: return "Release Notes on GitHub"
+        case .failed: return "Release page on GitHub"
+        default: return nil
+        }
+    }
+
     /// The small print under an offer.
     public var detail: String? {
-        if case .available(_, _, _, let bytes, _) = self, bytes > 0 { return "Downloads \(Format.bytes(bytes)) from GitHub" }
-        return nil
+        guard case .available(_, _, _, let bytes, _) = self, bytes > 0 else { return nil }
+        return "Downloads \(UpdateStep.size(bytes)) from GitHub"
     }
 }
 

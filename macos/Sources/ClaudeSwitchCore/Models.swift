@@ -66,6 +66,20 @@ public struct UsageReading: Equatable {
         return s > f ? ("seven_day", s) : ("five_hour", f)
     }
 
+    /// The window nearest its own trigger, as Go's Usage.WorstAgainst and the
+    /// daemon judge it: ("five_hour" | "seven_day", percent), nil when neither
+    /// is known. At 80% of the session and 90% of the week, against 85 and
+    /// 98, the session binds; the higher figure is not the nearer line. A
+    /// tie goes to the session, an unknown window never binds.
+    public func binding(session: Double, week: Double) -> (window: String, pct: Double)? {
+        switch (fiveHour.utilization, sevenDay.utilization) {
+        case (nil, nil): return nil
+        case let (f?, nil): return ("five_hour", f)
+        case let (nil, s?): return ("seven_day", s)
+        case let (f?, s?): return s - week > f - session ? ("seven_day", s) : ("five_hour", f)
+        }
+    }
+
     /// Weekly limits narrower than the whole account — per model, today.
     public var scopedWeekly: [LimitReading] {
         limits.filter { $0.group == "weekly" && $0.kind != "weekly_all" }

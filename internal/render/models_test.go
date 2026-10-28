@@ -73,7 +73,7 @@ func renderStatus(cfg *config.Config, st *state.State, detail bool) string {
 func TestDetailShowsPerModelWeeklyAndUnknownLimits(t *testing.T) {
 	cfg, st := modelsWorld()
 	out := renderStatus(cfg, st, true)
-	for _, want := range []string{"Modelname weekly 12%", "Othermodel weekly unknown", "fortnightly_new", "not understood"} {
+	for _, want := range []string{"Modelname week 12%", "Othermodel week unknown", "fortnightly_new", "not understood"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("status --detail lacks %q:\n%s", want, out)
 		}
@@ -131,7 +131,7 @@ func TestWhyShowsPaceAndModels(t *testing.T) {
 	var b bytes.Buffer
 	Why(&b, WhyOptions{Cfg: cfg, St: st, Decision: dec, Verdicts: vs})
 	out := b.String()
-	for _, want := range []string{"WEEKLY", "57% of the week gone", "would expire unused", "Modelname 12%"} {
+	for _, want := range []string{"WEEK", "57% of the week gone", "would expire unused", "Modelname 12%"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("why lacks %q:\n%s", want, out)
 		}
@@ -147,9 +147,10 @@ func TestTheHeadlineNamesTheWindowNearestItsTrigger(t *testing.T) {
 	a := st.Accounts["work-a"]
 	a.Last.FiveHour.Utilization, a.Last.SevenDay.Utilization = ptr(80), ptr(90)
 	a.Last.Limits = nil
+	st.DaemonLive = true // only a live daemon rotates
 	var b bytes.Buffer
 	Status(&b, Options{Cfg: cfg, St: st, DaemonOwns: true, Decision: &policy.Decision{Kind: policy.Stay}})
-	if out := b.String(); !strings.Contains(out, "work-a at 80% of its 5-hour · 5 points before it rotates") {
+	if out := b.String(); !strings.Contains(out, "work-a at 80% of its session · 5 points before it rotates") {
 		t.Errorf("the headline must give the session against its own trigger:\n%s", out)
 	}
 }

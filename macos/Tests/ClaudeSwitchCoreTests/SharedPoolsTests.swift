@@ -255,19 +255,19 @@ func sharedProfiles() throws -> ProfileList { try #require(ProfileList(data: try
     @Test func testConfirmingADrop() throws {
         let pools = try sharedPools()
         let move = Confirm.poolDrop(.move(account: "team-2", from: "team", to: "ops"), pools: pools)
-        #expect(move.title == "Move team-2 to ops?")
+        #expect(move.title == "Move “team-2” to “ops”?")
         #expect(move.action == "Move")
-        #expect(move.message == "team-2 leaves team and joins ops. From now on work may use it; default no longer can.")
+        #expect(move.message == "The account “team-2” leaves the pool “team” and joins “ops”. From now on “work” may use it; “default” no longer can.")
         let toUnused = Confirm.poolDrop(.move(account: "ops-1", from: "ops", to: "spare"), pools: pools)
-        #expect(toUnused.message == "ops-1 leaves ops and joins spare. No profile uses spare, so ops-1 rotates nowhere until one does.")
+        #expect(toUnused.message == "The account “ops-1” leaves the pool “ops” and joins “spare”. No profile uses “spare”, so “ops-1” rotates nowhere until one does.")
         let intoTeam = Confirm.poolDrop(.move(account: "loose-1", from: nil, to: "team"), pools: pools)
-        #expect(intoTeam.message == "loose-1 joins team. From now on default and work may use it.")
+        #expect(intoTeam.message == "The account “loose-1” joins the pool “team”. From now on “default” and “work” may use it.")
         let out = Confirm.poolDrop(.remove(account: "ops-1", from: "ops"), pools: pools)
-        #expect(out.title == "Take ops-1 out of ops?")
+        #expect(out.title == "Take “ops-1” out of “ops”?")
         #expect(out.action == "Take out")
-        #expect(out.message == "ops-1 is then in no pool: default uses it, after its pools. work no longer can.")
-        #expect(Notes.poolDrop(.move(account: "team-2", from: "team", to: "ops")) == "team-2 is now in ops")
-        #expect(Notes.poolDrop(.remove(account: "ops-1", from: "ops")) == "ops-1 is in no pool now")
+        #expect(out.message == "The account “ops-1” is then in no pool, where “default” uses it after its pools; “work” no longer can.")
+        #expect(Notes.poolDrop(.move(account: "team-2", from: "team", to: "ops")) == "The account “team-2” is now in “ops”")
+        #expect(Notes.poolDrop(.remove(account: "ops-1", from: "ops")) == "The account “ops-1” is in no pool now")
     }
 
     @Test func testReorderingWithinAPoolKeepsTheOthersInPlace() {
@@ -290,11 +290,12 @@ func sharedProfiles() throws -> ProfileList { try #require(ProfileList(data: try
         #expect(p.create == ["loose-1"])
         #expect(p.moves == [.move(account: "team-2", from: "team", to: "lab")])
         let c = try #require(p.confirmation)
-        #expect(c.title == "Create lab and move team-2?")
-        #expect(c.message == "team-2 leaves team.")
+        #expect(c.title == "Create “lab” and move “team-2”?")
+        #expect(c.message == "The account “team-2” leaves the pool “team”.")
         #expect(NewPoolPlan.make(name: "lab", selected: ["loose-1"], pools: pools).confirmation == nil)
-        #expect(NewPoolPlan.note(for: "team-2", pools: pools) == "leaves pool team")
-        #expect(NewPoolPlan.note(for: "loose-1", pools: pools) == nil)
+        #expect(NewPoolPlan.note(for: "team-2", checked: true, pools: pools) == "leaves “team”")
+        #expect(NewPoolPlan.note(for: "team-2", checked: false, pools: pools) == "in “team”", "not checked: where it is")
+        #expect(NewPoolPlan.note(for: "loose-1", checked: true, pools: pools) == nil)
     }
 }
 
@@ -359,11 +360,13 @@ func sharedProfiles() throws -> ProfileList { try #require(ProfileList(data: try
                 == [["default", "review"]])
         #expect(ProfilePools.steps(profile: "work", pools: try sharedPools(), chosen: ["team"]) == [["team"]])
         #expect(ProfilePools.note(profile: "review", pools: legacy, chosen: ["default"])
-                == "review's own accounts (personal) become the pool review, which no profile uses then: "
+                == "Its own accounts (“personal”) become the pool “review”, which no profile uses then: "
                 + "they rotate nowhere until a profile lists it or you move them. "
-                + "default's own pool becomes shared: default keeps using it.")
+                + "The pool “default” belongs to the profile of the same name: checked, it becomes shared, "
+                + "and that profile keeps using it.")
         #expect(ProfilePools.note(profile: "default", pools: legacy, chosen: ["default", "review"])
-                == "review's own pool becomes shared: review keeps using it.")
+                == "The pool “review” belongs to the profile of the same name: checked, it becomes shared, "
+                + "and that profile keeps using it.")
         #expect(ProfilePools.note(profile: "work", pools: try sharedPools(), chosen: ["team"]) == nil)
     }
 }
@@ -392,7 +395,8 @@ func sharedProfiles() throws -> ProfileList { try #require(ProfileList(data: try
         let t2 = try #require(card.accounts.first { $0.id == "team-2" })
         #expect(Format.pickerLine(t2, inUseBy: "work", now: fixtureNow) == "team-2  – · in use by work")
         let p = try #require(card.accounts.first { $0.id == "personal" })
-        #expect(Format.pickerLine(p, inUseBy: nil, now: fixtureNow).hasPrefix("✓ personal  "))
+        #expect(Format.pickerLine(p, inUseBy: nil, now: fixtureNow).hasPrefix("personal  "),
+                "the live account's check is the menu's own, in its gutter, so the ids line up")
     }
 }
 
@@ -401,13 +405,16 @@ func sharedProfiles() throws -> ProfileList { try #require(ProfileList(data: try
     @Test func testAnExistingAccountsPlace() throws {
         let l = try #require(AccountList(data: try fixture("cli-account-list-pools.json")))
         #expect(AddForm.lockedNote(account: "team-2", info: l.account("team-2"), profile: "default")
-                == "team-2 is in the pool team, which default and work use. To change that, move it to another pool in Accounts.")
+                == "The account “team-2” is in the pool “team”, which “default” and “work” use. "
+                + "To change that, move it to another pool in Accounts.")
         #expect(AddForm.lockedNote(account: "loose-1", info: l.account("loose-1"), profile: "default")
-                == "loose-1 is in no pool: default uses it. To change that, move it into a pool in Accounts.")
+                == "The account “loose-1” is in no pool: “default” uses it. To change that, move it into a pool in Accounts.")
         let old = try #require(AccountList(data: Data(#"{"accounts": [{"id": "a1", "profile": "work"}]}"#.utf8)))
-        #expect(AddForm.lockedNote(account: "a1", info: old.account("a1"), profile: "work") == "a1 is already in work.")
+        #expect(AddForm.lockedNote(account: "a1", info: old.account("a1"), profile: "work")
+                == "The account “a1” is already in the profile “work”.")
         #expect(AddForm.lockedNote(account: "loose-1", info: l.account("loose-1"), profile: "default", grouped: false)
-                == "loose-1 is already in default.", "with no [[profile]] blocks there are no pools to move it between")
+                == "The account “loose-1” is already in the profile “default”.",
+                "with no [[profile]] blocks there are no pools to move it between")
         #expect(AddForm.usedBy(info: l.account("team-2"), profile: "default") == "default, work")
         #expect(AddForm.usedBy(info: old.account("a1"), profile: "work") == "work")
     }
@@ -421,9 +428,9 @@ func sharedProfiles() throws -> ProfileList { try #require(ProfileList(data: try
     @Test func testSavingALoginTheSourceSharesSaysSo() throws {
         let (pools, list) = (try sharedPools(), try sharedProfiles())
         #expect(AddForm.crossProfileNote(source: "default", target: "work", sourceUsesIt: false)
-                == "still signed in in default — default will move off it; work can use it after")
+                == "it is still the login in “default”, which will move off it — “work” can use it after")
         #expect(AddForm.crossProfileNote(source: "default", target: "work", sourceUsesIt: true)
-                == "still signed in in default, which uses it too — work can use it once default rotates off it")
+                == "it is still the login in “default”, which uses it too — “work” can use it once “default” rotates off it")
         #expect(AddForm.crossProfileNote(source: "work", target: "work", sourceUsesIt: true) == nil)
         // A new account joins the target's first pool: ops, which default
         // does not use; team, which it does.
@@ -437,7 +444,7 @@ func sharedProfiles() throws -> ProfileList { try #require(ProfileList(data: try
 
     @Test func testWhereANewAccountGoes() throws {
         let (pools, list) = (try sharedPools(), try sharedProfiles())
-        #expect(AddForm.destination(target: "work", list: list, pools: pools) == "the pool ops (work's first)")
+        #expect(AddForm.destination(target: "work", list: list, pools: pools) == "the pool “ops”, the first “work” uses")
         let legacy = try #require(ProfileList(data: try fixture("cli-profile-list.json")))
         #expect(AddForm.destination(target: "review", list: legacy, pools: nil) == "review")
     }
@@ -447,7 +454,8 @@ func sharedProfiles() throws -> ProfileList { try #require(ProfileList(data: try
             {"url": "https://example.com/a", "pending": {"account": "team-2", "profile": "default", "new_account": false}}
             """#.utf8))!))
         #expect(AddForm.mismatch(chosen: "work", start: st)
-                == "team-2 already exists: it stays in its pool, which default uses. Move it to another pool in Accounts.")
+                == "“team-2” already exists: it stays in its pool, which the profile “default” uses. "
+                + "Move it to another pool in Accounts.")
         #expect(AddForm.mismatch(chosen: "default", start: st) == nil)
     }
 }
@@ -491,8 +499,8 @@ func sharedProfiles() throws -> ProfileList { try #require(ProfileList(data: try
         let w = try #require(list.profile("work"))
         #expect(ProfileRemoval.ownAccounts(w, pools: pools) == [])
         #expect(!ProfileRemoval.needsDestination(w, pools: pools))
-        #expect(ProfileRemoval.summary(w, to: "default", pools: pools).hasPrefix(
-            "It has no accounts of its own; the pools it uses (ops, team) stay."))
+        #expect(ProfileRemoval.summary(w, to: "default", pools: pools).contains(
+            "is not rotated. It has no accounts of its own; the pool it shares (“team”) and the pool only it uses (“ops”) stay."))
         let d = try #require(list.profile("default"))
         #expect(ProfileRemoval.ownAccounts(d, pools: pools) == ["loose-1"], "default's own: the accounts in no pool")
         let legacy = try #require(PoolList(data: try fixture("cli-pool-list.json")))
@@ -500,7 +508,7 @@ func sharedProfiles() throws -> ProfileList { try #require(ProfileList(data: try
         let review = try #require(lp.profile("review"))
         #expect(ProfileRemoval.ownAccounts(review, pools: legacy) == ["personal"])
         #expect(ProfileRemoval.needsDestination(review, pools: legacy))
-        #expect(ProfileRemoval.summary(review, to: "default", pools: legacy).hasPrefix("Its accounts (personal) move to default."))
+        #expect(ProfileRemoval.summary(review, to: "default", pools: legacy).contains("Its accounts (“personal”) move to “default”."))
         let old = try #require(ProfileList(data: Data(#"{"profiles": [{"name": "x", "declared": true, "pool": ["a"]}]}"#.utf8)))
         #expect(ProfileRemoval.ownAccounts(old.profiles[0], pools: nil) == ["a"], "an older CLI: its pool")
     }

@@ -84,3 +84,15 @@ func TestWhyShowsAnAccountLiveInAnotherProfileAsInUse(t *testing.T) {
 		t.Errorf("team-1 in default's why: %q\n%s", row, buf.String())
 	}
 }
+
+// An account another profile has live, with no reading here, is that
+// profile's for now: its row says so, and no warning calls it not set up.
+func TestAnAccountInUseElsewhereIsNotCalledNotSetUp(t *testing.T) {
+	cfg, st := sharedWorld()
+	delete(st.Accounts, "team-1")
+	var buf bytes.Buffer
+	Status(&buf, Options{Cfg: cfg, St: st, Profile: "default", Pool: []string{"own-1", "team-1"}, Block: true})
+	if strings.Contains(buf.String(), "team-1 is not set up") {
+		t.Errorf("team-1 is live in work:\n%s", buf.String())
+	}
+}

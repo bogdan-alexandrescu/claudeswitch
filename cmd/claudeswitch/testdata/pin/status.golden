@@ -1,10 +1,12 @@
 
-  a at 40% of its 5-hour · 45 points before it rotates
+  a at 40% of its session · 45 points before its trigger
 
-     ACCOUNT  PLAN      5H                    7D                CLEARS  STATE    
-  ▸  a        -        40%  ●●●●●·····◉·     20%  ●●·········◉  2h 30m  available
-     b        -        10%  ●·········◉·      5%  ●··········◉  2h 30m  available
+     ACCOUNT  PLAN  SESSION                  WEEK                CLEARS  STATE
+  ▸  a        -        40%   ●●●●●·····◉·    20%   ●●·········◉  2h 30m  available
+     b        -        10%   ●·········◉·     5%   ●··········◉  2h 30m  available
 
-  switch ≥85% session / ≥95% weekly  ·  hard floor ≥98%  ·  swap idle, forced after 30s
-  ! flagged by the API  ·  ~ projected from an older reading
+  no daemon running: nothing rotates (claudeswitch daemon start)
+  rotates at session ≥85% / week ≥95% · at an idle gap, or mid-turn after 30s
+  past 98% (the hard floor), mid-turn at once
+  ▸ the live account · ● used · ◉ its trigger · ! flagged by the API · ~ carried forward from the last reading
 

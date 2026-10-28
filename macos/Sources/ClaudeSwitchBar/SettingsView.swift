@@ -29,34 +29,30 @@ enum Pane: String, CaseIterable, Identifiable {
 struct SettingsView: View {
     static let windowID = "settings"
     static let windowTitle = "ClaudeSwitch Settings"
+    /// The sidebar's least width (design call D1, 2026-10-28): room for the
+    /// 145 pt wordmark at 18 pt between its 18 pt margins. At 170 it did not
+    /// fit, and SwiftUI centred it, 5.5 pt left of the icons below.
+    static let sidebarLeast: CGFloat = 182
     @EnvironmentObject var store: Store
     @State var pane: Pane? = .overview
     /// --render only: an off-screen capture does not draw the sidebar's
-    /// vibrant material, so the render draws a plain copy of it.
+    /// vibrant material, so the render puts the same sidebar on a plain fill.
     var renderSidebar = false
+    /// --render only: the sidebar's width, its ideal unless drawn at its least.
+    var sidebarWidth: CGFloat = 190
 
     var body: some View {
         Group {
             if renderSidebar {
                 HStack(spacing: 0) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Wordmark(size: 18, mark: 33, gap: 4).fixedSize().padding(.horizontal, 8).padding(.bottom, 12)
-                        ForEach(Pane.allCases) { p in
-                            Label {
-                                Text(p.rawValue).fontWeight(p == pane ? .semibold : .regular)
-                            } icon: {
-                                Image(systemName: p.symbol).foregroundStyle(p == pane ? Color.csAccent : Color.secondary)
-                            }
-                            .padding(.horizontal, 8).padding(.vertical, 5)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(RoundedRectangle(cornerRadius: 6)
-                                .fill(p == pane ? Color.csAccent.opacity(0.14) : Color.clear))
-                        }
-                        Spacer()
-                    }
-                    .padding(.horizontal, 10).padding(.top, 40)
-                    .frame(width: 200)
-                    .background(Color.secondary.opacity(0.08))
+                    // The real sidebar, under the 40 pt the title bar takes on
+                    // screen, on a plain fill for the material.
+                    sidebar
+                        .scrollContentBackground(.hidden)
+                        .environment(\.controlActiveState, .key)
+                        .padding(.top, 40)
+                        .background(Color.secondary.opacity(0.08))
+                        .frame(width: sidebarWidth)
                     Divider()
                     detail
                 }
@@ -66,17 +62,22 @@ struct SettingsView: View {
         }
     }
 
+    var sidebar: some View {
+        List(Pane.allCases, selection: $pane) { p in
+            Label(p.rawValue, systemImage: p.symbol).tag(p)
+        }
+        .listStyle(.sidebar)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            Wordmark(size: 18, mark: 33, gap: 4).fixedSize()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 18).padding(.top, 4).padding(.bottom, 8)
+        }
+    }
+
     var split: some View {
         NavigationSplitView {
-            List(Pane.allCases, selection: $pane) { p in
-                Label(p.rawValue, systemImage: p.symbol).tag(p)
-            }
-            .safeAreaInset(edge: .top, spacing: 0) {
-                Wordmark(size: 18, mark: 33, gap: 4).fixedSize()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 18).padding(.top, 4).padding(.bottom, 8)
-            }
-            .navigationSplitViewColumnWidth(min: 170, ideal: 190, max: 240)
+            sidebar
+                .navigationSplitViewColumnWidth(min: Self.sidebarLeast, ideal: 190, max: 240)
         } detail: {
             detail
         }
@@ -98,7 +99,7 @@ struct SettingsView: View {
     /// A notification's action asked for a pane (F5: sign in again).
     func openRequested(_ r: SettingsRequest?) {
         guard let r else { return }
-        pane = r.pane
+        if let p = r.pane { pane = p }
         store.next.settingsRequest = nil
     }
 
@@ -168,10 +169,21 @@ struct SchemaPane: View {
         PaneHeader(title: title, subtitle: subtitle).padding([.horizontal, .top], 24)
         Form {
             if let schema = store.schema {
+                if store.values == nil, let e = store.valuesError {
+                    Section {
+                        PaneUnavailable(error: e, what: "The current settings")
+                        Button("Try Again") { store.reloadValues() }
+                    }
+                }
                 Section {
                     ForEach(schema.settings(in: pane)) { s in
                         SettingRow(setting: s)
                     }
+                }
+            } else if let e = store.schemaError {
+                Section {
+                    PaneUnavailable(error: e, what: "The settings")
+                    Button("Try Again") { store.loadSettings() }
                 }
             } else {
                 Section {
@@ -193,18 +205,24 @@ struct SchemaPane: View {
 struct SettingRow: View {
     @EnvironmentObject var store: Store
     let setting: SettingSchema
+    /// Off while the setting it depends on is (Every with the schedule off).
+    var off = false
     @State private var text = ""
     @State private var edited = false
     @State private var cliError: AppError?
     @State private var saved: ConfigSetResult?
+    @FocusState private var focused: Bool
 
-    var current: String { store.values?.values[setting.key] ?? setting.defaultValue }
+    /// nil until the values are read: the default is not the value.
+    var current: String? { store.values.map { $0.values[setting.key] ?? setting.defaultValue } }
     var local: String? { edited ? setting.validate(text) : nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             LabeledContent {
-                control.frame(maxWidth: 220)
+                // A text field takes a fixed column; a switch or a picker
+                // only its own width, so the description beside it runs on.
+                if setting.type == "bool" || setting.type == "enum" { control.fixedSize() } else { control.frame(maxWidth: 220) }
             } label: {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(settingLabel(setting.key))
@@ -214,9 +232,13 @@ struct SettingRow: View {
             }
             HStack(spacing: 8) {
                 Text("Default " + SettingNames.value(setting, setting.defaultValue) + range)
-                    .font(.caption).foregroundStyle(.tertiary)
+                    .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 if store.isBusy("set:\(setting.key)") { ProgressView().controlSize(.mini) }
+            }
+            if !edited, let c = current, let why = SettingNames.outOfRange(setting, c) {
+                Label(why, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if let e = local {
                 InlineError(message: "Must be " + e, hint: "")
@@ -230,8 +252,9 @@ struct SettingRow: View {
                 }
             }
         }
-        .onAppear { if !edited { text = SettingNames.editable(setting, current) } }
-        .onChange(of: current) { v in if !edited { text = SettingNames.editable(setting, v) } }
+        .onAppear { if !edited, let c = current { text = SettingNames.editable(setting, c) } }
+        .onChange(of: current) { v in if !edited, let v { text = SettingNames.editable(setting, v) } }
+        .disabled(current == nil || off)
     }
 
     @ViewBuilder var control: some View {
@@ -239,23 +262,39 @@ struct SettingRow: View {
             Toggle("", isOn: Binding(get: { current == "true" }, set: { save($0 ? "true" : "false") }))
                 .labelsHidden()
                 .toggleStyle(.switch)
-                .frame(maxWidth: .infinity, alignment: .trailing)
                 .accessibilityLabel(settingLabel(setting.key))
         } else if setting.type == "enum" {
-            Picker("", selection: Binding(get: { current }, set: { save($0) })) {
+            Picker("", selection: Binding(get: { current ?? setting.defaultValue }, set: { save($0) })) {
                 ForEach(setting.enumValues, id: \.self) { Text(SettingNames.value(setting, $0)).tag($0) }
             }
             .labelsHidden()
+            .fixedSize()
             .accessibilityLabel(settingLabel(setting.key))
         } else {
+            HStack(spacing: 4) {
             TextField("", text: Binding(get: { text }, set: { text = $0; edited = true; cliError = nil }),
-                      prompt: Text(SettingNames.editable(setting, setting.defaultValue)))
+                      // An empty list's default reads "none", as elsewhere.
+                      prompt: Text(setting.type == "list" ? SettingNames.value(setting, setting.defaultValue)
+                                   : SettingNames.editable(setting, setting.defaultValue)))
                 .labelsHidden()
                 .textFieldStyle(.roundedBorder)
                 .multilineTextAlignment(.trailing)
-                .onSubmit { if local == nil, text != SettingNames.editable(setting, current) { save(text) } }
+                .focused($focused)
+                .onSubmit(commit)
+                // Leaving the field saves it too, as a Mac field does; a
+                // value typed and clicked away from was lost.
+                .onChange(of: focused) { f in if !f { commit() } }
                 .accessibilityLabel(settingLabel(setting.key))
+            // The unit beside the figure, as the profile fields have it.
+            if let u = ProfilesText.unit(setting) { Text(u).foregroundStyle(.secondary) }
+            }
         }
+    }
+
+    func commit() {
+        // Not while a save of it runs: Return then click-away saved twice.
+        guard !store.isBusy("set:\(setting.key)") else { return }
+        if edited, local == nil, let c = current, text != SettingNames.editable(setting, c) { save(text) }
     }
 
     var range: String {
@@ -309,6 +348,13 @@ struct DaemonPane: View {
     @State private var confirmUninstall = false
     @State private var pending: PendingAction?
 
+    /// How long the daemon has not polled, when it has stopped; nil while it
+    /// polls.
+    var stale: String? {
+        guard case .stale(let since) = store.snapshot?.daemon.health else { return nil }
+        return Format.duration(store.now.timeIntervalSince(since))
+    }
+
     /// Live swaps for real: asked first.
     func goLive(install: Bool) {
         pending = PendingAction(confirmation: Confirm.daemonLive(install: install)) {
@@ -324,31 +370,50 @@ struct DaemonPane: View {
         Form {
             if let d = store.daemon {
                 Section("Service") {
-                    LabeledContent("Status", value: d.running ? "running" : d.loaded ? "loaded, not running"
-                                   : d.installed ? "installed, stopped" : "not installed")
+                    LabeledContent("Status", value: d.running ? (stale == nil ? "running" : "running, not polling")
+                                   : d.loaded ? "loaded, not running" : d.installed ? "installed, stopped" : "not installed")
+                    // Running but not reading: Overview sends people here, so
+                    // say it here too.
+                    if let s = stale {
+                        Label("Not polling for \(s): its readings are old and nothing rotates. Restart it.",
+                              systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption).foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     if d.installed {
-                        Toggle("Live (switches accounts; off is dry run)", isOn: Binding(
+                        Toggle(isOn: Binding(
                             get: { d.mode == "live" },
                             set: { on in
                                 if on { goLive(install: false) } else {
                                     store.setDaemon(.dryRun, title: "Could not change the daemon's mode")
                                 }
-                            }))
+                            })) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Live")
+                                Text("Switches accounts. Off is a dry run: it says what it would do and does nothing.")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
                         .disabled(store.isBusy("daemon"))
                     }
                     if let v = d.daemonVersion { LabeledContent("Version", value: v) }
-                    if let s = d.since { LabeledContent("Running since", value: Format.age(s, now: Date())) }
+                    if let s = d.since { LabeledContent("Running for", value: Format.uptime(since: s, now: store.now)) }
+                    if let at = store.snapshot?.daemon.lastPoll {
+                        LabeledContent("Last poll", value: Format.age(at, now: store.now))
+                    }
                     if let b = d.binary {
-                        LabeledContent("Binary", value: b)
+                        LabeledContent("Binary", value: (b as NSString).abbreviatingWithTildeInPath)
                         if !d.binaryIsThis {
                             Label("The service runs another build than this app uses (\(d.thisBinary ?? "?")).",
                                   systemImage: "exclamationmark.triangle").foregroundStyle(.orange).font(.caption)
                         }
                     }
-                    if let f = d.file { LabeledContent("Service file", value: f) }
+                    if let f = d.file { LabeledContent("Service file", value: (f as NSString).abbreviatingWithTildeInPath) }
                     if let l = d.log {
                         LabeledContent("Log") {
-                            Button(l) { NSWorkspace.shared.open(URL(fileURLWithPath: l)) }.buttonStyle(.link)
+                            Button((l as NSString).abbreviatingWithTildeInPath) {
+                                NSWorkspace.shared.open(URL(fileURLWithPath: l))
+                            }.buttonStyle(.link)
                         }
                     }
                 }
@@ -362,7 +427,9 @@ struct DaemonPane: View {
                                 Button("Start") { store.setDaemon(.start, title: "Could not start the daemon") }
                             }
                             Spacer()
+                            // Red, as destructive: the Form's accent tint drew it blue.
                             Button("Uninstall…", role: .destructive) { confirmUninstall = true }
+                                .tint(.red).foregroundStyle(.red)
                         } else {
                             Button("Install (dry run)") { store.setDaemon(.install(live: false), title: "Could not install the daemon") }
                             Button("Install live…") { goLive(install: true) }
@@ -372,27 +439,33 @@ struct DaemonPane: View {
                     }
                     .disabled(store.isBusy("daemon"))
                 }
+            } else if let e = store.daemonError, !store.daemonMissing {
+                Section {
+                    PaneUnavailable(error: e, what: "The service's status")
+                    Button("Try Again") { store.loadDaemon() }.disabled(store.isBusy("load:daemon"))
+                }
+            } else if !store.daemonMissing {
+                Section {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Reading the service…").foregroundStyle(.secondary)
+                    }
+                }
             } else {
                 Section {
                     HStack(spacing: 8) {
-                        if store.isBusy("load:daemon") { ProgressView().controlSize(.small) }
-                        Text(store.isBusy("load:daemon") ? "Reading the service…" : "The daemon service is not installed.")
+                        Text("The daemon service is not installed.")
                             .foregroundStyle(.secondary)
                         Spacer()
                         Button("Install (dry run)") { store.setDaemon(.install(live: false), title: "Could not install the daemon") }
                         Button("Install live…") { goLive(install: true) }
                             .buttonStyle(PrimaryButtonStyle())
                     }
-                    .disabled(store.isBusy("daemon") || store.binaryPath == nil)
-                }
-            }
-            Section("This app") {
-                if login.available {
-                    Toggle("Open ClaudeSwitch at login", isOn: Binding(get: { login.enabled }, set: { login.set($0) }))
-                    if let e = login.error { Text(e).font(.caption).foregroundStyle(.red) }
-                } else {
-                    Text("Launch at login is available once the app is installed in Applications.")
-                        .font(.caption).foregroundStyle(.secondary)
+                    .disabled(store.isBusy("daemon") || store.binaryUnusable)
+                    if store.binaryUnusable {
+                        Text("Install it once claudeswitch is: see Settings → Advanced.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
             }
         }
@@ -415,12 +488,28 @@ struct DaemonPane: View {
 
 struct AdvancedPane: View {
     @EnvironmentObject var store: Store
+    @EnvironmentObject var login: LoginItem
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
         PaneHeader(title: "Advanced", subtitle: "Credential refresh, call budgets, and this app.")
             .padding([.horizontal, .top], 24)
         Form {
+            // First, as the subtitle names it first, and named for what it is.
+            if let schema = store.schema {
+                Section("Credential refresh and call budgets") {
+                    if store.values == nil, let e = store.valuesError {
+                        PaneUnavailable(error: e, what: "The current settings")
+                        Button("Try Again") { store.reloadValues() }
+                    }
+                    ForEach(schema.settings(in: .advanced)) { SettingRow(setting: $0) }
+                }
+            } else if let e = store.schemaError {
+                Section("Credential refresh and call budgets") {
+                    PaneUnavailable(error: e, what: "These settings")
+                    Button("Try Again") { store.loadSettings() }
+                }
+            }
             Section("This app") {
                 LabeledContent {
                     Picker("Appearance", selection: $store.appearance) {
@@ -446,24 +535,55 @@ struct AdvancedPane: View {
                 Toggle(isOn: $store.compact) {
                     described("Icon only in the menu bar", "Hide the profile, account and percentage next to the rings.")
                 }
+                // With the app's other preferences (it sat under Daemon).
+                if login.available {
+                    Toggle("Open ClaudeSwitch at login", isOn: Binding(get: { login.enabled }, set: { login.set($0) }))
+                    if let e = login.error { Text(e).font(.caption).foregroundStyle(.red) }
+                } else {
+                    Text("Open at login is available once the app is installed in Applications.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 LabeledContent("claudeswitch") {
                     HStack {
-                        Text(store.binaryPath.map { $0 + (store.binaryVersion.map { " · " + $0 } ?? "") } ?? "not found")
+                        Text(store.binaryPath.map { ($0 as NSString).abbreviatingWithTildeInPath
+                            + (store.binaryVersion.map { " · " + $0 } ?? "") } ?? "not found")
                             .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                         Button("Choose…") { chooseBinary() }
+                        if !store.configuredBinary.isEmpty {
+                            Button("Reset") { store.configuredBinary = "" }
+                                .help("Look for claudeswitch where installers put it")
+                        }
                     }
+                }
+                // Missing or too old: the reason and the way to fix it, where
+                // Overview's need sends people.
+                if store.binaryUnusable, let p = store.problem {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label(p.message, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                        Text(CLI.installIntro).foregroundStyle(.secondary)
+                        ForEach(CLI.installCommands, id: \.self) { c in
+                            Text(c).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                        }
+                        Text(CLI.installOutro).foregroundStyle(.secondary)
+                    }
+                    .font(.caption)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                // A chosen file that cannot be run is passed over for the one
+                // found: say so, or the choice looks ignored.
+                if !store.configuredBinary.isEmpty,
+                   (store.configuredBinary as NSString).expandingTildeInPath != store.binaryPath {
+                    Label("The chosen \((store.configuredBinary as NSString).abbreviatingWithTildeInPath) cannot be run; "
+                          + (store.binaryPath.map { "using \(($0 as NSString).abbreviatingWithTildeInPath)." } ?? "none found."),
+                          systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(.orange)
                 }
                 AppFlowsRows(updates: AppHub.updates, notifier: AppHub.notifier, hotKey: AppHub.hotKey)
                 LabeledContent {
-                    Button("Quit ClaudeSwitch") { NSApp.terminate(nil) }
+                    Button("Quit ClaudeSwitch") { AppQuit.quit() }
                 } label: {
                     described("Quit", "Closes the menu-bar app. The daemon keeps switching accounts; "
                               + "open ClaudeSwitch from Applications to bring the icon back.")
-                }
-            }
-            if let schema = store.schema {
-                Section("Settings") {
-                    ForEach(schema.settings(in: .advanced)) { SettingRow(setting: $0) }
                 }
             }
         }

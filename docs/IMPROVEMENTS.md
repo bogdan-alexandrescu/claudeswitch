@@ -1675,3 +1675,68 @@ lost its `bin/` and `lib/` (121 MB) as "the scratch folder of an ended
 session", and Claude Code's own `bundled-skills/<version>` would have gone
 next. Now only `-<project path>/<session id>` is judged; everything else in
 the temp folder is left alone.
+
+**The app against the macOS design guide (owner request 2026-10-28, for
+0.8.18).** Asked "based on what you just learned … what would you improve
+on the current claudeswitch app", the owner chose all three groups:
+- **Fixes.** Every age and expiry on screen counts from the app's clock
+  (seven views used the wall clock; the Daemon pane's docs render said
+  "Running since 18d 13h ago", now "Running for 3h"). The docs renders draw
+  the real Settings sidebar on a plain fill instead of a hand-made copy whose
+  titles zig-zagged, Overview tile symbols sit in a fixed box so every title
+  starts at the same place, and renders show the release's version
+  (`--version`, from plugin.json) instead of 0.5.0, 0.5.1 and 0.8.13.
+- **Review gaps.** `render.sh`'s `min` set draws Settings at its least size;
+  the icon menu and its docs facsimile are built from one list
+  (`StatusMenu.layout`); `macos/scripts/render-diff.py` compares a render
+  run with `docs/images` and publishes what changed.
+- **Design calls**, where the owner chose "CLD builds its recommendations"
+  and keeps the alternatives on a picks page
+  (`.claude/mockups/design-calls/`, local): **D1** the Settings sidebar is
+  at least 182 pt (from 170), so the 18 pt name fits between its margins and
+  lines up with the icons below (at 170 it overflowed its room and SwiftUI
+  centred it, 5.5 pt left of them; CLD had first said it ran into the
+  divider, which a measurement showed was wrong); **D2** a routine stay in the
+  popover reads "Next: stay · 57 points left on the week" (first "…before it
+  rotates", shortened in the QA pass so it no longer wraps a two-word line),
+  from the daemon's own figures, instead of "stay — active account at 41%,
+  under the 98% trigger"; **D3** Switch to best is the filled button only
+  when the daemon would switch or wait, and a quiet one while it stays.
+
+**The QA pass (owner request 2026-10-28, for 0.8.18).** Before going to bed
+the owner asked: "perform a full exhaustive in detail visual qa of the
+entire console UI and functionality UX and fix all the identified bugs, gaps
+or issues of any kind", and then to repeat it. Each finding got a failing
+test first, then its fix. By area:
+- **Popover.** A card needing sign-in says so, with **Sign in…**, and dims
+  its old figures; a refusal says when it clears; the mini rings carry the
+  glyph's warning mark. Next takes the window the daemon judged and the
+  dial's reading, shortened from D2 to "Next: stay · 57 points left on the
+  week". A collapsed card leads with a pending switch or wait. **Switch to
+  best** never offers an account live elsewhere, needing sign-in or outside
+  the profile's pools. The picker's check sits in the menu's gutter, the
+  menu-bar title cuts long names in the middle, and a dead credential reads
+  "needs sign-in" everywhere.
+- **Overview.** Its needs act (**Sign in…** signs in; the Chrome need gives
+  the account its own Chrome profile) and include failing health checks and
+  a missing or too-old claudeswitch; each tile says what its pane says.
+- **Settings panes.** Accounts are judged by the profile they are live in
+  and the window nearest its trigger; Move up and Move down stay within the
+  pool. Fields save when focus leaves them, a value outside its range is
+  said, durations read as typed. A failed read says so with Try Again
+  instead of "not installed" or the defaults. Open at login moved to
+  Advanced. Cleanup's Undo shows progress and what came back; History
+  rereads once five minutes old; every Quit closes open sheets first.
+- **Sheets and setup.** Names are quoted; Rename, Remove profile and Delete
+  pool say what they do. New pool and New profile retry only what is left.
+  Add account speaks the app's words; Return acts only as its button would;
+  the setup window claims only what it knows.
+- **Update window.** With the check off it says so and offers Turn On; a
+  failed check is kept apart from the last good one; a copy with no version
+  says so; the bar shows the download's own share and "Too late to cancel";
+  a failure names the app and the claudeswitch command and links the release.
+- **Renders and docs.** Each render set agrees with itself, a set draws the
+  states none reached (a stale daemon, a hard pin, a pool running dry, a
+  lifted pin), and `docs/app` follows the code again.
+
+And the CLI's output, see docs/cli: that work lands separately.

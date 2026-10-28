@@ -115,7 +115,7 @@
    "name": "work",
    "overrides": {
     "switch_at": "75",
-    "switch_at_weekly": "98"
+    "switch_at_weekly": "90"
    },
    "pinned": null,
    "pool": [
@@ -140,7 +140,7 @@
     "hard_floor": 98,
     "landing_margin": 10,
     "switch_at": 75,
-    "switch_at_weekly": 98
+    "switch_at_weekly": 90
    }
   },
   {

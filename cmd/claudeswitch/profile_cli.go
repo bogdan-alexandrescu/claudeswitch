@@ -39,7 +39,7 @@ func pickProfile(cfg *config.Config, flagName string) (config.Profile, error) {
 		if in, ok := cfg.ProfileNamed(flagName); ok {
 			return in, nil
 		}
-		return config.Profile{}, fmt.Errorf("no profile named %q; the profiles are %s",
+		return config.Profile{}, appErr(codeNotFound, "", "no profile named %q; the profiles are %s",
 			flagName, strings.Join(quoteAll(cfg.ProfileNames()), ", "))
 	}
 	all := cfg.EffectiveProfiles()

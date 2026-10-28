@@ -17,6 +17,7 @@ import (
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/policy"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/poller"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/profile"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/render"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/state"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/usage"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/vault"
@@ -815,7 +816,7 @@ func (d *daemon) noteRunway(il *profileLoop, in policy.Input) {
 	case r.Kind == policy.RunwayDry && r.DryAt.After(now) && !il.runwayWarned:
 		il.runwayWarned = true
 		msg := fmt.Sprintf("pool runs dry at %s at this pace (in %s)",
-			r.DryAt.Local().Format("15:04"), r.DryAt.Sub(now).Round(time.Minute))
+			r.DryAt.Local().Format("15:04"), render.Duration(r.DryAt.Sub(now)))
 		il.log.Warn("pool runs dry soon", "at", r.DryAt.Local().Format("15:04"),
 			"pace_per_min", fmt.Sprintf("%.2f", r.Pace))
 		d.nt.Send("runway:"+il.name, il.name+" pool runs dry soon", msg)
@@ -828,14 +829,14 @@ func (d *daemon) noteRunway(il *profileLoop, in policy.Input) {
 //
 // inUse names the accounts of its pool passed over as live in another
 // profile ("t2: in use by default"). Under shared pools (D34) that is often
-// why nothing is free, and "all accounts are burnt" would send the person
+// why nothing is free, and "every account is refused" would send the person
 // looking for a quota problem there is not.
 func (d *daemon) exhausted(il *profileLoop, recovers string, at time.Time, inUse []string) {
 	if !d.multi() {
 		d.nt.Exhausted(recovers, at)
 		return
 	}
-	title := il.name + ": all accounts are burnt"
+	title := il.name + ": every account is refused"
 	parts := append([]string(nil), inUse...)
 	if len(inUse) > 0 {
 		title = il.name + ": no account free"
@@ -1122,8 +1123,8 @@ func (d *daemon) maintainVault(ctx context.Context) {
 			var needsLogin *oauth.NeedsLoginError
 			if errors.As(err, &needsLogin) {
 				log.Error("account needs an interactive login", "account", a.ID, "detail", err)
-				d.nt.Send("relogin:"+a.ID, a.ID+" needs a login",
-					"its refresh token is spent; run `cs login "+a.ID+" --direct`")
+				d.nt.Send("relogin:"+a.ID, a.ID+" needs sign-in",
+					"its refresh token is spent; sign in again: claudeswitch login "+a.ID+" --direct")
 				// Record it where `status` looks. A spent refresh token is the
 				// one condition here a person has to act on, and it was only
 				// ever logged: the row went on showing whatever the last poll
@@ -1216,8 +1217,8 @@ func (d *daemon) renewQuietLive(ctx context.Context) {
 			if errors.As(err, &needsLogin) {
 				il.log.Error("the live account needs an interactive login: its refresh token is spent",
 					"account", id, "detail", err)
-				d.nt.Send("relogin:"+id, d.tag(il, id+" needs a login"),
-					"its refresh token is spent; run `cs login "+id+" --direct`")
+				d.nt.Send("relogin:"+id, d.tag(il, id+" needs sign-in"),
+					"its refresh token is spent; sign in again: claudeswitch login "+id+" --direct")
 				d.st.Get(id).LastErr = err.Error()
 				if serr := d.saveCLI(); serr != nil {
 					il.log.Warn("could not record that an account needs a login", "account", id, "err", serr)
@@ -1434,7 +1435,7 @@ func (d *daemon) run(ctx context.Context, stop chan struct{}, sig <-chan os.Sign
 					"blind_for", blind.Round(time.Second),
 					"limit", blindLimit(d.cfg))
 				d.nt.Send("blind", "claudeswitch restarting",
-					"no usage reading for "+blind.Round(time.Minute).String())
+					"no usage reading for "+render.Duration(blind))
 				close(stop)
 				d.stopProfiles()
 				d.noteClaudeAIs()

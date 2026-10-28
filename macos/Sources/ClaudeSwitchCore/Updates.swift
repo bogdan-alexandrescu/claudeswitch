@@ -24,6 +24,11 @@ public enum UpdateSource {
     public static func latestURL(repo: String = repo) -> URL {
         URL(string: "https://api.github.com/repos/\(repo)/releases/latest")!
     }
+
+    /// A release's page, from its version (its tag is v<version>).
+    public static func releasePage(_ version: String) -> URL? {
+        URL(string: home + "/releases/tag/v" + version)
+    }
 }
 
 /// A release version: major.minor.patch, an optional pre-release after "-"
@@ -144,19 +149,37 @@ public enum UpdateError: Error, Equatable {
     /// Cancel, while nothing had been replaced yet.
     case cancelled
 
-    /// What went wrong and that nothing changed.
+    /// What went wrong and that nothing changed. The app and the command
+    /// by what they are: "ClaudeSwitch and claudeswitch" told them apart by
+    /// case alone. When the release itself is at fault (a file missing, a
+    /// checksum that does not match), Try Again fails the same way, so it
+    /// also says what to do instead (second-pass QA, 2026-10-28).
     public var message: String {
-        let kept = " ClaudeSwitch and claudeswitch are as they were."
+        let kept = " The app and the claudeswitch command were not changed."
+        let instead = kept + " Try again later, or download it from the release page."
         switch self {
-        case .noRelease(let s): return "Could not read the latest release: \(s)."
-        case .missingAsset(let s): return "The release has no \(s)." + kept
-        case .checksumMissing(let s): return "The release lists no checksum for \(s)." + kept
-        case .checksumMismatch(let s): return "\(s) does not match its published checksum." + kept
+        case .noRelease(let s):
+            let why = Self.sentence(s)
+            return "Could not read the latest release." + (why.isEmpty ? "" : " " + why)
+        case .missingAsset(let s): return "The release has no \(s)." + instead
+        case .checksumMissing(let s): return "The release lists no checksum for \(s)." + instead
+        case .checksumMismatch(let s): return "\(s) does not match its published checksum." + instead
         case .download(let s): return "A download failed (\(s))." + kept
         case .install(let s): return "Could not install the update: \(s)." + kept
-        case .daemon(let s): return "The daemon did not restart on the new binary (\(s)), so both were put back." + kept
+        case .daemon(let s):
+            return "The daemon did not restart on the new claudeswitch (\(s)), so the app and the claudeswitch "
+                + "command were put back as they were."
         case .cancelled: return "Cancelled before anything was installed." + kept
         }
+    }
+
+    /// Why, as a sentence of its own: a capital first and one full stop
+    /// last ("…release: The Internet connection appears to be offline.."
+    /// had neither right).
+    static func sentence(_ s: String) -> String {
+        let t = s.trimmingCharacters(in: .whitespaces)
+        guard let first = t.first, let last = t.last else { return "" }
+        return first.uppercased() + t.dropFirst() + (".!?…".contains(last) ? "" : ".")
     }
 }
 
@@ -229,6 +252,42 @@ public enum UpdateSchedule {
         guard let last = lastCheck, last <= now else { return true }
         return now.timeIntervalSince(last) >= interval
     }
+
+    /// The same, with a failed check as the day's call: it is tried again
+    /// the next day, not every hour.
+    public static func due(enabled: Bool, lastCheck: Date?, failed: Date?, now: Date) -> Bool {
+        due(enabled: enabled, lastCheck: [lastCheck, failed].compactMap { $0 }.max(), now: now)
+    }
+}
+
+/// A check that did not read the release: when, and why. Kept apart from
+/// the last check, which is only ever a good one (a failed check counted as
+/// "checked just now", QA 2026-10-28).
+public struct UpdateCheckFailure: Equatable, Sendable {
+    public var at: Date
+    public var message: String
+
+    public init(at: Date, message: String) {
+        self.at = at
+        self.message = message
+    }
+}
+
+public enum UpdateStatus {
+    /// Advanced's line under Check for updates: this app's version, a newer
+    /// one found, and when it was last checked, or that the last check
+    /// failed. `failure` is the last check's, when it failed.
+    public static func line(current: String?, available: String?, lastCheck: Date?, failure: UpdateCheckFailure?,
+                            now: Date) -> String {
+        var s = current.map { "This is \($0)" } ?? "Version unknown"
+        if let v = available { s += " · \(v) available" }
+        if let f = failure {
+            s += " · last check failed " + Format.age(f.at, now: now)
+        } else if let d = lastCheck {
+            s += " · checked " + Format.age(d, now: now)
+        }
+        return s
+    }
 }
 
 // MARK: seams
@@ -283,7 +342,7 @@ public struct Updater {
         let data: Data
         let url = UpdateSource.latestURL(repo: repo)
         do { data = try network.data(from: url) } catch {
-            // "latest: HTTP 404" reads as "Could not read the latest release: HTTP 404".
+            // "latest: HTTP 404" reads as "Could not read the latest release. HTTP 404."
             var why = Self.describe(error)
             if why.hasPrefix(url.lastPathComponent + ": ") { why.removeFirst(url.lastPathComponent.count + 2) }
             return .failure(.noRelease(why))

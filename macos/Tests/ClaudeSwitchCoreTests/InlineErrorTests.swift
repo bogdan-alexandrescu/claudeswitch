@@ -79,10 +79,11 @@ import Testing
         let la = try #require(TimeZone(identifier: "America/Los_Angeles"))
         let at = try #require(GoTime.parse("2026-10-08T21:03:07Z"))
         var e = CardError(title: "t", .app(AppError(code: "live", message: "m")))
-        #expect(e.retryLine(timeZone: la) == nil, "no retry_at, no line")
+        let before = at.addingTimeInterval(-60)
+        #expect(e.retryLine(now: before, timeZone: la) == nil, "no retry_at, no line")
         e.retryAt = at
-        #expect(e.retryLine(timeZone: la) == "Try again at 14:03:07")
+        #expect(e.retryLine(now: before, timeZone: la) == "Try again at 14:03:07")
         let utc = try #require(TimeZone(identifier: "UTC"))
-        #expect(e.retryLine(timeZone: utc) == "Try again at 21:03:07")
+        #expect(e.retryLine(now: before, timeZone: utc) == "Try again at 21:03:07")
     }
 }

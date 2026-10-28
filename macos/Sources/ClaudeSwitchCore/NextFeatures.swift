@@ -70,10 +70,19 @@ public enum Runway {
         return clock(at, "d MMM HH:mm", timeZone)
     }
 
-    /// "work pool: runs dry Thu 14:00 at this pace"; nil when unknown.
+    /// "work pool: runs dry Thu 14:00 at this pace"; within two hours a
+    /// countdown, "runs dry in 40m (20:26) at this pace" (a bare clock time
+    /// 40 minutes away read as days off); once passed, "has run dry"; nil
+    /// when unknown.
     public static func poolLine(profile: String, dryAt: Date?, now: Date, timeZone: TimeZone = .current) -> String? {
         guard let at = dryAt else { return nil }
-        return "\(profile) pool: runs dry \(when(at, now: now, timeZone: timeZone)) at this pace"
+        let head = "\(profile) pool: "
+        if at <= now { return head + "has run dry" }
+        if urgent(dryAt: at, now: now) {
+            let left = Format.duration(at.timeIntervalSince(now))
+            return head + "runs dry in \(left) (\(clock(at, "HH:mm", timeZone))) at this pace"
+        }
+        return head + "runs dry \(when(at, now: now, timeZone: timeZone)) at this pace"
     }
 
     public static func urgent(dryAt: Date?, now: Date) -> Bool {
@@ -216,10 +225,10 @@ public struct ReloginReminder: Equatable {
 
     public var title: String { "Sign \(account) in again" }
 
-    /// "personal needs signing in within 5 days".
+    /// "personal needs sign-in within 5 days".
     public var body: String {
-        if days <= 0 { return "\(account) needs signing in: its login has expired" }
-        return "\(account) needs signing in within \(days) day\(days == 1 ? "" : "s")"
+        if days <= 0 { return "\(account) needs sign-in: its login has expired" }
+        return "\(account) needs sign-in within \(days) day\(days == 1 ? "" : "s")"
     }
 }
 
@@ -446,6 +455,14 @@ public enum FixAction: Equatable, Hashable {
         }
     }
 
+    /// What running it brings on, said before it runs.
+    public var warning: String? {
+        switch self {
+        case .keychainAllow: return "macOS asks for your login password once for each saved account."
+        default: return nil
+        }
+    }
+
     /// The command it runs; nil for sign-in, which opens Add account.
     public var argv: [String]? {
         switch self {
@@ -509,7 +526,7 @@ public struct DoctorReport: Equatable {
 
 public extension CLI {
     /// `account pin <id> [--hard] --json` (F3: --hard stays even when the
-    /// account is refused or needs a login).
+    /// account is refused or needs sign-in).
     func pin(_ id: String, hard: Bool) -> Result<PinResult, CallError> {
         guard CLI.validID(id) else { return .failure(.refused("usage", "\"\(id)\" is not a valid account name.")) }
         return shaped(call(["account", "pin", id] + (hard ? ["--hard"] : []) + ["--json"]), "account pin", PinResult.init)

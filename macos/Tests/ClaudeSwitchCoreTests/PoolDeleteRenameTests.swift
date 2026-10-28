@@ -22,7 +22,9 @@ import Testing
         #expect(plan.users == ["default", "work"])
         #expect(plan.destinations.map(\.pick) == [.pool("personal"), .pool("ops"), .pool("spare"), .none])
         #expect(plan.initial == .pool("personal"), "the first other pool")
-        #expect(plan.summary == "default and work stop using team. default then uses only personal; work then uses only ops.")
+        #expect(plan.summary == "Deletes the pool “team”. Its 3 accounts move to the pool “personal”; no account is deleted. "
+                + "The profile “default” then uses only “personal”. The profile “work” then uses only “ops”.")
+        #expect(plan.caption == "Its accounts: team-1, team-2, team-3")
     }
 
     /// It starts where the same profiles use the accounts, so deleting a
@@ -31,17 +33,23 @@ import Testing
     @Test func testItStartsWhereTheSameProfilesUseThem() throws {
         let plan = PoolDeletePlan.make("personal", pools: try sharedPools(), profiles: try sharedProfiles())
         #expect(plan.initial == PoolPick.none)
-        #expect(plan.summary(to: PoolPick.none) == "default stops using personal. default then uses team, then the accounts in no pool.",
+        #expect(plan.summary(to: PoolPick.none) == "Deletes the pool “personal”. Its account “personal” is then in no pool; "
+                + "no account is deleted. The profile “default” then uses “team”, then the accounts in no pool.",
                 "where the accounts go is part of what default is left using")
-        #expect(plan.summary(to: .pool("ops")) == "default stops using personal. default then uses only team.")
+        #expect(plan.summary(to: .pool("ops")) == "Deletes the pool “personal”. Its account “personal” moves to the pool “ops”; "
+                + "no account is deleted. The profile “default” then uses only “team”.")
+        #expect(plan.caption == "Its account: personal")
         let ops = PoolDeletePlan.make("ops", pools: try sharedPools(), profiles: try sharedProfiles())
         #expect(ops.initial == .pool("personal"), "no pool only work uses: the first other")
+        #expect(ops.summary == "Deletes the pool “ops”. Its account “ops-1” moves to the pool “personal”; no account is deleted. "
+                + "The profile “work” then uses only “team”.")
     }
 
     @Test func testDeletingAnEmptyPoolNoOneUses() throws {
         let plan = PoolDeletePlan.make("spare", pools: try sharedPools(), profiles: try sharedProfiles())
         #expect(plan.accounts.isEmpty && plan.users.isEmpty && plan.initial == nil)
-        #expect(plan.summary == "No profile uses it.")
+        #expect(plan.summary == "Deletes the pool “spare”. It has no accounts and no profile uses it, so nothing else changes.")
+        #expect(plan.caption == nil)
     }
 
     @Test func testTheCallsSayWhereTheAccountsGo() throws {

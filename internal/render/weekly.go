@@ -49,14 +49,24 @@ func PaceText(p state.Pace) string {
 	return s
 }
 
-// ExpiryText is the estimate: "~65% would expire unused at reset", or "" when
-// it is too early in the week to make one.
+// ExpiryText is the estimate: "~65% would expire unused at reset", "on pace
+// to run out Fri 14:00, before it resets Sun 09:00", or "" when it is too
+// early in the week to make one. Ahead of pace the week runs out before it
+// resets, and "on pace to use it all" undersold that.
 func ExpiryText(p state.Pace) string {
 	switch {
 	case !p.Estimated:
 		return ""
 	case p.Unused >= 0.5:
 		return fmt.Sprintf("~%.0f%% would expire unused at reset", p.Unused)
+	}
+	frac := p.Expected / 100
+	if p.Actual-p.Expected >= 1 && p.Actual > 0 && frac > 0 {
+		// At the average so far, the rest of the week goes in
+		// frac·(100-actual)/actual of a week.
+		now := p.ResetsAt.Add(-time.Duration((1 - frac) * float64(state.WeekLength)))
+		out := now.Add(time.Duration(frac * (100 - p.Actual) / p.Actual * float64(state.WeekLength)))
+		return fmt.Sprintf("on pace to run out %s, before it resets %s", When(out, now), When(p.ResetsAt, now))
 	}
 	return "on pace to use it all"
 }
@@ -84,7 +94,7 @@ func modelBlock(out io.Writer, o Options, accounts []config.Account) {
 	if len(t.rows) == 0 {
 		return
 	}
-	fmt.Fprintf(out, "\n  %s\n", paint(dim, "WEEKLY BY MODEL"))
+	fmt.Fprintf(out, "\n  %s\n", paint(dim, "WEEK BY MODEL"))
 	fmt.Fprint(out, t.render("  "))
 }
 
@@ -100,11 +110,13 @@ func unknownLimitWarnings(id string, u *usage.Usage) []string {
 	return out
 }
 
-// detailLimits writes the per-model, unknown-limit and pace lines of one
-// account in status --detail.
-func detailLimits(out io.Writer, pad func(string) string, cfg *config.Config, acct *state.Account) {
+// detailLimits are the per-model, unknown-limit and pace notes of one account
+// in status --detail. projects says whether its weekly figure may be carried
+// forward (State.Projects).
+func detailLimits(cfg *config.Config, acct *state.Account, projects bool) []string {
+	var notes []string
 	for _, l := range acct.Last.ModelWeekly() {
-		s := fmt.Sprintf("%s weekly %s", l.ModelName(), limitPct(l))
+		s := fmt.Sprintf("%s week %s", l.ModelName(), limitPct(l))
 		if !l.Known() {
 			s += " (the API gave no figure)"
 		}
@@ -115,15 +127,15 @@ func detailLimits(out io.Writer, pad func(string) string, cfg *config.Config, ac
 			s += " (" + l.Severity + ")"
 		}
 		if cfg.CountsModel(l.ModelName()) {
-			s += " · counted like the weekly window"
+			s += " · counted like the week"
 		}
-		fmt.Fprintf(out, "  %s   ↳ %s\n", pad(""), s)
+		notes = append(notes, s)
 	}
 	for _, l := range acct.Last.UnknownLimits() {
-		fmt.Fprintf(out, "  %s   ↳ %s %s: not understood — unknown, not counted\n",
-			pad(""), l.Describe(), limitPct(l))
+		notes = append(notes, fmt.Sprintf("%s %s: not understood — unknown, not counted", l.Describe(), limitPct(l)))
 	}
-	if p, ok := acct.WeeklyPace(time.Now()); ok {
-		fmt.Fprintf(out, "  %s   ↳ pace: %s\n", pad(""), paceLine(p))
+	if p, ok := acct.WeeklyPace(time.Now(), projects); ok {
+		notes = append(notes, "pace: "+paceLine(p))
 	}
+	return notes
 }

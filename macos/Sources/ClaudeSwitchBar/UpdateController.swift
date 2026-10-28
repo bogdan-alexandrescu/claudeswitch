@@ -20,6 +20,8 @@ final class UpdateController: ObservableObject {
 
     static let enabledKey = "checkForUpdates"
     static let lastCheckKey = "updateLastCheck"
+    static let lastFailureKey = "updateLastFailure"
+    static let lastFailureMessageKey = "updateLastFailureMessage"
     static let availableKey = "updateAvailable"
     /// The version an install relaunched into, for the window that says so.
     static let installedKey = "updateJustInstalled"
@@ -27,13 +29,22 @@ final class UpdateController: ObservableObject {
     @Published var enabled: Bool {
         didSet {
             defaults.set(enabled, forKey: Self.enabledKey)
-            if enabled { checkIfDue() } else { available = nil }
+            if enabled {
+                // What the last check found comes back with it, as at launch.
+                available = remembered
+                checkIfDue()
+            } else {
+                available = nil
+            }
         }
     }
     /// The newer version, when there is one.
     @Published private(set) var available: String?
     @Published private(set) var phase: Phase = .idle
+    /// The last good check: one that read the latest release.
     @Published private(set) var lastCheck: Date?
+    /// The last check, when it failed: when and why. A good check clears it.
+    @Published private(set) var lastFailure: UpdateCheckFailure?
     /// The update window's state; nil while it is closed.
     @Published private(set) var dialog: UpdateDialog?
     /// The binary to update beside the app: the path the app runs.
@@ -57,11 +68,18 @@ final class UpdateController: ObservableObject {
     init() {
         enabled = defaults.object(forKey: Self.enabledKey) as? Bool ?? true
         lastCheck = defaults.object(forKey: Self.lastCheckKey) as? Date
-        // A version found by an earlier check, still newer than this app.
-        if let v = defaults.string(forKey: Self.availableKey), let have = current.flatMap(SemVer.init),
-           let new = SemVer(v), new > have, enabled {
-            available = v
+        if let at = defaults.object(forKey: Self.lastFailureKey) as? Date {
+            lastFailure = UpdateCheckFailure(at: at, message: defaults.string(forKey: Self.lastFailureMessageKey) ?? "")
         }
+        if enabled { available = remembered }
+    }
+
+    /// The version the last good check found, while it is still newer than
+    /// this app.
+    private var remembered: String? {
+        guard let v = defaults.string(forKey: Self.availableKey), let have = current.flatMap(SemVer.init),
+              let new = SemVer(v), new > have else { return nil }
+        return v
     }
 
     /// --render: shows (or hides) an offer without any call.
@@ -78,6 +96,7 @@ final class UpdateController: ObservableObject {
     func preview(version: String, lastCheck: Date, now: Date) {
         previewVersion = version
         self.lastCheck = lastCheck
+        lastFailure = nil
         clock = { now }
     }
 
@@ -94,7 +113,9 @@ final class UpdateController: ObservableObject {
     }
 
     func checkIfDue() {
-        guard UpdateSchedule.due(enabled: enabled, lastCheck: lastCheck, now: Date()) else { return }
+        guard UpdateSchedule.due(enabled: enabled, lastCheck: lastCheck, failed: lastFailure?.at, now: clock()) else {
+            return
+        }
         check()
     }
 
@@ -114,16 +135,29 @@ final class UpdateController: ObservableObject {
 
     private func checked(_ r: Result<Release, UpdateError>) {
         phase = .idle
-        lastCheck = Date()
-        defaults.set(lastCheck, forKey: Self.lastCheckKey)
+        let now = clock()
         switch r {
         case .success(let release):
+            // Only a check that read the release is the last check.
+            lastCheck = now
+            lastFailure = nil
+            defaults.set(now, forKey: Self.lastCheckKey)
+            defaults.removeObject(forKey: Self.lastFailureKey)
+            defaults.removeObject(forKey: Self.lastFailureMessageKey)
             self.release = release
-            available = UpdateOffer.available(current: current, latest: release)
-            defaults.set(available, forKey: Self.availableKey)
+            // A check under way when the switch went off offers nothing:
+            // the popover offered it while the Overview said the check is
+            // off (second-pass QA 2026-10-28). It is kept for when the
+            // check is turned on again.
+            let found = UpdateOffer.available(current: current, latest: release)
+            available = enabled ? found : nil
+            defaults.set(found, forKey: Self.availableKey)
         case .failure(let e):
             // Quietly unless the window asked: a failed daily check is not
             // worth an interruption; the next one is tomorrow.
+            lastFailure = UpdateCheckFailure(at: now, message: e.message)
+            defaults.set(now, forKey: Self.lastFailureKey)
+            defaults.set(e.message, forKey: Self.lastFailureMessageKey)
             flowsLog.error("update check: \(e.message, privacy: .public)")
         }
         if asked, dialog == .checking {
@@ -133,13 +167,22 @@ final class UpdateController: ObservableObject {
     }
 
     /// Check for updates, from the ⋯ menu or Check now: the window opens and
-    /// says what the check found, whatever it was.
+    /// says what the check found, whatever it was. With the check off it
+    /// says so, and no call is made.
     func checkNow() {
-        if case .installing = dialog { show(dialog!); return }
-        show(.checking)
+        let d = UpdateDialog.checkNow(enabled: enabled, showing: dialog)
+        show(d)
+        guard d == .checking else { return }
         asked = true
         if phase == .checking { return } // the daily check under way answers it
         check()
+    }
+
+    /// The window's Turn On: Check for updates on, then the check it was
+    /// opened for.
+    func turnOn() {
+        enabled = true
+        checkNow()
     }
 
     /// The popover's Update…: the offer in the window, from the release the
@@ -179,8 +222,18 @@ final class UpdateController: ObservableObject {
     /// the daemon and relaunches the app. Any failure leaves both as they
     /// were and says why.
     func update() {
-        guard let version = available else { return }
         if case .updating = phase { return }
+        // The version the open window offers: turning the check off under
+        // it clears `available`, and Install Update then did nothing and
+        // said nothing (second-pass QA 2026-10-28).
+        var offered: String?
+        if case .available(let v, _, _, _, _)? = dialog { offered = v }
+        guard let version = offered ?? available else {
+            // No offer to install: the window says what a check finds now,
+            // or that the check is off.
+            checkNow()
+            return
+        }
         let offer = dialog
         func refuse(_ message: String) {
             phase = .failed(message)
@@ -268,13 +321,7 @@ final class UpdateController: ObservableObject {
     /// closed first, since an open one refuses the quit, and the helper ends
     /// this process if it is still here after a few seconds (Relaunch).
     static func relaunch(_ app: String) {
-        // Innermost first: a sheet can carry a sheet (an alert on an editor).
-        for _ in 0..<4 {
-            let open = NSApp.windows.compactMap { w in w.attachedSheet.map { (w, $0) } }
-            if open.isEmpty { break }
-            for (w, sheet) in open where sheet.attachedSheet == nil { w.endSheet(sheet) }
-        }
-        if NSApp.modalWindow != nil { NSApp.abortModal() }
+        AppQuit.closeSheets()
         let argv = Relaunch.helper(app: app, pid: ProcessInfo.processInfo.processIdentifier)
         let p = Process()
         p.executableURL = URL(fileURLWithPath: argv[0])
@@ -429,19 +476,23 @@ struct UpdateLine: View {
     var body: some View {
         switch updates.phase {
         case .updating(let v):
-            Button { updates.showOffer() } label: {
-                VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 4) {
+                Button { updates.showOffer() } label: {
+                    // Two lines: a step such as "Checking the downloads
+                    // against the release's checksums…" was cut off.
                     Text(updates.installStep.map { "Updating to \(v): \($0.label)" } ?? "Updating to \(v)…")
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    ProgressView(value: updates.installStep?.fraction ?? 0)
-                        .progressViewStyle(.linear)
-                        .tint(Color.csAccent)
-                        .controlSize(.small)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                // Outside the button's label, which drew the bar grey.
+                UpdateBar(value: updates.installStep?.fraction ?? 0, height: 4)
+                    .contentShape(Rectangle())
+                    .onTapGesture { updates.showOffer() }
             }
-            .buttonStyle(.plain)
             .font(.callout)
             .help("Shows the update window.")
         case .failed(let message):
@@ -459,7 +510,7 @@ struct UpdateLine: View {
                         .foregroundStyle(Color.csAccent)
                         .fontWeight(.semibold)
                         .help("Shows what is new in \(v), and Install, which downloads ClaudeSwitch and "
-                              + "claudeswitch, checks them against the release's checksums, installs both, "
+                              + "claudeswitch, checks them against the release’s checksums, installs both, "
                               + "restarts the daemon and relaunches.")
                     Spacer()
                 }
@@ -481,14 +532,17 @@ struct AppFlowsRows: View {
             Toggle(isOn: $updates.enabled) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Check for updates")
-                    Text("Once a day, one call to GitHub's latest release. Off makes no call at all.")
+                    Text("Once a day, one call to GitHub’s latest release. Off makes no call at all.")
                         .font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .toggleStyle(.switch)
             HStack(spacing: 8) {
-                Text(checkedLine).font(.caption).foregroundStyle(.tertiary)
+                // Secondary, as the caption above it: tertiary grey read at
+                // 1.9:1 in light and 2.3:1 in dark (second-pass QA 2026-10-28).
+                Text(checkedLine).font(.caption).foregroundStyle(.secondary)
+                    .help(updates.lastFailure?.message ?? "")
                 if updates.phase == .checking { ProgressView().controlSize(.mini) }
                 Spacer()
                 Button("Check now") { updates.checkNow() }
@@ -499,10 +553,18 @@ struct AppFlowsRows: View {
         Toggle(isOn: $notifier.enabled) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Notifications with actions")
-                Text("Undo and Pin here when rotation switches; Sign in when an account needs it. "
-                     + "The daemon's own notifications still appear too.")
+                Text("Undo and Pin here when rotation switches, in place of the daemon’s notice; Sign in when an "
+                     + "account needs it. The daemon’s other notices still appear.")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                // On here but refused by macOS: nothing arrives, and the switch
+                // alone would not say why.
+                if notifier.enabled && notifier.answered && !notifier.granted {
+                    Label("Not allowed in System Settings → Notifications; the daemon’s own notices appear instead.",
+                          systemImage: "bell.slash")
+                        .font(.caption).foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .toggleStyle(.switch)
@@ -510,9 +572,7 @@ struct AppFlowsRows: View {
     }
 
     var checkedLine: String {
-        var s = updates.current.map { "This is \($0)" } ?? "Version unknown"
-        if let v = updates.available { s += " · \(v) available" }
-        if let d = updates.lastCheck { s += " · checked " + Format.age(d, now: updates.clock()) }
-        return s
+        UpdateStatus.line(current: updates.current, available: updates.available, lastCheck: updates.lastCheck,
+                          failure: updates.lastFailure, now: updates.clock())
     }
 }

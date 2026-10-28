@@ -11,6 +11,7 @@ import (
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/audit"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/readings"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/render"
 )
 
 // `cs history --usage [--days 30] [--json]` (IMPROVEMENTS F7): each
@@ -97,11 +98,17 @@ func historyUsage(w io.Writer, cfgPath string, days int, asJSON bool, now time.T
 		return emitTo(w, map[string]any{"days": days, "from": from.UTC(), "to": now.UTC(),
 			"accounts": accounts, "switches": switches})
 	}
-	fmt.Fprintf(w, "\n  usage over the last %d day(s), from the daemon's readings log\n\n", days)
+	fmt.Fprintf(w, "\n  usage over the last %s, from the daemon's readings log\n\n", render.Plural(days, "day", "days"))
+	t := render.NewTable([]string{"ACCOUNT", "READINGS", "PEAK SESSION", "PEAK WEEK", "LAST"}, 1, 2, 3)
 	for _, a := range accounts {
+		id := a["id"].(string)
+		if a["configured"] == false {
+			// Renamed or removed since, as status marks it.
+			id += render.Grey(" (gone)")
+		}
 		s := a["series"].([]point)
 		if len(s) == 0 {
-			fmt.Fprintf(w, "  %-18s no readings\n", a["id"])
+			t.Add(id, "none", "", "", "")
 			continue
 		}
 		peak5, peak7 := "-", "-"
@@ -115,9 +122,10 @@ func historyUsage(w io.Writer, cfgPath string, days int, asJSON bool, now time.T
 			}
 		}
 		last := s[len(s)-1]["at"].(time.Time)
-		fmt.Fprintf(w, "  %-18s %d readings · peak 5h %s · 7d %s · last %s\n", a["id"], len(s), peak5, peak7,
-			last.Local().Format("Mon 02 Jan 15:04"))
+		t.Add(id, fmt.Sprintf("%d", len(s)), peak5, peak7, render.When(last, now))
 	}
-	fmt.Fprintf(w, "\n  %d switches; `cs history --usage --json` has every reading and switch\n\n", len(switches))
+	fmt.Fprint(w, t.Render("  "))
+	fmt.Fprintf(w, "\n  %s; claudeswitch history --usage --json lists every reading and switch\n\n",
+		render.Plural(len(switches), "switch", "switches"))
 	return nil
 }

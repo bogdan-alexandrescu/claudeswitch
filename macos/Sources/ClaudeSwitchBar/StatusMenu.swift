@@ -35,26 +35,74 @@ final class StatusMenu: NSObject {
         menu().popUp(positioning: nil, at: below, in: view)
     }
 
+    /// The menu's lines in order, nil a separator: what menu() builds and
+    /// the docs' facsimile draws (MoreMenuFacsimile), so they cannot drift.
+    enum Line {
+        case refresh, appearance, usage, settings, setup, updates, about, quit
+
+        var title: String {
+            switch self {
+            case .refresh: "Refresh now"
+            case .appearance: "Appearance"
+            case .usage: "Show usage as"
+            case .settings: "Settings"
+            case .setup: "Set up…"
+            case .updates: "Check for updates…"
+            case .about: "About ClaudeSwitch"
+            case .quit: "Quit ClaudeSwitch"
+            }
+        }
+
+        /// The key with ⌘, or "".
+        var key: String {
+            switch self {
+            case .refresh: "r"
+            case .settings: ","
+            case .quit: "q"
+            default: ""
+            }
+        }
+
+        var submenu: Bool { self == .appearance || self == .usage }
+    }
+
+    static let layout: [Line?] = [.refresh, .appearance, .usage, nil, .settings, .setup, .updates, .about, nil, .quit]
+
     func menu() -> NSMenu {
         let store = AppHub.store
         let m = NSMenu()
         m.autoenablesItems = false
-        m.addItem(item("Refresh now", key: "r") { store.refresh(full: true, profiles: true) })
-        m.addItem(choices("Appearance", AppearancePref.allCases.map { ($0.label, $0 == store.appearance) }) { i in
-            store.appearance = AppearancePref.allCases[i]
-        })
-        m.addItem(choices("Show usage as", UsageMode.allCases.map { ($0.label, $0 == store.usageMode) }) { i in
-            store.usageMode = UsageMode.allCases[i]
-        })
-        m.addItem(.separator())
-        m.addItem(item("Settings", key: ",") { store.openSettings(.overview) })
-        m.addItem(item("Set up…") { WelcomeWindow.show(store: store) })
-        let updates = item("Check for updates…") { AppHub.updates.checkNow() }
-        updates.isEnabled = AppHub.updates.enabled
-        m.addItem(updates)
-        m.addItem(item("About ClaudeSwitch") { WindowFocus.about() })
-        m.addItem(.separator())
-        m.addItem(item("Quit ClaudeSwitch", key: "q") { NSApp.terminate(nil) })
+        for line in Self.layout {
+            guard let line else { m.addItem(.separator()); continue }
+            switch line {
+            case .refresh:
+                m.addItem(item(line.title, key: line.key) { store.refresh(full: true, profiles: true) })
+            case .appearance:
+                m.addItem(choices(line.title, AppearancePref.allCases.map { ($0.label, $0 == store.appearance) }) { i in
+                    store.appearance = AppearancePref.allCases[i]
+                })
+            case .usage:
+                m.addItem(choices(line.title, UsageMode.allCases.map { ($0.label, $0 == store.usageMode) }) { i in
+                    store.usageMode = UsageMode.allCases[i]
+                })
+            case .settings:
+                // Brings an open Settings forward where it is; opens on
+                // Overview only when it was closed.
+                m.addItem(item(line.title, key: line.key) {
+                    store.openSettings(WindowFocus.settings?.isVisible == true ? nil : .overview)
+                })
+            case .setup:
+                m.addItem(item(line.title, key: line.key) { WelcomeWindow.show(store: store) })
+            case .updates:
+                let updates = item(line.title, key: line.key) { AppHub.updates.checkNow() }
+                updates.isEnabled = AppHub.updates.enabled
+                m.addItem(updates)
+            case .about:
+                m.addItem(item(line.title, key: line.key) { WindowFocus.about() })
+            case .quit:
+                m.addItem(item(line.title, key: line.key) { AppQuit.quit() })
+            }
+        }
         // The app's Appearance, not the menu bar's: popped up from the
         // status item, the menu would otherwise take the menu bar's look.
         // NSApp.effectiveAppearance is the Mac's own while it follows the

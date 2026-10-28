@@ -50,7 +50,7 @@ import Testing
         let s = try #require(n.first)
         #expect(n.count == 1)
         #expect(s.category == NoticeCategory.signIn)
-        #expect(s.title == "work-1 needs a sign-in")
+        #expect(s.title == "work-1 needs sign-in")
         #expect(Notices.command(action: NoticeAction.signIn, info: s.info) == .signIn(account: "work-1", profile: "work"))
         #expect(Notices.command(action: NoticeAction.undo, info: s.info) == nil)
     }

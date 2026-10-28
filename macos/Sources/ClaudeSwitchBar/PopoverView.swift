@@ -22,7 +22,9 @@ struct PopoverView: View {
         VStack(alignment: .leading, spacing: 12) {
             header
             if let p = store.problem { ProblemBanner(problem: p) }
-            if let s = store.snapshot {
+            // A binary missing, too old or too new: the banner in place of
+            // the cards, whose buttons would run that binary and fail.
+            if let s = store.snapshot, !Self.replacesCards(store.problem) {
                 let followed = s.followed(store.menuProfile)
                 let cards = VStack(spacing: 8) {
                     ForEach(s.cards) { c in
@@ -44,8 +46,10 @@ struct PopoverView: View {
                     cards
                 }
             } else if store.problem == nil {
-                Text(store.refreshing ? "Reading…" : "No state yet: is the daemon installed? Run `claudeswitch setup`.")
+                Text(store.refreshing || readingOverride ? "Reading…"
+                     : "No state yet: is the daemon installed? Run `claudeswitch setup`.")
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             // M11: an error with no card to show on, inline; never a modal
             // alert in the popover.
@@ -62,6 +66,9 @@ struct PopoverView: View {
         .padding(16)
         .frame(width: 384)
         .onPreferenceChange(CardsHeight.self) { cardsHeight = $0 }
+        // A note ("default now uses work-2") is news while the popover is
+        // open; reopened later it would be stale.
+        .onDisappear { store.clearNote(on: .popover) }
         .onAppear {
             store.acting(in: .popover)
             login.reload()
@@ -72,23 +79,45 @@ struct PopoverView: View {
     /// The visible frame of the screen the popover opens on (menu bar and
     /// Dock excluded).
     static var visibleHeight: CGFloat {
-        (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.height ?? 800
+        if let h = heightOverride { return h }
+        let item = NSApp.windows.first { StatusMenu.isStatusItem($0) }?.screen
+        return (item ?? NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.height ?? 800
+    }
+
+    /// --render only: draws every card whole, whatever this Mac's screen.
+    static var heightOverride: CGFloat?
+
+    /// --render only: draws the popover as it is while the first read runs.
+    var readingOverride = false
+
+    /// A binary that cannot be used (missing, too old, or speaking a
+    /// contract this app does not): the cards are not shown, only how to fix
+    /// it.
+    static func replacesCards(_ p: CLIError?) -> Bool {
+        switch p {
+        case .missing?, .tooOld?, .unsupportedContract?: return true
+        default: return false
+        }
     }
 
     var header: some View {
         HStack(alignment: .center, spacing: 8) {
             Wordmark()
             Spacer()
+            if store.refreshing || readingOverride {
+                ProgressView().controlSize(.mini).accessibilityLabel("Refreshing")
+            }
             if let s = store.snapshot {
                 DaemonBadge(daemon: s.daemon)
+                UsageModeToggle(mode: $store.usageMode)
             }
-            UsageModeToggle(mode: $store.usageMode)
         }
     }
 
     var footer: some View {
         HStack(spacing: 8) {
-            let canAdd = store.binaryPath != nil
+            // Not with a binary too old or too new either: it would run it.
+            let canAdd = store.binaryPath != nil && !Self.replacesCards(store.problem)
             Button {
                 store.addAccount = AddAccountRequest(profile: store.snapshot?.followed(store.menuProfile))
                 showSettings()
@@ -101,8 +130,14 @@ struct PopoverView: View {
             .foregroundStyle(canAdd ? Color.csAccent : Color.secondary)
             .disabled(!canAdd)
             Spacer()
-            Button("Settings") { showSettings() }
+            // As the icon's menu opens it: on Overview when Settings is
+            // closed, where it is when it is open. The request opens the
+            // window (SettingsOpener) and picks the pane.
+            Button("Settings") {
+                store.openSettings(WindowFocus.settings?.isVisible == true ? nil : .overview)
+            }
                 .buttonStyle(.borderless)
+                .foregroundStyle(Color.csAccent)
                 .keyboardShortcut(",", modifiers: .command)
         }
         // The ⋯ menu moved to the menu-bar icon's right-click (StatusMenu,
@@ -111,7 +146,7 @@ struct PopoverView: View {
             Group {
                 Button("Refresh now") { store.refresh(full: true, profiles: true) }
                     .keyboardShortcut("r", modifiers: .command)
-                Button("Quit ClaudeSwitch") { NSApp.terminate(nil) }
+                Button("Quit ClaudeSwitch") { AppQuit.quit() }
                     .keyboardShortcut("q", modifiers: .command)
             }
             .opacity(0)
@@ -128,14 +163,38 @@ private struct CardsHeight: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
-/// "Live · polled 40s ago", with a coloured dot.
+/// "Live · polled 40s ago", with a coloured dot. A daemon that is not
+/// polling says so in the primary colour, and opens Settings → Daemon,
+/// where it is started: the header was the only place it showed, in grey.
 struct DaemonBadge: View {
+    @EnvironmentObject var store: Store
     let daemon: DaemonView
 
+    var polling: Bool {
+        if case .polling = daemon.health { return true }
+        return false
+    }
+
     var body: some View {
+        if polling {
+            badge
+        } else {
+            Button { store.openSettings(.daemon) } label: { badge.contentShape(Rectangle()) }
+                .buttonStyle(.plain)
+                .help("Open Settings → Daemon to start it")
+                .accessibilityHint("Opens Settings → Daemon")
+        }
+    }
+
+    var badge: some View {
         HStack(spacing: 8) {
             Circle().fill(color).frame(width: 8, height: 8)
-            Text(text).font(.caption).foregroundStyle(.secondary)
+            Text(text).font(.caption.weight(polling ? .regular : .medium))
+                .foregroundStyle(polling ? Color.secondary : Color.primary)
+            if !polling {
+                Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
         }
         .accessibilityElement(children: .combine)
     }
@@ -196,14 +255,27 @@ struct ProfileCardView: View {
             if let l = store.pinLiftNotice(card) { PinLiftBanner(lift: l) }
             if let a = card.active {
                 VStack(alignment: .leading, spacing: 8) {
-                    UsageView(account: a, card: card, now: now)
+                    // Figures from before the login died: kept, their dots
+                    // and figures dimmed; the labels and resets stay legible.
+                    UsageView(account: a, card: card, now: now, dimmed: a.status == .needsLogin)
                     ForEach(Array(a.scopedWeekly.enumerated()), id: \.offset) { _, l in
                         ModelLimitRow(limit: l, level: card.level(of: l), now: now)
                     }
-                    if a.status == .needsLogin || a.lastError != nil {
-                        Label(a.lastError ?? "needs login", systemImage: "exclamationmark.triangle.fill")
+                    if a.status == .needsLogin {
+                        HStack(spacing: 8) {
+                            Label("needs sign-in · last read " + Format.age(a.lastAt, now: now),
+                                  systemImage: "exclamationmark.triangle.fill")
+                                .font(.caption).foregroundStyle(.red).lineLimit(2)
+                                .help(a.lastError ?? "needs sign-in")
+                            Spacer(minLength: 4)
+                            Button("Sign in…") { store.beginSignIn(a.id) }.controlSize(.small)
+                        }
+                    } else if case .refused = a.status {
+                        Label(Format.status(a.status, now: now), systemImage: "nosign")
                             .font(.caption).foregroundStyle(.red).lineLimit(2)
-                            .help(a.lastError ?? "needs login")
+                    } else if let e = a.lastError {
+                        Label(e, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption).foregroundStyle(.red).lineLimit(2).help(e)
                     }
                 }
                 .padding(.top, 4)
@@ -216,29 +288,35 @@ struct ProfileCardView: View {
                     Text("Open Claude Code").lineLimit(1).frame(maxWidth: .infinity, minHeight: 32)
                 }
                 .buttonStyle(PillButtonStyle(primary: false))
-                .disabled(store.binaryPath == nil || !card.canOpen)
+                .disabled(store.binaryPath == nil || !card.canOpen || store.isBusy("run:\(card.name)"))
                 .help(card.openBlocked ?? "Open Claude Code in \(card.name)")
                 BestButton(card: card)
             }
             .padding(.top, 4)
-            if let why = card.openBlocked {
-                Label(why, systemImage: "person.crop.circle.badge.exclamationmark")
-                    .font(.caption).foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else if let why = card.bestUnavailable {
+            // Each greyed button says why, under the pair. A live account
+            // that needs sign-in has its one remedy above (Sign in…): the
+            // profile's own "not signed in" would point elsewhere for the
+            // same trouble.
+            if let why = card.openBlocked, card.active?.status != .needsLogin {
+                OpenBlockedLine(text: why)
+            }
+            if let why = card.bestUnavailable {
                 Text(why).font(.caption).foregroundStyle(.secondary).lineLimit(2).help(why)
+                    .fixedSize(horizontal: false, vertical: true)
             } else if let warn = card.bestWarning {
                 Label(warn, systemImage: "exclamationmark.triangle")
                     .font(.caption).foregroundStyle(.orange).lineLimit(2).help(warn)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            HStack(alignment: .top, spacing: 8) {
+            // The first line of Next, Pin and ⋯ on one baseline.
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if card.nextVisible {
                     // Its full height, up to three lines: given only one
                     // line's it was cut ("…under the 98…"). The popover has a
                     // fixed width, so the height is measured against it.
                     Text("Next: " + nextText)
                         .font(.caption).foregroundStyle(.secondary)
-                        .lineLimit(3)
+                        .lineLimit(6)
                         .fixedSize(horizontal: false, vertical: true)
                         .help(nextText)
                 }
@@ -255,30 +333,36 @@ struct ProfileCardView: View {
 
     var titleRow: some View {
         HStack(spacing: 8) {
-            Text(card.name).font(.headline).lineLimit(1).truncationMode(.tail)
+            Text(card.name).font(.headline).lineLimit(1).truncationMode(.middle)
                 .help(card.name)
                 .layoutPriority(1)
-            if followed {
-                MenuBarBadge()
-            } else {
-                Button("Show in menu bar") { store.menuProfile = card.name }
-                    .buttonStyle(.borderless).font(.caption)
+            if (store.snapshot?.cards.count ?? 0) > 1 {
+                if followed {
+                    MenuBarBadge()
+                } else {
+                    Button("Show in menu bar") { store.menuProfile = card.name }
+                        .buttonStyle(.borderless).font(.caption)
+                        .foregroundStyle(Color.csAccent)
+                        .fixedSize()
+                }
             }
             Spacer(minLength: 8)
-            Text(card.dirLabel).font(.caption).foregroundStyle(.secondary)
-                .lineLimit(1).truncationMode(.middle)
-                .help(card.dirLabel)
+            // Whole or not at all: squeezed beside a long name it showed ",".
+            ViewThatFits(in: .horizontal) {
+                Text(card.dirLabel).font(.caption).foregroundStyle(.secondary).lineLimit(1).fixedSize()
+                    .help(card.dirLabel)
+                Color.clear.frame(width: 0, height: 0)
+            }
             if let c = collapse {
                 IconButton(symbol: "chevron.up", label: "Collapse \(card.name)", action: c)
             }
         }
+        // One height with or without the collapse button, so every card's
+        // picker starts at the same distance below its title.
+        .frame(height: 24)
     }
 
-    var nextText: String {
-        guard let d = card.decision else { return "unknown" }
-        let head = Format.next(d)
-        return d.reason.isEmpty ? head : head + " — " + d.reason
-    }
+    var nextText: String { card.nextLine }
 }
 
 /// "Switch to best: w02 12%": the account why would pick now (owner
@@ -287,52 +371,99 @@ struct BestButton: View {
     @EnvironmentObject var store: Store
     let card: ProfileCard
 
+    var busy: Bool { store.isBusy("use:\(card.name)") }
+    var disabled: Bool { card.best == nil || card.alreadyOnBest || store.binaryPath == nil || busy }
+
+    /// A greyed button's second line is news, not the action ("next:
+    /// work-2 · 12%"): drawn over the button, outside its dimming, where
+    /// the label keeps its place. Dimmed with it, it measured 2.65:1.
+    var subtitleOutside: Bool { disabled && !busy && !card.bestIsPrimary }
+
     var body: some View {
         Button {
             store.switchToBest(card)
         } label: {
-            if store.isBusy("use:\(card.name)") {
+            if busy {
                 ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 32)
             } else {
-                // Two lines, so a long id is never cut out of the verb.
-                VStack(spacing: 0) {
-                    Text(card.bestTitle).lineLimit(1)
-                    if let sub = card.bestSubtitle {
-                        Text(sub).font(.caption)
-                            .lineLimit(1).truncationMode(.middle)
-                    }
-                }
-                .frame(maxWidth: .infinity, minHeight: 32)
+                lines(subtitle: !subtitleOutside)
             }
         }
-        // The primary action while it can be taken; a quiet pill when off.
-        .buttonStyle(PillButtonStyle(primary: card.best != nil && !card.alreadyOnBest))
-        .disabled(card.best == nil || card.alreadyOnBest || store.binaryPath == nil
-            || store.isBusy("use:\(card.name)"))
+        // Filled only when the daemon would move anyway (D3); quiet while it
+        // stays, and when there is nowhere better to go.
+        .buttonStyle(PillButtonStyle(primary: card.bestIsPrimary))
+        .overlay {
+            if subtitleOutside, card.bestSubtitle != nil {
+                lines(title: false)
+                    .font(.body.weight(.semibold))
+                    .padding(.vertical, 7).padding(.horizontal, 12)
+                    .foregroundStyle(Color.primary.opacity(0.75))
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+        .disabled(disabled)
         .help(card.bestUnavailable ?? (card.alreadyOnBest
             ? "No other account has more room than \(card.active?.id ?? "the active one"); the picker still switches"
             : "Switch \(card.name) to \(card.best?.id ?? "")"))
         .accessibilityLabel(card.alreadyOnBest ? "Already on the best account"
             : card.best.map { "Switch \(card.name) to \($0.id)" } ?? "No account to switch to")
     }
+
+    /// The button's two lines, so a long id is never cut out of the verb.
+    /// Either can be left out and still hold its place (the overlay draws
+    /// the subtitle where the label would).
+    func lines(title: Bool = true, subtitle: Bool = true) -> some View {
+        VStack(spacing: 0) {
+            Text(card.bestTitle).lineLimit(1).opacity(title ? 1 : 0)
+            if let sub = card.bestSubtitle {
+                Text(sub).font(.caption)
+                    .lineLimit(1).truncationMode(.middle)
+                    .opacity(subtitle ? 1 : 0)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 32)
+    }
 }
 
-/// One per-model weekly limit: its name, a mini bar and the figure,
-/// coloured by how close it is to the weekly trigger.
+/// Why Open Claude Code is greyed: the profile has no login of its own.
+struct OpenBlockedLine: View {
+    let text: String
+
+    var body: some View {
+        Label(text, systemImage: "person.crop.circle.badge.exclamationmark")
+            .font(.caption).foregroundStyle(.orange)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// One per-model weekly limit: its name, a mini bar in the rings' usage
+/// ramp (as the dials above it), and the figure, coloured, with a triangle,
+/// when it is near or over the weekly trigger.
 struct ModelLimitRow: View {
     let limit: LimitReading
     let level: Level?
     let now: Date
+    @Environment(\.colorScheme) private var scheme
+
+    var fill: Color {
+        guard let p = limit.percent, p.isFinite else { return .clear }
+        return BrandTokens(scheme).usage(min(max(p, 0), 100) / 100)
+    }
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(Format.limitName(limit)).lineLimit(1).truncationMode(.tail)
+            Text(Format.limitName(limit)).lineLimit(2).truncationMode(.tail)
                 .help(Format.limitName(limit))
+            if level == .near || level == .over {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(levelColor(level))
+                    .accessibilityLabel(level == .over ? "over the weekly trigger" : "near the weekly trigger")
+            }
             Spacer(minLength: 8)
             Capsule().fill(Color.secondary.opacity(0.18))
                 .frame(width: 48, height: 4)
                 .overlay(alignment: .leading) {
-                    Capsule().fill(levelColor(level))
+                    Capsule().fill(fill)
                         .frame(width: 48 * CGFloat(min(max(limit.percent ?? 0, 0), 100) / 100), height: 4)
                 }
                 .accessibilityHidden(true)
@@ -366,7 +497,11 @@ struct AccountPicker: View {
         } label: {
             HStack {
                 if let a = card.active {
-                    (Text(a.id).bold() + Text(detail(a.id)).foregroundColor(.secondary))
+                    // A long id cut in its middle, as names are everywhere:
+                    // its start and end tell accounts apart. The plan, at the
+                    // end, gives way first. One Text: a menu's label draws
+                    // only its first.
+                    (Text(Format.middle(a.id, 28)).bold() + Text(detail(a.id)).foregroundColor(.secondary))
                         .lineLimit(1).truncationMode(.tail)
                 } else {
                     Text("No account live").foregroundColor(.secondary)
@@ -400,12 +535,14 @@ struct AccountMenuItems: View {
     var body: some View {
         ForEach(card.accounts) { a in
             let elsewhere = store.snapshot?.liveElsewhere(a.id, notIn: card.name)
-            Button {
-                if !a.isActive && elsewhere == nil { store.use(a.id, profile: card.name) }
-            } label: {
-                Text(Format.pickerLine(a, inUseBy: elsewhere, now: store.snapshot?.now ?? Date()))
+            // A Toggle puts the live account's check in the menu's gutter,
+            // so every id starts in the same place.
+            Toggle(isOn: Binding(get: { a.isActive }, set: { on in
+                if on && !a.isActive && elsewhere == nil { store.use(a.id, profile: card.name) }
+            })) {
+                Text(Format.pickerLine(a, inUseBy: elsewhere, now: store.now))
             }
-            .disabled(a.isActive || elsewhere != nil)
+            .disabled(elsewhere != nil)
         }
     }
 }
@@ -423,13 +560,32 @@ struct PinToggle: View {
                   systemImage: card.isPinned ? "pin.fill" : "pin")
                 .font(.caption)
         }
-        .toggleStyle(.button)
+        .toggleStyle(PinToggleStyle())
         .controlSize(.small)
         .disabled(card.active == nil || store.isBusy("pin:\(card.name)"))
         .help(card.isPinned ? "Rotation is off in \(card.name): let it rotate again"
               : "Keep \(card.name) on \(card.active?.id ?? "its account"): turn rotation off"
-                + (store.accountList?.knowsHardPin == true ? " until it is refused or needs a login" : ""))
+                + (store.accountList?.knowsHardPin == true ? " until it is refused or needs sign-in" : ""))
         .accessibilityLabel(card.isPinned ? "Unpin \(card.name)" : "Pin \(card.name) to its account")
+    }
+}
+
+/// Pin's look: off, the small bordered button (as ⋯ beside it); on, the
+/// brand accent with onAccent text. The system's toggle button filled with
+/// the system accent, a saturated blue beside the brand's light-blue pills
+/// in dark mode.
+struct PinToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        if configuration.isOn {
+            Button { configuration.isOn.toggle() } label: {
+                configuration.label.foregroundStyle(Color.csOnAccent)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Color.csAccent)
+        } else {
+            Button { configuration.isOn.toggle() } label: { configuration.label }
+                .buttonStyle(.bordered)
+        }
     }
 }
 
@@ -443,8 +599,14 @@ struct CompactCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             row
+            // The greyed ▶'s reason, in the row: a disabled control shows
+            // no tooltip. Not again when the line already says the live
+            // account needs sign-in.
+            if let why = card.openBlocked, card.active?.status != .needsLogin {
+                OpenBlockedLine(text: why)
+            }
             CardErrorView(card: card.name)
-            PoolLine(card: card, now: store.snapshot?.now ?? Date())
+            PoolLine(card: card, now: store.now)
         }
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
@@ -456,21 +618,32 @@ struct CompactCardView: View {
             MiniRings(account: card.active, size: 24, dotRadius: 3)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
-                    Text(card.name).font(.headline).lineLimit(1).truncationMode(.tail).help(card.name)
+                    Text(card.name).font(.headline).lineLimit(1).truncationMode(.middle).help(card.name)
                     if card.isPinned {
                         Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary)
                             .accessibilityLabel("pinned")
                     }
                 }
-                Text(Format.cardSummary(card)).font(.caption)
-                    .foregroundStyle(trouble ? Color.red : Color.secondary)
-                    .lineLimit(1).truncationMode(.tail)
-                    .help(Format.cardSummary(card))
+                // One line when it fits; else the figures go under the lead,
+                // which truncates only when it alone is too long. The figures
+                // never do (a short id was cut to "wor…eam" to make room).
+                let parts = Format.cardSummaryParts(card)
+                ViewThatFits(in: .horizontal) {
+                    Text(parts.figures.map { parts.lead + " · " + $0 } ?? parts.lead).lineLimit(1).fixedSize()
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(parts.lead).lineLimit(1).truncationMode(.middle)
+                        if let f = parts.figures { Text(f).lineLimit(1).fixedSize() }
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(trouble ? Color.red : Color.secondary)
+                .help(Format.cardSummary(card))
             }
             Spacer(minLength: 8)
             IconButton(symbol: "play.fill", label: card.openBlocked ?? "Open Claude Code in \(card.name)",
                        busy: store.isBusy("run:\(card.name)")) { store.openClaudeCode(card.name) }
-                .disabled(!card.canOpen)
+                // As the open card's Open Claude Code: greyed without a binary too.
+                .disabled(store.binaryPath == nil || !card.canOpen)
             IconButton(symbol: "chevron.down", label: "Expand \(card.name)", action: expand)
         }
     }
@@ -515,21 +688,16 @@ struct ChromeSignInBanner: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                Text(notice.text).font(.caption).foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                Button { store.dismissChromeNotice(notice.key) } label: { Image(systemName: "xmark") }
-                    .buttonStyle(.borderless)
-                    .help("Dismiss until the next rotation")
-                    .accessibilityLabel("Dismiss the Claude in Chrome notice")
+            AmberBannerLine(symbol: "exclamationmark.triangle.fill", text: notice.text,
+                            dismissHelp: "Dismiss until the next rotation",
+                            dismissLabel: "Dismiss the Claude in Chrome notice") {
+                store.dismissChromeNotice(notice.key)
             }
             // P2, C4: once the account has its own Chrome profile,
             // claudeswitch opens it after every switch.
             Button {
-                store.setAccountChrome(notice.account, .createNew)
-                store.dismissChromeNotice(notice.key)
+                // Dismissed once it worked: a failure keeps the notice.
+                store.setAccountChrome(notice.account, .createNew) { store.dismissChromeNotice(notice.key) }
             } label: {
                 if store.isBusy("chrome:\(notice.account)") {
                     ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 28)
@@ -542,10 +710,41 @@ struct ChromeSignInBanner: View {
             .help("Creates a Chrome profile for \(notice.account) and opens it at the sign-in pages; " +
                   "sign in there once, and claudeswitch opens it after every switch to \(notice.account)")
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(8)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.orange.opacity(0.5)))
+        .amberBanner()
+    }
+}
+
+/// The popover's amber banners (Claude in Chrome, a lifted pin, a binary
+/// that cannot be used) in one style: a tinted fill, an orange border.
+extension View {
+    func amberBanner() -> some View {
+        frame(maxWidth: .infinity, alignment: .leading)
+            .padding(8)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.orange.opacity(0.5)))
+    }
+}
+
+/// An amber banner's first line: a filled orange symbol, the text, and a
+/// full-size × that dismisses it.
+struct AmberBannerLine: View {
+    let symbol: String
+    let text: String
+    var dismissHelp = "Dismiss"
+    var dismissLabel = "Dismiss"
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: symbol).foregroundStyle(.orange).accessibilityHidden(true)
+            Text(text).font(.caption).foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Button(action: dismiss) { Image(systemName: "xmark") }
+                .buttonStyle(.borderless)
+                .help(dismissHelp)
+                .accessibilityLabel(dismissLabel)
+        }
     }
 }
 
@@ -561,22 +760,52 @@ struct ProblemBanner: View {
             }
             .fixedSize(horizontal: false, vertical: true)
             if problem == .missing || isTooOld {
-                Text(CLI.installSteps)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.primary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+                // One command per line, never wrapped: a wrapped URL read as
+                // a command of its own.
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(CLI.installIntro).font(.caption)
+                    ForEach(CLI.installCommands, id: \.self) { InstallCommandRow(command: $0) }
+                    Text(CLI.installOutro).font(.caption).fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(8)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.orange.opacity(0.5)))
+        .amberBanner()
     }
 
     var isTooOld: Bool {
         if case .tooOld = problem { return true }
         return false
+    }
+}
+
+/// One install command: cut in its middle when it is wider than the
+/// banner (a hidden horizontal scroll cut the URL with no sign of more),
+/// and a Copy button that puts the whole command on the clipboard.
+struct InstallCommandRow: View {
+    let command: String
+    @State private var copied = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(command).font(.system(.caption, design: .monospaced))
+                .lineLimit(1).truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .help(command)
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(command, forType: .string)
+                copied = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = false }
+            } label: {
+                Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                    .font(.caption)
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(Color.csAccent)
+            .fixedSize()
+            .help("Copy “\(command)”")
+            .accessibilityLabel("Copy the command \(command)")
+        }
     }
 }
 
@@ -587,7 +816,7 @@ struct CardErrorView: View {
 
     var body: some View {
         if let e = store.cardError(card) {
-            InlineErrorView(title: e.title, message: e.message, hint: e.hint, retryLine: e.retryLine()) {
+            InlineErrorView(title: e.title, message: e.message, hint: e.hint, retryLine: e.retryLine(now: store.now)) {
                 store.dismissCardError(card)
             }
         }

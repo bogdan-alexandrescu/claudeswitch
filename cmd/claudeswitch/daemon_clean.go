@@ -10,6 +10,7 @@ import (
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/audit"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/clean"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/render"
 )
 
 // The daemon's cleanup (owner decisions 2026-10-25): with clean on, once
@@ -99,7 +100,8 @@ func (d *daemon) maybeClean(ctx context.Context) {
 				n++
 				bytes += it.Bytes
 			}
-			ev.Reason = fmt.Sprintf("would move %d to the Trash (%s); dry run", n, clean.Human(bytes))
+			ev.Reason = fmt.Sprintf("would move %s to the Trash (%s); dry run", render.Plural(n, "item", "items"),
+				clean.Human(bytes))
 			d.log.Info("cleanup planned (dry run)", "items", n, "bytes", bytes)
 		default:
 			ev.Reason = cleanSummary(run)
@@ -119,11 +121,11 @@ func cleanSummary(run *clean.Run) string {
 	var parts []string
 	for _, k := range kindOrderCLI {
 		if n := counts[k]; n > 0 {
-			parts = append(parts, fmt.Sprintf("%d %s", n, kindTitle[k]))
+			parts = append(parts, kindCount(k, n))
 		}
 	}
 	if len(parts) == 0 {
-		return "run " + run.ID + ": nothing to remove"
+		return "run " + run.ID + ": nothing to move"
 	}
 	s := fmt.Sprintf("run %s moved %s to the Trash: %s", run.ID, clean.Human(run.Bytes()), strings.Join(parts, ", "))
 	if n := len(run.Skipped); n > 0 {
@@ -132,5 +134,5 @@ func cleanSummary(run *clean.Run) string {
 	if n := len(run.Failed); n > 0 {
 		s += fmt.Sprintf("; %d failed", n)
 	}
-	return s + "; cs clean undo " + run.ID + " puts it back"
+	return s + "; claudeswitch clean undo " + run.ID + " puts it back"
 }

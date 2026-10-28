@@ -58,10 +58,11 @@ type layout struct {
 	clears bool
 	plan   bool
 	burn   bool
-	reason int // characters available for a switch reason
 }
 
-func layoutFor(width, nameWidth int) layout {
+// layoutFor chooses the columns for a terminal width, an account column of
+// nameWidth and a STATE column of stateWidth.
+func layoutFor(width, nameWidth, stateWidth int) layout {
 	// Widths of the pieces, so the arithmetic is checkable rather than guessed.
 	// An earlier version guessed and produced an 83-column table in an
 	// 80-column terminal, which wraps and destroys the alignment entirely.
@@ -70,12 +71,12 @@ func layoutFor(width, nameWidth int) layout {
 		gap    = 2
 		marker = 1
 		numCol = 6  // "~100%!"
+		sessW  = 7  // "SESSION", the header, is wider than any figure
 		clearW = 6  // "2d 12h"
 		planW  = 11 // "Max 5x team"
-		stateW = 17 // "no headroom · 5h"
 	)
 	// Always present: indent, marker, name, both numbers, state.
-	need := indent + marker + gap + nameWidth + gap + numCol + gap + numCol + gap + stateW
+	need := indent + marker + gap + nameWidth + gap + sessW + gap + numCol + gap + stateWidth
 
 	l := layout{width: width}
 	if width >= need+gap+clearW {
@@ -102,20 +103,12 @@ func layoutFor(width, nameWidth int) layout {
 	// Burn rate lives inside the state column, so it needs room there rather
 	// than a column of its own.
 	l.burn = width >= need+12
-
-	l.reason = width - (indent + 12 + gap + nameWidth*2 + 4)
-	if l.reason < 10 {
-		l.reason = 10
-	}
-	if l.reason > 44 {
-		l.reason = 44
-	}
 	return l
 }
 
 // Dot bar glyphs. A lit dot is spent quota; the threshold dot is where the
-// profile rotates away. Without colour, bold cannot set the threshold apart
-// from a lit dot, so it gets a glyph of its own.
+// profile rotates away, a glyph of its own in colour too: bold alone set it
+// apart from a lit dot only by weight.
 const (
 	dotLit       = "●"
 	dotUnlit     = "·"
@@ -168,11 +161,7 @@ func dotBar(pct, threshold float64, n int, tone string, frozen bool) string {
 		switch {
 		case i == thr:
 			flush()
-			if useColor {
-				b.WriteString(paint(bold, dotLit))
-			} else {
-				b.WriteString(dotThreshold)
-			}
+			b.WriteString(paint(bold, dotThreshold))
 			continue
 		case i < lit:
 			glyph, t = dotLit, litTone

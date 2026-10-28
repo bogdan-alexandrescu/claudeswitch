@@ -12,7 +12,6 @@ import (
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/policy"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/render"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/state"
-	"github.com/bogdan-alexandrescu/claudeswitch/internal/usage"
 )
 
 // profileView is one profile as the read-only views (status, top, why, plan,
@@ -127,7 +126,7 @@ func (v profileView) options(base render.Options, st *state.State) render.Option
 	o := base
 	o.Cfg, o.St = v.cfg, st
 	if v.declared {
-		o.Profile, o.Pool = v.in.Name, v.pool
+		o.Profile, o.Pool, o.Pools = v.in.Name, v.pool, len(v.in.Pools)
 	}
 	return o
 }
@@ -146,9 +145,9 @@ func launchedAs(in config.Profile) string {
 // heading introduces one profile's block: its name, how it is launched, its
 // pool and its effective thresholds (D4).
 func (v profileView) heading(w io.Writer) {
-	fmt.Fprintf(w, "\n  %s %s %s  %s\n", render.Bold("profile"), render.Bold(v.in.Name),
-		fmt.Sprintf("(switch ≥%.0f%% / ≥%.0f%%)", v.cfg.TriggerFor(usage.FiveHourKey), v.cfg.TriggerFor(usage.SevenDayKey)),
-		render.Grey(launchedAs(v.in)))
+	fmt.Fprintln(w)
+	writeWrapped(w, fmt.Sprintf("%s %s %s  %s", render.Bold("profile"), render.Bold(v.in.Name),
+		"("+render.Thresholds(v.cfg)+")", render.Grey(launchedAs(v.in))), "  ", "    ", false)
 	pool := "pool empty — nothing to rotate to"
 	if len(v.pool) > 0 {
 		pool = "pool " + strings.Join(v.pool, ", ")
@@ -163,8 +162,28 @@ func (v profileView) heading(w io.Writer) {
 			tiers = append(tiers, fmt.Sprintf("%s (%s)", name, nonEmpty(strings.Join(v.in.Tiers[t], ", "), "empty")))
 		}
 		pool = "pools " + strings.Join(tiers, ", then ")
+		if len(tiers) == 1 {
+			pool = "pool " + tiers[0]
+		}
 	}
-	fmt.Fprintf(w, "  %s\n", render.Grey(fmt.Sprintf("%s · hard floor ≥%.0f%%", pool, v.cfg.HardFloor)))
+	writeWrapped(w, render.Grey(pool+" · "+render.HardFloor(v.cfg)), "  ", "    ", true)
+}
+
+// writeWrapped writes s wrapped to the terminal: its first line after first,
+// the rest after rest. phrases breaks a " · " list between its phrases.
+func writeWrapped(w io.Writer, s, first, rest string, phrases bool) {
+	width := render.Width() - len(rest)
+	lines := render.Wrap(s, width)
+	if phrases {
+		lines = render.WrapPhrases(s, width)
+	}
+	for i, l := range lines {
+		if i == 0 {
+			fmt.Fprintln(w, first+l)
+		} else {
+			fmt.Fprintln(w, rest+l)
+		}
+	}
 }
 
 // activeIn names the profile whose live credential holds accountID, or "".
@@ -209,6 +228,17 @@ func switchesFor(evs []audit.Event, name string) []audit.Event {
 	return out
 }
 
+// recentShown is how many switches each block lists under RECENT SWITCHES.
+const recentShown = 5
+
+// lastOf is the last n of evs.
+func lastOf(evs []audit.Event, n int) []audit.Event {
+	if len(evs) > n {
+		return evs[len(evs)-n:]
+	}
+	return evs
+}
+
 // renderStatus writes `status` (and each frame of `top`): with more than one
 // profile, one block per profile, each with its own pool, active account,
 // decision and thresholds; otherwise the single view, unchanged.
@@ -222,10 +252,10 @@ func renderStatus(w io.Writer, cfg *config.Config, st *state.State, base render.
 		o.Decision = &dec
 		r := v.runway(cfg, st, now)
 		o.Runway = &r
-		o.Switches = switches
+		o.Switches = lastOf(switches, recentShown)
 		if multi {
 			v.heading(w)
-			o.Switches = switchesFor(switches, v.in.Name)
+			o.Switches = lastOf(switchesFor(switches, v.in.Name), recentShown)
 			o.Block = true
 		}
 		render.Status(w, o)
@@ -326,7 +356,7 @@ func bestExclusions(cfg *config.Config, st *state.State, name string, now, recor
 	out := map[string]string{}
 	for _, a := range cfg.Accounts {
 		if st.Accounts[a.ID].NeedsSignIn(now) {
-			out[a.ID] = "needs a sign-in"
+			out[a.ID] = "needs sign-in"
 		}
 	}
 	for _, v := range profileViews(cfg, st, "") {

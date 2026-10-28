@@ -70,14 +70,16 @@ public enum AddForm {
     /// (`grouped` false) there are no pools to move it between, and the note
     /// says only where it is.
     public static func lockedNote(account: String, info: AccountInfo?, profile: String, grouped: Bool = true) -> String {
-        guard grouped, let i = info, let profiles = i.profiles else { return "\(account) is already in \(profile)." }
+        let it = "The account \(inQuotes(account))"
+        guard grouped, let i = info, let profiles = i.profiles else { return "\(it) is already in the profile \(inQuotes(profile))." }
+        let named = spoken(profiles.map(inQuotes))
         if let pool = i.pool {
             let who = profiles.isEmpty ? "which no profile uses"
-                : "which \(spoken(profiles)) \(profiles.count == 1 ? "uses" : "use")"
-            return "\(account) is in the pool \(pool), \(who). To change that, move it to another pool in Accounts."
+                : "which \(named) \(profiles.count == 1 ? "uses" : "use")"
+            return "\(it) is in the pool \(inQuotes(pool)), \(who). To change that, move it to another pool in Accounts."
         }
-        let who = profiles.isEmpty ? "no profile uses it" : "\(spoken(profiles)) uses it"
-        return "\(account) is in no pool: \(who). To change that, move it into a pool in Accounts."
+        let who = profiles.isEmpty ? "no profile uses it" : "\(named) uses it"
+        return "\(it) is in no pool: \(who). To change that, move it into a pool in Accounts."
     }
 
     /// The profiles an existing account is used by, as the sheet shows them.
@@ -95,15 +97,17 @@ public enum AddForm {
     }
 
     /// Saving one profile's login into another's accounts (owner decision):
-    /// the CLI's own wording, shown before saving; nil for the same profile.
+    /// what the CLI's note says, shown before saving; nil for the same
+    /// profile.
     /// When the source may use the account too (a pool both list), it keeps
     /// it until its own rotation moves on (D34).
     public static func crossProfileNote(source: String, target: String, sourceUsesIt: Bool = false) -> String? {
         guard source != target else { return nil }
         if sourceUsesIt {
-            return "still signed in in \(source), which uses it too — \(target) can use it once \(source) rotates off it"
+            return "it is still the login in \(inQuotes(source)), which uses it too — \(inQuotes(target)) can use it once "
+                + "\(inQuotes(source)) rotates off it"
         }
-        return "still signed in in \(source) — \(source) will move off it; \(target) can use it after"
+        return "it is still the login in \(inQuotes(source)), which will move off it — \(inQuotes(target)) can use it after"
     }
 
     /// Whether a new account added for `target` lands in a pool `source`
@@ -118,7 +122,7 @@ public enum AddForm {
     /// pool), or the first pool it lists.
     public static func destination(target: String, list: ProfileList?, pools: PoolList?) -> String {
         guard let first = list?.profile(target)?.pools?.first, first != target else { return target }
-        return "the pool \(first) (\(target)'s first)"
+        return "the pool \(inQuotes(first)), the first \(inQuotes(target)) uses"
     }
 
     /// What to tell the person when the CLI keeps the account elsewhere
@@ -126,14 +130,16 @@ public enum AddForm {
     /// the CLI's profile, never the chosen one.
     public static func mismatch(chosen: String, start: LoginStart) -> String? {
         guard let p = start.profile, p != chosen else { return nil }
-        return "\(start.account) already exists: it stays in its pool, which \(p) uses. Move it to another pool in Accounts."
+        return "\(inQuotes(start.account)) already exists: it stays in its pool, which the profile \(inQuotes(p)) uses. "
+            + "Move it to another pool in Accounts."
     }
 
     // MARK: organization (GROUND_TRUTH §48)
 
     /// The organizations the accounts already here are in, each named by
-    /// its accounts: the CLI knows no organization names without reading
-    /// the keychain. In the order of their first account by name.
+    /// its first two accounts and a count of the rest, so the label stays
+    /// short: the CLI knows no organization names without reading the
+    /// keychain. In the order of their first account by name.
     public static func organizations(_ accounts: AccountList?) -> [OrgChoice] {
         var ids: [String: [String]] = [:]
         var order: [String] = []
@@ -144,7 +150,11 @@ public enum AddForm {
             if ids[org] == nil { order.append(org) }
             ids[org, default: []].append(a.id)
         }
-        return order.map { OrgChoice(id: $0, label: "Same as " + ids[$0]!.joined(separator: ", ")) }
+        return order.map { org in
+            let all = ids[org]!
+            let more = all.count > 2 ? " +\(all.count - 2)" : ""
+            return OrgChoice(id: org, label: "Same organization as " + all.prefix(2).map(inQuotes).joined(separator: ", ") + more)
+        }
     }
 
     /// The organization to ask for; nil leaves it to the browser.
@@ -161,7 +171,7 @@ public enum AddForm {
     /// Why the typed organization cannot be asked for; nil when it can.
     public static func orgProblem(_ pick: OrgPick, typed: String) -> String? {
         guard case .other = pick, org(pick, typed: typed) == nil else { return nil }
-        return "Paste the organization's id: letters, digits and dashes."
+        return "Paste the organization’s id: letters, digits and dashes."
     }
 
     /// The CLI's own rule for --org: nothing that could carry another
@@ -258,7 +268,7 @@ public extension ProfileInfo {
 public enum ProfileText {
     /// The note beside a profile's name.
     public static func badge(_ p: ProfileInfo) -> String? {
-        if p.implicit { return "No profiles yet" }
+        if p.implicit { return "the only profile" }
         return p.fromEnv ? "from CLAUDE_CONFIG_DIR" : nil
     }
 
@@ -305,12 +315,15 @@ public enum SettingNames {
         "clean_remote_branches": "Branches on GitHub",
         "clean_keep": "Never remove",
         "clean_roots": "Also look in",
+        "api_budget": "API budget",
+        "switch_when": "Switch when",
     ]
 
     /// An enum setting's choices as a person reads them (F1); a choice not
     /// listed reads as itself.
     static let choices = [
         "prefer": ["room": "Most room", "expiring": "Expiring quota"],
+        "switch_when": ["idle": "Between turns", "immediate": "At once"],
     ]
 
     /// A setting's name for a person.
@@ -321,11 +334,23 @@ public enum SettingNames {
         return ([first.prefix(1).uppercased() + first.dropFirst()] + words.dropFirst()).joined(separator: " ")
     }
 
-    /// The schema's description without its "advanced:" prefix, as a sentence.
+    /// The schema's description without its "advanced:" prefix, as a
+    /// sentence, naming other settings as their labels ("every “Poll hot”"),
+    /// not their config keys ("every poll_hot").
     public static func description(_ s: SettingSchema) -> String {
         var d = s.description.trimmingCharacters(in: .whitespaces)
         if d.lowercased().hasPrefix("advanced:") { d = String(d.dropFirst("advanced:".count)).trimmingCharacters(in: .whitespaces) }
+        d = d.replacing(#/\b[a-z]+(?:_[a-z]+)+\b/#) { m in "“" + label(String(m.output)) + "”" }
+        // A quoted choice reads as its words, as the picker shows it.
+        if let words = choices[s.key] {
+            for (raw, word) in words { d = d.replacingOccurrences(of: "\"\(raw)\"", with: "“\(word)”") }
+        }
         return d.prefix(1).uppercased() + d.dropFirst()
+    }
+
+    /// Why the current value is outside the setting's own range, or nil.
+    public static func outOfRange(_ s: SettingSchema, _ raw: String) -> String? {
+        s.validate(editable(s, raw)).map { "The current value, \(value(s, raw)), is outside its range: it must be " + $0 }
     }
 
     /// A value to edit: a Go duration without its zero units, still in the
@@ -343,7 +368,9 @@ public enum SettingNames {
     public static func value(_ s: SettingSchema, _ raw: String) -> String {
         let v = raw.trimmingCharacters(in: .whitespaces)
         switch s.type {
-        case "duration": return GoDuration.parse(v).map(Format.duration) ?? v
+        // As it is typed (config set takes no days): "72h", never "3d"
+        // over a field that says 72h.
+        case "duration": return editable(s, v)
         case "percent": return v.isEmpty ? v : v + "%"
         case "list": return v.isEmpty ? "none" : v
         case "enum": return choices[s.key]?[v] ?? v

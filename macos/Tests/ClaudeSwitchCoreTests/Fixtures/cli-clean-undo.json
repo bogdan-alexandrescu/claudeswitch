@@ -1,0 +1,22 @@
+{
+  "run": {
+    "id": "20261025-160212",
+    "at": "2026-10-25T16:02:12-07:00",
+    "done": [
+      {"kind": "worktree", "path": "/Users/me/src/app/.claude/worktrees/agent-a1", "repo": "/Users/me/src/app",
+       "branch": "lane/a1", "sha": "9c0e1d2f", "remove": true, "why": "PR #212 merged", "bytes": 536870912,
+       "trash": "/Users/me/.Trash/agent-a1 (cs clean 20261025-160212)", "ref": "refs/archive/lane/a1",
+       "undone": true},
+      {"kind": "branch", "path": "/Users/me/src/app", "repo": "/Users/me/src/app", "branch": "feat/x",
+       "sha": "11bb", "remove": true, "why": "merged into main", "ref": "refs/archive/feat/x", "undone": true}
+    ],
+    "skipped": [
+      {"kind": "worktree", "path": "/Users/me/src/app/.claude/worktrees/agent-b2", "remove": false,
+       "why": "changed since the plan"}
+    ],
+    "failed": [
+      {"kind": "scratch", "path": "/private/tmp/claude-501/x/5b1e", "remove": true, "why": "ended",
+       "error": "it is on another volume than the Trash; left in place"}
+    ]
+  }
+}

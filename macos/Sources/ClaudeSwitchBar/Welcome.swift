@@ -3,12 +3,15 @@ import ClaudeSwitchCore
 import SwiftUI
 
 /// The first-run setup window (F9), its own NSWindow so it can open at
-/// launch, before anything else is on screen. Reopened from the ⋯ menu.
+/// launch, before anything else is on screen. Reopened from the menu-bar
+/// icon's menu (Set up…). It grows and shrinks as steps open and close,
+/// and keeps its middle where it is, as the update window does.
 @MainActor
 enum WelcomeWindow {
     static let title = "Welcome to ClaudeSwitch"
     private static var window: NSWindow?
     private static var closeObserver: NSObjectProtocol?
+    private static var sizeObservers: [NSObjectProtocol] = []
 
     static func show(store: Store) {
         WindowFocus.closePopover()
@@ -18,17 +21,21 @@ enum WelcomeWindow {
             return
         }
         let host = NSHostingController(rootView: WelcomeView(close: { window?.close() }).environmentObject(store))
+        host.sizingOptions = [.preferredContentSize]
         let w = NSWindow(contentViewController: host)
         w.title = title
         w.styleMask = [.titled, .closable]
         w.isReleasedWhenClosed = false
         w.setContentSize(host.view.fittingSize)
         WindowFocus.centre(w, on: WindowFocus.pointerScreen)
+        sizeObservers = WindowFocus.keepCentred(w)
         window = w
         closeObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w,
                                                                queue: .main) { _ in
             MainActor.assumeIsolated {
                 if let o = closeObserver { NotificationCenter.default.removeObserver(o) }
+                sizeObservers.forEach(NotificationCenter.default.removeObserver)
+                sizeObservers = []
                 closeObserver = nil
                 window = nil
             }
@@ -55,13 +62,24 @@ struct WelcomeView: View {
     @State private var error: String?
     @State private var installing = false
     @State private var dontShowAgain = FirstRun.dontShowAgain()
+    /// The binary's banner, closed with its ×.
+    @State private var bannerHidden = false
 
     var facts: SetupFacts {
         if let f = renderFacts { return f }
-        let accounts = store.accountList?.accounts.count ?? store.accountIDs.count
+        let ids = store.accountList?.accounts.map(\.id) ?? store.accountIDs
         let profiles = store.profiles?.profiles.filter { $0.declared && $0.name != StateFile.defaultProfile }.count ?? 0
-        return SetupFacts(accounts: accounts, profiles: profiles, daemonInstalled: store.daemon?.installed ?? false)
+        return SetupFacts(accounts: ids.count, profiles: profiles,
+                          daemonInstalled: SetupFacts.daemonInstalled(status: store.daemon, missing: store.daemonMissing),
+                          currentLogin: SetupFacts.currentLogin(profiles: store.profiles, accounts: ids))
     }
+
+    /// `daemon status`'s failure, while it has not said whether the
+    /// service is installed.
+    var daemonReadError: CallError? { renderFacts == nil ? store.daemonError : nil }
+
+    /// Missing, too old or too new: the steps cannot run.
+    var banner: SetupBanner? { renderFacts == nil ? FirstRun.banner(store.problem) : nil }
 
     /// The flow with what is true now.
     var shown: SetupFlow {
@@ -73,9 +91,16 @@ struct WelcomeView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             header
-            if store.problem == .missing && renderFacts == nil {
-                InlineErrorView(title: "claudeswitch is not installed", message: CLIError.missing.message,
-                                hint: CLI.installSteps, retryLine: nil) {}
+            if let b = banner, !bannerHidden {
+                InlineErrorView(title: b.title, message: b.message, hint: b.hint, retryLine: nil) { bannerHidden = true }
+            } else if let b = banner {
+                // Closed with its ×: the greyed step buttons still say why.
+                Label {
+                    Text(b.line).foregroundStyle(.secondary)
+                } icon: {
+                    Image(systemName: "exclamationmark.octagon.fill").foregroundStyle(.red)
+                }
+                .font(.caption)
             }
             VStack(spacing: 8) {
                 ForEach(SetupStep.allCases) { s in step(s) }
@@ -85,18 +110,24 @@ struct WelcomeView: View {
             }
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Each step can be skipped. ⋯ → Set up… opens this again.")
+                    Text(FirstRun.reopenHint)
                         .font(.caption).foregroundStyle(.secondary)
-                    Toggle("Don't show this again", isOn: $dontShowAgain)
+                    Toggle(FirstRun.dontShowLabel, isOn: $dontShowAgain)
                         .toggleStyle(.checkbox).font(.caption)
-                        .help("Stop opening this window by itself at launch. ⋯ → Set up… still opens it.")
+                        .tint(.csAccent)
+                        .help(FirstRun.dontShowHelp)
                         .onChange(of: dontShowAgain) { on in
                             if renderFacts == nil { FirstRun.setDontShowAgain(on) }
                         }
                 }
                 Spacer()
+                // No tint here: Finish later and Continue draw as every other
+                // secondary button does, plain bordered.
                 if shown.finished {
                     Button("Done") { close() }.buttonStyle(PrimaryButtonStyle()).keyboardShortcut(.defaultAction)
+                        // Escape closes the window too, as Finish later's does.
+                        .background(Button("", action: close).keyboardShortcut(.cancelAction)
+                            .opacity(0).accessibilityHidden(true))
                 } else {
                     Button("Finish later") { close() }.keyboardShortcut(.cancelAction)
                 }
@@ -104,7 +135,6 @@ struct WelcomeView: View {
         }
         .padding(28)
         .frame(width: 560)
-        .tint(.csAccent)
         .onAppear {
             guard renderFacts == nil else { return }
             store.refresh(full: true, profiles: true)
@@ -150,25 +180,37 @@ struct WelcomeView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(s.title).fontWeight(current ? .semibold : .regular)
                         .foregroundStyle(status == .pending || current ? Color.primary : Color.secondary)
-                    if let note = note(s, status: status) {
+                    if let note = f.note(s, daemonMode: store.daemon?.mode) {
                         Text(note).font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 Spacer()
                 if !current && status != .pending {
-                    Button(status == .skipped ? "Do it now" : "Again") { flow.reopen(s) }
+                    let action = s.reopenAction(status)
+                    Button(s.reopen(status)) { reopen(s, action) }
                         .buttonStyle(.borderless).font(.caption)
                         .foregroundStyle(Color.csAccent)
+                        .disabled(action == .run && stepsOff)
                 }
             }
             if current {
                 Text(s.detail).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     .padding(.leading, 34)
+                // The binary's banner, or its line, says it already when it is the binary.
+                if s == .daemon, banner == nil, case .readFailed(let e) = f.daemonOffer(readError: daemonReadError) {
+                    InlineError(message: e.message, hint: e.hint).padding(.leading, 34)
+                }
                 HStack(spacing: 8) {
-                    Button(s.action) { run(s) }
-                        .buttonStyle(PrimaryButtonStyle())
-                        .disabled(store.binaryPath == nil && renderFacts == nil || installing)
-                    if s == .addAccounts && f.facts.accounts > 0 {
+                    // Return runs the open step; Done is the default once all are.
+                    if s == .daemon {
+                        daemonAction(f)
+                    } else {
+                        Button(s.action) { run(s) }
+                            .buttonStyle(PrimaryButtonStyle())
+                            .keyboardShortcut(.defaultAction)
+                            .disabled(stepsOff)
+                    }
+                    if f.canContinue(s) {
                         Button("Continue") { flow.complete(s) }
                     }
                     if installing && s == .daemon { ProgressView().controlSize(.small) }
@@ -183,6 +225,37 @@ struct WelcomeView: View {
             .fill(current ? Color.csAccent.opacity(0.08) : Color.secondary.opacity(0.05)))
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
             .strokeBorder(current ? Color.csAccent.opacity(0.6) : Color.secondary.opacity(0.15), lineWidth: 1))
+    }
+
+    /// The step buttons are off while the binary cannot run them.
+    var stepsOff: Bool { store.binaryPath == nil && renderFacts == nil || banner != nil || installing }
+
+    /// Step 4's button: Install only when the CLI said the service is not
+    /// installed. `daemon install --dry-run` over an installed one rewrites
+    /// it as dry run, a live one too, so until `daemon status` answers the
+    /// step says it is reading, or shows the failure with Try Again.
+    @ViewBuilder
+    func daemonAction(_ f: SetupFlow) -> some View {
+        switch f.daemonOffer(readError: daemonReadError) {
+        case .install:
+            Button(SetupStep.daemon.action) { run(.daemon) }
+                .buttonStyle(PrimaryButtonStyle())
+                .keyboardShortcut(.defaultAction)
+                .disabled(stepsOff)
+        case .settings:
+            Button(FirstRun.daemonSettings) { store.openSettings(.daemon) }
+                .buttonStyle(PrimaryButtonStyle())
+                .keyboardShortcut(.defaultAction)
+        case .reading:
+            ProgressView().controlSize(.small)
+            Text(FirstRun.daemonReading).foregroundStyle(.secondary)
+        case .readFailed:
+            Button(FirstRun.tryAgain) { store.loadDaemon() }
+                .buttonStyle(PrimaryButtonStyle())
+                .keyboardShortcut(.defaultAction)
+                .disabled(stepsOff || store.isBusy("load:daemon"))
+            if store.isBusy("load:daemon") { ProgressView().controlSize(.small) }
+        }
     }
 
     func badge(_ s: SetupStep, status: StepStatus, current: Bool) -> some View {
@@ -200,15 +273,16 @@ struct WelcomeView: View {
         .accessibilityLabel(status == .done ? "done" : status == .skipped ? "skipped" : "step \(s.rawValue + 1)")
     }
 
-    func note(_ s: SetupStep, status: StepStatus) -> String? {
-        let f = shown.facts
-        switch (s, status) {
-        case (_, .skipped): return "Skipped"
-        case (.saveLogin, .done), (.addAccounts, _) where f.accounts > 0:
-            return f.accounts == 1 ? "1 account saved" : "\(f.accounts) accounts saved"
-        case (.workProfile, .done): return f.profiles == 1 ? "1 profile besides default" : "\(f.profiles) profiles besides default"
-        case (.daemon, .done): return store.daemon.map { "Installed, \($0.mode == "live" ? "live" : "dry run")" } ?? "Installed"
-        default: return nil
+    /// A done or skipped step's link: open the step again, run its sheet
+    /// (Add another), or Settings → Daemon (step 4's Open).
+    func reopen(_ s: SetupStep, _ action: ReopenAction) {
+        switch action {
+        case .reopen:
+            // Whether what it does is true now decides when it closes again.
+            flow.facts = facts
+            flow.reopen(s)
+        case .run: run(s)
+        case .daemonSettings: store.openSettings(.daemon)
         }
     }
 
@@ -221,11 +295,16 @@ struct WelcomeView: View {
                 sheet = s == .saveLogin ? .saveLogin : s == .addAccounts ? .addAccount : .newProfile
             }
         case .daemon:
+            // Never over a service that is there, or one not read yet.
+            guard shown.daemonOffer() == .install else { return }
             installing = true
             Task {
                 let r = await store.call("daemon") { $0.daemon(.install(live: false)) }
                 installing = false
-                if case .failure(let e) = r { error = e.hint.isEmpty ? e.message : e.message + " " + e.hint }
+                switch r {
+                case .success: flow.complete(.daemon)
+                case .failure(let e): error = e.hint.isEmpty ? e.message : e.message + " " + e.hint
+                }
                 store.loadDaemon()
                 store.refresh(full: true)
             }

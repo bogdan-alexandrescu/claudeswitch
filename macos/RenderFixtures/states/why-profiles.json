@@ -1,0 +1,166 @@
+{
+ "dir": "/Users/example",
+ "profiles": [
+  {
+   "accounts": [
+    {
+     "active": true,
+     "eligible": false,
+     "id": "research",
+     "utilization": 100,
+     "why": "refused on its session window",
+     "window": "five_hour"
+    },
+    {
+     "active": false,
+     "eligible": false,
+     "id": "personal",
+     "utilization": 91,
+     "why": "at 91% of its session, over the 85% trigger",
+     "window": "five_hour"
+    }
+   ],
+   "best": null,
+   "best_why": "no other account in default has room (each is over its trigger, refused, reserved or unread)",
+   "current": true,
+   "decision": {
+    "kind": "wait",
+    "reason": "active account was refused and nothing else is usable"
+   },
+   "on_best": false,
+   "pool": [
+    "research",
+    "personal"
+   ],
+   "pool_dry_at": null,
+   "profile": "default",
+   "thresholds": {
+    "hard_floor": 99,
+    "landing_margin": 10,
+    "switch_at": 85,
+    "switch_at_weekly": 98
+   }
+  },
+  {
+   "accounts": [
+    {
+     "active": true,
+     "eligible": true,
+     "id": "work-team",
+     "trigger_at": "2026-10-08T03:26:41Z",
+     "utilization": 72,
+     "why": "at 72% of its session, 13 points of room",
+     "window": "five_hour"
+    },
+    {
+     "active": false,
+     "eligible": false,
+     "id": "work-2",
+     "utilization": 100,
+     "why": "refused on its session window",
+     "window": "five_hour"
+    }
+   ],
+   "best": null,
+   "best_why": "no other account in work has room (each is over its trigger, refused, reserved or unread)",
+   "current": false,
+   "decision": {
+    "kind": "stay",
+    "reason": "active account at 72% of its session, under the 85% trigger"
+   },
+   "on_best": false,
+   "pool": [
+    "work-team",
+    "work-2"
+   ],
+   "pool_dry_at": "2026-10-08T03:26:41Z",
+   "profile": "work",
+   "thresholds": {
+    "hard_floor": 99,
+    "landing_margin": 10,
+    "switch_at": 85,
+    "switch_at_weekly": 98
+   }
+  },
+  {
+   "accounts": [
+    {
+     "active": true,
+     "eligible": false,
+     "id": "lab-1",
+     "utilization": 100,
+     "why": "refused on its session window",
+     "window": "five_hour"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "lab-2",
+     "utilization": 79,
+     "why": "at 79% of its session, 6 points of room",
+     "window": "five_hour"
+    }
+   ],
+   "best": "lab-2",
+   "best_why": "lab-2's session window has only 6 points below its 85% trigger, short of the 10-point landing margin",
+   "current": false,
+   "decision": {
+    "kind": "stay",
+    "reason": "pinned to lab-1; automatic rotation is off"
+   },
+   "on_best": false,
+   "pool": [
+    "lab-1",
+    "lab-2"
+   ],
+   "pool_dry_at": null,
+   "profile": "lab",
+   "thresholds": {
+    "hard_floor": 99,
+    "landing_margin": 10,
+    "switch_at": 85,
+    "switch_at_weekly": 98
+   }
+  },
+  {
+   "accounts": [
+    {
+     "active": true,
+     "eligible": true,
+     "id": "client-1",
+     "utilization": 80,
+     "why": "at 80% of its session, 5 points of room",
+     "window": "five_hour"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "client-2",
+     "utilization": 75,
+     "why": "at 75% of its week, 23 points of room",
+     "window": "seven_day"
+    }
+   ],
+   "best": "client-2",
+   "best_why": null,
+   "current": false,
+   "decision": {
+    "kind": "stay",
+    "reason": "pinned to client-1; automatic rotation is off"
+   },
+   "on_best": true,
+   "pool": [
+    "client-1",
+    "client-2"
+   ],
+   "pool_dry_at": "2026-10-10T21:00:00Z",
+   "profile": "client",
+   "thresholds": {
+    "hard_floor": 99,
+    "landing_margin": 10,
+    "switch_at": 85,
+    "switch_at_weekly": 98
+   }
+  }
+ ]
+}

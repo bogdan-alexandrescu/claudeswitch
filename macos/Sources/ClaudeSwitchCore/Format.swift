@@ -47,12 +47,32 @@ public enum Format {
         return left <= 0 ? "reset" : "resets in " + duration(left)
     }
 
-    /// How long ago: "12s ago", "3m ago", "never".
+    /// How long something has been running: "2h 14m".
+    public static func uptime(since: Date, now: Date) -> String {
+        duration(now.timeIntervalSince(since))
+    }
+
+    /// An account's sign-in, judged at now: when its login renews or expired,
+    /// or, without a refresh date, its token's. Nil once it needs signing in
+    /// (its state says so): a renewal date would contradict that.
+    public static func login(refresh: Date?, token: Date?, now: Date, needsSignIn: Bool = false) -> String? {
+        guard !needsSignIn else { return nil }
+        func at(_ d: Date) -> String { d.formatted(date: .abbreviated, time: .shortened) }
+        if let r = refresh { return (r > now ? "login renews until " : "login expired ") + at(r) }
+        if let t = token { return "token " + (t > now ? "valid until " : "expired ") + at(t) }
+        return nil
+    }
+
+    /// How long ago, in its largest unit: "12s ago", "3m ago", "18h ago",
+    /// "2d ago", "never". A countdown keeps two units (resets); an age
+    /// needs one.
     public static func age(_ at: Date?, now: Date) -> String {
         guard let at = at else { return "never" }
         let ago = now.timeIntervalSince(at)
         if ago < 5 { return "just now" }
-        return duration(ago) + " ago"
+        let s = Int(ago)
+        let one = s >= 86_400 ? "\(s / 86_400)d" : s >= 3600 ? "\(s / 3600)h" : s >= 60 ? "\(s / 60)m" : "\(s)s"
+        return one + " ago"
     }
 
     /// The decision as one line: "stay", "switch → work-2", "wait".
@@ -65,11 +85,23 @@ public enum Format {
         }
     }
 
+    /// A window in the app's words: "session" (five_hour) or "week"
+    /// (seven_day); nil for no window, the key itself for any other.
+    public static func windowName(_ key: String?) -> String? {
+        switch key {
+        case "five_hour": return "session"
+        case "seven_day": return "week"
+        case let k? where !k.isEmpty: return k
+        default: return nil
+        }
+    }
+
+    /// "refused · session · clears in 36m", "needs sign-in", "available".
     public static func status(_ s: AccountStatus, now: Date) -> String {
         switch s {
         case .refused(let w, let until):
             var t = "refused"
-            if let w = w, !w.isEmpty { t += " · " + window(w) }
+            if let w = windowName(w) { t += " · " + w }
             if let u = until, u > now { t += " · clears in " + duration(u.timeIntervalSince(now)) }
             return t
         default:
@@ -101,26 +133,62 @@ public enum Format {
 }
 
 public extension Format {
-    /// A card's account picker line: "work-1  41% · available · trigger
-    /// Thu 09:30" (F2: the ETA only when the CLI knows it), or "team-2  12%
-    /// · in use by work" for one live in another profile (D34).
+    /// A card's account picker line: "work-1  41% week · available ·
+    /// trigger Thu 09:30" (F2: the ETA only when the CLI knows it), "w03
+    /// 100% · refused · session · clears in 36m", or "team-2  12% session ·
+    /// in use by work" for one live in another profile (D34). The figure
+    /// names its window, since one line's may be a session and the next's a
+    /// week; a refusal names its own, once.
     static func pickerLine(_ a: AccountView, inUseBy: String?, now: Date) -> String {
-        var s: String = (a.isActive ? "✓ " : "") + a.id + "  " + pct(a.bindingPct)
+        // The live account's check is the menu's own (its gutter), so the
+        // ids line up.
+        var refusalNamesWindow = false
+        if case .refused(let w, _) = a.status, windowName(w) != nil { refusalNamesWindow = true }
+        var s: String = a.id + "  " + pct(a.bindingPct)
+        if a.bindingPct != nil, !refusalNamesWindow, let w = windowName(a.bindingWindow) { s += " " + w }
         if let p = inUseBy { return s + " · in use by " + p }
-        s += " · " + a.status.label
+        s += " · " + status(a.status, now: now)
         if let eta = Runway.accountETA(a.triggerAt, now: now) { s += " · " + eta }
         return s
     }
 
     /// A collapsed card's line: "work-1 · session 3% · week 41%"; trouble
-    /// first, "needs login · work-1", since figures mean nothing then.
+    /// first, "needs sign-in · work-1", since figures mean nothing then.
     static func cardSummary(_ c: ProfileCard) -> String {
-        guard let a = c.active else { return "no account live" }
-        switch a.status {
-        case .needsLogin, .refused: return "\(a.status.label) · \(a.id)"
-        default: return "\(a.id) · session \(pct(a.fiveHour?.utilization)) · week \(pct(a.sevenDay?.utilization))"
-        }
+        let p = cardSummaryParts(c)
+        return p.figures.map { p.lead + " · " + $0 } ?? p.lead
     }
+
+    /// The line in two parts, so the view truncates the lead (a long id)
+    /// and never the figures. A pending switch or wait leads: "w01 → w02",
+    /// "waiting · w01".
+    static func cardSummaryParts(_ c: ProfileCard) -> CardSummary {
+        guard let a = c.active else { return CardSummary(lead: "no account live", figures: nil) }
+        switch a.status {
+        case .needsLogin, .refused: return CardSummary(lead: "\(a.status.label) · \(a.id)", figures: nil)
+        default: break
+        }
+        var lead = a.id
+        switch c.decision?.kind {
+        case "switch": if let t = c.decision?.target { lead = "\(a.id) → \(t)" }
+        case "wait": lead = "waiting · \(a.id)"
+        default: break
+        }
+        return CardSummary(lead: lead, figures: "session \(pct(a.fiveHour?.utilization)) · week \(pct(a.sevenDay?.utilization))")
+    }
+
+    /// s cut in the middle past n characters: "client-e…gration".
+    static func middle(_ s: String, _ n: Int) -> String {
+        guard s.count > n, n > 1 else { return s }
+        let head = (n - 1) / 2 + (n - 1) % 2, tail = (n - 1) / 2
+        return String(s.prefix(head)) + "…" + String(s.suffix(tail))
+    }
+}
+
+/// A collapsed card's line in parts: the lead may truncate, the figures not.
+public struct CardSummary: Equatable {
+    public var lead: String
+    public var figures: String?
 }
 
 /// What the menu bar shows.
@@ -179,14 +247,21 @@ public struct MenuTitle: Equatable {
     public static func of(_ s: Snapshot?, compact: Bool, profile: String?) -> MenuTitle {
         guard let s = s else { return MenuTitle(text: compact ? "" : "cs", level: .ok, problem: true) }
         guard let card = s.card(s.followed(profile)) else { return of(s, compact: compact) }
-        let prefix = s.cards.count > 1 ? card.name + " · " : ""
+        // Names cut in the middle past 16, so the figure and its "!" show
+        // and a long title does not hide the item behind the notch.
+        let prefix = s.cards.count > 1 ? Format.middle(card.name, 16) + " · " : ""
         guard let a = card.active else {
-            return MenuTitle(text: compact ? "" : prefix + "–", level: .ok, problem: false)
+            // Said, not drawn as a dash: "scratch · no account".
+            return MenuTitle(text: compact ? "" : prefix + "no account", level: .ok, problem: false)
         }
         var level = a.level
         if a.status == .needsLogin { level = .over }
+        // A stopped daemon is trouble too: the figure is old and nothing
+        // rotates.
+        if case .stale = s.daemon.health { level = .over }
         let marker = level == .over ? "!" : ""
         if compact { return MenuTitle(text: marker, level: level, problem: false) }
-        return MenuTitle(text: "\(prefix)\(a.id) \(Format.pct(a.bindingPct))\(marker)", level: level, problem: false)
+        return MenuTitle(text: "\(prefix)\(Format.middle(a.id, 16)) \(Format.pct(a.bindingPct))\(marker)",
+                         level: level, problem: false)
     }
 }

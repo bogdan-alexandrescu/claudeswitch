@@ -19,6 +19,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -52,11 +53,19 @@ var version = "dev"
 
 func main() {
 	if len(os.Args) < 2 {
-		usageText()
+		usageText(os.Stderr)
 		os.Exit(2)
 	}
 	cmd := os.Args[1]
 	args := os.Args[2:]
+	// help, and help <command>: asking is a success, on stdout.
+	if isHelp(cmd) {
+		if len(args) == 0 || isHelp(args[0]) {
+			usageText(os.Stdout)
+			os.Exit(0)
+		}
+		cmd, args = args[0], []string{"--help"}
+	}
 	asJSON := jsonRequested(args)
 	promptsOff = asJSON || flagPresent(args, "yes")
 	legacyQuiet = quietCommand(cmd, args)
@@ -142,27 +151,33 @@ func main() {
 	case "version", "-v", "--version":
 		err = cmdVersion(os.Stdout, args)
 	default:
-		usageText()
+		// One line, not the whole list: the list is a command away.
+		fmt.Fprintf(os.Stderr, "claudeswitch: unknown command %q; claudeswitch help lists them\n", cmd)
 		os.Exit(2)
 	}
 	if err != nil {
+		var help *helpRequest
+		if errors.As(err, &help) {
+			fmt.Fprint(os.Stdout, help.text)
+			os.Exit(0)
+		}
 		if asJSON {
 			writeJSONError(os.Stdout, err)
 			os.Exit(1)
 		}
 		fmt.Fprintln(os.Stderr, "claudeswitch: "+err.Error())
-		os.Exit(1)
+		os.Exit(exitStatus(err))
 	}
 }
 
-func usageText() {
-	fmt.Fprint(os.Stderr, `claudeswitch `+version+` — keeps Claude Code on an account that still has quota
+func usageText(w io.Writer) {
+	fmt.Fprint(w, `claudeswitch `+version+` — keeps Claude Code on an account that still has quota
 
   status     what every configured account's quota looks like right now
   watch      run the daemon (dry-run by default; --live to act)
-  history    deduped rejection history from the transcripts;
-             --usage [--days 30]: each account's utilization over time,
-             and the switches
+  history    the limit refusals in every profile's transcripts, each once;
+             --usage [--days 30]: each account's readings over time, and
+             how many switches (--json lists them)
   session    token usage across every account used in a span of work
   clean      what Claude left behind that is merged, unused and unchanged:
              worktrees, branches, lane clones, temp folders (changes nothing);
@@ -187,7 +202,7 @@ func usageText() {
   add <id>   vault the credential that is live right now, as <id>
              (--from <profile>: the one live in that profile; --pool <pool>
              or --no-pool: where a new account goes)
-  use <id>   swap Claude Code onto a vaulted account (hot; no restart needed)
+  use <id>   switch Claude Code onto a vaulted account (hot; no restart needed)
   accounts   what is in the vault
   plan       the rotation decision right now (changes nothing)
   why        the same decision, account by account, with the reasoning
@@ -209,7 +224,7 @@ func usageText() {
   whoami     which Claude account is live right now
   identify   record which seat each vaulted credential belongs to
   refresh    renew a vaulted account's credential (never the live one)
-  recovery   credentials a swap kept because it could not tell whose they were;
+  recovery   credentials a switch kept because it could not tell whose they were;
              restore <slot> <account> vaults one, clear <slot> deletes one
   profile create <name> [--dir PATH] [--pool a,b] [--seed <account>]
              make a Claude Code profile: its dir, your settings, CLAUDE.md,
@@ -260,12 +275,16 @@ func usageText() {
              in Chrome in as the account
   chrome profiles
              your Chrome profiles, and which profiles and accounts use each
+  chrome check [--profile <p>]
+             whether Claude in Chrome can connect in a profile, and why not
   chrome list | forget <account>
 
   Several Claude Code profiles ([[profile]] in the config): use, add, login,
   whoami, status, top, why and plan take --profile NAME. Without it, a command
   acts on the profile this shell's CLAUDE_CONFIG_DIR belongs to (use, add,
   login, whoami), or shows every profile (status, top, why, plan).
+
+  help <command> (or <command> --help) shows a command's usage and flags.
 
   For scripts and the menu-bar app: config, profile, pool, account, priority,
   remove, recovery, use, add, login --direct/--code and daemon take --json,
@@ -283,30 +302,19 @@ func usageText() {
 // it separates `--config` from its value and hands the wrong string to the
 // wrong flag. This walks the argument list instead, letting the FlagSet decide
 // where each flag's value ends.
+//
+// A parse error never returns: help is printed on stdout (exit 0); with
+// --json a bad flag still answers with the error object (exit 1), not usage
+// text; otherwise the error and the command's help go to stderr (exit 2).
+// Returning the positionals parsed so far, as it once did for a flag set
+// that does not exit, ran the command without its flags: `chrome --bogus`
+// opened Chrome.
 func parseInterleaved(fs *flag.FlagSet, args []string) []string {
-	// With --json a bad flag must still answer with the error object, not
-	// with usage text and exit 2: parse without exiting, then answer.
-	asJSON := jsonRequested(args)
-	if asJSON {
-		fs.Init(fs.Name(), flag.ContinueOnError)
-		fs.SetOutput(io.Discard)
+	positional, err := parseFlagsErr(fs, args)
+	if err != nil {
+		answerParseError(fs, args, err)
 	}
-	var positional []string
-	for {
-		if err := fs.Parse(args); err != nil {
-			if asJSON {
-				writeJSONError(os.Stdout, appErr(codeUsage, "", "%s: %v", fs.Name(), err))
-				exitProcess(1)
-			}
-			return positional
-		}
-		rest := fs.Args()
-		if len(rest) == 0 {
-			return positional
-		}
-		positional = append(positional, rest[0])
-		args = rest[1:]
-	}
+	return positional
 }
 
 func logger(verbose bool) *slog.Logger {
@@ -364,14 +372,17 @@ func loadWith(loader func(string) (*config.Config, error), cfgPath string) (*con
 func cmdStatus(args []string) error {
 	fs := flag.NewFlagSet("status", flag.ExitOnError)
 	cfgPath := fs.String("config", "", "path to config.toml")
-	refresh := fs.Bool("refresh", true, "fetch a live reading for the active account")
+	refresh := fs.Bool("refresh", true, "take a fresh reading of any account whose reading is older than --max-age "+
+		"(--refresh=false: saved state only)")
 	detail := fs.Bool("detail", false, "per-account detail: bars, reading age, burn rate, binding limit")
 	asJSON := fs.Bool("json", false, "machine-readable output")
 	maxAge := fs.Duration("max-age", 0,
 		"refresh any account whose reading is older than this (default: three poll intervals)")
 	verbose := fs.Bool("v", false, "verbose logging")
 	only := fs.String("profile", "", "show only this Claude Code profile (default: every one)")
-	parseInterleaved(fs, args)
+	if err := noArgs("status", parseInterleaved(fs, args)); err != nil {
+		return err
+	}
 
 	cfg, st, err := load(*cfgPath)
 	if err != nil {
@@ -423,7 +434,7 @@ func cmdStatus(args []string) error {
 	}
 	degraded, why := p.Degraded()
 	if *asJSON {
-		return emitJSON(statusJSON(cfg, st, p))
+		return emitJSON(statusJSON(cfg, st, p, *only))
 	}
 	printHeader(os.Stdout, st)
 	vlt := vault.New(log)
@@ -537,145 +548,294 @@ func cmdWatch(args []string) error {
 
 func cmdAudit(args []string) error {
 	fs := flag.NewFlagSet("audit", flag.ExitOnError)
-	n := fs.Int("n", 30, "how many events")
-	kind := fs.String("kind", "", "only this kind: decision|switch|rejection|unpin|severity|error|login|clean")
+	n := fs.Int("n", 30, "how many events, newest first")
+	kind := fs.String("kind", "", "only this kind: "+strings.Join(audit.Kinds, ", "))
 	since := fs.Duration("since", 0, "only events newer than this (e.g. 24h)")
+	asJSON := fs.Bool("json", false, "the events as JSON, oldest first")
 	fs.String("config", "", "accepted as by every command; audit reads no config")
-	parseInterleaved(fs, args)
+	if pos := parseInterleaved(fs, args); len(pos) > 0 {
+		return badArgs("", "audit takes no arguments; got %q (--kind picks a kind)", pos[0])
+	}
+	if *n < 1 {
+		return badArgs("", "audit: -n must be at least 1, got %d", *n)
+	}
+	if *kind != "" && !slices.Contains(audit.Kinds, *kind) {
+		return badArgs("", "audit: there is no kind %q; the kinds are %s", *kind, strings.Join(audit.Kinds, ", "))
+	}
 
-	events, err := audit.Tail("", 100000)
+	all, err := audit.Tail("", 100000)
 	if err != nil {
 		return err
 	}
-	events = audit.Filter(events, *kind, *since)
+	events := audit.Filter(all, *kind, *since)
 	if len(events) > *n {
 		events = events[len(events)-*n:]
 	}
+	if *asJSON {
+		return emitJSON(map[string]any{"events": append([]audit.Event{}, events...)})
+	}
 	if len(events) == 0 {
-		fmt.Print("\n  no audit events yet (run `claudeswitch watch`)\n\n")
+		if len(all) == 0 {
+			fmt.Print("\n  no audit events yet (the daemon writes them: claudeswitch daemon start)\n\n")
+		} else {
+			fmt.Printf("\n  no events match%s (the log holds %s)\n\n", auditFilters(*kind, *since),
+				render.Plural(len(all), "event", "events"))
+		}
 		return nil
 	}
 	fmt.Println()
-	t := render.NewTable([]string{"WHEN", "WHAT", "DETAIL"})
-	// Newest first: the reason for opening the log is almost always the most
-	// recent thing in it.
+	fmt.Print(auditTable(events, time.Now()).Render("  "))
+	fmt.Println()
+	return nil
+}
+
+// auditFilters names the filters given, for "no events match".
+func auditFilters(kind string, since time.Duration) string {
+	var parts []string
+	if kind != "" {
+		parts = append(parts, "--kind "+kind)
+	}
+	if since > 0 {
+		parts = append(parts, "--since "+render.Duration(since))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " " + strings.Join(parts, " ")
+}
+
+// auditTable lays events out newest first, the reason for opening the log
+// being almost always the most recent thing in it. A PROFILE column appears
+// once any event names a profile other than the default, and every row fits
+// the terminal.
+func auditTable(events []audit.Event, now time.Time) *render.Table {
+	profiles := false
+	for _, e := range events {
+		profiles = profiles || (e.Profile != "" && e.Profile != config.DefaultProfile)
+	}
+	head := []string{"WHEN", "WHAT"}
+	if profiles {
+		head = append(head, "PROFILE")
+	}
+	t := render.NewTable(append(head, "DETAIL")).Fit(render.Width())
 	for i := len(events) - 1; i >= 0; i-- {
 		e := events[i]
-		kind, detail := e.Kind, ""
-		switch e.Kind {
-		case "switch":
-			kind = render.Good("switch")
-			detail = nonEmpty(e.From, "?") + " → " + render.Bold(e.To)
-			if e.Reason != "" {
-				detail += render.Grey("  " + truncateStr(e.Reason, 40))
-			}
-		case "rejection":
-			kind = render.Bad("refused")
-			detail = fmt.Sprintf("%s on %s, cleared %s", e.From, e.Window,
-				e.ResetsAt.Local().Format("15:04"))
-		case "decision":
-			kind = render.Dim("decision")
-			detail = render.Dim(e.Decision)
-			if e.To != "" {
-				detail += render.Dim(" → " + e.To)
-			}
-			if e.Reason != "" {
-				detail += render.Grey("  " + truncateStr(e.Reason, 40))
-			}
-		case "unpin":
-			// The pin safety valve lifted a pin (IMPROVEMENTS F3).
-			kind = render.Warn("unpin")
-			detail = e.Reason
-			if e.Profile != "" && e.Profile != config.DefaultProfile {
-				detail = e.Profile + ": " + detail
-			}
-		case "severity":
-			kind = render.Warn("severity")
-			pct := ""
-			if e.Percent != nil {
-				pct = fmt.Sprintf(" at %.0f%%", *e.Percent)
-			}
-			detail = fmt.Sprintf("%s %s: %s → %s%s", e.Account, e.LimitKind,
-				e.FromSeverity, e.ToSeverity, pct)
-		case "error":
-			kind = render.Bad("error")
-			detail = truncateStr(e.Err, 56)
-		case "clean":
-			// The daemon's cleanup after Claude (owner decisions 2026-10-25).
-			kind = render.Dim("clean")
-			detail = e.Reason
-			if e.Err != "" {
-				kind, detail = render.Bad("clean"), truncateStr(e.Err, 56)
-			}
-		case "login":
-			// Claude Code's recorded login lined up with the live account
-			// (IMPROVEMENTS P1, P5): why Claude in Chrome would not connect.
-			kind = render.Warn("login")
-			detail = nonEmpty(e.From, "?") + " → " + render.Bold(e.To)
-			if e.Profile != "" && e.Profile != config.DefaultProfile {
-				detail = e.Profile + ": " + detail
-			}
-		}
+		kind, detail := auditRow(e, now)
 		if e.DryRun {
 			detail += render.Dim("  [dry-run]")
 		}
 		if e.Forced {
 			detail += render.Warn("  [forced]")
 		}
-		t.Add(render.Grey(e.At.Local().Format("01-02 15:04")), kind, detail)
+		cells := []string{render.Grey(render.When(e.At, now)), kind}
+		if profiles {
+			// Severity belongs to the account, not to a profile.
+			cells = append(cells, render.Grey(nonEmpty(e.Profile, "-")))
+		}
+		t.Add(append(cells, detail)...)
 	}
-	fmt.Print(t.Render("  "))
-	fmt.Println()
-	return nil
+	return t
+}
+
+// auditAccount is an account as audit names it: a profile's live credential
+// that matches no configured account is recorded under "active@<profile>",
+// a key, not a name.
+func auditAccount(id string) string {
+	if p, ok := strings.CutPrefix(id, state.Unattributed+"@"); ok {
+		return p + "'s live account"
+	}
+	return id
+}
+
+// auditRow is an event's WHAT and DETAIL cells.
+func auditRow(e audit.Event, now time.Time) (kind, detail string) {
+	switch e.Kind {
+	case "switch":
+		kind = render.Good("switch")
+		detail = nonEmpty(e.From, "?") + " → " + render.Bold(e.To)
+		if e.Reason != "" {
+			detail += render.Grey("  " + e.Reason)
+		}
+	case "rejection":
+		kind = render.Bad("refused")
+		verb := "cleared"
+		if e.ResetsAt.After(now) {
+			verb = "clears"
+		}
+		detail = fmt.Sprintf("%s on its %s window, %s %s", nonEmpty(e.From, "?"), render.WindowName(e.Window),
+			verb, render.When(e.ResetsAt, now))
+	case "decision":
+		kind = render.Dim("decision")
+		detail = render.Dim(e.Decision)
+		if e.To != "" {
+			detail += render.Dim(" → " + e.To)
+		}
+		if e.Reason != "" {
+			detail += render.Grey("  " + e.Reason)
+		}
+	case "unpin":
+		// The pin safety valve lifted a pin (IMPROVEMENTS F3).
+		kind, detail = render.Warn("unpin"), e.Reason
+	case "severity":
+		// The API's own grading of a window: a rise is worth noticing, a
+		// return to normal is good news.
+		switch strings.ToLower(e.ToSeverity) {
+		case "normal", "":
+			kind = render.Good("severity")
+		case "critical":
+			kind = render.Bad("severity")
+		default:
+			kind = render.Warn("severity")
+		}
+		pct := ""
+		if e.Percent != nil {
+			pct = fmt.Sprintf(" at %.0f%%", *e.Percent)
+		}
+		detail = fmt.Sprintf("%s %s: %s → %s%s", auditAccount(e.Account), render.WindowName(e.LimitKind),
+			e.FromSeverity, e.ToSeverity, pct)
+	case "error":
+		kind, detail = render.Bad("error"), e.Err
+	case "clean":
+		// The daemon's cleanup after Claude (owner decisions 2026-10-25).
+		kind, detail = render.Dim("clean"), e.Reason
+		if e.Err != "" {
+			kind, detail = render.Bad("clean"), e.Err
+		}
+	case "login":
+		// Claude Code's recorded login lined up with the live account
+		// (IMPROVEMENTS P1, P5): why Claude in Chrome would not connect.
+		kind = render.Dim("login")
+		detail = nonEmpty(e.From, "?") + " → " + render.Bold(e.To)
+		if e.Reason != "" {
+			detail += render.Grey("  " + e.Reason)
+		}
+	case "refresh":
+		// The daemon renewing a quiet profile's live token.
+		kind = render.Dim("refresh")
+		detail = e.Account + render.Grey("  "+e.Reason)
+		if e.Err != "" {
+			kind, detail = render.Bad("refresh"), e.Account+": "+e.Err
+		}
+	default:
+		kind, detail = e.Kind, e.Reason
+	}
+	return kind, detail
 }
 
 func cmdHistory(args []string) error {
 	fs := flag.NewFlagSet("history", flag.ExitOnError)
 	days := fs.Int("days", 21, "how far back to read (30 with --usage)")
-	cfgPath := fs.String("config", "", "path to config.toml (--usage names accounts from it)")
-	usageMode := fs.Bool("usage", false, "each account's utilization over time, and the switches "+
-		"(from the daemon's readings log)")
+	cfgPath := fs.String("config", "", "path to config.toml: its profiles' transcripts are read, and --usage names "+
+		"accounts from it")
+	only := fs.String("profile", "", "read only this Claude Code profile's transcripts (default: every profile's)")
+	usageMode := fs.Bool("usage", false, "each account's readings over time, from the daemon's readings log, "+
+		"and how many switches (--json lists them all)")
 	asJSON := fs.Bool("json", false, "with --usage: machine-readable output")
-	parseInterleaved(fs, args)
+	if err := noArgs("history", parseInterleaved(fs, args)); err != nil {
+		return err
+	}
 	daysSet := false
 	fs.Visit(func(f *flag.Flag) { daysSet = daysSet || f.Name == "days" })
 	if *asJSON && !*usageMode {
 		return appErr(codeUsage, "claudeswitch history --usage [--days N] --json",
 			"history --json needs --usage")
 	}
+	if *usageMode && !daysSet {
+		*days = 30
+	}
+	if *days <= 0 {
+		return badArgs("", "--days must be at least 1, got %d", *days)
+	}
 	if *usageMode {
-		if !daysSet {
-			*days = 30
-		}
-		if *days <= 0 {
-			return appErr(codeUsage, "", "--days must be at least 1, got %d", *days)
-		}
 		return historyUsage(os.Stdout, *cfgPath, *days, *asJSON, time.Now())
 	}
 
-	log := logger(false)
-	hits, raw, err := detector.Backfill("", time.Duration(*days)*24*time.Hour, log)
-	if err != nil {
+	cfg, err := config.Load(*cfgPath)
+	if err != nil && cfg == nil {
 		return err
 	}
-	fmt.Printf("\n  %s\n\n", render.Grey(fmt.Sprintf(
-		"%d raw records over %d days → %d real limit hits after dedupe",
-		raw, *days, len(hits))))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "note: %v\n", err)
+	}
+	if err := checkProfileFlag(cfg, *only); err != nil {
+		return err
+	}
+	// Every profile's transcripts, as `session` reads them, so the totals are
+	// everyone's; each folder once.
+	var roots []string
+	seen := map[string]bool{}
+	for _, in := range cfg.EffectiveProfiles() {
+		if *only != "" && in.Name != *only {
+			continue
+		}
+		root := detector.ProjectsRoot()
+		if !in.FromEnv {
+			p, err := ccdir.For(in.Dir)
+			if err != nil {
+				continue
+			}
+			root = p.Projects
+		}
+		if !seen[root] {
+			seen[root] = true
+			roots = append(roots, root)
+		}
+	}
+
+	log := logger(false)
+	byKey := map[string]detector.Rejection{}
+	raw := 0
+	for _, root := range roots {
+		hits, n, err := detector.Backfill(root, time.Duration(*days)*24*time.Hour, log)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "note: %s: %v\n", tilde(root), err)
+		}
+		raw += n
+		for _, h := range hits {
+			if prev, ok := byKey[h.Key()]; !ok || h.At.Before(prev.At) {
+				byKey[h.Key()] = h
+			}
+		}
+	}
+	hits := make([]detector.Rejection, 0, len(byKey))
+	for _, h := range byKey {
+		hits = append(hits, h)
+	}
+	sort.Slice(hits, func(i, j int) bool { return hits[i].At.Before(hits[j].At) })
+
+	// The daemon records the account it saw refused; the transcripts do not
+	// say whose a refusal was.
+	whose := map[string]string{}
+	if events, err := audit.Tail("", 100000); err == nil {
+		for _, e := range events {
+			if e.Kind == "rejection" {
+				whose[e.Window+"@"+e.ResetsAt.UTC().Format(time.RFC3339)] = e.From
+			}
+		}
+	}
+
+	dirs := make([]string, len(roots))
+	for i, r := range roots {
+		dirs[i] = tilde(r)
+	}
+	fmt.Printf("\n  %s\n  %s\n\n", render.Grey(fmt.Sprintf(
+		"%s in the last %s, from %s (Claude Code writes one per retry)",
+		render.Plural(len(hits), "limit refusal", "limit refusals"), render.Plural(*days, "day", "days"),
+		render.Plural(raw, "record", "records"))), render.Grey("read "+strings.Join(dirs, ", ")))
 	if len(hits) == 0 {
 		fmt.Printf("  %s\n\n", render.Good("no refusals recorded"))
 		return nil
 	}
-	t := render.NewTable([]string{"WHEN", "WINDOW", "CLEARED"})
+	now := time.Now()
+	t := render.NewTable([]string{"WHEN", "ACCOUNT", "WINDOW", "CLEARS"})
 	for i := len(hits) - 1; i >= 0; i-- {
 		h := hits[i]
-		window := h.Type
-		if window == "seven_day" {
-			window = render.Warn("weekly")
-		} else {
-			window = "5-hour"
+		window := render.WindowName(h.Type)
+		if window == "week" {
+			window = render.Warn(window)
 		}
-		t.Add(render.Grey(h.ResetsAt.Local().Format("Mon 02 Jan")), window,
-			h.ResetsAt.Local().Format("15:04"))
+		t.Add(render.Grey(render.When(h.At, now)), nonEmpty(whose[h.Key()], "-"), window,
+			render.When(h.ResetsAt, now))
 	}
 	fmt.Print(t.Render("  "))
 	fmt.Println()
@@ -759,7 +919,7 @@ func cmdDoctor(args []string) error {
 	cfgPath := fs.String("config", "", "path to config.toml")
 	deep := fs.Bool("verify", false,
 		"also confirm every vaulted credential still authenticates (one API call each)")
-	asJSON := fs.Bool("json", false, "every check as {name, status, message, fix} (IMPROVEMENTS F12)")
+	asJSON := fs.Bool("json", false, "every check as {name, status, message, fix}")
 	parseInterleaved(fs, args)
 	if *asJSON {
 		return doctorJSON(os.Stdout, *cfgPath, *deep)
@@ -976,8 +1136,12 @@ func runDoctorTo(stdout io.Writer, cfgPath string, deep bool, rep *doctorReport)
 			rep.add(tally.size, verifyCheck(a.ID, verdict, line))
 		}
 		if bad > 0 {
-			fmt.Fprintf(w, "  [FAIL] credentials     %d of %d vaulted account(s) do not sign in as configured\n",
-				bad, tried)
+			verb := "do"
+			if bad == 1 {
+				verb = "does"
+			}
+			fmt.Fprintf(w, "  [FAIL] credentials     %d of %s %s not sign in as configured\n",
+				bad, render.Plural(tried, "vaulted account", "vaulted accounts"), verb)
 		}
 	} else if cfg != nil {
 		fmt.Fprintf(w, "  [ok  ] credentials     %d vaulted; `cs doctor --verify` checks each one works\n",
@@ -1143,7 +1307,7 @@ func cmdAdd(args []string) error {
 	profName := fs.String("profile", "", "the profile whose pool the account joins, and without --from "+
 		"the one whose live credential is vaulted (default: the one this shell's CLAUDE_CONFIG_DIR belongs to)")
 	from := fs.String("from", "", "the Claude Code profile whose live credential to vault, when it is not "+
-		"--profile (the app's \"Save the login Claude Code is using in\")")
+		"--profile")
 	force := fs.Bool("force", false,
 		"re-add even when the live credential looks staler than the one already vaulted under that name")
 	asJSON := fs.Bool("json", false, "machine-readable output; never prompts")
@@ -1328,10 +1492,10 @@ func crossProfileNote(cfg *config.Config, source, target, id string) string {
 		return ""
 	}
 	if cfg.InPool(source, id) {
-		return "still signed in in " + source + ", which uses it too — " + target + " can use it once " +
+		return "it is still the login in " + source + ", which uses it too — " + target + " can use it once " +
 			source + " rotates off it"
 	}
-	return "still signed in in " + source + " — " + source + " will move off it; " + target + " can use it after"
+	return "it is still the login in " + source + ", which will move off it — " + target + " can use it after"
 }
 
 // chooseAddName decides what to vault the live credential under. Given a name,
@@ -2070,7 +2234,9 @@ func cmdPlan(args []string) error {
 	refresh := fs.Bool("refresh", true, "read the active account's usage first")
 	planJSON := fs.Bool("json", false, "machine-readable output")
 	only := fs.String("profile", "", "plan only this Claude Code profile (default: every one)")
-	parseInterleaved(fs, args)
+	if err := noArgs("plan", parseInterleaved(fs, args)); err != nil {
+		return err
+	}
 
 	cfg, st, err := load(*cfgPath)
 	if err != nil {
@@ -2162,8 +2328,8 @@ func printPlan(w io.Writer, cfg *config.Config, d policy.Decision) {
 		}
 	}
 	if d.Kind == policy.Wait && d.RecoversAccount != "" {
-		fmt.Fprintf(w, "  recovers  %s in %s (at %s)\n", d.RecoversAccount,
-			time.Until(d.RecoversAt).Round(time.Minute), d.RecoversAt.Local().Format("15:04"))
+		fmt.Fprintf(w, "  recovers  %s in %s (%s)\n", d.RecoversAccount,
+			render.Duration(time.Until(d.RecoversAt)), render.When(d.RecoversAt, time.Now()))
 	}
 }
 
@@ -3969,8 +4135,7 @@ func cmdSession(args []string) error {
 	}
 
 	fmt.Printf("\n  %s → %s  (%s)\n\n",
-		s.From.Local().Format("Mon 15:04"), s.To.Local().Format("15:04"),
-		render.Duration(s.Span()))
+		render.When(s.From, s.To), s.To.Local().Format("15:04"), render.Duration(s.Span()))
 
 	if s.Messages == 0 {
 		fmt.Printf("  no recorded usage in that span\n\n")
@@ -4008,11 +4173,12 @@ func cmdSession(args []string) error {
 		humanTokens(s.Total.Output), humanTokens(s.Total.Thinking))))
 
 	if len(s.Switches) > 0 {
-		fmt.Printf("\n  %s\n", render.Dim(fmt.Sprintf("%d SWITCH(ES) IN THIS SPAN", len(s.Switches))))
+		fmt.Printf("\n  %s\n", render.Dim(strings.ToUpper(render.Plural(len(s.Switches), "switch", "switches"))+
+			" IN THIS SPAN"))
 		sw := render.NewTable(nil)
 		for i := len(s.Switches) - 1; i >= 0; i-- {
 			e := s.Switches[i]
-			cells := []string{render.Grey(e.At.Local().Format("15:04"))}
+			cells := []string{render.Grey(render.When(e.At, s.To))}
 			if labelled {
 				cells = append(cells, e.Profile)
 			}
@@ -4028,12 +4194,8 @@ func cmdSession(args []string) error {
 	return nil
 }
 
-func truncateStr(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n-1] + "…"
-}
+// truncateStr cuts s to n columns, on runes: slicing bytes split "→" and "…".
+func truncateStr(s string, n int) string { return render.Fit(s, n) }
 
 // probeDue reports whether an idle account is overdue a liveness probe. The
 // vault records when each entry was last written, which is also when it was last
@@ -4503,18 +4665,28 @@ func staleDecisionAfter(cfg *config.Config) time.Duration {
 	return min(3*iv, 4*time.Minute)
 }
 
-// recentSwitches returns the last n rotations, oldest first, for the status
-// view. Reading them from the audit log rather than tracking them separately
-// keeps one record of what happened.
+// recentSwitches returns each profile's last n rotations, oldest first, for
+// the status view: every block lists its own, so the cut is per profile (a
+// profile's last switch, however old, is not pushed out by another's). An
+// event from before profiles is the default profile's. Reading them from the
+// audit log rather than tracking them separately keeps one record of what
+// happened.
 func recentSwitches(n int) []audit.Event {
 	events, err := audit.Tail("", 20000)
 	if err != nil {
 		return nil
 	}
 	var out []audit.Event
-	for i := len(events) - 1; i >= 0 && len(out) < n; i-- {
-		if events[i].Kind == "switch" {
-			out = append([]audit.Event{events[i]}, out...)
+	seen := map[string]int{}
+	for i := len(events) - 1; i >= 0; i-- {
+		e := events[i]
+		if e.Kind != "switch" {
+			continue
+		}
+		p := nonEmpty(e.Profile, config.DefaultProfile)
+		if seen[p] < n {
+			seen[p]++
+			out = append([]audit.Event{e}, out...)
 		}
 	}
 	return out
@@ -4598,7 +4770,9 @@ func cmdWhy(args []string) error {
 	cfgPath := fs.String("config", "", "path to config.toml")
 	asJSON := fs.Bool("json", false, "machine-readable output")
 	only := fs.String("profile", "", "explain only this Claude Code profile (default: every one)")
-	parseInterleaved(fs, args)
+	if err := noArgs("why", parseInterleaved(fs, args)); err != nil {
+		return err
+	}
 
 	cfg, st, err := load(*cfgPath)
 	if err != nil {
@@ -4669,7 +4843,7 @@ func verdictsJSON(vs []policy.Verdict, cfg *config.Config, st *state.State, now 
 		if !v.ClearsAt.IsZero() {
 			m["clears_at"] = v.ClearsAt
 		}
-		addWeeklyJSON(m, cfg, st.Accounts[v.ID], now)
+		addWeeklyJSON(m, cfg, st.Accounts[v.ID], now, st.Projects(v.ID, now, cfg.PollActive.Duration))
 		out = append(out, m)
 	}
 	return out
@@ -4684,7 +4858,7 @@ func verdictsJSON(vs []policy.Verdict, cfg *config.Config, st *state.State, now 
 //	"unknown_limits": [{"kind", "group", "describe", "percent", "severity"}]
 //	"weekly_pace":    {"expected", "actual", "resets_at",
 //	                   "at_reset", "unused_at_reset" (only once estimable)}
-func addWeeklyJSON(m map[string]any, cfg *config.Config, acct *state.Account, now time.Time) {
+func addWeeklyJSON(m map[string]any, cfg *config.Config, acct *state.Account, now time.Time, projects bool) {
 	if !acct.HasReading() {
 		return
 	}
@@ -4718,7 +4892,7 @@ func addWeeklyJSON(m map[string]any, cfg *config.Config, acct *state.Account, no
 	if len(unknown) > 0 {
 		m["unknown_limits"] = unknown
 	}
-	if p, ok := acct.WeeklyPace(now); ok {
+	if p, ok := acct.WeeklyPace(now, projects); ok {
 		pace := map[string]any{"expected": p.Expected, "actual": p.Actual, "resets_at": p.ResetsAt}
 		if p.Estimated {
 			pace["at_reset"] = p.AtReset
@@ -4737,47 +4911,82 @@ func emitJSON(v any) error {
 }
 
 // statusJSON is the machine-readable form of what `cs status` shows. Keeping the
-// shape flat and named makes it usable from jq without a manual.
-func statusJSON(cfg *config.Config, st *state.State, p *poller.Poller) map[string]any {
+// shape flat and named makes it usable from jq without a manual. only, when
+// set, keeps one profile, as why --json --profile does: its accounts, its
+// entry in "profiles", and its live account as "active".
+//
+// Each account is judged as the daemon judges it: by the window nearest its
+// own trigger, against the thresholds of the profile it is live in, else of
+// the first that may use it (D4, D31). Its "state" is one of available,
+// reserved, burnt (refused, until its window resets), unknown (never read,
+// or a reading of a window that has since reset), no_headroom (at or over
+// its trigger) or window_reset.
+func statusJSON(cfg *config.Config, st *state.State, p *poller.Poller, only string) map[string]any {
 	accounts := make([]map[string]any, 0, len(cfg.Accounts))
-	v := vault.New(logger(false))
+	now := time.Now()
+	views := profileViews(cfg, st, only)
+	// --profile with profiles configured: that profile's pool alone.
+	var keep map[string]bool
+	if only != "" && multiProfile(cfg) {
+		keep = map[string]bool{}
+		for _, id := range views[0].pool {
+			keep[id] = true
+		}
+	}
 	// IMPROVEMENTS F2: each account's trigger_at and each profile's pool
 	// runway (pool_dry_at, pool_forecast, pool_refills_at).
-	runway := runwayJSON(cfg, st, time.Now())
+	runway := runwayJSON(cfg, st, now)
 	for _, a := range cfg.Ordered() {
+		if keep != nil && !keep[a.ID] {
+			continue
+		}
 		m := map[string]any{
-			"id": a.ID, "vaulted": v.Has(a.ID),
+			"id": a.ID, "vaulted": acctSeams.has(a.ID),
 			"active":     activeIn(cfg, st, a.ID) != "",
 			"trigger_at": runway.accounts[a.ID],
 		}
 		addProfileJSON(m, cfg, st, a.ID)
-		if plan := v.PlanOf(a.ID); plan != "" {
+		if plan := acctSeams.plan(a.ID); plan != "" {
 			m["plan"] = plan
 		}
-		if email := v.DescribeOf(a.ID); email != "" {
+		if email := acctSeams.describe(a.ID); email != "" {
 			m["email"] = email
 		}
 		acct := st.Accounts[a.ID]
 		if acct != nil && acct.Last != nil {
-			which, worst := acct.Last.Worst()
+			// The thresholds and models of the profile the account is live
+			// in, else of the first that may use it (D31).
+			pcfg := cfg
+			if len(cfg.Profiles) > 0 {
+				if in, _ := m["active_in"].(string); in != "" {
+					pcfg = cfg.ForProfile(in)
+				} else if owner, ok := cfg.ProfileOf(a.ID); ok {
+					pcfg = cfg.ForProfile(owner)
+				}
+			}
+			eff, _, _ := acct.WithModels(pcfg.Models)
+			which, worst, _ := eff.Last.WorstAgainst(pcfg.TriggerFor(usage.FiveHourKey), pcfg.TriggerFor(usage.SevenDayKey))
 			m["five_hour"] = acct.Last.FiveHour.Pct()
 			m["seven_day"] = acct.Last.SevenDay.Pct()
 			m["binding_window"] = which
 			m["utilization"] = worst
 			// Idle accounts do not project (0.6.1): only a live account or one
 			// read within poll_active has its figure carried forward.
-			projects := st.Projects(a.ID, time.Now(), cfg.PollActive.Duration)
-			proj := st.ProjectedFor(a.ID, time.Now(), cfg.PollActive.Duration)
+			projects := st.Projects(a.ID, now, pcfg.PollActive.Duration)
+			proj := worst
+			if projects {
+				proj = max(eff.ProjectedIn(which, now), worst)
+			}
 			m["projected"] = proj
 			m["read_at"] = acct.LastAt
 			// Apply the trigger here too. "available" beside 100% is true of the
 			// raw availability check and useless to a reader or a script: what
 			// is being asked is whether this account could actually serve.
 			st := string(acct.Availability(a.Reserve))
-			if st == "available" && proj >= cfg.SwitchAt {
+			if st == "available" && proj >= pcfg.TriggerFor(which) {
 				st = "no_headroom"
 			}
-			if acct.ExpiredAt(time.Now()) {
+			if acct.ExpiredAt(now) {
 				st = "window_reset"
 			}
 			m["state"] = st
@@ -4791,17 +5000,8 @@ func statusJSON(cfg *config.Config, st *state.State, p *poller.Poller) map[strin
 					m["clears_at"] = *b.ResetsAt
 				}
 			}
-			// "counted" follows the models list of the profile the account
-			// is live in, else of the first that may use it (D31).
-			pcfg := cfg
-			if len(cfg.Profiles) > 0 {
-				if in, _ := m["active_in"].(string); in != "" {
-					pcfg = cfg.ForProfile(in)
-				} else if owner, ok := cfg.ProfileOf(a.ID); ok {
-					pcfg = cfg.ForProfile(owner)
-				}
-			}
-			addWeeklyJSON(m, pcfg, acct, time.Now())
+			// "counted" follows the models list of the same profile.
+			addWeeklyJSON(m, pcfg, acct, now, projects)
 		} else {
 			m["state"] = "unknown"
 			m["usable"] = false
@@ -4809,12 +5009,16 @@ func statusJSON(cfg *config.Config, st *state.State, p *poller.Poller) map[strin
 		accounts = append(accounts, m)
 	}
 	degraded, why := p.Degraded()
+	tcfg, active := cfg, st.Default().Active
+	if only != "" {
+		tcfg, active = views[0].cfg, views[0].ist.Active
+	}
 	out := map[string]any{
-		"active":   st.Default().Active,
+		"active":   active,
 		"accounts": accounts,
 		"thresholds": map[string]any{
-			"switch_at": cfg.SwitchAt, "hard_floor": cfg.HardFloor,
-			"switch_when": cfg.SwitchWhen, "max_switch_wait": cfg.MaxSwitchWait.String(),
+			"switch_at": tcfg.SwitchAt, "switch_at_weekly": tcfg.TriggerFor(usage.SevenDayKey),
+			"hard_floor": tcfg.HardFloor, "switch_when": tcfg.SwitchWhen, "max_switch_wait": tcfg.MaxSwitchWait.String(),
 		},
 		"daemon_running":  state.DaemonRunning(),
 		"api_calls_spare": p.Budget().Remaining(),
@@ -4835,7 +5039,7 @@ func statusJSON(cfg *config.Config, st *state.State, p *poller.Poller) map[strin
 	// default profile's, so a script written for one profile keeps working.
 	if multiProfile(cfg) {
 		var list []map[string]any
-		for _, v := range profileViews(cfg, st, "") {
+		for _, v := range views {
 			m := map[string]any{
 				"profile": v.in.Name, "active": v.ist.Active, "pool": v.pool,
 				"thresholds": thresholdsJSON(v.cfg),
@@ -4880,7 +5084,9 @@ func cmdTop(args []string) error {
 	cfgPath := fs.String("config", "", "path to config.toml")
 	every := fs.Duration("every", 2*time.Second, "how often to redraw")
 	only := fs.String("profile", "", "show only this Claude Code profile (default: every one)")
-	parseInterleaved(fs, args)
+	if err := noArgs("top", parseInterleaved(fs, args)); err != nil {
+		return err
+	}
 	if cfg, err := config.Load(*cfgPath); err == nil {
 		if err := checkProfileFlag(cfg, *only); err != nil {
 			return err
@@ -4888,7 +5094,7 @@ func cmdTop(args []string) error {
 	}
 
 	if !canDraw() {
-		return fmt.Errorf("`cs top` draws to a terminal; use `cs status` when piping")
+		return fmt.Errorf("claudeswitch top draws to a terminal; use claudeswitch status when piping")
 	}
 	if *every < time.Second {
 		*every = time.Second

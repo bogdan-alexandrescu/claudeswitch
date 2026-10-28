@@ -30,7 +30,7 @@ func near(a, b float64) bool { return math.Abs(a-b) < 0.05 }
 func TestWeeklyPaceBehind(t *testing.T) {
 	now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
 	a := paceAccount(20, now.Add(3*24*time.Hour), now)
-	p, ok := a.WeeklyPace(now)
+	p, ok := a.WeeklyPace(now, true)
 	if !ok {
 		t.Fatal("no pace for a readable weekly window with a reset")
 	}
@@ -52,7 +52,7 @@ func TestWeeklyPaceBehind(t *testing.T) {
 func TestWeeklyPaceAheadCapsAtTheLimit(t *testing.T) {
 	now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
 	a := paceAccount(90, now.Add(3*24*time.Hour), now)
-	p, ok := a.WeeklyPace(now)
+	p, ok := a.WeeklyPace(now, true)
 	if !ok || !p.Estimated {
 		t.Fatal("no estimate")
 	}
@@ -69,7 +69,7 @@ func TestWeeklyPaceAheadCapsAtTheLimit(t *testing.T) {
 func TestWeeklyPaceTooEarlyToEstimate(t *testing.T) {
 	now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
 	a := paceAccount(5, now.Add(7*24*time.Hour-6*time.Hour), now)
-	p, ok := a.WeeklyPace(now)
+	p, ok := a.WeeklyPace(now, true)
 	if !ok {
 		t.Fatal("pace must still be shown early in the week")
 	}
@@ -80,21 +80,21 @@ func TestWeeklyPaceTooEarlyToEstimate(t *testing.T) {
 
 func TestWeeklyPaceNeedsAKnownWindowAndReset(t *testing.T) {
 	now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
-	if _, ok := (&Account{}).WeeklyPace(now); ok {
+	if _, ok := (&Account{}).WeeklyPace(now, true); ok {
 		t.Error("an account with no reading has no pace")
 	}
 	a := paceAccount(20, now.Add(3*24*time.Hour), now)
 	a.Last.SevenDay.ResetsAt = nil
-	if _, ok := a.WeeklyPace(now); ok {
+	if _, ok := a.WeeklyPace(now, true); ok {
 		t.Error("no reset means no window to measure pace against")
 	}
 	a = paceAccount(20, now.Add(-time.Hour), now.Add(-2*time.Hour))
-	if _, ok := a.WeeklyPace(now); ok {
+	if _, ok := a.WeeklyPace(now, true); ok {
 		t.Error("a reading from a week that has since reset has no pace")
 	}
 	a = paceAccount(20, now.Add(3*24*time.Hour), now)
 	a.Last.SevenDay.Utilization = nil
-	if _, ok := a.WeeklyPace(now); ok {
+	if _, ok := a.WeeklyPace(now, true); ok {
 		t.Error("an unknown weekly window has no pace")
 	}
 }
@@ -107,12 +107,17 @@ func TestWeeklyPaceUsesTheProjectionForAnOldWeeklyReading(t *testing.T) {
 	a := paceAccount(50, now.Add(3*24*time.Hour), read)
 	*a.Last.FiveHour.Utilization = 5 // the weekly window is the worse one
 	a.PrevWorst, a.PrevAt = 49, read.Add(-10*time.Minute)
-	p, ok := a.WeeklyPace(now)
+	p, ok := a.WeeklyPace(now, true)
 	if !ok {
 		t.Fatal("no pace")
 	}
 	if p.Actual <= 50 {
 		t.Errorf("Actual = %v; a weekly reading burning 0.1/min, 10 minutes old, projects past 50", p.Actual)
+	}
+	// An account that may not be carried forward (State.Projects) keeps
+	// its reading.
+	if p, _ := a.WeeklyPace(now, false); p.Actual != 50 {
+		t.Errorf("Actual = %v without projection, want the reading, 50", p.Actual)
 	}
 }
 

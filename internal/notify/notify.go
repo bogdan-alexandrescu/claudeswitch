@@ -7,6 +7,7 @@
 package notify
 
 import (
+	"fmt"
 	"strings"
 	"time"
 )
@@ -67,12 +68,20 @@ func (n *Notifier) Exhausted(recovers string, at time.Time) {
 	if recovers != "" {
 		msg = recovers + " recovers at " + at.Local().Format("15:04")
 	}
-	n.Send("exhausted", "all accounts are burnt", msg)
+	n.Send("exhausted", "every account is refused", msg)
 }
 
 // RefreshExpiring warns before an idle account's refresh token dies, since a
 // dead account cannot even be polled.
 func (n *Notifier) RefreshExpiring(account string, in time.Duration) {
-	n.Send("refresh:"+account, account+" needs a login",
-		"its refresh token expires in "+in.Round(24*time.Hour).String())
+	days := int((in + 12*time.Hour) / (24 * time.Hour))
+	when := fmt.Sprintf("in %d days", days)
+	switch {
+	case days == 1:
+		when = "in a day"
+	case days < 1:
+		when = "within a day"
+	}
+	n.Send("refresh:"+account, account+" needs sign-in soon",
+		"its sign-in expires "+when+"; claudeswitch login "+account+" --direct renews it")
 }

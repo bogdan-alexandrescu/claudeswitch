@@ -12,6 +12,7 @@ import (
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/keychain"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/render"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/state"
 )
 
@@ -412,7 +413,7 @@ func doctorGhostLine(gs []*state.Ghost) string {
 		return ""
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "  [warn] ghosts          %d old credential(s) still guarded\n", len(gs))
+	fmt.Fprintf(&b, "  [warn] ghosts          %s still guarded\n", render.Plural(len(gs), "old credential", "old credentials"))
 	for _, g := range gs {
 		fmt.Fprintf(&b, "         └ %s may still hold %s; once it is signed out or closed this clears by itself, "+
 			"or `cs profile forget %s`\n", ghostName(g), g.Account, g.Profile)
@@ -448,6 +449,9 @@ func cmdProfile(args []string) error {
 	yes := fs.Bool("yes", false, "remove: do not ask for confirmation")
 	dir := fs.String("dir", "", "which: the folder to ask about (default: this one)")
 	hook := fs.Bool("hook", false, "which: the one line the shell hook reads")
+	if isHelp(args[0]) {
+		return &helpRequest{text: helpFor(profileUsage, fs)}
+	}
 	p, err := parseApp(fs, args[1:], profileUsage)
 	if err != nil {
 		return err
@@ -553,7 +557,7 @@ func profileForget(w io.Writer, cfgPath, name string, asJSON bool) error {
 	if asJSON {
 		return emitTo(w, map[string]any{"profile": name, "released": n})
 	}
-	fmt.Fprintf(w, "  released %d guarded credential(s) of profile %s; its account(s) may be used elsewhere again\n",
-		n, name)
+	fmt.Fprintf(w, "  released %s of profile %s; its accounts may be used elsewhere again\n",
+		render.Plural(n, "guarded credential", "guarded credentials"), name)
 	return nil
 }

@@ -637,7 +637,7 @@ func TestCrossProfileNoteForASharedAccount(t *testing.T) {
 		!strings.Contains(got, "work") || !strings.Contains(got, "default") {
 		t.Errorf("shared: %q", got)
 	}
-	if got := crossProfileNote(cfg, "solo", "default", "t1"); !strings.Contains(got, "solo will move off it") {
+	if got := crossProfileNote(cfg, "solo", "default", "t1"); !strings.Contains(got, "in solo, which will move off it") {
 		t.Errorf("not shared: %q", got)
 	}
 	if got := crossProfileNote(cfg, "work", "work", "t1"); got != "" {

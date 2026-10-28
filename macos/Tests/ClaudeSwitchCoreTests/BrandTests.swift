@@ -161,7 +161,7 @@ private func scratchDefaults(_ name: String = #function) -> UserDefaults {
         let g = GlyphReading.of(s, profile: "review")
         #expect(g.state == .needsYou, "personal's last poll was a 401")
         #expect(g.satellite == nil, "a warning mark instead of the satellite")
-        #expect(g.accessibility.hasSuffix(", personal needs a login"))
+        #expect(g.accessibility.hasSuffix(", personal needs sign-in"))
     }
 
     @Test func testNeedsYouWhenTheLiveAccountIsRefused() throws {

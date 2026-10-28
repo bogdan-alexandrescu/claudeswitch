@@ -63,7 +63,7 @@ thing kept, which one did not.
    build or package manager makes again (`node_modules`, `.venv`, `dist`,
    `build`, caches, `*.tsbuildinfo`, `test-results`) are dropped; anything
    else, an agent's `scratchpad/` or a `.env` included, is copied to the
-   archive first. More than 50 MB of those keeps the worktree.
+   archive first. More than 50 MiB of those keeps the worktree.
 3. **Not in use.** No live Claude Code session works inside it (any
    profile's `sessions/<pid>.json`, its process alive), no process has its
    working directory there, it is not locked (`git worktree lock`), no
@@ -127,12 +127,12 @@ GitHub. `--only` limits it to entries whose path or branch contains the text.
 
 ```
 $ cs clean
-cs clean: what would go to the Trash (nothing is removed without --apply)
+claudeswitch clean: what would go to the Trash (nothing moves without --apply)
 
-worktrees (3, 1.4 GB)
-  worktree ~/src/app/.claude/worktrees/agent-a1 [lane/a1] — PR #212 merged; a stale checkout of 3f2a91c0d; scratchpad archived (512 MB)
-  worktree ~/src/app/.claude/worktrees/agent-b7 [worktree-agent-b7] — merged into main (466 MB)
-  worktree ~/src/app/.claude/worktrees/agent-c3 [lane/c3] — its commits are in merged pull requests (440 MB)
+worktrees (3, 1.4 GiB)
+  worktree ~/src/app/.claude/worktrees/agent-a1 [lane/a1] — PR #212 merged; a stale checkout of 3f2a91c0d; scratchpad archived (512 MiB)
+  worktree ~/src/app/.claude/worktrees/agent-b7 [worktree-agent-b7] — merged into main (466 MiB)
+  worktree ~/src/app/.claude/worktrees/agent-c3 [lane/c3] — its commits are in merged pull requests (440 MiB)
 
 records of worktrees whose folder is gone (2)
   prune    ~/src/app/.claude/worktrees/agent-d9 — its folder is gone; git still lists it
@@ -140,18 +140,30 @@ records of worktrees whose folder is gone (2)
 local branches (41)
   ~/src/app                                                    41
 
-ended sessions' scratch (4, 12 MB)
-  scratch  /private/tmp/claude-501/-Users-me-src-app/5b1e… — the scratch folder of an ended session (3 MB)
+ended sessions' scratch (4, 12 MiB)
+  scratch  /private/tmp/claude-501/-Users-me-src-app/5b1e… — the scratch folder of an ended session (3 MiB)
 
-12 kept (cs clean --all says why, one by one)
+12 kept (claudeswitch clean --all says why, one by one)
 off: clean_remote_branches
-cs clean --apply moves 1.4 GB to the Trash; cs clean undo puts a run back
+claudeswitch clean --apply moves 1.4 GiB to the Trash; claudeswitch clean undo puts a run back
 
 $ cs clean --apply
-cs clean: run 20261025-160212 moved 1.4 GB to the Trash: 3 worktrees, 2 records of worktrees whose folder is gone, 41 local branches, 4 ended sessions' scratch
+claudeswitch clean: run 20261025-160212 moved 1.4 GiB to the Trash: 3 worktrees, 2 records of worktrees whose folder is gone, 41 local branches, 4 ended sessions' scratch
   deleted branches' tips are kept as refs/archive/<branch>
-cs clean undo 20261025-160212 puts it back
+claudeswitch clean undo 20261025-160212 puts it back
+
+$ cs clean runs
+
+  WHEN          RUN              MOVED TO THE TRASH  PUT BACK
+  today 16:02   20261025-160212  50 items, 1.4 GiB   -
+  18 Oct 09:30  20261018-093011  1 item, 12 MiB      1
+
+  claudeswitch clean undo <run> puts a run back (with no run named, the newest)
 ```
+
+Sizes are counted in powers of 1024 and labelled so: GiB, MiB, KiB (Finder
+counts in powers of 1000, so it shows a little more). Counts are in words:
+`1 worktree`, `3 worktrees`.
 
 `--all` adds every kept item with its reason, for example `keep worktree
 ~/src/app/.claude/worktrees/agent-e2 [lane/e2] — 2 changed files match no

@@ -53,7 +53,7 @@ enum NotchCheck {
                        "sh", String(ProcessInfo.processInfo.processIdentifier), path]
         do {
             try p.run()
-            NSApp.terminate(nil)
+            AppQuit.quit()
         } catch {
             log.error("could not relaunch: \(error.localizedDescription, privacy: .public)")
         }

@@ -31,9 +31,9 @@
            fix: cs login a2 --direct
          └ a3                 ok — a3@example.com · unknown
          └ a4                 not vaulted
-  [FAIL] credentials     2 of 3 vaulted account(s) do not sign in as configured
+  [FAIL] credentials     2 of 3 vaulted accounts do not sign in as configured
   [ok  ] switching       live rotation is wired; `cs plan` says what it would do
   [info] status line     not set; `cs statusline install` adds it
   [info] claude plugin   not installed; see README, "Inside Claude Code"
 
-exit: 1 (1 doctor check(s) failed)
+exit: 1 (1 doctor check failed)

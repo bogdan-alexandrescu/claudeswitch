@@ -41,6 +41,9 @@ func cmdPool(args []string) error {
 	asJSON := fs.Bool("json", false, "machine-readable output")
 	to := fs.String("to", "", "move: the pool the account goes to; delete: the pool its accounts go to")
 	noPool := fs.Bool("no-pool", false, "delete: its accounts go to no pool (the default)")
+	if isHelp(verb) {
+		return &helpRequest{text: helpFor(poolCmdUsage, fs)}
+	}
 	p, err := parseApp(fs, args[1:], poolCmdUsage)
 	if err != nil {
 		return err
@@ -197,15 +200,17 @@ func poolList(w io.Writer, cfgPath string, asJSON bool) error {
 		if subs := cfg.SubscribersOf(p.Name); len(subs) > 0 {
 			users = "used by " + strings.Join(subs, ", ")
 		}
-		fmt.Fprintf(w, "  %s\n    accounts  %s\n    %s\n", p.Name,
-			nonEmpty(strings.Join(p.Accounts, ", "), "(empty)"), users)
+		fmt.Fprintf(w, "  %s\n", p.Name)
+		writeWrapped(w, nonEmpty(strings.Join(p.Accounts, ", "), "(empty)"), "    accounts  ", "              ", false)
+		writeWrapped(w, users, "    ", "    ", false)
 	}
 	for _, in := range cfg.Profiles {
 		// An empty own pool is no pool to show: its profile uses what it lists,
 		// or, for default, the accounts in no pool.
 		if hasOwnPool(cfg, in) && len(in.Pool) > 0 {
-			fmt.Fprintf(w, "  %s (profile %s's own)\n    accounts  %s\n    used by %s\n", in.Name, in.Name,
-				nonEmpty(strings.Join(in.Pool, ", "), "(empty)"), in.Name)
+			fmt.Fprintf(w, "  %s (profile %s's own)\n", in.Name, in.Name)
+			writeWrapped(w, nonEmpty(strings.Join(in.Pool, ", "), "(empty)"), "    accounts  ", "              ", false)
+			fmt.Fprintf(w, "    used by %s\n", in.Name)
 		}
 	}
 	if un := unlistedAccounts(cfg); len(un) > 0 {
@@ -216,7 +221,9 @@ func poolList(w io.Writer, cfgPath string, asJSON bool) error {
 		case declaredIndex(cfg, config.DefaultProfile) < 0:
 			who = fmt.Sprintf("no profile uses them: there is no %q profile", config.DefaultProfile)
 		}
-		fmt.Fprintf(w, "  in no pool\n    accounts  %s\n    %s\n", strings.Join(un, ", "), who)
+		fmt.Fprintf(w, "  in no pool\n")
+		writeWrapped(w, strings.Join(un, ", "), "    accounts  ", "              ", false)
+		writeWrapped(w, who, "    ", "    ", false)
 	}
 	fmt.Fprintln(w)
 	return nil

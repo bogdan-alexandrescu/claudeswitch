@@ -62,7 +62,7 @@ func TestAPinOnAnAccountNeedingASignInIsLifted(t *testing.T) {
 	a := weekly(40, 50, now.Add(time.Hour), now.Add(3*24*time.Hour))
 	a.RefreshExpiry = now.Add(-time.Minute)
 	d := Decide(pinnedWorld(a))
-	if d.Unpin != "pin on work-1 lifted: it needs a sign-in" {
+	if d.Unpin != "pin on work-1 lifted: it needs sign-in" {
 		t.Fatalf("expired refresh token: unpin %q", d.Unpin)
 	}
 	// With the pin lifted, rotation runs as usual: work-1 is under its
@@ -73,7 +73,7 @@ func TestAPinOnAnAccountNeedingASignInIsLifted(t *testing.T) {
 
 	a = weekly(40, 50, now.Add(time.Hour), now.Add(3*24*time.Hour))
 	a.LastErr, a.ReadFails = "usage API: 401 Unauthorized", 1
-	if d := Decide(pinnedWorld(a)); d.Unpin != "pin on work-1 lifted: it needs a sign-in" {
+	if d := Decide(pinnedWorld(a)); d.Unpin != "pin on work-1 lifted: it needs sign-in" {
 		t.Fatalf("401 counted as a failed read: unpin %q", d.Unpin)
 	}
 }

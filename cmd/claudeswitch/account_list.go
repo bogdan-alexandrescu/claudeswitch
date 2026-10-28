@@ -9,6 +9,7 @@ import (
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/render"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/state"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/usage"
 )
 
 // `cs account list` (lane 15): every configured account from config.toml and
@@ -49,8 +50,9 @@ func accountState(acct *state.Account, reserve float64, now time.Time) string {
 }
 
 // readingJSON is the last reading in brief, or null when state holds
-// neither a reading nor an error for the account.
-func readingJSON(acct *state.Account, now time.Time) any {
+// neither a reading nor an error for the account. Its binding window is the
+// one nearest its own trigger, as the daemon judges it.
+func readingJSON(cfg *config.Config, acct *state.Account, now time.Time) any {
 	if acct == nil || (acct.Last == nil && acct.LastErr == "") {
 		return nil
 	}
@@ -65,7 +67,7 @@ func readingJSON(acct *state.Account, now time.Time) any {
 		if u.SevenDay.Known() {
 			m["seven_day"] = u.SevenDay.Pct()
 		}
-		if which, _ := u.Worst(); which != "" {
+		if which, _, _ := u.WorstAgainst(cfg.TriggerFor(usage.FiveHourKey), cfg.TriggerFor(usage.SevenDayKey)); which != "" {
 			m["binding"] = which
 		}
 	}
@@ -119,13 +121,22 @@ func accountJSON(cfg *config.Config, st *state.State, a config.Account, now time
 		"profile": orNull(owner), "pool": orNull(pool), "profiles": profiles,
 		"active_in": orNull(activeIn), "pinned": pinned, "pin_hard": pinHard,
 		"refresh_expires_at": nil, "access_expires_at": nil,
-		"state": accountState(acct, a.Reserve, now), "reading": readingJSON(acct, now),
+		"state": accountState(acct, a.Reserve, now), "reading": readingJSON(cfg, acct, now),
 	}
 	if acct != nil {
 		m["refresh_expires_at"] = timeOrNull(acct.RefreshExpiry)
 		m["access_expires_at"] = timeOrNull(acct.TokenExpiry)
 	}
 	return m
+}
+
+// accountStateWord is an account state as the table says it: the app's and
+// the rest of the CLI's words, not the JSON's.
+func accountStateWord(state string) string {
+	if state == acctNeedsLogin {
+		return "needs sign-in"
+	}
+	return strings.ReplaceAll(state, "_", " ")
 }
 
 // accountList is `cs account list [--json]`.
@@ -146,7 +157,9 @@ func accountList(w io.Writer, cfgPath string, asJSON bool) error {
 		fmt.Fprintln(w, "  no accounts are configured")
 		return nil
 	}
-	t := render.NewTable([]string{"ACCOUNT", "EMAIL", "PLAN", "PROFILE", "STATE", "5H", "7D"}, 5, 6)
+	// The email goes last: it is the column a narrow terminal can cut.
+	t := render.NewTable([]string{"ACCOUNT", "PROFILES", "STATE", "SESSION", "WEEK", "PLAN", "EMAIL"}, 3, 4).
+		Fit(render.Width())
 	str := func(v any) string {
 		if s, ok := v.(string); ok {
 			return s
@@ -155,13 +168,20 @@ func accountList(w io.Writer, cfgPath string, asJSON bool) error {
 	}
 	for _, m := range list {
 		id := m["id"].(string)
-		if m["active_in"] != nil {
-			id += " *"
-		}
 		if m["pinned"] == true {
 			id += " (pinned)"
 		}
-		stateWord := strings.ReplaceAll(m["state"].(string), "_", " ")
+		// Every profile that may use it, the one it is live in starred: a
+		// shared account is live in one profile at a time (D34), not
+		// necessarily the first.
+		var profiles []string
+		for _, p := range m["profiles"].([]string) {
+			if p == m["active_in"] {
+				p += "*"
+			}
+			profiles = append(profiles, p)
+		}
+		stateWord := accountStateWord(m["state"].(string))
 		if m["enabled"] == false {
 			stateWord = "disabled, " + stateWord
 		}
@@ -174,9 +194,9 @@ func accountList(w io.Writer, cfgPath string, asJSON bool) error {
 				seven = fmt.Sprintf("%.0f%%", v)
 			}
 		}
-		t.Add(id, str(m["email"]), str(m["plan"]), str(m["profile"]), stateWord, five, seven)
+		t.Add(id, nonEmpty(strings.Join(profiles, ", "), "-"), stateWord, five, seven, str(m["plan"]), str(m["email"]))
 	}
 	fmt.Fprintf(w, "\n%s", t.Render("  "))
-	fmt.Fprintln(w, "\n  * live in its profile. Read from config and state alone: no keychain lookups.")
+	fmt.Fprintln(w, "\n  * where the account is live · emails, plans and figures as last recorded")
 	return nil
 }

@@ -2,9 +2,9 @@
   [ok  ] config          $CFGDIR/config.toml
   [warn] config          hard_floor (90) is below switch_at_weekly (95), so every weekly rotation counts as forced: it skips the 10m0s cooldown and swaps mid-turn rather than at an idle gap. Raise hard_floor above 95 to keep both.
   [ok  ] vault entries   each holds its own credential
-  [warn] recovery        1 kept credential(s) a swap could not file, oldest 2h ago
+  [warn] recovery        1 kept credential a swap could not file, oldest 2h ago
          └ `cs recovery` lists them; restore or clear each
-  [warn] ghosts          1 old credential(s) still guarded
+  [warn] ghosts          1 old credential still guarded
          └ removed profile old may still hold a2; once it is signed out or closed this clears by itself, or `cs profile forget old`
   [ok  ] daemon          running, not older than this binary (0.5.2)
   [ok  ] service qos     not throttled

@@ -19,9 +19,19 @@ Leave out `?profile=` for the profile the menu bar follows. A profile that is
 not a name is refused. When the URL starts the app, the command runs once
 the app has read the state.
 
-Anything the app cannot do (already on the best, no such profile) comes back
-as a notification. A refused switch shows in the popover, as it does when
-you click.
+Anything the app cannot do comes back as a notification, saying why:
+
+- `work is already on its best account.`
+- `work has no account to switch to: work-2 is in use by default` (the
+  reason **Switch to best** gives under the button), or `…to switch to.`
+  when there is none to give;
+- `There is no profile called lab.`
+- `work has no live account to pin.`
+- `Could not switch work to work-2: …`, with the CLI's message, when it
+  refuses the switch;
+- `ClaudeSwitch could not read the accounts yet, so nothing was switched.`,
+  when a command that arrived before the app's first reading (the URL
+  launched the app) has waited 30 seconds for one that never came.
 
 ### Shortcuts
 
@@ -55,7 +65,10 @@ open "claudeswitch://status?profile=work"
 Settings → Advanced → This app → **Switch to best hotkey**: anywhere on your
 Mac, switches the followed profile to its best account. Off by default.
 Click the key to record another (⌘, ⌥ or ⌃ and a key; Escape cancels). A
-key another app or macOS already holds is refused with a note.
+key pressed without ⌘, ⌥ or ⌃ is not taken, and the row says `Hold ⌘, ⌥ or
+⌃ with the key.` A key another app or macOS already holds is refused with a
+note: `⌥⌘S is taken by another app or by macOS. Choose another.` When there
+is no account to switch to, it says why, as the URL does.
 
 | setting | default |
 |---|---|
@@ -83,12 +96,19 @@ buttons. The app posts its own notification when it sees the change in
 | notification | buttons | runs |
 |---|---|---|
 | **work → work-2** (a rotation) | **Undo**, **Pin here** | `use <previous> --profile work --json`; `account pin work-2 --json` |
-| **work-1 needs a sign-in**, **work-1 was refused** (the live account) | **Sign in** | opens Add account for that account |
+| **work-1 needs sign-in**, **work-1 was refused** (the live account) | **Sign in** | opens Add account for that account |
 | **Sign personal in again** (its login expires within 5 days) | **Sign in…** | opens Add account for that account |
 
 A switch you made in the app (the popover, a shortcut, Undo) is not
-announced back. An idle account that is refused is not announced; one that
-can no longer sign in is. Each appears once per change.
+announced back, unless the CLI refused it: a refused switch is forgotten, so
+it does not hide the next real rotation. An idle account that is refused is
+not announced; one that can no longer sign in is. Each appears once per
+change.
+
+**Undo** and **Pin here** act from the notification, so when the CLI
+refuses one, the app says so in another notification (`Could not switch
+work to work-1: …`, `Could not pin work-2: …`) rather than only on a
+popover card you may not open for a while.
 
 A rotation is announced once. While the app posts these notifications
 (Notifications with actions on, and allowed in System Settings), it runs
@@ -97,7 +117,7 @@ the app is notifying for the next two minutes, and the daemon skips its own
 rotation notice meanwhile. Quit the app, or turn its notifications off with
 Settings → Advanced → **Notifications with actions**, and the daemon's
 notice comes back within two minutes. Only the rotation notice moves to the
-app: every other daemon notice ("all accounts are burnt", or "<profile>: no
+app: every other daemon notice ("<profile>: every account is refused", or "<profile>: no
 account free" when the accounts left are in use in another profile; a pool
 running dry; a lifted pin; Claude in Chrome) still comes from the daemon.
 

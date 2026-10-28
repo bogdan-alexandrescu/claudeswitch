@@ -1,0 +1,159 @@
+{
+ "ghosts": [],
+ "pools": [
+  {
+   "accounts": [
+    "research",
+    "personal"
+   ],
+   "name": "default",
+   "own": true,
+   "profiles": [
+    "default"
+   ]
+  },
+  {
+   "accounts": [
+    "work-team",
+    "work-2"
+   ],
+   "name": "work",
+   "own": true,
+   "profiles": [
+    "work"
+   ]
+  },
+  {
+   "accounts": [
+    "lab-1",
+    "lab-2"
+   ],
+   "name": "lab",
+   "own": true,
+   "profiles": [
+    "lab"
+   ]
+  },
+  {
+   "accounts": [
+    "client-1",
+    "client-2"
+   ],
+   "name": "client",
+   "own": true,
+   "profiles": [
+    "client"
+   ]
+  }
+ ],
+ "profiles": [
+  {
+   "declared": true,
+   "dir": null,
+   "from_env": false,
+   "listed": [
+    "research",
+    "personal"
+   ],
+   "live": "research",
+   "name": "default",
+   "overrides": {},
+   "pinned": null,
+   "pool": [
+    "research",
+    "personal"
+   ],
+   "pools": [
+    "default"
+   ],
+   "signed_in": "yes",
+   "thresholds": {
+    "hard_floor": 99,
+    "landing_margin": 10,
+    "switch_at": 85,
+    "switch_at_weekly": 98
+   }
+  },
+  {
+   "declared": true,
+   "dir": "~/.claude-work",
+   "from_env": false,
+   "listed": [
+    "work-team",
+    "work-2"
+   ],
+   "live": "work-team",
+   "name": "work",
+   "overrides": {},
+   "pinned": null,
+   "pool": [
+    "work-team",
+    "work-2"
+   ],
+   "pools": [
+    "work"
+   ],
+   "signed_in": "yes",
+   "thresholds": {
+    "hard_floor": 99,
+    "landing_margin": 10,
+    "switch_at": 85,
+    "switch_at_weekly": 98
+   }
+  },
+  {
+   "declared": true,
+   "dir": "~/.claude-lab",
+   "from_env": false,
+   "listed": [
+    "lab-1",
+    "lab-2"
+   ],
+   "live": "lab-1",
+   "name": "lab",
+   "overrides": {},
+   "pinned": "lab-1",
+   "pool": [
+    "lab-1",
+    "lab-2"
+   ],
+   "pools": [
+    "lab"
+   ],
+   "signed_in": "yes",
+   "thresholds": {
+    "hard_floor": 99,
+    "landing_margin": 10,
+    "switch_at": 85,
+    "switch_at_weekly": 98
+   }
+  },
+  {
+   "declared": true,
+   "dir": "~/.claude-client",
+   "from_env": false,
+   "listed": [
+    "client-1",
+    "client-2"
+   ],
+   "live": "client-1",
+   "name": "client",
+   "overrides": {},
+   "pinned": "client-1",
+   "pool": [
+    "client-1",
+    "client-2"
+   ],
+   "pools": [
+    "client"
+   ],
+   "signed_in": "yes",
+   "thresholds": {
+    "hard_floor": 99,
+    "landing_margin": 10,
+    "switch_at": 85,
+    "switch_at_weekly": 98
+   }
+  }
+ ]
+}

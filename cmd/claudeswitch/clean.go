@@ -16,6 +16,7 @@ import (
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/ccdir"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/clean"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/render"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/state"
 )
 
@@ -168,7 +169,7 @@ func readCleanPlan(path string) (*clean.Plan, error) {
 		b, err = os.ReadFile(path)
 	}
 	if err != nil {
-		return nil, appErr(codeUsage, "save one with: cs clean --json > <file>", "cannot read the plan: %v", err)
+		return nil, appErr(codeUsage, "save one with: claudeswitch clean --json > <file>", "cannot read the plan: %v", err)
 	}
 	var f struct {
 		Plan  *clean.Plan  `json:"plan"`
@@ -176,7 +177,7 @@ func readCleanPlan(path string) (*clean.Plan, error) {
 		Items []clean.Item `json:"items"`
 	}
 	if err := json.Unmarshal(b, &f); err != nil || (f.Plan == nil && f.At.IsZero()) {
-		return nil, appErr(codeUsage, "save one with: cs clean --json > <file>", "%s holds no cleanup plan", path)
+		return nil, appErr(codeUsage, "save one with: claudeswitch clean --json > <file>", "%s holds no cleanup plan", path)
 	}
 	if f.Plan != nil {
 		return f.Plan, nil
@@ -204,6 +205,22 @@ var kindTitle = map[clean.Kind]string{
 	clean.KindTranscript: "old subagent transcripts",
 }
 
+// kindNoun is a kind's noun for a count, singular then plural: "1
+// worktree", "3 worktrees".
+var kindNoun = map[clean.Kind][2]string{
+	clean.KindWorktree: {"worktree", "worktrees"},
+	clean.KindPrune:    {"record of a worktree whose folder is gone", "records of worktrees whose folder is gone"},
+	clean.KindBranch:   {"local branch", "local branches"}, clean.KindRemote: {"branch on GitHub", "branches on GitHub"},
+	clean.KindClone: {"lane clone", "lane clones"}, clean.KindScratch: {"ended session's scratch", "ended sessions' scratch"},
+	clean.KindPlugin:     {"old plugin version", "old plugin versions"},
+	clean.KindTranscript: {"old subagent transcript", "old subagent transcripts"},
+}
+
+// kindCount is n of a kind in words.
+func kindCount(k clean.Kind, n int) string {
+	return render.Plural(n, kindNoun[k][0], kindNoun[k][1])
+}
+
 var kindOrderCLI = []clean.Kind{clean.KindWorktree, clean.KindPrune, clean.KindBranch, clean.KindRemote,
 	clean.KindClone, clean.KindScratch, clean.KindPlugin, clean.KindTranscript}
 
@@ -212,10 +229,10 @@ var grouped = map[clean.Kind]bool{clean.KindBranch: true, clean.KindRemote: true
 
 func printCleanPlan(w io.Writer, p *clean.Plan, opt clean.Options, from string, all bool) {
 	if from == "" {
-		fmt.Fprintln(w, "cs clean: what would go to the Trash (nothing is removed without --apply)")
+		fmt.Fprintln(w, "claudeswitch clean: what would go to the Trash (nothing moves without --apply)")
 	} else {
-		fmt.Fprintf(w, "cs clean: the plan in %s, made %s (nothing is removed without --apply)\n", tilde(from),
-			p.At.Local().Format("Jan 2 15:04"))
+		fmt.Fprintf(w, "claudeswitch clean: the plan in %s, made %s (nothing moves without --apply)\n", tilde(from),
+			render.When(p.At, time.Now()))
 	}
 	var total int64
 	var kept []clean.Item
@@ -278,7 +295,7 @@ func printCleanPlan(w io.Writer, p *clean.Plan, opt clean.Options, from string, 
 	sort.Strings(off)
 	fmt.Fprintf(w, "\n%d kept", len(kept))
 	if !all && len(kept) > 0 {
-		fmt.Fprint(w, " (cs clean --all says why, one by one)")
+		fmt.Fprint(w, " (claudeswitch clean --all says why, one by one)")
 	}
 	fmt.Fprintln(w)
 	if all {
@@ -298,10 +315,11 @@ func printCleanPlan(w io.Writer, p *clean.Plan, opt clean.Options, from string, 
 	}
 	switch {
 	case any && from != "":
-		fmt.Fprintf(w, "cs clean --apply --plan %s moves %s to the Trash, each item judged once more; "+
-			"cs clean undo puts a run back\n", from, clean.Human(total))
+		fmt.Fprintf(w, "claudeswitch clean --apply --plan %s moves %s to the Trash, each item judged once more; "+
+			"claudeswitch clean undo puts a run back\n", from, clean.Human(total))
 	case any:
-		fmt.Fprintf(w, "cs clean --apply moves %s to the Trash; cs clean undo puts a run back\n", clean.Human(total))
+		fmt.Fprintf(w, "claudeswitch clean --apply moves %s to the Trash; claudeswitch clean undo puts a run back\n",
+			clean.Human(total))
 	}
 }
 
@@ -327,13 +345,13 @@ func printCleanRun(w io.Writer, run *clean.Run) {
 	var parts []string
 	for _, k := range kindOrderCLI {
 		if n := counts[k]; n > 0 {
-			parts = append(parts, fmt.Sprintf("%d %s", n, kindTitle[k]))
+			parts = append(parts, kindCount(k, n))
 		}
 	}
 	if len(parts) == 0 {
-		fmt.Fprintf(w, "cs clean: run %s removed nothing\n", run.ID)
+		fmt.Fprintf(w, "claudeswitch clean: run %s moved nothing\n", run.ID)
 	} else {
-		fmt.Fprintf(w, "cs clean: run %s moved %s to the Trash: %s\n", run.ID, clean.Human(run.Bytes()),
+		fmt.Fprintf(w, "claudeswitch clean: run %s moved %s to the Trash: %s\n", run.ID, clean.Human(run.Bytes()),
 			strings.Join(parts, ", "))
 		fmt.Fprintln(w, "  deleted branches' tips are kept as refs/archive/<branch>")
 	}
@@ -344,7 +362,7 @@ func printCleanRun(w io.Writer, run *clean.Run) {
 		fmt.Fprintf(w, "  failed  %s %s: %s\n", f.Kind, tilde(f.Path), f.Err)
 	}
 	if len(run.Done) > 0 {
-		fmt.Fprintf(w, "cs clean undo %s puts it back\n", run.ID)
+		fmt.Fprintf(w, "claudeswitch clean undo %s puts it back\n", run.ID)
 	}
 }
 
@@ -375,9 +393,12 @@ func cleanRuns(w io.Writer, opt clean.Options, asJSON bool) error {
 		return emitTo(w, map[string]any{"runs": out})
 	}
 	if len(runs) == 0 {
-		fmt.Fprintln(w, "no cleanup has run")
+		fmt.Fprint(w, "\n  no cleanup has run\n\n")
 		return nil
 	}
+	// The newest first, each with when it ran; the id is what undo takes.
+	now := time.Now()
+	t := render.NewTable([]string{"WHEN", "RUN", "MOVED TO THE TRASH", "PUT BACK"})
 	for _, r := range runs {
 		undone := 0
 		for _, e := range r.Done {
@@ -385,12 +406,15 @@ func cleanRuns(w io.Writer, opt clean.Options, asJSON bool) error {
 				undone++
 			}
 		}
-		line := fmt.Sprintf("%s  %d removed, %s", r.ID, len(r.Done), clean.Human(r.Bytes()))
+		moved := render.Plural(len(r.Done), "item", "items") + ", " + clean.Human(r.Bytes())
+		back := "-"
 		if undone > 0 {
-			line += fmt.Sprintf(", %d undone", undone)
+			back = fmt.Sprintf("%d", undone)
 		}
-		fmt.Fprintln(w, line)
+		t.Add(render.Grey(render.When(r.At, now)), r.ID, moved, back)
 	}
+	fmt.Fprintf(w, "\n%s\n  claudeswitch clean undo <run> puts a run back (with no run named, the newest)\n\n",
+		t.Render("  "))
 	return nil
 }
 
@@ -410,7 +434,7 @@ func cleanUndo(ctx context.Context, w io.Writer, opt clean.Options, id, only str
 		if errors.Is(err, clean.ErrBusy) {
 			return cleanErr(err)
 		}
-		return appErr(codeNotFound, "cs clean runs lists them", "%v", err)
+		return appErr(codeNotFound, "claudeswitch clean runs lists them", "%v", err)
 	}
 	if asJSON {
 		if err != nil {
@@ -424,6 +448,6 @@ func cleanUndo(ctx context.Context, w io.Writer, opt clean.Options, id, only str
 			n++
 		}
 	}
-	fmt.Fprintf(w, "cs clean: run %s: %d of %d put back\n", run.ID, n, len(run.Done))
+	fmt.Fprintf(w, "claudeswitch clean: run %s: %d of %d put back\n", run.ID, n, len(run.Done))
 	return err
 }

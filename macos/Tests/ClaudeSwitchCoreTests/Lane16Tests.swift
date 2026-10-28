@@ -255,15 +255,15 @@ final class Box<T>: @unchecked Sendable {
     /// allowed, and the sheet says what happens next, before and after.
     @Test func testAcrossProfilesTheSheetSaysWhatHappens() throws {
         #expect(AddForm.crossProfileNote(source: "default", target: "work")
-                == "still signed in in default — default will move off it; work can use it after")
+                == "it is still the login in “default”, which will move off it — “work” can use it after")
         #expect(AddForm.crossProfileNote(source: "work", target: "work") == nil)
         try FakeAppCLI.reply(dir, text: #"""
             {"account": "x", "profile": "work", "from": "default",
-             "note": "still signed in in default — default will move off it; work can use it after"}
+             "note": "it is still the login in default, which will move off it — work can use it after"}
             """#, exit: 0)
         let a = try cli.add(account: "x", from: "default", profile: "work").get()
         #expect(a.from == "default")
-        #expect(a.note == "still signed in in default — default will move off it; work can use it after")
+        #expect(a.note == "it is still the login in default, which will move off it — work can use it after")
     }
 
     @Test func testTheSheetStartsOnADeclaredProfile() throws {
@@ -285,7 +285,8 @@ final class Box<T>: @unchecked Sendable {
                 "from the pools when the account list is not read yet")
         #expect(AddForm.lockedProfile(account: "brand-new", accounts: accounts, list: profiles) == nil)
         #expect(AddForm.lockedNote(account: "personal", info: accounts.account("personal"), profile: "review")
-                == "personal is in the pool review, which review uses. To change that, move it to another pool in Accounts.")
+                == "The account “personal” is in the pool “review”, which “review” uses. "
+                + "To change that, move it to another pool in Accounts.")
     }
 
     @Test func testAProfileTheCLIDidNotApplyIsNeverReported() throws {
@@ -294,7 +295,8 @@ final class Box<T>: @unchecked Sendable {
             """#, exit: 0)
         let st = try cli.loginStart(account: "personal", profile: "default", browser: nil).get()
         #expect(AddForm.mismatch(chosen: "default", start: st)
-                == "personal already exists: it stays in its pool, which review uses. Move it to another pool in Accounts.")
+                == "“personal” already exists: it stays in its pool, which the profile “review” uses. "
+                    + "Move it to another pool in Accounts.")
         #expect(AddForm.mismatch(chosen: "review", start: st) == nil)
         #expect(!FakeAppCLI.calls(dir).joined().joined().contains("scope"), "S1: no --scope")
     }
@@ -314,7 +316,7 @@ final class Box<T>: @unchecked Sendable {
             """#.utf8)))
         let p = one.profiles[0]
         #expect(p.implicit)
-        #expect(ProfileText.badge(p) == "No profiles yet", "never \"from CLAUDE_CONFIG_DIR\" for the implicit profile")
+        #expect(ProfileText.badge(p) == "the only profile", "never \"from CLAUDE_CONFIG_DIR\" for the implicit profile")
         #expect(ProfileText.createHint == "Create a profile to split accounts")
         let declared = try #require(ProfileList(data: Data(#"""
             {"profiles": [{"name": "work", "declared": true, "from_env": true}]}
@@ -388,9 +390,11 @@ final class Box<T>: @unchecked Sendable {
 
         let s = try cardsSnapshot()
         let d = try #require(s.card("default"))
-        #expect(d.best?.id == "personal")
-        #expect(d.bestLabel == "Switch to best: personal 12%")
-        #expect(d.bestUnavailable == nil)
+        // The fixture's why names personal, which is live in review: the
+        // card never offers what the switch would refuse (D34).
+        #expect(d.best == nil)
+        #expect(d.bestLabel == "Switch to best")
+        #expect(d.bestUnavailable == "personal is in use by review")
         let rv = try #require(s.card("review"))
         #expect(rv.best == nil)
         #expect(rv.bestLabel == "Switch to best")
@@ -401,6 +405,8 @@ final class Box<T>: @unchecked Sendable {
     /// names the best account and best_why warns; the button shows it.
     @Test func testABestInsideTheMarginCarriesItsWarning() throws {
         var c = try #require(try cardsSnapshot().card("default"))
+        c.best = c.accounts.first { $0.id != c.active?.id }
+        c.bestWhy = nil
         #expect(c.bestWarning == nil)
         c.bestWhy = "personal is only 5 points below its 90% 5-hour trigger, short of the 10-point landing margin"
         #expect(c.bestWarning == c.bestWhy)
@@ -430,7 +436,7 @@ final class Box<T>: @unchecked Sendable {
     }
 
     @Test func testTheCollapsedSummaryLeadsWithTrouble() {
-        #expect(Format.cardSummary(card(status: .needsLogin)) == "needs login · a1")
+        #expect(Format.cardSummary(card(status: .needsLogin)) == "needs sign-in · a1")
         #expect(Format.cardSummary(card(status: .refused(window: "five_hour", until: nil))) == "refused · a1")
         #expect(Format.cardSummary(card(status: .available)) == "a1 · session 3% · week 41%")
     }
@@ -493,7 +499,7 @@ final class Box<T>: @unchecked Sendable {
         let poll = try #require(schema.setting("poll_active"))
         #expect(SettingNames.value(poll, "3m0s") == "3m")
         #expect(SettingNames.value(poll, "1h0m0s") == "1h")
-        #expect(SettingNames.value(poll, "24h0m0s") == "1d")
+        #expect(SettingNames.value(poll, "24h0m0s") == "24h", "as typed: config set takes no days")
         let models = try #require(schema.setting("models"))
         #expect(SettingNames.value(models, "") == "none", "empty counts no model (the CLI: empty = none)")
         #expect(SettingNames.value(models, "Modelname") == "Modelname")
@@ -506,7 +512,7 @@ final class Box<T>: @unchecked Sendable {
         var empty = p
         empty.pool = []
         #expect(!ProfileRemoval.summary(empty, to: "default").lowercased().contains("pool"))
-        #expect(ProfileRemoval.summary(empty, to: "default").hasPrefix("It has no accounts."))
+        #expect(ProfileRemoval.summary(empty, to: "default").contains("is not rotated. It has no accounts."))
         #expect(!ProfileRemoval.needsDestination(empty))
         #expect(ProfileRemoval.needsDestination(p))
     }

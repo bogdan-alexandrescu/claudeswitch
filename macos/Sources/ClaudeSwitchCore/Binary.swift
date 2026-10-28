@@ -163,11 +163,11 @@ public enum CLIError: Error, Equatable {
         case .missing:
             return "claudeswitch is not installed, or not where this app looks."
         case .tooOld(let v):
-            return "claudeswitch \(v) is too old for this app: it needs \(CLI.minimumVersion) or later, "
-                + "speaking the app's contract \(CLI.requiredContract). Update claudeswitch."
+            return "claudeswitch \(v) is too old for this app, which needs \(CLI.minimumVersion) or later. "
+                + "Update claudeswitch."
         case .unsupportedContract(let v, let c):
-            return "claudeswitch \(v) speaks the app's contract \(c); this app speaks "
-                + "\(CLI.supportedContracts.lowerBound). Update ClaudeSwitch (./install-app.sh) to match it."
+            return "claudeswitch \(v) is newer than this app understands. "
+                + "Update ClaudeSwitch (./install-app.sh) to match it."
         case .failed(let s): return s
         case .unreadable(let s): return s
         }
@@ -195,12 +195,14 @@ public struct CLI {
     /// reads, so it is refused too (review), naming the app as what to update.
     public static let supportedContracts = 2...2
     public static let installSteps = """
-        Install or update it from a source checkout:
-          git clone \(UpdateSource.home)
-          cd claudeswitch && ./install.sh
-        or download a release binary into ~/.local/bin/claudeswitch.
-        If it lives elsewhere, choose it in Settings → Advanced → Choose….
+        \(installIntro)
+        \(installCommands.map { "  " + $0 }.joined(separator: "\n"))
+        \(installOutro)
         """
+    public static let installIntro = "Install or update it from a source checkout:"
+    public static let installCommands = ["git clone \(UpdateSource.home)", "cd claudeswitch && ./install.sh"]
+    public static let installOutro = "Or put a release binary at ~/.local/bin/claudeswitch. "
+        + "If it lives elsewhere, choose it in Settings → Advanced → Choose…"
 
     public var path: String
     public var runner: CommandRunning

@@ -360,7 +360,7 @@ final class FakeSystem: UpdateSystem {
         #expect(UpdateError.checksumMismatch("a.zip").message.contains("a.zip"))
         #expect(UpdateError.missingAsset("checksums.txt").message.contains("checksums.txt"))
         #expect(UpdateError.download("x: 404").message.contains("404"))
-        #expect(UpdateError.install("y").message.contains("as they were"), "a failure says nothing changed")
+        #expect(UpdateError.install("y").message.contains("were not changed"), "a failure says nothing changed")
     }
 }
 

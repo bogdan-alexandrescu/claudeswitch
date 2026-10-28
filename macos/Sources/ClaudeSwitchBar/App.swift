@@ -28,10 +28,10 @@ struct ClaudeSwitchBarApp: App {
                 .environmentObject(login)
         } label: {
             MenuBarLabel(title: Self.rendering ? .rendering
-                                : MenuTitle.of(store.problem == .missing ? nil : store.snapshot,
+                                : MenuTitle.of(store.binaryUnusable ? nil : store.snapshot,
                                                compact: store.compact, profile: store.menuProfile,
                                                problem: store.problem),
-                         glyph: GlyphReading.of(store.problem == .missing ? nil : store.snapshot,
+                         glyph: GlyphReading.of(store.binaryUnusable ? nil : store.snapshot,
                                                 profile: store.menuProfile))
                 .background(SettingsOpener(store: store))
         }
@@ -54,6 +54,12 @@ let menuBarLog = Logger(subsystem: "xyz.claudeswitch.menubar", category: "menuba
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
         listenForURLs()
+    }
+
+    /// Any quit, the app menu's ⌘Q included: close what would refuse it.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        MainActor.assumeIsolated { AppQuit.closeSheets() }
+        return .terminateNow
     }
 
     /// claudeswitch://switch-best?profile=…, pin, unpin, status (F6): the
@@ -107,8 +113,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let now = args.firstIndex(of: "--now").flatMap { j in
                 args.count > j + 1 ? ISO8601DateFormatter().date(from: args[j + 1]) : nil
             }
+            // --version 0.8.17: the release the renders show, for the app and
+            // the daemon alike.
+            let version = args.firstIndex(of: "--version").flatMap { j in args.count > j + 1 ? args[j + 1] : nil }
             Task { @MainActor in
-                Render.run(fixtures: args[i + 1], out: args[i + 2], now: now)
+                Render.run(fixtures: args[i + 1], out: args[i + 2], now: now, version: version,
+                           least: args.contains("--min"))
                 exit(0)
             }
             return
@@ -138,7 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// `ClaudeSwitch --render <fixtures-dir> <out-dir> [--now <RFC 3339>]` draws
+/// `ClaudeSwitch --render <fixtures-dir> <out-dir> [--now <RFC 3339>] [--version <v>] [--min]` draws
 /// the menu-bar label, the popover (collapsed and expanded), every Settings
 /// pane, the profile editors and every sheet, in light and dark, from the
 /// JSON in a directory (the test fixtures, or macos/RenderFixtures) to PNGs,
@@ -147,7 +157,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 /// it, a minute after the newest reading.
 @MainActor
 enum Render {
-    static func run(fixtures: String, out: String, now fixed: Date? = nil) {
+    static func run(fixtures: String, out: String, now fixed: Date? = nil, version: String? = nil,
+                    least: Bool = false) {
+        // Every card whole, whatever this Mac's screen (PopoverView's
+        // height cap measures the screen the renders run on).
+        PopoverView.heightOverride = 4000
         func data(_ n: String) -> Data? { try? Data(contentsOf: URL(fileURLWithPath: fixtures + "/" + n)) }
         let state = data("state.json").flatMap(StateFile.init(data:))
         let now = fixed ?? state?.accounts.values.compactMap(\.lastAt).max()?.addingTimeInterval(60) ?? Date()
@@ -188,14 +202,34 @@ enum Render {
                 return r
             }
         }
+        // The daemon's start in the base fixture is later than the overlay
+        // sets' fixed clock: keep it in the past, as a daemon up three hours.
+        if let since = fx.daemon?.since, since > now { fx.daemon?.since = now.addingTimeInterval(-3 * 3600) }
+        // One release throughout: the fixture's daemon is as old as the tests
+        // need it, the renders show the release they document.
+        if let version { fx.daemon?.daemonVersion = version }
         // F3: a set may bring audit log lines, for a lifted pin's notice.
         fx.pinLifts = data("render-audit.jsonl").map(PinLift.latest(jsonl:)) ?? [:]
-        let store = Store(preview: snap, binaryPath: "~/.local/bin/claudeswitch", fixtures: fx)
+        let store = Store(preview: snap, binaryPath: "~/.local/bin/claudeswitch", binaryVersion: version, fixtures: fx)
+        AppHub.updates.preview(version: version ?? "0.0.0", lastCheck: now.addingTimeInterval(-3600), now: now)
+        if least {
+            // --min: only Settings, at the least the window and its sidebar
+            // can be (760 × 520, SettingsView.sidebarLeast), to see what cuts
+            // off there.
+            for dark in [false, true] {
+                for pane in Pane.allCases {
+                    save(SettingsView(pane: pane, renderSidebar: true, sidebarWidth: SettingsView.sidebarLeast).environmentObject(store)
+                        .environmentObject(LoginItem()),
+                         size: CGSize(width: 760, height: 520), dark: dark,
+                         to: out + "/settings-\(pane.rawValue.lowercased())-min\(dark ? "-dark" : "").png")
+                }
+            }
+            return
+        }
         poolSheets(fx: fx, snap: snap, out: out)
         let missing = Store(preview: nil, problem: .missing)
         let login = LoginItem()
 
-        AppHub.updates.preview(version: "0.8.13", lastCheck: now.addingTimeInterval(-3600), now: now)
         for dark in [false, true] {
             let suffix = dark ? "-dark" : ""
             save(PopoverView().environmentObject(store).environmentObject(login),
@@ -235,14 +269,17 @@ enum Render {
                                                  hint: AddForm.appHint(code: "already_vaulted", asked: nil) ?? ""))
                                     .environmentObject(store),
                  size: nil, dark: dark, to: out + "/add-account-duplicate\(suffix).png")
-            extras(store: store, snap: snap, login: login, profiles: profiles, dark: dark, out: out)
+            extras(store: store, snap: snap, login: login, profiles: profiles, fx: fx, version: version, dark: dark,
+                   out: out)
             save(MoreMenuFacsimile(appearance: store.appearance, usage: store.usageMode, open: "Appearance"),
                  size: nil, dark: dark, to: out + "/menu-more\(suffix).png")
             save(MoreMenuFacsimile(appearance: store.appearance, usage: store.usageMode, open: "Show usage as"),
                  size: nil, dark: dark, to: out + "/menu-more-usage\(suffix).png")
         }
-        save(PopoverView().environmentObject(missing).environmentObject(login), size: nil, dark: false,
-             to: out + "/popover-missing.png")
+        for dark in [false, true] {
+            save(PopoverView().environmentObject(missing).environmentObject(login), size: nil, dark: dark,
+                 to: out + "/popover-missing\(dark ? "-dark" : "").png")
+        }
         for (name, compact) in [("label", false), ("label-compact", true)] {
             for p in snap.cards.map(\.name) {
                 for dark in [false, true] {
@@ -295,6 +332,8 @@ enum Render {
     /// Every state of the update window (fixture versions; no call is made).
     static let updateDialogs: [(String, UpdateDialog)] = [
         ("checking", .checking),
+        ("check-off", .checkOff),
+        ("version-unknown", .versionUnknown(latest: "0.5.6")),
         ("up-to-date", .upToDate(current: "0.5.6", latest: "0.5.6")),
         ("check-failed", .checkFailed(UpdateError.noRelease("The Internet connection appears to be offline")
             .message)),
@@ -314,13 +353,39 @@ enum Render {
 
     /// The states the base set does not reach: every card expanded, the
     /// profile editors, and the other sheets (from QA's render extras).
-    static func extras(store: Store, snap: Snapshot, login: LoginItem, profiles: ProfileList?, dark: Bool, out: String) {
+    static func extras(store: Store, snap: Snapshot, login: LoginItem, profiles: ProfileList?, fx: PreviewData,
+                       version: String?, dark: Bool, out: String) {
         let sfx = dark ? "-dark" : ""
+        // The panes whose rows run below the 640 pt window, whole.
+        for pane in [Pane.rotation, .polling, .cleanup, .advanced, .daemon] {
+            save(SettingsView(pane: pane, renderSidebar: true).environmentObject(store).environmentObject(login),
+                 size: CGSize(width: 880, height: 1500), dark: dark,
+                 to: out + "/settings-\(pane.rawValue.lowercased())-tall\(sfx).png")
+        }
+        // A binary older than this app speaks to runs nothing: what the app
+        // has is state.json alone, and the banner takes the cards' place.
+        var oldFx = PreviewData()
+        oldFx.state = fx.state
+        let oldSnap = Snapshot.build(state: fx.state, why: nil, settings: nil, profiles: nil, now: snap.now)
+        let old = Store(preview: oldSnap, problem: .tooOld(version: "0.5.0"), binaryPath: "~/.local/bin/claudeswitch",
+                        fixtures: oldFx)
+        save(PopoverView().environmentObject(old).environmentObject(login), size: nil, dark: dark,
+             to: out + "/popover-too-old\(sfx).png")
+        // A note, as a switch leaves it (the followed card shows the account
+        // it names), and `why` timing out on the next read: the app's own
+        // words for both.
+        let noted = Store(preview: snap, problem: .failed("`claudeswitch why --json` did not finish in time."),
+                          binaryPath: "~/.local/bin/claudeswitch", binaryVersion: version, fixtures: fx)
+        noted.acting(in: .popover)
+        if let c = snap.card(snap.followed(nil)), let a = c.active { noted.note = "\(c.name) now uses \(a.id)" }
+        save(PopoverView().environmentObject(noted).environmentObject(login), size: nil, dark: dark,
+             to: out + "/popover-notes\(sfx).png")
+        states(snap: snap, fx: fx, version: version, login: login, dark: dark, out: out)
         save(PopoverView(expanded: Set(snap.cards.map(\.name))).environmentObject(store).environmentObject(login),
              size: nil, dark: dark, to: out + "/popover-expanded\(sfx).png")
         // M11: a refused `use` shown inline on its card, with R1's retry time.
         if let c = snap.cards.first {
-            let target = c.best?.id ?? c.accounts.first?.id ?? "work-1"
+            let target = c.best?.id ?? c.accounts.first { !$0.isActive }?.id ?? "work-1"
             let at = snap.now.addingTimeInterval(4 * 60)
             let message = "can't confirm \"\(target)\" isn't signed in under profile \"\(c.name)\": the check is "
                 + "rate limited until \(CardError.clock(at)); try again then"
@@ -346,8 +411,10 @@ enum Render {
                  to: out + "/sheet-remove-empty-profile\(sfx).png")
         }
         if let list = profiles?.profiles {
-            save(ScrollView { VStack(spacing: 16) { ForEach(list) { ProfileEditor(profile: $0, done: {}) } }.padding(24) }
-                    .frame(width: 680, height: max(640, CGFloat(list.count) * 440))
+            // Each editor at its own height: a fixed 440 pt each cut the last
+            // ones off.
+            save(VStack(spacing: 16) { ForEach(list) { ProfileEditor(profile: $0, done: {}) } }.padding(24)
+                    .frame(width: 680)
                     .environmentObject(store),
                  size: nil, dark: dark, to: out + "/settings-profile-editors\(sfx).png")
         }
@@ -359,6 +426,35 @@ enum Render {
         save(AddAccountSheet(request: AddAccountRequest()).environmentObject(store),
              size: nil, dark: dark, to: out + "/add-account-from-accounts-pane\(sfx).png")
         pools(store: store, snap: snap, profiles: profiles, dark: dark, out: out)
+    }
+
+    /// Popovers no set's data reaches (QA 2026-10-28): no daemon ever
+    /// started, the first read under way, no state file yet, and the ⋯
+    /// menu of a card pinned softly.
+    static func states(snap: Snapshot, fx: PreviewData, version: String?, login: LoginItem, dark: Bool, out: String) {
+        let sfx = dark ? "-dark" : ""
+        // No daemon: the same state.json with no daemon_since.
+        var never = fx
+        never.state?.daemonSince = nil
+        never.daemon = nil
+        let neverSnap = Snapshot.build(state: never.state, why: fx.why, settings: snap.settings, profiles: fx.profiles,
+                                       now: snap.now)
+        let none = Store(preview: neverSnap, binaryPath: "~/.local/bin/claudeswitch", binaryVersion: version,
+                         fixtures: never)
+        save(PopoverView().environmentObject(none).environmentObject(login), size: nil, dark: dark,
+             to: out + "/popover-no-daemon\(sfx).png")
+        // Before the first read, and with no state file to read.
+        let empty = Store(preview: nil, binaryPath: "~/.local/bin/claudeswitch", binaryVersion: version)
+        save(PopoverView(readingOverride: true).environmentObject(empty).environmentObject(login), size: nil,
+             dark: dark, to: out + "/popover-reading\(sfx).png")
+        save(PopoverView().environmentObject(empty).environmentObject(login), size: nil, dark: dark,
+             to: out + "/popover-no-state\(sfx).png")
+        // A soft pin's ⋯, open: it offers to keep the pin even if it runs out.
+        let store = Store(preview: snap, binaryPath: "~/.local/bin/claudeswitch", binaryVersion: version, fixtures: fx)
+        guard store.accountList?.knowsHardPin == true else { return }
+        for c in snap.cards where c.isPinned && store.pinIsHard(c) == false {
+            save(PinMenuFacsimile(), size: nil, dark: dark, to: out + "/menu-pin-\(c.name)\(sfx).png")
+        }
     }
 
     /// The pool sheets (D38, D39): Rename for a [[pool]] and for a
@@ -431,30 +527,36 @@ enum Render {
             GlyphReading(state: state, week: w, session: s, satellite: sat, accessibility: "")
         }
         let live = MenuTitle.of(snap, compact: false, profile: nil).text
+        // Switching: work-1 is over its session trigger (81%) and the
+        // satellite has moved to the incoming account's week (12%).
         let rows: [(String, GlyphReading, String)] = [
             ("Healthy", reading(.healthy, 0.41, 0.18, 0.41), "default · work-1 41%"),
             ("Climbing", reading(.climbing, 0.52, 0.81, 0.52), "work · work-team 81%"),
-            ("Switching", reading(.switching, 0.12, 0.06, 0.62), "work · work-team 12%"),
+            ("Switching", reading(.switching, 0.52, 0.81, 0.12), "work · work-1 81%"),
             ("Needs you", reading(.needsYou, 0.71, 1, nil), "default · research 100%!"),
             ("This fixture", GlyphReading.of(snap, profile: nil), live),
         ]
-        let sheet = VStack(alignment: .leading, spacing: 10) {
+        // A grid, so each column's chips share one width and their glyphs
+        // and labels line up, in the dark column as in the light.
+        let sheet = Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 10) {
             ForEach(rows, id: \.0) { r in
-                HStack(spacing: 14) {
-                    Text(r.0).frame(width: 90, alignment: .leading)
+                GridRow {
+                    Text(r.0)
                     ForEach([false, true], id: \.self) { dark in
                         HStack(spacing: 4) {
                             Image(nsImage: MenuGlyph.image(r.1, dark: dark))
-                            Text(r.2).monospacedDigit()
+                            Text(r.2).monospacedDigit().lineLimit(1).fixedSize()
                         }
                         .font(.system(size: 13))
-                        .padding(.horizontal, 10).frame(height: 24)
+                        .padding(.horizontal, 10)
+                        .frame(maxWidth: .infinity, minHeight: 24, maxHeight: 24, alignment: .leading)
                         .foregroundStyle(dark ? Color(white: 0.95) : Color(white: 0.07))
                         .background(RoundedRectangle(cornerRadius: 6).fill(dark ? Color(white: 0.17) : Color(white: 0.92)))
                     }
                 }
             }
         }
+        .fixedSize()
         .padding(16)
         save(sheet, size: nil, dark: false, to: out + "/glyph-states.png")
     }
@@ -462,10 +564,21 @@ enum Render {
     /// Draws a view through a real (off-screen) window, so AppKit-backed
     /// controls — lists, text fields, menus — render as they do on screen.
     static func save<V: View>(_ v: V, size: CGSize?, dark: Bool, to path: String) {
-        let host = NSHostingView(rootView: v.background(Color(nsColor: .windowBackgroundColor)))
-        let fit = size ?? host.fittingSize
-        let window = NSWindow(contentRect: NSRect(x: -20_000, y: -20_000, width: fit.width, height: fit.height),
-                              styleMask: [.borderless], backing: .buffered, defer: false)
+        // Drawn as in a window in use: the off-screen window is never the
+        // active one, and switches that are on, red buttons and tinted
+        // bars drew grey.
+        let fit = size ?? {
+            let f = NSHostingView(rootView: v.environment(\.controlActiveState, .key)).fittingSize
+            return CGSize(width: f.width.rounded(.up), height: f.height.rounded(.up))
+        }()
+        // Framed to the whole-point size before the background, so the
+        // background fills every pixel: a fractional fitting size left a
+        // transparent row or column at the edge.
+        let host = NSHostingView(rootView: v.frame(width: fit.width, height: fit.height)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .environment(\.controlActiveState, .key))
+        let window = RenderWindow(contentRect: NSRect(x: -20_000, y: -20_000, width: fit.width, height: fit.height),
+                                  styleMask: [.borderless], backing: .buffered, defer: false)
         window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         window.contentView = host
         host.frame = NSRect(origin: .zero, size: fit)
@@ -483,8 +596,19 @@ enum Render {
     }
 }
 
+/// The off-screen window renders draw in. It says it is the key window, so
+/// AppKit-backed controls (the Settings sidebar's list) draw as they do in a
+/// window in use, not dimmed as in a background one.
+final class RenderWindow: NSWindow {
+    override var isKeyWindow: Bool { true }
+    override var isMainWindow: Bool { true }
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
 /// A card's account picker, drawn for review: a menu cannot be drawn off
-/// screen, so this lays out the same lines (AccountMenuItems), an account
+/// screen, so this lays out the same lines (AccountMenuItems), as the menu
+/// has them: no header, the live account enabled and checked, an account
 /// live in another profile dimmed as the menu disables it. Render only.
 struct AccountMenuFacsimile: View {
     @EnvironmentObject var store: Store
@@ -492,14 +616,19 @@ struct AccountMenuFacsimile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(card.name).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                .padding(.horizontal, 6).padding(.bottom, 4)
             ForEach(card.accounts) { a in
                 let elsewhere = store.snapshot?.liveElsewhere(a.id, notIn: card.name)
-                Text(Format.pickerLine(a, inUseBy: elsewhere, now: store.snapshot?.now ?? Date()))
-                    .font(.system(size: 13))
-                    .foregroundStyle(a.isActive || elsewhere != nil ? Color.secondary : Color.primary)
-                    .padding(.horizontal, 6).frame(height: 22, alignment: .leading)
+                // One line, as a menu item is: allowed to wrap inside its
+                // fixed height, a long line (a trigger time) left AppKit's
+                // constraint passes never settling, and the render crashed.
+                HStack(spacing: 0) {
+                    Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold))
+                        .opacity(a.isActive ? 1 : 0).frame(width: 18)
+                    Text(Format.pickerLine(a, inUseBy: elsewhere, now: store.now)).lineLimit(1).fixedSize()
+                }
+                .font(.system(size: 13))
+                .foregroundStyle(elsewhere != nil ? Color.secondary : Color.primary)
+                .padding(.horizontal, 6).frame(height: 22, alignment: .leading)
             }
             if card.accounts.isEmpty {
                 Text("No accounts").font(.system(size: 13)).foregroundStyle(.secondary).padding(.horizontal, 6)
@@ -514,9 +643,27 @@ struct AccountMenuFacsimile: View {
     }
 }
 
+/// Pin's ⋯ menu open on a card pinned softly, drawn for review: a menu
+/// cannot be drawn off screen. Its one item is HardPinMenu's for a pin
+/// already made. Render only.
+struct PinMenuFacsimile: View {
+    var body: some View {
+        HStack(spacing: 0) {
+            Text("Keep the pin even if it runs out…").lineLimit(1).fixedSize()
+        }
+        .font(.system(size: 13))
+        .padding(.horizontal, 6 + 18).frame(height: 22, alignment: .leading)
+        .padding(5)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.15)))
+        .padding(18)
+        .accessibilityHidden(true)
+    }
+}
+
 /// The menu-bar icon's menu (right-click or Control-click; it was the
 /// popover's ⋯ menu), drawn for the docs: an NSMenu cannot be drawn off
-/// screen, so this lays out the same items (StatusMenu) with one submenu
+/// screen, so this lays out StatusMenu.layout's lines with one submenu
 /// open ("Appearance" or "Show usage as"). Render only; the app never
 /// shows it.
 struct MoreMenuFacsimile: View {
@@ -527,10 +674,9 @@ struct MoreMenuFacsimile: View {
     enum Row { case item(String, String?, Bool), divider }
 
     var main: [Row] {
-        [.item("Refresh now", "⌘R", false), .item("Appearance", nil, true), .item("Show usage as", nil, true),
-         .divider, .item("Settings", "⌘,", false), .item("Set up…", nil, false), .item("Check for updates…", nil, false),
-         .item("About ClaudeSwitch", nil, false),
-         .divider, .item("Quit ClaudeSwitch", "⌘Q", false)]
+        StatusMenu.layout.map { line in
+            line.map { .item($0.title, $0.key.isEmpty ? nil : "⌘" + $0.key.uppercased(), $0.submenu) } ?? .divider
+        }
     }
 
     var body: some View {
@@ -602,7 +748,9 @@ struct MenuBarLabel: View {
             } else {
                 Image(nsImage: MenuGlyph.image(glyph))
             }
-            if !text.isEmpty { Text(text).monospacedDigit() }
+            // Its own width: given a point less it cut its tail, the "%"
+            // and the "!" that says something needs the person.
+            if !text.isEmpty { Text(text).monospacedDigit().lineLimit(1).fixedSize() }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)

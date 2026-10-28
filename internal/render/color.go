@@ -218,6 +218,14 @@ func colorState(s string) string {
 	switch {
 	case strings.HasPrefix(s, "ACTIVE"):
 		return paint(bold, s)
+	case strings.Contains(s, "needs sign-in"):
+		// The one state only a person can fix.
+		return paint(red, s)
+	case strings.Contains(s, "unreadable"):
+		return paint(orange, s)
+	case strings.Contains(s, "short of margin"):
+		// Under its triggers, but no landing place for now.
+		return paint(amber, s)
 	case strings.Contains(s, "refills in"):
 		// Not red: red is reserved for "you have to do something about this",
 		// and an account that refills within the hour is the one case where
@@ -340,9 +348,22 @@ type table struct {
 	head  []string
 	rows  [][]string
 	right map[int]bool // columns to right-align
+	fit   int          // when set, the width rows are cut to (Fit)
+	wrap  int          // when set, the width rows are wrapped to (Wrap)
 }
 
 func (t *table) add(cells ...string) { t.rows = append(t.rows, cells) }
+
+// Fit has rows cut to width columns, indent included, by shortening the last
+// column: a row that wraps loses the alignment the table exists for, and a
+// fixed cut wastes a wide terminal. The column that can lose the most for
+// the least goes last.
+func (t *table) Fit(width int) *Table { t.fit = width; return t }
+
+// Wrap has rows kept to width columns, indent included, by breaking the last
+// column onto lines of its own under it, for a column whose every word
+// matters. It keeps at least twenty columns for it.
+func (t *table) Wrap(width int) *Table { t.wrap = width; return t }
 
 func (t *table) render(indent string) string {
 	n := len(t.head)
@@ -351,20 +372,64 @@ func (t *table) render(indent string) string {
 			n = len(r)
 		}
 	}
+	rows := t.rows
 	widths := make([]int, n)
-	for i, h := range t.head {
-		widths[i] = visibleLen(h)
-	}
-	for _, r := range t.rows {
-		for i, c := range r {
-			if i < len(widths) && visibleLen(c) > widths[i] {
-				widths[i] = visibleLen(c)
+	measure := func() {
+		clear(widths)
+		for i, h := range t.head {
+			widths[i] = visibleLen(h)
+		}
+		for _, r := range rows {
+			for i, c := range r {
+				if i < len(widths) && visibleLen(c) > widths[i] {
+					widths[i] = visibleLen(c)
+				}
 			}
 		}
 	}
+	measure()
+	// room is what the last column has, given the others.
+	room := func(least int) int {
+		r := max(t.fit, t.wrap) - visibleLen(indent) - 2*(n-1)
+		for _, w := range widths[:n-1] {
+			r -= w
+		}
+		return max(r, least)
+	}
+	switch {
+	case n == 0:
+	case t.fit > 0:
+		w := room(1)
+		rows = nil
+		for _, r := range t.rows {
+			if len(r) == n {
+				r = append(append([]string{}, r[:n-1]...), Fit(r[n-1], w))
+			}
+			rows = append(rows, r)
+		}
+		measure()
+	case t.wrap > 0:
+		w := room(20)
+		rows = nil
+		for _, r := range t.rows {
+			if len(r) != n {
+				rows = append(rows, r)
+				continue
+			}
+			parts := WrapPhrases(r[n-1], w)
+			rows = append(rows, append(append([]string{}, r[:n-1]...), parts[0]))
+			for _, p := range parts[1:] {
+				cont := make([]string, n)
+				cont[n-1] = p
+				rows = append(rows, cont)
+			}
+		}
+		measure()
+	}
 	var b strings.Builder
 	line := func(cells []string, dimmed bool) {
-		b.WriteString(indent)
+		var l strings.Builder
+		l.WriteString(indent)
 		for i, c := range cells {
 			if i >= len(widths) {
 				continue
@@ -373,20 +438,22 @@ func (t *table) render(indent string) string {
 				c = paint(dim, c)
 			}
 			if t.right[i] {
-				b.WriteString(padLeft(c, widths[i]))
+				l.WriteString(padLeft(c, widths[i]))
 			} else {
-				b.WriteString(padRight(c, widths[i]))
+				l.WriteString(padRight(c, widths[i]))
 			}
 			if i < len(cells)-1 {
-				b.WriteString("  ")
+				l.WriteString("  ")
 			}
 		}
-		b.WriteString("\n")
+		// No line ends in padding: a last column padded to its widest cell
+		// left every shorter row trailing spaces.
+		b.WriteString(strings.TrimRight(l.String(), " ") + "\n")
 	}
 	if len(t.head) > 0 {
 		line(t.head, true)
 	}
-	for _, r := range t.rows {
+	for _, r := range rows {
 		line(r, false)
 	}
 	return b.String()

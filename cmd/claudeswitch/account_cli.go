@@ -55,7 +55,10 @@ func cmdAccount(args []string) error {
 	yes := fs.Bool("yes", false, "do not ask for confirmation")
 	profName := fs.String("profile", "", "pin, unpin: the profile to pin or unpin (pin's default: the "+
 		"profile the account is live in)")
-	hard := fs.Bool("hard", false, "pin: stay even when the account is refused, out of quota or needs a sign-in")
+	hard := fs.Bool("hard", false, "pin: stay even when the account is refused, out of quota or needs sign-in")
+	if isHelp(verb) {
+		return &helpRequest{text: helpFor(accountUsage, fs)}
+	}
 	p, err := parseApp(fs, rest, accountUsage)
 	if err != nil {
 		return err
@@ -228,9 +231,9 @@ func accountPin(w io.Writer, cfgPath, id, profName string, hard, asJSON bool) er
 	fmt.Fprintf(w, "  pinned %s in profile %s: automatic rotation is off there until `cs account unpin %s`\n",
 		id, prof, id)
 	if hard {
-		fmt.Fprintf(w, "  a hard pin: it stays even if %s is refused, runs out or needs a sign-in\n", id)
+		fmt.Fprintf(w, "  a hard pin: it stays even if %s is refused, runs out or needs sign-in\n", id)
 	} else {
-		fmt.Fprintf(w, "  if %s is refused, runs out or needs a sign-in, the daemon lifts the pin and rotates "+
+		fmt.Fprintf(w, "  if %s is refused, runs out or needs sign-in, the daemon lifts the pin and rotates "+
 			"(`--hard` keeps it)\n", id)
 	}
 	return nil

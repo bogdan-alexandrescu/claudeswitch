@@ -46,7 +46,7 @@ Pick the archive for your machine (`darwin_arm64` for Apple silicon,
 put the binary in `~/.local/bin` with `cs` as a short name for it:
 
 ```sh
-VERSION=v0.8.17
+VERSION=v0.8.18
 TARGET=darwin_arm64
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 curl -LO "$BASE/claudeswitch_${VERSION}_${TARGET}.tar.gz"
@@ -65,7 +65,7 @@ cs version
 ```
 
 ```
-claudeswitch v0.8.17
+claudeswitch v0.8.18
 ```
 
 If your shell says `cs: command not found`, add `~/.local/bin` to your `PATH`
@@ -140,7 +140,7 @@ your config does not say, which pool it joins. Then it opens the sign-in
 page. Sign in **as the account you want to add** and approve; the browser
 hands the result back to claudeswitch by itself. claudeswitch checks the
 credential, stores it in the Keychain, and adds `research` to your config.
-Your current Claude Code session is not touched. Ctrl-C stops it, with
+The login Claude Code is using now is not touched. Ctrl-C stops it, with
 nothing stored.
 
 A browser signs in as whichever account it is already signed in to. If your

@@ -131,10 +131,22 @@ func TestHistoryUsageText(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	for _, want := range []string{"w1", "2 readings", "peak 5h 20%", "7d 40%", "w2", "no readings", "2 switches"} {
+	for _, want := range []string{"READINGS", "PEAK SESSION", "PEAK WEEK", "2 switches"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("text lacks %q:\n%s", want, out)
 		}
+	}
+	rows := map[string][]string{}
+	for _, line := range strings.Split(out, "\n") {
+		if f := strings.Fields(line); len(f) > 0 {
+			rows[f[0]] = f
+		}
+	}
+	if w1 := rows["w1"]; len(w1) < 4 || w1[1] != "2" || w1[2] != "20%" || w1[3] != "40%" {
+		t.Errorf("w1: two readings, peaks 20%% and 40%%:\n%s", out)
+	}
+	if w2 := rows["w2"]; len(w2) != 2 || w2[1] != "none" {
+		t.Errorf("w2 has no readings:\n%s", out)
 	}
 }
 

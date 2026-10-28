@@ -165,29 +165,81 @@ public enum ProfileRemoval {
         return out
     }
 
-    /// Whether the sheet asks where its accounts go: not when it has none.
+    /// Whether the sheet asks where its accounts go: when it has some to
+    /// move, and always for `default`, which `profile remove` refuses
+    /// without --to (the accounts in no pool are default's, D6).
     public static func needsDestination(_ p: ProfileInfo, pools: PoolList? = nil) -> Bool {
-        !ownAccounts(p, pools: pools).isEmpty
+        !ownAccounts(p, pools: pools).isEmpty || p.name == StateFile.defaultProfile
     }
 
-    /// The sheet's explanation, before the CLI's own confirmation.
-    public static func summary(_ p: ProfileInfo, to: String, pools: PoolList? = nil) -> String {
-        let own = ownAccounts(p, pools: pools)
-        let listed = pools.flatMap { l in ProfilePools.shown(p, pools: l)?.filter { l.pool($0)?.own == false } } ?? []
-        let stay = "the pools it uses (\(listed.joined(separator: ", "))) stay"
-        var s: String
-        switch (own.isEmpty, listed.isEmpty) {
-        case (true, true): s = "It has no accounts."
-        case (true, false): s = "It has no accounts of its own; \(stay)."
-        case (false, true): s = "Its accounts (\(own.joined(separator: ", "))) move to \(to)."
-        case (false, false): s = "Its own accounts (\(own.joined(separator: ", "))) move to \(to); \(stay)."
+    /// The destination picker's label: for `default` with nothing of its
+    /// own to move, what the CLI asks about, the accounts in no pool.
+    public static func destinationLabel(_ p: ProfileInfo, pools: PoolList?) -> String {
+        ownAccounts(p, pools: pools).isEmpty ? "Accounts in no pool go to" : "Its accounts go to"
+    }
+
+    /// The pools it lists that stay when it goes (all but its own pool):
+    /// those another profile uses too, and those only it uses, which no
+    /// profile uses then.
+    public static func keptPools(_ p: ProfileInfo, pools: PoolList?) -> (shared: [String], alone: [String]) {
+        guard let l = pools, let shown = ProfilePools.shown(p, pools: l) else { return ([], []) }
+        let kept = shown.filter { !($0 == p.name && l.pool($0)?.own == true) }
+        let alone = kept.filter { n in l.pool(n)?.profiles.allSatisfy { $0 == p.name } ?? false }
+        return (kept.filter { !alone.contains($0) }, alone)
+    }
+
+    /// Under the summary, as a warning: each pool only it uses whose
+    /// accounts then rotate nowhere. Nil when there is none.
+    public static func unusedAfter(_ p: ProfileInfo, pools: PoolList?) -> String? {
+        let q = ProfilesText.q
+        let notes = keptPools(p, pools: pools).alone.compactMap { name -> String? in
+            guard let a = pools?.pool(name)?.accounts, !a.isEmpty else { return nil }
+            let its = a.count == 1 ? "its account \(q(a[0])) rotates" : "its accounts \(spoken(a.map(q))) rotate"
+            return "No profile uses \(q(name)) then: \(its) nowhere until a profile lists it."
         }
-        s += " Its folder \(p.dir ?? "~/.claude") and its saved login stay on disk; nothing is deleted."
+        return notes.isEmpty ? nil : notes.joined(separator: " ")
+    }
+
+    /// The sheet's explanation, and its confirmation: what removing does
+    /// first, then where its accounts go and what stays. `to` is where its
+    /// accounts go; nil until one is chosen.
+    public static func summary(_ p: ProfileInfo, to: String?, pools: PoolList? = nil) -> String {
+        let q = ProfilesText.q
+        let own = ownAccounts(p, pools: pools)
+        let isDefault = p.name == StateFile.defaultProfile
+        let ids = own.map(q).joined(separator: ", ")
+        let dest = to.map(q) ?? "the profile you choose"
+        var s = "The profile \(q(p.name)) is removed from claudeswitch: it gets no card and is not rotated. "
+        switch (own.isEmpty, stays(keptPools(p, pools: pools))) {
+        case (true, nil): s += isDefault ? "It has no accounts of its own, so none move." : "It has no accounts."
+        case (true, let st?): s += "It has no accounts of its own" + (isDefault ? ", so none move" : "") + "; \(st)."
+        case (false, nil): s += "Its accounts (\(ids)) move to \(dest)."
+        case (false, let st?): s += "Its own accounts (\(ids)) move to \(dest); \(st)."
+        }
+        if own.isEmpty && isDefault {
+            s += " Accounts in no pool belong to \(q(p.name)), so claudeswitch asks where they would go even when, "
+                + "as now, there are none."
+        }
+        s += " Its folder \(ProfilesText.dir(p.dir)) and its saved login stay on disk; nothing is deleted."
         if let live = p.live {
-            s += " \(live) may still be signed in there, so it stays guarded: no other profile uses it"
-                + " until that login is gone, or you forget the old profile."
+            s += " The account \(q(live)) may still be signed in there, so it stays guarded: no other profile uses it"
+                + " until that login is gone, or until you release it with Forget… in Profiles."
         }
         return s
+    }
+
+    /// "the pool it shares (“team”) and the pool only it uses (“ops”)
+    /// stay"; nil when none of the pools it lists stays.
+    static func stays(_ kept: (shared: [String], alone: [String])) -> String? {
+        func part(_ ns: [String], _ how: String) -> String {
+            (ns.count == 1 ? "the pool " : "the pools ") + how + " (" + ns.map(ProfilesText.q).joined(separator: ", ") + ")"
+        }
+        switch (kept.shared.isEmpty, kept.alone.isEmpty) {
+        case (true, true): return nil
+        case (false, true): return part(kept.shared, "it shares") + (kept.shared.count == 1 ? " stays" : " stay")
+        case (true, false): return part(kept.alone, "only it uses") + (kept.alone.count == 1 ? " stays" : " stay")
+        case (false, false): return part(kept.shared, "it shares") + " and " + part(kept.alone, "only it uses") + " stay"
+        }
     }
 }
 

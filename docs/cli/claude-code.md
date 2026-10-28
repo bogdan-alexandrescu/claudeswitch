@@ -12,9 +12,9 @@ cs statusline install          [--force]
 cs statusline uninstall
 cs context                     [--config PATH]
 cs session                     [--since DURATION] [--profile NAME] [--detail] [--json] [--config PATH]
-cs history                     [--days N]
+cs history                     [--days N] [--profile NAME] [--config PATH]
 cs history --usage             [--days N] [--json] [--config PATH]
-cs audit                       [-n N] [--kind KIND] [--since DURATION]
+cs audit                       [-n N] [--kind KIND] [--since DURATION] [--json]
 ```
 
 Flags may come before or after the arguments. An unknown flag prints the
@@ -178,25 +178,36 @@ runs. Exit 0, or 1 if the config or state cannot be loaded.
 
 ## cs history
 
-Reads Claude Code's transcripts for limit refusals, de-duplicates them, and
-lists the real ones, newest first:
+Reads Claude Code's transcripts for limit refusals and lists each one once,
+newest first. Claude Code writes a record for every retry of a refused
+request, so a refusal's records are counted as one:
 
 ```
-  412 raw records over 21 days → 3 real limit hits after dedupe
+  3 limit refusals in the last 21 days, from 412 records (Claude Code writes one per retry)
+  read ~/.claude/projects, ~/.claude-work/projects
 
-  WHEN         WINDOW   CLEARED
-  ...
+  WHEN         ACCOUNT  WINDOW  CLEARS
+  today 09:12  work-1   week    Fri 01:10
+  Mon 14:02    -        session Mon 18:00
 ```
 
-Each row is the day, the window (`5-hour` or `weekly`) and the time it
-cleared. With none: `no refusals recorded`. (The header line's wording is the
-source's; its numbers here are illustrative.)
+It reads every profile's transcripts (each profile's `CLAUDE_CONFIG_DIR`,
+`~/.claude` for the one without), and says which folders. Each row is when
+the refusal happened (its first record), the account the daemon saw refused
+(`-` when the daemon did not record it: the transcripts do not say whose a
+refusal was), the window (`session`, `week`, or the limit's own name for any
+other kind) and when that window clears or cleared. Dates read as in
+[cs audit](#cs-audit). With none: `no refusals recorded`. (The numbers here
+are illustrative.)
 
 | flag | default | meaning |
 |---|---|---|
-| `--days N` | `21` | how far back to read |
+| `--days N` | `21` | how far back to read; at least 1 |
+| `--profile NAME` | every profile | read only this profile's transcripts |
+| `--config PATH` | `~/.config/claudeswitch/config.toml` | the config whose profiles are read |
 
-Exit 0, or 1 if the transcripts cannot be read.
+Exit 0; 1 if the config cannot be loaded; 2 for `--days` under 1 or an
+argument.
 
 ### cs history --usage
 
@@ -206,13 +217,18 @@ audit log (IMPROVEMENTS F7). It reads those two files and the config, and
 writes nothing; no keychain, no API.
 
 ```
-  usage over the last 30 day(s), from the daemon's readings log
+  usage over the last 30 days, from the daemon's readings log
 
-  work-1             412 readings · peak 5h 91% · 7d 64% · last Thu 09 Oct 11:58
-  work-2             no readings
+  ACCOUNT        READINGS  PEAK SESSION  PEAK WEEK  LAST
+  work-1              412           91%        64%  today 11:58
+  work-2             none
+  old-one (gone)        3           12%        40%  2 Oct 09:30
 
-  7 switches; `cs history --usage --json` has every reading and switch
+  7 switches; claudeswitch history --usage --json lists every reading and switch
 ```
+
+An account the log names that the config no longer has is marked `(gone)`,
+as in `cs status`. The text form counts the switches; `--json` lists them.
 
 `--json`:
 
@@ -225,7 +241,7 @@ writes nothing; no keychain, no API.
    "series": []}],
  "switches": [
   {"at": "2026-10-09T10:01:00Z", "profile": "work", "from": "work-1", "to": "work-2",
-   "reason": "active account at 86%, over the 85% session trigger", "forced": false}]}
+   "reason": "active account at 86% of its session, over the 85% trigger", "forced": false}]}
 ```
 
 - `accounts`: the configured ones in rotation order (disabled ones after),
@@ -252,34 +268,51 @@ there is nothing new to show.
 What the daemon observed, decided and did, newest first, from its audit log:
 
 ```
-  WHEN         WHAT       DETAIL
-  10-08 15:01  switch     research → personal  active account at 86%, over the 85% …
-  10-08 15:01  decision   switch → personal  ...
+  WHEN         WHAT       PROFILE  DETAIL
+  today 15:01  switch     work     work-1 → work-team  active account at 86% of its session, over the 85% …
+  today 15:01  decision   work     switch → work-team  ...
+  Sun 23:42    refused    default  research on its session window, cleared Mon 01:10
+  18 Oct 02:36 clean      -        run 20261018-023600 moved 1.4 GiB to the Trash: ...
 ```
+
+WHEN is `today 15:04` or a weekday within six days of today, and a date
+(`18 Oct 02:36`, with the year when it is not this one) further off. The
+PROFILE column appears once any event shown names a profile other than
+`default`; a `severity` row belongs to an account, not a profile, and reads
+`-`. Each row is cut to the terminal's width (`COLUMNS` when set), ending
+in `…`.
 
 Kinds and what their DETAIL shows:
 
 | kind | shown as | detail |
 |---|---|---|
 | `switch` | switch | `from → to` and the reason |
-| `rejection` | refused | the account, the window, when it cleared |
+| `rejection` | refused | the account, the window (session or week), when it clears or cleared |
 | `decision` | decision | stay, switch or wait, the target, the reason |
 | `unpin` | unpin | the pin the safety valve lifted, and why (`pin on work-1 lifted: it was refused`) |
-| `severity` | severity | an account's limit changing severity, with the percentage |
+| `severity` | severity | an account's limit changing severity, with the percentage; green back to normal, orange for a warning, red for critical |
 | `error` | error | the error |
+| `login` | login | Claude Code's recorded login lined up with the live account: `was → now` |
+| `clean` | clean | the daemon's cleanup run, or why it failed ([cs clean](clean.md)) |
+| `refresh` | refresh | the daemon renewing a quiet profile's live token: the account and why, or the error |
 
-`[dry-run]` marks what a dry-run daemon would have done; `[forced]` a swap
-made mid-turn. With an empty log: `no audit events yet (run \`claudeswitch watch\`)`.
+`[dry-run]` marks what a dry-run daemon would have done; `[forced]` a switch
+made mid-turn. With an empty log: `no audit events yet (the daemon writes
+them: claudeswitch daemon start)`; with events of which none pass the
+filters: `no events match --kind unpin (the log holds 412 events)`.
 
 | flag | default | meaning |
 |---|---|---|
-| `-n N` | `30` | how many events |
-| `--kind KIND` | all | only `decision`, `switch`, `rejection`, `unpin`, `severity` or `error` |
+| `-n N` | `30` | how many events; at least 1 |
+| `--kind KIND` | all | only `decision`, `switch`, `rejection`, `unpin`, `severity`, `error`, `login`, `clean` or `refresh` |
 | `--since DURATION` | all | only events newer than this, e.g. `24h` |
+| `--json` | off | `{"events": [...]}`: the events that pass the filters, oldest first, each as the log holds it (`at`, `kind`, `profile`, `from`, `to`, `reason`, ...) |
 
 `cs audit --kind decision` is how to check a dry-run daemon's judgement before
-`cs daemon live` ([cs daemon](daemon.md)). Exit 0, or 1 if the log cannot be
-read. The rows above show the layout; their values are illustrative.
+`cs daemon live` ([cs daemon](daemon.md)). Exit 0; 1 if the log cannot be
+read; 2 for an argument, an `-n` under 1 or a kind it does not know (the
+message lists the kinds). The rows above show the layout; their values are
+illustrative.
 
 ## The plugin
 

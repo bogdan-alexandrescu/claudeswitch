@@ -18,7 +18,8 @@ struct PoolLine: View {
     var body: some View {
         if let line = Runway.poolLine(profile: card.name, dryAt: card.poolDryAt, now: now) {
             let urgent = Runway.urgent(dryAt: card.poolDryAt, now: now)
-            Label(line, systemImage: "hourglass")
+            // Urgent says so with its symbol too, not by colour alone.
+            Label(line, systemImage: urgent ? "exclamationmark.triangle.fill" : "hourglass")
                 .font(.caption)
                 .foregroundStyle(urgent ? Color.orange : Color.secondary)
                 .lineLimit(1).truncationMode(.tail)
@@ -30,23 +31,18 @@ struct PoolLine: View {
 // MARK: F3 the pin safety valve
 
 /// The daemon lifted this card's pin: why, until dismissed or a day old.
+/// The Claude in Chrome banner's style: a filled symbol, a border, a
+/// full-size ×.
 struct PinLiftBanner: View {
     @EnvironmentObject var store: Store
     let lift: PinLift
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "pin.slash").foregroundStyle(.orange)
-            Text(lift.message + ", so rotation runs again.")
-                .font(.caption)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 4)
-            Button { store.dismissPinLift(lift) } label: { Image(systemName: "xmark") }
-                .buttonStyle(.borderless).font(.caption)
-                .accessibilityLabel("Dismiss")
+        AmberBannerLine(symbol: "pin.slash.fill", text: lift.message + ", so rotation runs again.",
+                        dismissLabel: "Dismiss the lifted pin notice") {
+            store.dismissPinLift(lift)
         }
-        .padding(8)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
+        .amberBanner()
         .accessibilityElement(children: .combine)
     }
 }
@@ -56,20 +52,47 @@ struct PinLiftBanner: View {
 struct HardPinMenu: View {
     @EnvironmentObject var store: Store
     let card: ProfileCard
+    @State private var confirming = false
 
     var body: some View {
-        if !card.isPinned, let a = card.active, store.accountList?.knowsHardPin == true {
-            Menu {
-                Button("Pin, even if it runs out") { store.pinHard(profile: card.name, account: a.id) }
-            } label: {
-                Image(systemName: "ellipsis")
+        // Unpinned, or pinned softly: a soft pin can be made hard without
+        // unpinning first.
+        if store.pinIsHard(card) != true, let a = card.active, store.accountList?.knowsHardPin == true {
+            if confirming {
+                // Asked inline, in the card: a modal dialog opened from the
+                // popover was never put on screen by macOS and left the
+                // popover blocked (M11).
+                HStack(spacing: 6) {
+                    Button("Pin hard") {
+                        confirming = false
+                        store.pinHard(profile: card.name, account: a.id)
+                    }
+                    .buttonStyle(.borderedProminent).tint(.csAccent).controlSize(.small)
+                    .help("Keep \(card.name) on \(a.id) even when it is refused or needs sign-in; Claude Code "
+                          + "then waits until it clears. Unpin to let it rotate again.")
+                    Button("Cancel") { confirming = false }
+                        .buttonStyle(.bordered).controlSize(.small)
+                        .keyboardShortcut(.cancelAction)
+                }
+                .fixedSize()
+            } else {
+                Menu {
+                    Button(card.isPinned ? "Keep the pin even if it runs out…" : "Pin, even if it runs out…") {
+                        confirming = true
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+                // Pin's look, so it reads as a control beside it.
+                .menuStyle(.button)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .disabled(store.isBusy("pin:\(card.name)"))
+                .help("More ways to pin \(card.name)")
+                .accessibilityLabel("More ways to pin \(card.name)")
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .disabled(store.isBusy("pin:\(card.name)"))
-            .help("More ways to pin \(card.name)")
-            .accessibilityLabel("More ways to pin \(card.name)")
         }
     }
 }
@@ -85,6 +108,7 @@ struct FoldersField: View {
     @State private var text = ""
     @State private var edited = false
     @State private var error: CallError?
+    @FocusState private var focused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -94,7 +118,10 @@ struct FoldersField: View {
                           prompt: Text(verbatim: "~/work/**, ~/clients/**"))
                     .labelsHidden()
                     .textFieldStyle(.roundedBorder)
+                    .focused($focused)
                     .onSubmit(save)
+                    // Leaving the field saves it, as the other fields do.
+                    .onChange(of: focused) { f in if !f, edited { save() } }
                     .accessibilityLabel("Folders that use \(profile.name)")
                 if store.isBusy("folders:\(profile.name)") { ProgressView().controlSize(.mini) }
             }
@@ -116,7 +143,7 @@ struct FoldersField: View {
 
     func save() {
         let new = FolderList.parse(text)
-        guard FolderList.validate(text) == nil, new != paths else { return }
+        guard FolderList.validate(text) == nil, new != paths, !store.isBusy("folders:\(profile.name)") else { return }
         store.setFolders(profile.name, new) { e in
             error = e
             if e == nil { edited = false }
@@ -150,8 +177,10 @@ struct EnumOverrideField: View {
             if let e = error {
                 InlineError(message: e.message, hint: e.hint)
             } else {
-                Text(profile.overrides[setting.key] == nil ? "inherits \(SettingNames.value(setting, global))"
-                     : "overrides \(SettingNames.value(setting, global))")
+                // The global value once: the picker's Inherit choice names
+                // it, as the threshold fields' placeholders do.
+                Text(ProfilesText.overrideCaption(setting, overridden: profile.overrides[setting.key] != nil,
+                                                 global: store.values == nil ? nil : global))
                     .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }
         }
@@ -176,24 +205,31 @@ struct EnumOverrideField: View {
 struct HistoryPane: View {
     @EnvironmentObject var store: Store
 
-    var now: Date { store.snapshot?.now ?? Date() }
+    var now: Date { store.now }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             PaneHeader(title: "History",
                        subtitle: "Each account's session and week over the last 30 days, with its switches.") {
-                Button { store.loadHistory() } label: { Label("Refresh", systemImage: "arrow.clockwise") }
-                    .disabled(store.binaryPath == nil || store.isBusy("load:history"))
+                HStack(spacing: 8) {
+                    if store.isBusy("load:history") { ProgressView().controlSize(.small) }
+                    Button { store.loadHistory() } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                        .disabled(store.binaryPath == nil || store.isBusy("load:history"))
+                }
             }
             .padding([.horizontal, .top], 24)
             .padding(.bottom, 12)
             content
         }
-        .onAppear { if store.next.history == nil { store.loadHistory() } }
+        .onAppear { store.loadHistoryIfStale() }
     }
 
     @ViewBuilder var content: some View {
         if let h = store.next.history {
+            // A failed reread keeps the last history, and says it failed.
+            if let e = store.next.historyError {
+                PaneUnavailable(error: e, what: "Refreshing the history").padding(.horizontal, 24).padding(.bottom, 8)
+            }
             let ids = HistoryChart.accounts(h, now: now)
             if ids.isEmpty {
                 Text("No readings in the last 30 days yet: the daemon records them as it polls.")
@@ -303,7 +339,9 @@ struct AccountHistoryChart: View {
             .chartXAxis {
                 // No vertical grid: the only vertical lines are switches.
                 AxisMarks(values: .stride(by: .day, count: 7)) { _ in
-                    AxisTick()
+                    // Short and solid: a longer dashed tick read as the
+                    // legend's "Switched away" mark.
+                    AxisTick(length: 3, stroke: StrokeStyle(lineWidth: 1))
                     AxisValueLabel(format: .dateTime.day().month(.abbreviated))
                 }
             }
@@ -367,7 +405,7 @@ struct HealthPane: View {
 
     @ViewBuilder var content: some View {
         if let d = store.next.doctor {
-            Text(d.summary + (store.next.doctorAt.map { " · checked " + Format.age($0, now: Date()) } ?? ""))
+            Text(d.summary + (store.next.doctorAt.map { " · checked " + Format.age($0, now: store.now) } ?? ""))
                 .font(.callout).foregroundStyle(.secondary)
                 .padding(.horizontal, 24).padding(.bottom, 8)
             if let e = store.next.doctorError {
@@ -433,7 +471,7 @@ struct CheckRow: View {
                     }
                 }
                 .disabled(store.binaryPath == nil || store.isBusy("fix:\(check.id)"))
-                .help(check.fixText.map { "Runs: claudeswitch \($0)" } ?? fix.title)
+                .help((fix.warning.map { $0 + " " } ?? "") + (check.fixText.map { "Runs: claudeswitch \($0)" } ?? fix.title))
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 10)

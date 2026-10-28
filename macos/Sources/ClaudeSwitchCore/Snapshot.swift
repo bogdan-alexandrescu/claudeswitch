@@ -28,7 +28,7 @@ public enum AccountStatus: Equatable {
 
     public var label: String {
         switch self {
-        case .needsLogin: return "needs login"
+        case .needsLogin: return "needs sign-in"
         case .refused: return "refused"
         case .windowReset: return "window reset"
         case .noHeadroom: return "no headroom"
@@ -211,6 +211,42 @@ public struct ProfileCard: Equatable, Identifiable {
     /// shows that beside the button.
     public var bestWarning: String? { best == nil ? nil : bestWhy }
 
+    /// The text after "Next:" (design call D2, 2026-10-28). A routine stay
+    /// says how far the account is from rotating, from the daemon's own
+    /// figures (its projection, the window it judged), as `cs status` does;
+    /// any other decision gives the daemon's reason.
+    public var nextLine: String {
+        guard let d = decision else { return "unknown" }
+        let head = Format.next(d)
+        if d.kind == "stay", let room = room(d.reason) {
+            return head + " · " + room
+        }
+        return d.reason.isEmpty ? head : head + " — " + d.reason
+    }
+
+    /// "57 points left on the week" for the policy's routine stay, "active
+    /// account at 41% of its week, under the 98% trigger" (before 0.8.18
+    /// without "of its week"); nil for any other reason. The room is the
+    /// card's binding window's, as its label and picker show it, on the
+    /// reading the dial shows (the reason's figure is projected).
+    func room(_ reason: String) -> String? {
+        guard reason.wholeMatch(of: #/active account at \d+%(?: of its [^,]+)?, under the \d+% trigger/#) != nil,
+              let a = active, let w = a.bindingWindow else { return nil }
+        let week = w == "seven_day"
+        guard let shown = (week ? a.sevenDay : a.fiveHour)?.utilization ?? a.bindingPct else { return nil }
+        let left = Int((trigger(for: w) - shown).rounded(.down))
+        guard left > 0 else { return nil }
+        let window = switchAt == switchAtWeekly ? "" : week ? " on the week" : " on the session"
+        return "\(left) point\(left == 1 ? "" : "s") left\(window)"
+    }
+
+    /// Whether Switch to best is the filled button (design call D3,
+    /// 2026-10-28): only when the daemon would move anyway, or has not said.
+    /// While it stays, the loudest control was an action nobody needed.
+    public var bestIsPrimary: Bool {
+        best != nil && !alreadyOnBest && decision?.kind != "stay"
+    }
+
     /// Whether "Next:" is about the account shown: hidden when why judged
     /// another account live than the one state records.
     public var nextVisible: Bool {
@@ -307,7 +343,18 @@ public struct Snapshot: Equatable {
                          decision: why?.profiles.first { $0.profile == rec.name }?.decision)
         }
         let cards = Self.cards(state: state, why: why, cfg: cfg, list: list, order: order, now: now)
-        return Snapshot(accounts: views, activeID: activeID, decision: primary?.decision,
+        // Settings → Accounts and Overview judge an account by the profile it
+        // is live in, else the first that uses it, with that profile's
+        // thresholds and verdicts; the default profile's judged them all.
+        let judged = views.map { v -> AccountView in
+            let card = cards.first { $0.active?.id == v.id } ?? cards.first { c in c.accounts.contains { $0.id == v.id } }
+            guard var j = card?.accounts.first(where: { $0.id == v.id }) ?? card?.active.flatMap({ $0.id == v.id ? $0 : nil })
+            else { return v }
+            j.isActive = v.isActive
+            j.isPinned = v.isPinned
+            return j
+        }
+        return Snapshot(accounts: judged, activeID: activeID, decision: primary?.decision,
                         daemon: daemon, profiles: profiles, settings: switchCfg, now: now, cards: cards)
     }
 
@@ -351,6 +398,19 @@ public struct Snapshot: Equatable {
                                    switchAtWeekly: c.trigger(for: "seven_day"), pool: pool, accounts: accounts)
             card.best = pw?.best.flatMap { id in id == activeID ? nil : (accounts.first { $0.id == id } ?? view(id)) }
             card.bestWhy = pw?.bestWhy
+            // Never offer what the switch would refuse: an account live in
+            // another profile (D34), one needing sign-in, or one outside
+            // this profile's pools.
+            if let b = card.best {
+                let elsewhere = state?.profiles.first { $0.name != name && $0.active == b.id }?.name
+                if let p = elsewhere {
+                    (card.best, card.bestWhy) = (nil, "\(b.id) is in use by \(p)")
+                } else if b.status == .needsLogin {
+                    (card.best, card.bestWhy) = (nil, "\(b.id) needs sign-in")
+                } else if !pool.isEmpty, !pool.contains(b.id) {
+                    (card.best, card.bestWhy) = (nil, "\(b.id) is not in \(name)'s pools")
+                }
+            }
             card.onBest = pw?.onBest
             card.whyActive = pw?.accounts.first { $0.active }?.id
             card.poolDryAt = pw?.poolDryAt
@@ -361,11 +421,11 @@ public struct Snapshot: Equatable {
     static func account(id: String, record: AccountRecord?, verdict: Verdict?, activeID: String?,
                         pinned: String?, cfg: ConfigSettings, now: Date) -> AccountView {
         let last = record?.last
-        let worst = last?.worst
+        let worst = last?.binding(session: cfg.trigger(for: "five_hour"), week: cfg.trigger(for: "seven_day"))
         let window = worst?.window ?? verdict?.window
         let pct = worst?.pct ?? verdict?.utilization
         let trigger = cfg.trigger(for: window ?? "five_hour")
-        let status = statusOf(record: record, trigger: trigger, now: now)
+        let status = statusOf(record: record, cfg: cfg, now: now)
         var level = pct.map { Level.of($0, trigger: trigger) } ?? .ok
         if case .refused = status { level = .over }
         return AccountView(
@@ -378,14 +438,18 @@ public struct Snapshot: Equatable {
             triggerAt: verdict?.triggerAt)
     }
 
-    static func statusOf(record: AccountRecord?, trigger: Double, now: Date) -> AccountStatus {
+    /// Judged by the window nearest its own trigger (UsageReading.binding),
+    /// as the daemon judges it.
+    static func statusOf(record: AccountRecord?, cfg: ConfigSettings, now: Date) -> AccountStatus {
         guard let r = record else { return .unknown }
         if let e = r.lastError, needsLogin(e) { return .needsLogin }
         if let until = r.burntUntil, now < until { return .refused(window: r.burntWindow, until: until) }
-        guard let last = r.last, let worst = last.worst else { return .unknown }
-        let w = worst.window == "seven_day" ? last.sevenDay : last.fiveHour
+        guard let last = r.last,
+              let b = last.binding(session: cfg.trigger(for: "five_hour"), week: cfg.trigger(for: "seven_day"))
+        else { return .unknown }
+        let w = b.window == "seven_day" ? last.sevenDay : last.fiveHour
         if let reset = w.resetsAt, now > reset, let at = r.lastAt, at < reset { return .windowReset }
-        if worst.pct >= trigger { return .noHeadroom }
+        if b.pct >= cfg.trigger(for: b.window) { return .noHeadroom }
         return .available
     }
 

@@ -10,7 +10,10 @@ See also: [accounts](accounts.md) · [config](config.md) · [daemon](daemon.md) 
 |---|---|
 | `0` | success |
 | `1` | the command failed; the message is on stderr as `claudeswitch: <message>`. `version --json` and other `--json` commands answer a failure with one error object on stdout |
-| `2` | an unknown command, no command, or a flag the command does not know |
+| `2` | an unknown command (one line naming it), no command, or a flag the command does not know |
+
+`help` (or `--help`, `-h`) on a command, or `cs help <command>`, prints its
+synopsis and flags on stdout and exits 0.
 
 ## cs setup
 
@@ -185,10 +188,12 @@ cs -v
 cs --version
 ```
 
-Prints the build: `claudeswitch v0.8.17` for a release binary,
+Prints the build: `claudeswitch v0.8.18` for a release binary,
 `claudeswitch dev` for a build from source (fixture `version.txt`). With no
 command at all, `cs` prints the version line and every command with a
-one-line description, and exits 2:
+one-line description, and exits 2; `cs help` (or `cs --help`, `cs -h`) prints
+the same on stdout and exits 0, and `cs help <command>` that command's
+synopsis and flags:
 
 <p align="center"><img src="../images/cli-help.svg" width="720" alt="Output of cs with no arguments: the version line and a list of every command with a one-line description"></p>
 

@@ -1,0 +1,49 @@
+{
+ "pools": [
+  {
+   "accounts": [
+    "research",
+    "personal"
+   ],
+   "name": "default",
+   "own": true,
+   "profiles": [
+    "default"
+   ]
+  },
+  {
+   "accounts": [
+    "work-team",
+    "work-2"
+   ],
+   "name": "work",
+   "own": true,
+   "profiles": [
+    "work"
+   ]
+  },
+  {
+   "accounts": [
+    "lab-1",
+    "lab-2"
+   ],
+   "name": "lab",
+   "own": true,
+   "profiles": [
+    "lab"
+   ]
+  },
+  {
+   "accounts": [
+    "client-1",
+    "client-2"
+   ],
+   "name": "client",
+   "own": true,
+   "profiles": [
+    "client"
+   ]
+  }
+ ],
+ "unlisted": []
+}

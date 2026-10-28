@@ -345,7 +345,7 @@ func TestTheWindowsAreJudgedByTheirOwnTriggers(t *testing.T) {
 		t.Fatalf("96%% weekly is over the 95%% trigger and must rotate: %v -> %s (%s)",
 			d.Kind, d.Target, d.Reason)
 	}
-	if !contains(d.Reason, "weekly") {
+	if !contains(d.Reason, "week") {
 		t.Errorf("the reason must name the window that drove it, got: %s", d.Reason)
 	}
 
@@ -382,7 +382,7 @@ func TestTheProjectionMovesTheWindowBeingJudged(t *testing.T) {
 		t.Fatalf("80%% of the session and 90%% of the week are both under their triggers: %v -> %s (%s)",
 			d.Kind, d.Target, d.Reason)
 	}
-	if !contains(d.Reason, "at 80%, under the 85% trigger") {
+	if !contains(d.Reason, "at 80% of its session, under the 85% trigger") {
 		t.Errorf("the reason must give the session's own figure against its trigger, got: %s", d.Reason)
 	}
 
@@ -445,5 +445,22 @@ func TestAPinnedProfileOnAnotherAccountGoesBackToThePin(t *testing.T) {
 	})
 	if d := Decide(Input{Cfg: cfg(), Now: now, St: s3, Pinned: "work-b"}); d.Target == "work-b" || d.Unpin == "" {
 		t.Fatalf("pinned to an account out of quota: %v (unpin %q), want the pin lifted", d, d.Unpin)
+	}
+}
+
+// A verdict names the window it judged, with that window's figure: it said
+// "seven_day" beside the session's 80 when the week's 90 was the higher.
+func TestAVerdictNamesTheWindowItJudged(t *testing.T) {
+	later := now.Add(time.Hour)
+	c := cfg()
+	c.SwitchAtWeekly, c.HardFloor = 98, 99
+	_, vs := Explain(Input{Cfg: c, Now: now, St: st("work-a", map[string]*state.Account{
+		"work-a": reading(80, 90, later),
+		"work-b": reading(10, 10, later),
+	})})
+	for _, v := range vs {
+		if v.ID == "work-a" && (v.Window != "five_hour" || v.Worst != 80) {
+			t.Fatalf("work-a is judged on its session at 80%%, got %s at %.0f", v.Window, v.Worst)
+		}
 	}
 }

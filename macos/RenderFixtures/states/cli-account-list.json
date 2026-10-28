@@ -1,0 +1,140 @@
+{
+ "accounts": [
+  {
+   "active_in": "default",
+   "email": "person1@example.com",
+   "enabled": true,
+   "id": "research",
+   "pin_hard": false,
+   "pinned": false,
+   "plan": "Max 20x",
+   "pool": "default",
+   "profile": "default",
+   "profiles": [
+    "default"
+   ],
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  },
+  {
+   "active_in": null,
+   "email": null,
+   "enabled": true,
+   "id": "personal",
+   "pin_hard": false,
+   "pinned": false,
+   "plan": "Pro",
+   "pool": "default",
+   "profile": "default",
+   "profiles": [
+    "default"
+   ],
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  },
+  {
+   "active_in": "work",
+   "email": "person2@example.com",
+   "enabled": true,
+   "id": "work-team",
+   "pin_hard": false,
+   "pinned": false,
+   "plan": "Team",
+   "pool": "work",
+   "profile": "work",
+   "profiles": [
+    "work"
+   ],
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  },
+  {
+   "active_in": null,
+   "email": null,
+   "enabled": true,
+   "id": "work-2",
+   "pin_hard": false,
+   "pinned": false,
+   "plan": "Max 5x",
+   "pool": "work",
+   "profile": "work",
+   "profiles": [
+    "work"
+   ],
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  },
+  {
+   "active_in": "lab",
+   "email": null,
+   "enabled": true,
+   "id": "lab-1",
+   "pin_hard": true,
+   "pinned": true,
+   "plan": "Max 20x",
+   "pool": "lab",
+   "profile": "lab",
+   "profiles": [
+    "lab"
+   ],
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  },
+  {
+   "active_in": null,
+   "email": null,
+   "enabled": true,
+   "id": "lab-2",
+   "pin_hard": false,
+   "pinned": false,
+   "plan": "Max 5x",
+   "pool": "lab",
+   "profile": "lab",
+   "profiles": [
+    "lab"
+   ],
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  },
+  {
+   "active_in": "client",
+   "email": null,
+   "enabled": true,
+   "id": "client-1",
+   "pin_hard": false,
+   "pinned": true,
+   "plan": "Team",
+   "pool": "client",
+   "profile": "client",
+   "profiles": [
+    "client"
+   ],
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  },
+  {
+   "active_in": null,
+   "email": null,
+   "enabled": true,
+   "id": "client-2",
+   "pin_hard": false,
+   "pinned": false,
+   "plan": "Team",
+   "pool": "client",
+   "profile": "client",
+   "profiles": [
+    "client"
+   ],
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  }
+ ]
+}

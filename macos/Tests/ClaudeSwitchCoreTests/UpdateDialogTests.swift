@@ -47,14 +47,16 @@ import Testing
         #expect(r.whatsNew == nil)
     }
 
-    @Test func testTheProgressBarOnlyMovesForward() {
+    @Test func testTheProgressBarFillsByTheDownloadThenByStep() {
         let steps: [UpdateStep] = [.downloading(received: 0, total: 100), .downloading(received: 50, total: 100),
                                    .downloading(received: 100, total: 100), .verifying, .installingCLI,
                                    .installingApp, .restartingDaemon, .relaunching]
-        let f = steps.map(\.fraction)
-        #expect(f == f.sorted() && Set(f).count == f.count, "each step further along than the one before: \(f)")
-        #expect(f.first == 0 && f.last == 1)
-        #expect(UpdateStep.downloading(received: 1 << 20, total: 11 << 20).label == "Downloading… 1 MB of 11 MB")
+        let download = steps.prefix(3).map(\.fraction), after = steps.dropFirst(3).map(\.fraction)
+        #expect(download == [0, 0.5, 1], "the download's own share")
+        #expect(after == after.sorted() && Set(after).count == after.count,
+                "each step further along than the one before: \(after)")
+        #expect(after.last == 1)
+        #expect(UpdateStep.downloading(received: 1 << 20, total: 11 << 20).label == "Downloading… 1.0 MB of 11.0 MB")
         #expect(UpdateStep.downloading(received: 0, total: 0).fraction == 0)
         #expect(steps.filter(\.cancellable) == Array(steps.prefix(4)), "Cancel only before anything is replaced")
         let installing = UpdateDialog.installing(version: "0.5.6", step: .installingApp)
@@ -74,12 +76,12 @@ import Testing
 
     @Test func testTheOtherStatesSayWhatHappened() {
         let failed = UpdateDialog.failed(version: "0.5.6", message: UpdateError.install("x").message)
-        #expect(failed.title == "The update did not install" && failed.message.contains("as they were"))
+        #expect(failed.title == "The update did not install" && failed.message.contains("were not changed"))
         let done = UpdateDialog.installed(version: "0.5.6")
         #expect(done.title == "ClaudeSwitch is now 0.5.6")
         #expect(done.message.contains("claudeswitch") && done.message.contains("daemon"))
         #expect(UpdateDialog.checking.title == "Checking for updates…")
-        #expect(UpdateError.cancelled.message.contains("as they were"))
+        #expect(UpdateError.cancelled.message.contains("were not changed"))
     }
 }
 
@@ -101,8 +103,9 @@ extension UpdaterTests {
         #expect(steps.contains(.downloading(received: 45, total: 45)), "then the app zip")
         let after = steps.filter { if case .downloading = $0 { return false } else { return true } }
         #expect(after == [.verifying, .installingCLI, .installingApp, .restartingDaemon])
-        let f = steps.map(\.fraction)
-        #expect(f == f.sorted(), "the bar never goes back")
+        let download = steps.filter { if case .downloading = $0 { return true } else { return false } }.map(\.fraction)
+        #expect(download == download.sorted() && download.last == 1, "the bar never goes back while downloading")
+        #expect(after.map(\.fraction) == after.map(\.fraction).sorted(), "nor in the steps after it")
     }
 
     @Test func testCancelWhileDownloadingChangesNothing() throws {

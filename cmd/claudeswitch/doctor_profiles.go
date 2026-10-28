@@ -9,6 +9,7 @@ import (
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/profile"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/render"
 )
 
 // doctorWarnings prints the config's warnings: settings that load and run but
@@ -29,7 +30,7 @@ func doctorExit(failures int) error {
 	if failures == 0 {
 		return nil
 	}
-	return fmt.Errorf("%d doctor check(s) failed", failures)
+	return fmt.Errorf("%s failed", render.Plural(failures, "doctor check", "doctor checks"))
 }
 
 // doctorProfiles checks each Claude Code profile: its dir exists, its live

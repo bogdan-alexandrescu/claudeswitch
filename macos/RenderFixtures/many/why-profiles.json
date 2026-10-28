@@ -143,7 +143,7 @@
    "current": false,
    "decision": {
     "kind": "switch",
-    "reason": "w01's Modelthree Extended Thinking Preview weekly limit is at 93%, over the 90% trigger, and w02 has 88 points of room on both windows",
+    "reason": "w01's Modelthree Extended Thinking Preview weekly limit is at 93%, over the 90% trigger, and w02 has room on both windows",
     "target": "w02"
    },
    "pool": [
@@ -165,7 +165,7 @@
     "hard_floor": 98,
     "landing_margin": 10,
     "switch_at": 75,
-    "switch_at_weekly": 98
+    "switch_at_weekly": 90
    }
   },
   {

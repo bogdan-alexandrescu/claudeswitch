@@ -1,0 +1,40 @@
+{
+ "checks": [
+  {
+   "fix": null,
+   "message": "~/.config/claudeswitch/config.toml: 8 accounts, 4 profiles",
+   "name": "config",
+   "status": "ok"
+  },
+  {
+   "fix": null,
+   "message": "8 accounts in the vault",
+   "name": "vault",
+   "status": "ok"
+  },
+  {
+   "fix": null,
+   "message": "the daemon can read the vault",
+   "name": "keychain",
+   "status": "ok"
+  },
+  {
+   "fix": null,
+   "message": "reachable; last read 21m ago",
+   "name": "usage API",
+   "status": "ok"
+  },
+  {
+   "fix": "daemon restart",
+   "message": "installed, but it has not polled for 21m",
+   "name": "daemon",
+   "status": "fail"
+  },
+  {
+   "fix": null,
+   "message": "installed in Claude Code",
+   "name": "status line",
+   "status": "ok"
+  }
+ ]
+}

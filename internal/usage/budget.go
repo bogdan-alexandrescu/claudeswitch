@@ -185,6 +185,21 @@ func (b *Budget) SetAllowance(n int) {
 	b.allowance = n
 }
 
+// Allowance is how many calls a window permits: api_budget for each profile
+// in use (config.WindowAllowance), or DefaultAllowance.
+func (b *Budget) Allowance() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.allowance
+}
+
+// Window is the span the allowance is counted over.
+func (b *Budget) Window() time.Duration {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.window
+}
+
 // shared is the budget every caller in this process uses. It is backed by a file
 // so that it is shared across PROCESSES too.
 //

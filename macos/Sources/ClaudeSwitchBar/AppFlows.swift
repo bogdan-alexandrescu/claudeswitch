@@ -57,6 +57,14 @@ enum ShortcutRunner {
         let store = AppHub.store
         guard let s = store.snapshot else {
             pending.append(c)
+            // Answered, not dropped, if no reading ever comes.
+            if pending.count == 1 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 30) {
+                    guard !pending.isEmpty, AppHub.store.snapshot == nil else { return }
+                    pending.removeAll()
+                    AppHub.notifier.inform("ClaudeSwitch could not read the accounts yet, so nothing was switched.")
+                }
+            }
             return
         }
         let name = c.profile ?? s.followed(store.menuProfile)
@@ -67,18 +75,25 @@ enum ShortcutRunner {
         switch c {
         case .switchBest:
             if let b = card.best, !card.alreadyOnBest {
-                store.use(b.id, profile: card.name)
+                store.use(b.id, profile: card.name) { e in
+                    AppHub.notifier.inform("Could not switch \(card.name) to \(b.id): \(e.message)")
+                }
             } else {
-                AppHub.notifier.inform("\(card.name) is already on its best account. " + (card.bestWhy ?? ""))
+                AppHub.notifier.inform(ShortcutAnswer.noBest(profile: card.name, alreadyOnBest: card.alreadyOnBest,
+                                                             why: card.bestWhy))
             }
         case .pin:
             guard let a = card.active?.id else {
                 AppHub.notifier.inform("\(card.name) has no live account to pin.")
                 return
             }
-            store.setPinned(true, profile: card.name, account: a)
+            store.setPinned(true, profile: card.name, account: a) { e in
+                AppHub.notifier.inform("Could not pin \(card.name): \(e.message)")
+            }
         case .unpin:
-            store.setPinned(false, profile: card.name, account: nil)
+            store.setPinned(false, profile: card.name, account: nil) { e in
+                AppHub.notifier.inform("Could not unpin \(card.name): \(e.message)")
+            }
         case .status:
             AppHub.notifier.inform(StatusLine.text(card))
         }
@@ -139,6 +154,7 @@ final class Notifier: NSObject, ObservableObject, UNUserNotificationCenterDelega
             flowsLog.notice("notifications allowed: \(granted, privacy: .public)")
             Task { @MainActor in
                 self.granted = granted
+                self.answered = true
                 // Beat at once now that it is known, rather than a minute on.
                 if granted { AppHub.heartbeat.start() }
             }
@@ -148,7 +164,10 @@ final class Notifier: NSObject, ObservableObject, UNUserNotificationCenterDelega
     /// Whether this app posts the actionable rotation notices right now: on,
     /// in a bundle, and allowed. The heartbeat runs only while it does, so
     /// the daemon's own notice comes back when it does not.
-    private var granted = false
+    @Published private(set) var granted = false
+    /// Whether macOS has answered the request: until then "not allowed" is
+    /// not known.
+    @Published private(set) var answered = false
     var notifying: Bool { enabled && available && granted }
 
     /// Compares a new snapshot with the last and posts what changed.
@@ -172,7 +191,9 @@ final class Notifier: NSObject, ObservableObject, UNUserNotificationCenterDelega
     /// A plain notification: a shortcut's answer (Status, or why nothing
     /// was done). Without notifications, a beep.
     func inform(_ text: String) {
-        guard available else {
+        // Outside a bundle, or refused by macOS, a notification goes
+        // nowhere: a beep at least says something happened.
+        guard available, !(answered && !granted) else {
             NSSound.beep()
             return
         }
@@ -188,11 +209,15 @@ final class Notifier: NSObject, ObservableObject, UNUserNotificationCenterDelega
                                              userInfo: userInfo) else { return }
         let store = AppHub.store
         switch cmd {
+        // Started from a notification, so a refusal is told as one: the
+        // popover's card error would be seen much later, if at all.
         case let .use(account, profile):
-            store.use(account, profile: profile)
+            store.use(account, profile: profile) { [weak self] e in
+                self?.inform("Could not switch \(profile) to \(account): \(e.message)")
+            }
         case .pin(let account):
             store.setPinned(true, profile: store.liveIn(account) ?? store.profile(of: account) ?? StateFile.defaultProfile,
-                            account: account)
+                            account: account) { [weak self] e in self?.inform("Could not pin \(account): \(e.message)") }
         case let .signIn(account, _):
             // Add account → sign in again, on Settings (SettingsOpener).
             store.beginSignIn(account)

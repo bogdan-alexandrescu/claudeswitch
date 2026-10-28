@@ -50,9 +50,9 @@ import Testing
         i.update.available = "0.9.0"
         i.daemon?.health = .never
         let o = Overview.build(i)
-        #expect(o.needs.map(\.target) == [.daemon, .accounts, .accounts, .update])
+        #expect(o.needs.map(\.target) == [.daemon, .signIn, .accounts, .update])
         #expect(o.needs[0].text.contains("not installed"))
-        #expect(o.needs[1].text == "\(s.accounts[0].id) needs signing in again" && o.needs[1].action == "Sign in…")
+        #expect(o.needs[1].text == "\(s.accounts[0].id) needs sign-in" && o.needs[1].action == "Sign in…")
         #expect(o.needs[3].text == "ClaudeSwitch 0.9.0 is available" && o.needs[3].action == "Update…")
         let accounts = try #require(o.tiles.first { $0.title == "Accounts" })
         #expect(accounts.attention && accounts.secondary.hasPrefix("1 needs sign-in"))
@@ -64,7 +64,7 @@ import Testing
         var i = input(try snapshot())
         i.clean = OverviewClean(on: false, every: nil, lastAt: nil, lastBytes: 0, lastRemoved: 0)
         var tile = try #require(Overview.build(i).tiles.first { $0.title == "Cleanup" })
-        #expect(tile.primary == "Off" && tile.secondary == "no run yet")
+        #expect(tile.primary == "Schedule off" && tile.secondary == "no run yet")
         i.clean = OverviewClean(on: true, every: 6 * 3600, lastAt: nil, lastBytes: 0, lastRemoved: 0)
         tile = try #require(Overview.build(i).tiles.first { $0.title == "Cleanup" })
         #expect(tile.primary == "Every 6h")
@@ -90,7 +90,7 @@ import Testing
         let o = Overview.build(i)
         #expect(o.recent.count == 3)
         #expect(o.recent[0].text == "review: b → c (at 86% of its session, over the 85% trigger)")
-        #expect(o.recent[1].text == "cleanup moved 3.4 GB (198 items)")
+        #expect(o.recent[1].text == "cleanup removed 198 items · 3.4 GB")
         #expect(o.recent[2].text == "default: a → b (manual)")
         #expect(o.recent[0].when == Overview.when(fixtureNow.addingTimeInterval(-600), now: fixtureNow))
     }

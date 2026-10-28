@@ -81,6 +81,8 @@ final class HotKeyCenter: ObservableObject {
 struct HotKeyRow: View {
     @ObservedObject var hotKey: HotKeyCenter
     @State private var recording = false
+    /// Why the last key pressed while recording was not taken.
+    @State private var refused: String?
     @State private var monitor: Any?
 
     var body: some View {
@@ -89,7 +91,7 @@ struct HotKeyRow: View {
                 HStack(spacing: 8) {
                     Button(recording ? "Press keys…" : hotKey.key.display) { recording ? stop() : record() }
                         .font(.body.monospaced())
-                        .help("Click, then press the keys: ⌘, ⌥ or ⌃ and a key. Escape cancels.")
+                        .help("Click, then press the keys: two of ⌘, ⌥ and ⌃, and a key. Escape cancels.")
                         .accessibilityLabel(recording ? "Recording a hotkey" : "Hotkey \(hotKey.key.display)")
                     Toggle("", isOn: $hotKey.enabled).labelsHidden().toggleStyle(.switch)
                         .accessibilityLabel("Switch to best hotkey")
@@ -102,6 +104,9 @@ struct HotKeyRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            if recording, let r = refused {
+                Text(r).font(.caption).foregroundStyle(.secondary)
+            }
             if let p = hotKey.problem {
                 Label(p, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
             }
@@ -110,6 +115,7 @@ struct HotKeyRow: View {
     }
 
     func record() {
+        refused = nil
         recording = true
         hotKey.suspend()
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
@@ -123,7 +129,11 @@ struct HotKeyRow: View {
             if e.modifierFlags.contains(.control) { mods.insert(.control) }
             if e.modifierFlags.contains(.shift) { mods.insert(.shift) }
             let k = HotKey(keyCode: UInt32(e.keyCode), modifiers: mods)
-            guard k.isUsable else { return nil }
+            if let why = k.recordRefusal {
+                refused = why
+                return nil
+            }
+            refused = nil
             hotKey.key = k
             stop()
             return nil

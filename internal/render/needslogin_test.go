@@ -44,17 +44,18 @@ func statusFor(t *testing.T, lastErr string, lastAt time.Time) string {
 // warning appeared only if a staleness timer had also elapsed.
 func TestAnAccountNeedingASignInSaysSoAndSaysWhatToRun(t *testing.T) {
 	for _, tc := range []struct{ name, err, want string }{
-		{"never captured", "account \"work-a\" is not in the vault: no stored credential", "claudeswitch add work-a"},
-		{"revoked", "usage API rejected the token (401): the account may need a re-login", "claudeswitch add work-a"},
-		{"refresh dead", "this account needs an interactive login (`claude` then /login): invalid_grant", "claudeswitch add work-a"},
+		// The decided path, which leaves the live session alone (0.7.3).
+		{"never captured", "account \"work-a\" is not in the vault: no stored credential", "claudeswitch login work-a --direct"},
+		{"revoked", "usage API rejected the token (401): the account may need a re-login", "claudeswitch login work-a --direct"},
+		{"refresh dead", "this account needs an interactive login (`claude` then /login): invalid_grant", "claudeswitch login work-a --direct"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// A *fresh* reading, so nothing else would have raised a warning.
 			out := statusFor(t, tc.err, time.Now())
-			if !strings.Contains(out, "needs login") {
-				t.Errorf("the state column must say the account needs a login:\n%s", out)
+			if !strings.Contains(out, "needs sign-in") {
+				t.Errorf("the state column must say the account needs sign-in:\n%s", out)
 			}
-			if !strings.Contains(out, "needs a sign-in") {
+			if !strings.Contains(out, "work-a needs sign-in:") {
 				t.Errorf("a warning must name the account:\n%s", out)
 			}
 			if !strings.Contains(out, tc.want) {
@@ -67,7 +68,7 @@ func TestAnAccountNeedingASignInSaysSoAndSaysWhatToRun(t *testing.T) {
 // A healthy account must not be told to sign in.
 func TestAHealthyAccountIsNotToldToSignIn(t *testing.T) {
 	out := statusFor(t, "", time.Now())
-	if strings.Contains(out, "needs a sign-in") || strings.Contains(out, "needs login") {
+	if strings.Contains(out, "needs sign-in") {
 		t.Errorf("no sign-in prompt belongs on a healthy account:\n%s", out)
 	}
 }
@@ -76,7 +77,7 @@ func TestAHealthyAccountIsNotToldToSignIn(t *testing.T) {
 // as one — the account is fine and will be read on the next tick.
 func TestATransientPollFailureIsNotASignInProblem(t *testing.T) {
 	out := statusFor(t, "not polled: remaining call is reserved for a swap check", time.Now())
-	if strings.Contains(out, "needs a sign-in") {
+	if strings.Contains(out, "needs sign-in") {
 		t.Errorf("a deferred poll is not a credential problem:\n%s", out)
 	}
 }
@@ -130,7 +131,7 @@ func TestASpentRefreshTokenOutranksAStaleTransientError(t *testing.T) {
 		`{"error": "invalid_grant", "error_description": "Refresh token not found or invalid"}`
 
 	out := statusFor(t, spent, time.Now())
-	if !strings.Contains(out, "needs login") {
+	if !strings.Contains(out, "needs sign-in") {
 		t.Errorf("a spent refresh token must show in the state column:\n%s", out)
 	}
 	if strings.Contains(out, "window reset") {
@@ -139,7 +140,7 @@ func TestASpentRefreshTokenOutranksAStaleTransientError(t *testing.T) {
 
 	// And a merely rate-limited account is not told to sign in.
 	out = statusFor(t, "usage API rate limited, retry in 52m50s", time.Now())
-	if strings.Contains(out, "needs login") {
+	if strings.Contains(out, "needs sign-in") {
 		t.Errorf("a transient refusal is not a login problem:\n%s", out)
 	}
 }

@@ -131,7 +131,7 @@ func fixtureSnapshot(why name: String = "why.json", now: Date = fixtureNow) thro
     }
 
     @Test func testNoHeadroomAtTheTrigger() {
-        let s = Snapshot.statusOf(record: nil, trigger: 90, now: fixtureNow)
+        let s = Snapshot.statusOf(record: nil, cfg: ConfigSettings(switchAt: 90), now: fixtureNow)
         #expect(s == .unknown)
     }
 
@@ -174,6 +174,26 @@ func fixtureSnapshot(why name: String = "why.json", now: Date = fixtureNow) thro
         #expect(Format.age(fixtureNow.addingTimeInterval(-90), now: fixtureNow) == "1m ago")
         #expect(Format.age(fixtureNow, now: fixtureNow) == "just now")
         #expect(Format.age(nil, now: fixtureNow) == "never")
+        // An age in its largest unit: "18h ago", never "18h 46m ago".
+        #expect(Format.age(fixtureNow.addingTimeInterval(-(18 * 3600 + 46 * 60)), now: fixtureNow) == "18h ago")
+        #expect(Format.age(fixtureNow.addingTimeInterval(-(2 * 86_400 + 5 * 3600)), now: fixtureNow) == "2d ago")
+    }
+
+    /// Times on screen count from the app's clock, never the wall clock, so
+    /// the docs renders (drawn at a fixed clock) read as the fixtures say.
+    /// The Daemon pane said "Running since 18d 13h ago" from the wall clock.
+    @Test func testTimesCountFromTheClockTheyAreGiven() {
+        let started = fixtureNow.addingTimeInterval(-(2 * 3600 + 14 * 60))
+        #expect(Format.uptime(since: started, now: fixtureNow) == "2h 14m")
+        #expect(Format.uptime(since: fixtureNow.addingTimeInterval(30), now: fixtureNow) == "0s")
+
+        let later = fixtureNow.addingTimeInterval(86_400), earlier = fixtureNow.addingTimeInterval(-60)
+        #expect(Format.login(refresh: later, token: nil, now: fixtureNow)?.hasPrefix("login renews until ") == true)
+        #expect(Format.login(refresh: earlier, token: later, now: fixtureNow)?.hasPrefix("login expired ") == true,
+                "a refresh date, when known, is the one that matters")
+        #expect(Format.login(refresh: nil, token: later, now: fixtureNow)?.hasPrefix("token valid until ") == true)
+        #expect(Format.login(refresh: nil, token: earlier, now: fixtureNow)?.hasPrefix("token expired ") == true)
+        #expect(Format.login(refresh: nil, token: nil, now: fixtureNow) == nil)
     }
 
     @Test func testRowsFromTheFixture() throws {
@@ -181,8 +201,8 @@ func fixtureSnapshot(why name: String = "why.json", now: Date = fixtureNow) thro
         let a = try #require(s.active)
         #expect(Format.resets(a.fiveHour?.resetsAt, now: s.now) == "resets in 2h")
         #expect(Format.resets(a.sevenDay?.resetsAt, now: s.now) == "resets in 3d")
-        #expect(Format.status(s.accounts[2].status, now: s.now) == "refused · 5h · clears in 40m")
-        #expect(Format.status(s.accounts[1].status, now: s.now) == "needs login")
+        #expect(Format.status(s.accounts[2].status, now: s.now) == "refused · session · clears in 40m")
+        #expect(Format.status(s.accounts[1].status, now: s.now) == "needs sign-in")
         #expect(Format.limitName(a.scopedWeekly[0]) == "Modelname weekly")
         #expect(a.pace != nil, "the popover shows the active account's weekly pace")
         #expect(Format.age(s.daemon.lastPoll, now: s.now) == "1m ago")

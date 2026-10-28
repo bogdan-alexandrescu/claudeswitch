@@ -9,7 +9,7 @@ public enum GlyphState: Equatable {
     /// Rotation is moving the profile to another account: the satellite
     /// sits at the incoming account's week.
     case switching
-    /// The live account was refused or needs a login: a warning mark
+    /// The live account was refused or needs sign-in: a warning mark
     /// replaces the satellite.
     case needsYou
 }
@@ -51,10 +51,16 @@ public struct GlyphReading: Equatable {
             + "session \(Format.pct(a.fiveHour?.utilization))"
         let decision = card?.decision ?? s.decision
 
+        // A daemon that stopped polling is trouble whatever the figures say:
+        // they are old, and nothing rotates.
+        if case .stale = s.daemon.health {
+            return GlyphReading(state: .needsYou, week: week, session: session, satellite: nil,
+                                accessibility: text + ", the daemon is not polling")
+        }
         switch a.status {
         case .needsLogin:
             return GlyphReading(state: .needsYou, week: week, session: session, satellite: nil,
-                                accessibility: text + ", \(a.id) needs a login")
+                                accessibility: text + ", \(a.id) needs sign-in")
         case .refused:
             return GlyphReading(state: .needsYou, week: week, session: session, satellite: nil,
                                 accessibility: text + ", \(a.id) was refused")

@@ -341,4 +341,16 @@ public enum RotationOrder {
         out.insert(id, at: j)
         return out
     }
+
+    /// The whole order with `id` moved `by` places within its section (a
+    /// pool's accounts): it swaps with the section's previous or next
+    /// account, and every other account stays where it is, as a drag there
+    /// does (D33). Nil at the section's ends.
+    public static func move(_ global: [String], section: [String], _ id: String, by: Int) -> [String]? {
+        let s = global.filter(section.contains)
+        guard let i = s.firstIndex(of: id) else { return nil }
+        let j = i + by
+        guard j >= 0, j < s.count, j != i else { return nil }
+        return reorder(global, section: s, from: IndexSet([i]), to: j > i ? j + 1 : j)
+    }
 }

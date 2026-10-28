@@ -21,18 +21,37 @@ struct CleanupPane: View {
                         Label("Preview", systemImage: "magnifyingglass")
                     }
                 }
-                .disabled(store.binaryPath == nil || store.isBusy("clean:plan") || store.isBusy("clean:apply"))
+                .disabled(store.binaryPath == nil || store.isBusy("clean:plan") || store.isBusy("clean:apply")
+                          || undoing != nil)
             }
             .padding([.horizontal, .top], 24)
             Form {
                 now
                 runs
+                if store.schema == nil, let e = store.schemaError {
+                    Section("Schedule") {
+                        PaneUnavailable(error: e, what: "The cleanup settings")
+                        Button("Try Again") { store.loadSettings() }
+                    }
+                } else if store.values == nil, let e = store.valuesError {
+                    Section("Schedule") {
+                        PaneUnavailable(error: e, what: "The current settings")
+                        Button("Try Again") { store.reloadValues() }
+                    }
+                }
                 if let schema = store.schema {
                     Section("Schedule") {
-                        ForEach(SettingsPane.cleanupScheduleKeys.compactMap(schema.setting)) { SettingRow(setting: $0) }
+                        // Every waits on the schedule being on.
+                        ForEach(SettingsPane.cleanupScheduleKeys.compactMap(schema.setting)) { s in
+                            SettingRow(setting: s, off: s.key == "clean_every" && store.values?.values["clean"] != "true")
+                        }
                     }
                     Section("What it removes") {
-                        ForEach(SettingsPane.cleanupKindKeys.compactMap(schema.setting)) { SettingRow(setting: $0) }
+                        // Subagent transcripts are temp files: off with them.
+                        ForEach(SettingsPane.cleanupKindKeys.compactMap(schema.setting)) { s in
+                            SettingRow(setting: s, off: s.key == "clean_transcripts_after"
+                                && store.values?.values["clean_temp"] != "true")
+                        }
                     }
                 }
             }
@@ -42,6 +61,9 @@ struct CleanupPane: View {
         .onAppear { if store.next.cleanRuns == nil { store.loadCleanRuns() } }
         .confirming($pending)
     }
+
+    /// The run an undo is putting back, while it does.
+    var undoing: String? { CleanUndo.running(store.busy) }
 
     // MARK: the plan and Clean now
 
@@ -58,6 +80,11 @@ struct CleanupPane: View {
                     ProgressView().controlSize(.small)
                     Text("Judging each item again and moving it to the Trash…").foregroundStyle(.secondary)
                 }
+            } else if let run = undoing {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(CleanUndo.progress(run)).foregroundStyle(.secondary)
+                }
             } else if let p = store.next.cleanPlan {
                 planView(p)
             } else if let e = store.next.cleanPlanError {
@@ -67,9 +94,10 @@ struct CleanupPane: View {
                     .foregroundStyle(.secondary)
             }
             if let r = store.next.cleanRun {
-                Label(r.summary, systemImage: "checkmark.circle").foregroundStyle(.green)
+                Label(r.summary, systemImage: r.kind == .undone ? "arrow.uturn.backward.circle" : "checkmark.circle")
+                    .foregroundStyle(.green)
                     .fixedSize(horizontal: false, vertical: true)
-                ForEach(r.failed, id: \.self) { f in
+                ForEach(r.failures, id: \.self) { f in
                     Label(f, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
                 }
             }
@@ -104,7 +132,7 @@ struct CleanupPane: View {
                         }
                         if p.removable.count > 500 {
                             Text("…and \(p.removable.count - 500) more (claudeswitch clean lists them all)")
-                                .font(.caption).foregroundStyle(.tertiary)
+                                .font(.caption).foregroundStyle(.secondary)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -113,8 +141,8 @@ struct CleanupPane: View {
             }
             HStack {
                 Text("\(p.kept) kept: unmerged, in use, protected or changed recently."
-                     + (store.next.cleanPlanAt.map { " Looked " + Format.age($0, now: Date()) + "." } ?? ""))
-                    .font(.caption).foregroundStyle(.tertiary)
+                     + (store.next.cleanPlanAt.map { " Looked " + Format.age($0, now: store.now) + "." } ?? ""))
+                    .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Clean now…") {
                     pending = PendingAction(confirmation: Confirm.cleanApply(p)) { store.applyClean(p) }
@@ -122,6 +150,16 @@ struct CleanupPane: View {
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(store.isBusy("clean:apply"))
             }
+        }
+        // What the plan did not judge: folders macOS guards, and pull
+        // requests gh could not read.
+        if let g = p.notLookedIn() {
+            Label(g, systemImage: "eye.slash").font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        ForEach(p.warnings, id: \.self) { w in
+            Label(w, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -141,7 +179,7 @@ struct CleanupPane: View {
                         Spacer()
                         if r.undoable {
                             Button("Undo") { store.undoClean(r.id) }
-                                .disabled(store.isBusy("clean:undo") || store.isBusy("clean:apply"))
+                                .disabled(undoing != nil || store.isBusy("clean:apply") || store.isBusy("clean:plan"))
                         }
                     }
                 }

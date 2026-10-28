@@ -47,6 +47,15 @@ final class Store: ObservableObject {
     @Published private(set) var refreshing = false
 
     var problem: CLIError? { data.problem }
+    /// claudeswitch is missing, too old, or speaks another app contract:
+    /// nothing the app does can run, so the menu bar shows "?" (docs/app/
+    /// menu-bar.md) and the popover the way to fix it.
+    var binaryUnusable: Bool {
+        switch problem {
+        case .missing?, .tooOld?, .unsupportedContract?: return true
+        default: return false
+        }
+    }
     var binaryPath: String? { data.binaryPath }
     var binaryVersion: String? { data.binaryVersion }
     var state: StateFile? { data.state }
@@ -67,6 +76,15 @@ final class Store: ObservableObject {
     @Published private(set) var schema: ConfigSchema?
     @Published private(set) var values: ConfigValues?
     @Published private(set) var daemon: DaemonStatus?
+    /// Why `daemon` is nil: the CLI said the service is not installed, or the
+    /// read failed (`daemonError`); neither means it has not been read yet.
+    /// "Not installed" is said only when the CLI says so.
+    @Published private(set) var daemonMissing = false
+    @Published private(set) var daemonError: CallError?
+    /// The settings reads' failures: without them a failed read drew the
+    /// defaults as if they were the values, or a spinner forever.
+    @Published private(set) var schemaError: CallError?
+    @Published private(set) var valuesError: CallError?
     @Published private(set) var recovery: [RecoveryItem]?
     /// F3, F5, F7, F12 (Store+Next.swift).
     @Published var next = NextState()
@@ -190,6 +208,9 @@ final class Store: ObservableObject {
     private var inFlight = 0
     /// --render: the clock the fixtures were written at.
     private var fixedNow: Date?
+    /// The clock every age on screen counts from: the latest reading's, or
+    /// --render's fixed clock (never the wall clock in a view).
+    var now: Date { snapshot?.now ?? fixedNow ?? Date() }
 
     /// How often everything is re-read without a file change: countdowns move
     /// and the daemon can stop without touching state.json.
@@ -212,7 +233,8 @@ final class Store: ObservableObject {
     }
 
     /// A store that shows fixed data and runs nothing (--render).
-    init(preview: Snapshot?, problem: CLIError? = nil, binaryPath: String? = nil, fixtures: PreviewData = PreviewData()) {
+    init(preview: Snapshot?, problem: CLIError? = nil, binaryPath: String? = nil, binaryVersion: String? = nil,
+         fixtures: PreviewData = PreviewData()) {
         self.preview = true
         compact = false
         configuredBinary = ""
@@ -222,13 +244,14 @@ final class Store: ObservableObject {
         usageMode = .dials
         snapshot = preview
         fixedNow = preview?.now
-        data = AppData(binaryPath: binaryPath, binaryVersion: binaryPath == nil ? nil : CLI.minimumVersion,
+        data = AppData(binaryPath: binaryPath, binaryVersion: binaryPath == nil ? nil : binaryVersion ?? CLI.minimumVersion,
                        problem: problem, state: fixtures.state, why: fixtures.why, settings: nil,
                        profiles: fixtures.profiles, chrome: fixtures.chrome, accountList: fixtures.accountList,
                        pools: fixtures.pools, poolsUnsupported: fixtures.poolsUnsupported)
         schema = fixtures.schema
         values = fixtures.values
         daemon = fixtures.daemon
+        daemonMissing = fixtures.daemon == nil
         recovery = fixtures.recovery
         timer = Timer() // never scheduled; marks the store as started
         chromeProfiles = fixtures.chromeProfiles
@@ -351,12 +374,15 @@ final class Store: ObservableObject {
     /// `daemon status --json`, for the setup window.
     func loadDaemon() {
         guard !preview else { return }
-        Task {
-            switch await call("load:daemon", { $0.daemon(.status) }) {
-            case .success(let x): daemon = x
-            case .failure(.app(let e)) where e.code == "not_installed" || e.code == "unsupported_platform": daemon = nil
-            case .failure: break
-            }
+        Task { readDaemon(await call("load:daemon", { $0.daemon(.status) })) }
+    }
+
+    func readDaemon(_ r: Result<DaemonStatus, CallError>) {
+        switch r {
+        case .success(let x): (daemon, daemonMissing, daemonError) = (x, false, nil)
+        case .failure(.app(let e)) where e.code == "not_installed" || e.code == "unsupported_platform":
+            (daemon, daemonMissing, daemonError) = (nil, true, nil)
+        case .failure(let e): daemonError = e
         }
     }
 
@@ -382,8 +408,12 @@ final class Store: ObservableObject {
     /// as the surface's alert. Either way a full refresh follows
     /// (re-reading the profile list when `profiles`): a refusal can mean
     /// the app's picture was out of date (B5).
-    func act<T>(_ key: String, title: String, profiles: Bool = false, card: String? = nil,
-                _ op: @escaping (CLI) -> Result<T, CallError>, done: @escaping (T) -> Void = { _ in }) {
+    /// quiet: started outside the app's windows (a notification, the
+    /// hotkey); its failure goes only to `failed`, not also into a card or an
+    /// alert found later.
+    func act<T>(_ key: String, title: String, profiles: Bool = false, card: String? = nil, quiet: Bool = false,
+                _ op: @escaping (CLI) -> Result<T, CallError>, failed: ((CallError) -> Void)? = nil,
+                done: @escaping (T) -> Void = { _ in }) {
         let origin = surface // where the person acted, wherever they are when it ends
         if let c = card { cardErrors.begin(card: c) }
         Task {
@@ -394,7 +424,8 @@ final class Store: ObservableObject {
                 done(v) // its note goes where the action started
                 surface = was
             case .failure(let e):
-                fail(title, e, card: card, on: origin)
+                if !quiet { fail(title, e, card: card, on: origin) }
+                failed?(e)
             }
             refresh(full: true, profiles: profiles)
         }
@@ -419,9 +450,9 @@ final class Store: ObservableObject {
     func runDrop(_ d: PoolDrop) {
         switch d {
         case .move(let a, _, let to):
-            poolEdit("move:\(a)", title: "Could not move \(a) to \(to)", note: Notes.poolDrop(d)) { $0.poolMove(a, to: to) }
+            poolEdit("move:\(a)", title: "Could not move \(inQuotes(a)) to \(inQuotes(to))", note: Notes.poolDrop(d)) { $0.poolMove(a, to: to) }
         case .remove(let a, let from):
-            poolEdit("move:\(a)", title: "Could not take \(a) out of \(from)", note: Notes.poolDrop(d)) {
+            poolEdit("move:\(a)", title: "Could not take \(inQuotes(a)) out of \(inQuotes(from))", note: Notes.poolDrop(d)) {
                 $0.poolRemove(from, account: a)
             }
         }
@@ -464,26 +495,36 @@ final class Store: ObservableObject {
 
     // MARK: actions
 
-    func use(_ account: String, profile: String) {
+    /// failed: also told of a refusal (a notification's action reports it
+    /// where the person acted).
+    func use(_ account: String, profile: String, failed: ((CallError) -> Void)? = nil) {
+        // Recorded before the CLI answers, since a refresh can land first;
+        // forgotten if it refuses.
         appSwitches.record(profile: profile, to: account, at: Date())
         act("use:\(profile)", title: "Could not switch \(profile) to \(account)", profiles: true, card: profile,
-            { $0.use(account, profile: profile) }) { [weak self] r in
+            quiet: failed != nil, { $0.use(account, profile: profile) }, failed: { [weak self] e in
+                self?.appSwitches.forget(profile: profile, to: account)
+                failed?(e)
+            }) { [weak self] r in
             var text = "\(r.profile) now uses \(r.account)"
             if r.already {
                 text = "\(r.profile) already uses \(r.account)"
             } else if !r.verified {
                 text += " (not yet confirmed by a usage read)"
             }
-            self?.note = text
+            // Started outside the windows: no note waiting in the popover
+            // for hours.
+            if failed == nil { self?.note = text }
         }
     }
 
-    func setPinned(_ pinned: Bool, profile: String, account: String?) {
+    func setPinned(_ pinned: Bool, profile: String, account: String?, failed: ((CallError) -> Void)? = nil) {
         if pinned, let a = account {
-            act("pin:\(profile)", title: "Could not pin \(profile)", profiles: true, card: profile, { $0.pin(a) })
+            act("pin:\(profile)", title: "Could not pin \(profile)", profiles: true, card: profile,
+                quiet: failed != nil, { $0.pin(a) }, failed: failed)
         } else {
             act("pin:\(profile)", title: "Could not unpin \(profile)", profiles: true, card: profile,
-                { $0.unpin(profile: profile) })
+                quiet: failed != nil, { $0.unpin(profile: profile) }, failed: failed)
         }
     }
 
@@ -553,7 +594,7 @@ final class Store: ObservableObject {
 
     /// An account's Chrome choice: the profile's (forget its own), one of
     /// the person's Chrome profiles, or a new one.
-    func setAccountChrome(_ account: String, _ choice: AccountChromeChoice) {
+    func setAccountChrome(_ account: String, _ choice: AccountChromeChoice, done: (() -> Void)? = nil) {
         let key = "chrome:\(account)"
         switch choice {
         case .sameAsProfile:
@@ -571,6 +612,7 @@ final class Store: ObservableObject {
             act(key, title: "Could not create a Chrome profile for \(account)", { $0.chromeAdd(account) }) { [weak self] r in
                 self?.note = r.created ? "Opened a new Chrome profile for \(r.account)" : "Opened \(r.account)'s Chrome profile"
                 self?.loadChromeProfiles()
+                done?()
             }
         }
     }
@@ -613,18 +655,24 @@ final class Store: ObservableObject {
             async let s = call("load:schema") { $0.configSchema() }
             async let v = call("load:values") { $0.configValues() }
             async let d = call("load:daemon") { $0.daemon(.status) }
-            if case .success(let x) = await s { schema = x }
-            if case .success(let x) = await v { values = x }
-            switch await d {
-            case .success(let x): daemon = x
-            case .failure(.app(let e)) where e.code == "not_installed" || e.code == "unsupported_platform": daemon = nil
-            case .failure: break
+            switch await s {
+            case .success(let x): (schema, schemaError) = (x, nil)
+            case .failure(let e): schemaError = e
             }
+            readValues(await v)
+            readDaemon(await d)
         }
     }
 
     func reloadValues() {
-        Task { if case .success(let v) = await call("load:values", { $0.configValues() }) { values = v } }
+        Task { readValues(await call("load:values", { $0.configValues() })) }
+    }
+
+    func readValues(_ r: Result<ConfigValues, CallError>) {
+        switch r {
+        case .success(let x): (values, valuesError) = (x, nil)
+        case .failure(let e): valuesError = e
+        }
     }
 
     func loadRecovery(identify: Bool) {
@@ -637,7 +685,9 @@ final class Store: ObservableObject {
     }
 
     func setDaemon(_ verb: DaemonVerb, title: String) {
-        act("daemon", title: title, { $0.daemon(verb) }) { [weak self] s in self?.daemon = s }
+        // Through readDaemon, so what Overview believes (installed, not
+        // missing) follows the action.
+        act("daemon", title: title, { $0.daemon(verb) }) { [weak self] s in self?.readDaemon(.success(s)) }
     }
 
     func setPriority(_ ids: [String]) {

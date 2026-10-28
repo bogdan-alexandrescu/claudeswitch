@@ -71,13 +71,17 @@ public struct CleanGroup: Equatable, Identifiable {
 public struct CleanPlan: Equatable {
     public var items: [CleanItem]
     public var kinds: [String: Bool]
+    /// The projects, and folders under clean_roots, left unread because
+    /// macOS asks before anything reads them (`plan.guarded`).
+    public var guarded: [String]
     /// The CLI's answer as it came, which `clean --apply --plan` takes back
     /// so that what goes is what was shown (0.8.8); nil for a plan made here.
     public var saved: Data?
 
-    public init(items: [CleanItem], kinds: [String: Bool] = [:]) {
+    public init(items: [CleanItem], kinds: [String: Bool] = [:], guarded: [String] = []) {
         self.items = items
         self.kinds = kinds
+        self.guarded = guarded
     }
 
     public init?(data: Data) {
@@ -88,6 +92,7 @@ public struct CleanPlan: Equatable {
     init?(_ j: JSON) {
         guard j["plan"].raw is [String: Any] else { return nil }
         items = j["plan"]["items"].array.compactMap(CleanItem.init)
+        guarded = j["plan"]["guarded"].array.compactMap(\.string)
         var k: [String: Bool] = [:]
         for (name, v) in j["kinds"].object { if let b = v.bool { k[name] = b } }
         kinds = k
@@ -100,6 +105,31 @@ public struct CleanPlan: Equatable {
     public var kept: Int { items.count - removable.count }
     public var bytes: Int64 { removable.reduce(0) { $0 + $1.bytes } }
 
+    /// The CLI's "not looked in (macOS asks first)" line; nil when it
+    /// looked everywhere. The first five, then how many more.
+    public func notLookedIn(home: String = NSHomeDirectory()) -> String? {
+        guard !guarded.isEmpty else { return nil }
+        let names = guarded.prefix(5).map { CleanItem.tilde($0, home: home) }
+        let more = guarded.count > 5 ? " and \(guarded.count - 5) more" : ""
+        return "Not looked in (macOS asks first): " + names.joined(separator: ", ") + more
+    }
+
+    /// When gh could not read a repository's pull requests, only merges
+    /// into the default branch counted, and the kept item says so: one
+    /// line per reason, with how many it kept.
+    public var warnings: [String] {
+        let marker = "pull requests not checked: "
+        var reasons: [String] = []
+        var counts: [String: Int] = [:]
+        for it in items where !it.remove {
+            guard let r = it.why.range(of: marker) else { continue }
+            let reason = String(it.why[r.upperBound...])
+            if counts[reason] == nil { reasons.append(reason) }
+            counts[reason, default: 0] += 1
+        }
+        return reasons.map { "Pull requests not checked: \($0), so \(counts[$0] ?? 0) kept may be merged already." }
+    }
+
     /// The removable items by kind, in the CLI's order.
     public var groups: [CleanGroup] {
         CleanKind.order.compactMap { kind in
@@ -111,6 +141,10 @@ public struct CleanPlan: Equatable {
 
 /// `clean --apply --json` and `clean undo --json`: one run.
 public struct CleanRun: Equatable {
+    /// Which call answered: both give the run's journal, so the caller
+    /// says. An undo's journal still holds the apply's skipped and failed.
+    public enum Kind: Equatable { case applied, undone }
+    public var kind: Kind = .applied
     public var id: String
     public var at: Date?
     /// What it removed, and of those what has been put back.
@@ -134,8 +168,13 @@ public struct CleanRun: Equatable {
 
     public var bytes: Int64 { done.reduce(0) { $0 + $1.bytes } }
 
+    /// What failed in this call: an undo's own failures come back as its
+    /// error, so after one the apply's are not said again.
+    public var failures: [String] { kind == .applied ? failed : [] }
+
     /// What it did, in one line.
     public var summary: String {
+        if kind == .undone { return "Put back \(undone) of \(done.count) from run \(id)." }
         if done.isEmpty { return "Run \(id) removed nothing." }
         var counts: [String: Int] = [:]
         for d in done { counts[d.kind, default: 0] += 1 }
@@ -175,6 +214,21 @@ public struct CleanRunSummary: Equatable, Identifiable {
 
     /// Whether undo has something to put back.
     public var undoable: Bool { removed > undone }
+}
+
+/// An undo can take minutes. It runs under a busy key that names its run,
+/// so the pane can say which run is coming back.
+public enum CleanUndo {
+    static let prefix = "clean:undo:"
+
+    public static func key(_ run: String) -> String { prefix + run }
+
+    /// The run being put back, from the store's busy keys.
+    public static func running(_ busy: Set<String>) -> String? {
+        busy.first { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)) }
+    }
+
+    public static func progress(_ run: String) -> String { "Putting back run \(run)…" }
 }
 
 public extension Confirm {

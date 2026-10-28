@@ -120,7 +120,14 @@ func runChrome(stdout, stderr io.Writer, args []string) error {
 	asJSON := fs.Bool("json", false, "answer with one JSON object")
 	existing := fs.String("existing", "", "add: map the account to a Chrome profile you already have (folder or name)")
 	profName := fs.String("profile", "", "check: the Claude Code profile to check (default: this shell's)")
-	pos := parseInterleaved(fs, args)
+	pos, err := parseFlagsErr(fs, args)
+	if err != nil {
+		// Never fall through to open: a mistyped flag left no command,
+		// and no command means open.
+		e := chromeFail("usage", chromeUsage, "chrome: %v", err)
+		e.Exit = 2
+		return e
+	}
 
 	sub := "open"
 	if len(pos) > 0 {

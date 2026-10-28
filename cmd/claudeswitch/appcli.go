@@ -63,6 +63,27 @@ type appError struct {
 	// RetryAt, when set, is when the refusal may clear (R1: a rate-limited
 	// §3 check); the JSON error object carries it as retry_at.
 	RetryAt time.Time
+	// Exit, when set, is the exit status without --json (badArgs). With
+	// --json every failure exits 1, as docs/APP_CLI.md has it.
+	Exit int
+}
+
+// badArgs is a usage mistake made at a terminal: exit status 2, as for a
+// flag the command does not know, rather than 1 for a command that failed.
+func badArgs(hint, format string, a ...any) *appError {
+	e := appErr(codeUsage, hint, format, a...)
+	e.Exit = 2
+	return e
+}
+
+// exitStatus is what a command that failed with err exits with, without
+// --json: 2 for badArgs, else 1.
+func exitStatus(err error) int {
+	var ae *appError
+	if errors.As(err, &ae) && ae.Exit != 0 {
+		return ae.Exit
+	}
+	return 1
 }
 
 func (e *appError) Error() string {
@@ -174,20 +195,17 @@ func appFlags(name string) *flag.FlagSet {
 }
 
 // parseApp is parseInterleaved for an appFlags set, with the parse error
-// as a usage error.
+// as a usage error, and a help request as the usage and flags on stdout,
+// exit 0 (it printed "flag: help requested" and exited 1).
 func parseApp(fs *flag.FlagSet, args []string, usage string) ([]string, error) {
-	var positional []string
-	for {
-		if err := fs.Parse(args); err != nil {
-			return nil, appErr(codeUsage, usage, "%v", err)
-		}
-		rest := fs.Args()
-		if len(rest) == 0 {
-			return positional, nil
-		}
-		positional = append(positional, rest[0])
-		args = rest[1:]
+	positional, err := parseFlagsErr(fs, args)
+	switch {
+	case errors.Is(err, flag.ErrHelp):
+		return nil, &helpRequest{text: helpFor(usage, fs)}
+	case err != nil:
+		return nil, appErr(codeUsage, usage, "%v", err)
 	}
+	return positional, nil
 }
 
 // emitTo writes v as indented JSON.

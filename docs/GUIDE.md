@@ -83,7 +83,7 @@ claudeswitch remove <id>         # delete an account everywhere: credential, con
 claudeswitch priority <id>...    # set the rotation order
 claudeswitch account pin <id>    # stop automatic rotation in the profile it is live in
                                  # (--profile names one; `unpin` resumes); lifted if the
-                                 # account is refused, runs out or needs a sign-in, unless
+                                 # account is refused, runs out or needs sign-in, unless
                                  # pinned with --hard
 claudeswitch pool list           # named pools, their accounts and the profiles that use them
 claudeswitch pool create|add|remove|move|rename|delete ...   # edit them
@@ -207,7 +207,7 @@ Claude Code's lock, at most once every 10 minutes (audited as `refresh`). A
 session open there but idle loses its old token and picks up the new one. An
 expired token is never sent to the usage API: until it is renewed the account
 shows "access token expired; parked". If the renewal is refused, the account
-needs a sign-in, and `status`, the app and a notification say so. Refreshing runs in dry-run too: dry-run
+needs sign-in, and `status`, the app and a notification say so. Refreshing runs in dry-run too: dry-run
 means "do not rotate", and letting every stored credential expire while watching
 would be a strange reading of it.
 
@@ -475,7 +475,7 @@ macOS and Linux (`google-chrome` or `chromium` on PATH) only.
 ## Notifications
 
 The daemon sends a desktop notification when it switches accounts, when a
-profile has nowhere to rotate to ("all accounts are burnt", naming which
+profile has nowhere to rotate to ("<profile>: every account is refused", naming which
 recovers first; with several profiles "<profile>: no account free" when
 accounts it shares are in use in another profile, naming them), and before an
 idle account's refresh token expires — a dead refresh token means that
@@ -486,7 +486,7 @@ that the new account has none yet.
 It also notifies once when a profile's pool is forecast to run dry within two
 hours at the pace it is being spent (`cs status` shows the same forecast:
 `work pool: runs dry Thu 14:00 at this pace`), and when it lifts a pin
-because the pinned account was refused, ran out or needs a sign-in
+because the pinned account was refused, ran out or needs sign-in
 (`pin on work-1 lifted: it was refused`; `cs account pin --hard` keeps a pin
 even then). Nothing else notifies; `--quiet` disables them. While the
 macOS app is running and posting its own rotation notifications (with

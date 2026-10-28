@@ -62,6 +62,12 @@ public struct AppSwitches: Equatable {
         made[profile] = (account, at)
     }
 
+    /// A switch the CLI refused: it never happened, so a rotation to that
+    /// account is news again.
+    public mutating func forget(profile: String, to account: String) {
+        if made[profile]?.to == account { made[profile] = nil }
+    }
+
     public func made(profile: String, to account: String, now: Date) -> Bool {
         guard let m = made[profile], m.to == account else { return false }
         return abs(now.timeIntervalSince(m.at)) <= Self.window
@@ -168,7 +174,7 @@ public enum Notices {
                 // An idle account's refusal is rotation's business; a
                 // credential that can no longer sign in is the person's.
                 if status == .refused && !live { continue }
-                let title = status == .needsLogin ? "\(account) needs a sign-in" : "\(account) was refused"
+                let title = status == .needsLogin ? "\(account) needs sign-in" : "\(account) was refused"
                 let body = status == .needsLogin
                     ? "Its credential no longer signs in" + (live ? ", and it is live in \(p.name)." : ".")
                     : "It is live in \(p.name). Rotation moves off it; sign in again if it keeps happening."

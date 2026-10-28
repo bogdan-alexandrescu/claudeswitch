@@ -26,6 +26,10 @@ struct AccountsPane: View {
         var message: String
     }
 
+    /// The inset list draws its rows 16 pt in; 8 more line them up with the
+    /// pane's header, 24 pt in like every other pane.
+    static let inset: CGFloat = 8
+
     var grouped: Bool { PoolLayout.grouped(store.pools, profiles: store.profiles) }
 
     var sections: [PoolSection] {
@@ -51,7 +55,7 @@ struct AccountsPane: View {
                     // offered no other pool a drop spot.
                     let all = sections
                     let rows = PoolLayout.rows(all)
-                    ForEach(rows) { r in poolRow(r, all: all) }
+                    ForEach(rows) { r in poolRow(r, all: all).padding(.horizontal, Self.inset) }
                         .onMove { from, to in moved(rows, all: all, from: from, to: to) }
                     HStack {
                         Spacer()
@@ -59,6 +63,7 @@ struct AccountsPane: View {
                             .disabled(store.binaryPath == nil)
                             .help("A pool groups accounts; profiles list the pools they use")
                     }
+                    .padding(.horizontal, Self.inset)
                     .moveDisabled(true)
                     .listRowSeparator(.hidden)
                 } else {
@@ -78,10 +83,10 @@ struct AccountsPane: View {
         .sheet(item: Binding(get: { deletingPool.map(RenameTarget.init) }, set: { deletingPool = $0?.id })) { t in
             DeletePoolSheet(name: t.id).environmentObject(store)
         }
-        .confirmationDialog(deleting.map { "Delete \($0.account)?" } ?? "",
+        .confirmationDialog(deleting.map { "Delete the account \(inQuotes($0.account))?" } ?? "",
                             isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
                             presenting: deleting) { ask in
-            Button("Delete \(ask.account)", role: .destructive) { delete(ask.account) }
+            Button("Delete \(inQuotes(ask.account))", role: .destructive) { delete(ask.account) }
         } message: { ask in
             Text(ask.message + "\n\nThis cannot be undone.")
         }
@@ -90,10 +95,23 @@ struct AccountsPane: View {
 
     /// One list in rotation order: no [[profile]] blocks (nothing to
     /// group), or a binary that predates pools (said in a line).
+    /// Its header is a row, as a pool's is: a Section header pinned a
+    /// tinted band whose rule ran past the pane's margins.
     var flat: some View {
-        Section {
+        Group {
+            HStack(spacing: 8) {
+                Text("ROTATION ORDER").fontWeight(.semibold)
+                if store.isBusy("priority") { ProgressView().controlSize(.mini) }
+                Spacer()
+                AccountColumns(plan: "Plan")
+                Color.clear.frame(width: AccountColumns.trailing, height: 1)
+            }
+            .font(.subheadline).foregroundStyle(.secondary)
+            .padding(.horizontal, Self.inset)
+            .moveDisabled(true)
+            .listRowSeparator(.hidden)
             ForEach(store.accountIDs, id: \.self) { id in
-                row(id, targets: [], inPool: false)
+                row(id, section: store.accountIDs, targets: [], inPool: false).padding(.horizontal, Self.inset)
             }
             .onMove { from, to in
                 var ids = store.accountIDs
@@ -104,15 +122,8 @@ struct AccountsPane: View {
                 Label("Update claudeswitch to group accounts into pools and share them between profiles.",
                       systemImage: "info.circle")
                     .font(.caption).foregroundStyle(.secondary)
+                    .padding(.horizontal, Self.inset)
                     .moveDisabled(true)
-            }
-        } header: {
-            HStack {
-                Text("Rotation order")
-                if store.isBusy("priority") { ProgressView().controlSize(.mini) }
-                Spacer()
-                AccountColumns(plan: "Plan")
-                Color.clear.frame(width: AccountColumns.trailing, height: 1)
             }
         }
     }
@@ -133,7 +144,8 @@ struct AccountsPane: View {
                     .listRowSeparator(.hidden)
             }
         case .account(let id, let sid):
-            row(id, targets: PoolLayout.targets(for: id, sections: all), inPool: sid != PoolSection.noPool.id)
+            row(id, section: all.first { $0.id == sid }?.accounts ?? [id],
+                targets: PoolLayout.targets(for: id, sections: all), inPool: sid != PoolSection.noPool.id)
         case .empty(let sid):
             if let s = all.first(where: { $0.id == sid }) {
                 EmptyPoolRow(section: s)
@@ -157,10 +169,13 @@ struct AccountsPane: View {
         }
     }
 
-    func row(_ id: String, targets: [PoolSection], inPool: Bool) -> some View {
+    /// One account's row; Move up and down keep it within `section`, the
+    /// accounts of its pool (in one list, all of them).
+    func row(_ id: String, section: [String], targets: [PoolSection], inPool: Bool) -> some View {
         AccountRow(id: id, rename: { renaming = id }, delete: { askDelete(id) },
                    targets: targets, canLeave: inPool,
-                   moveTo: { askDrop(id, onto: $0) }, leave: { askDrop(id, onto: .noPool) }, shift: { by in shift(id, by: by) })
+                   moveTo: { askDrop(id, onto: $0) }, leave: { askDrop(id, onto: .noPool) },
+                   moved: { by in RotationOrder.move(store.accountIDs, section: section, id, by: by) })
     }
 
     func busy(_ s: PoolSection) -> Bool {
@@ -184,10 +199,6 @@ struct AccountsPane: View {
 
     struct RenameTarget: Identifiable { var id: String }
 
-    func shift(_ id: String, by: Int) {
-        if let ids = RotationOrder.move(store.accountIDs, id, by: by) { store.setPriority(ids) }
-    }
-
     /// The CLI's own refusal names the account and seat; that is the
     /// confirmation text (docs/APP_CLI.md, account delete).
     func askDelete(_ id: String) {
@@ -208,9 +219,9 @@ struct AccountsPane: View {
         Task {
             switch await store.call("delete:\(id)", { $0.accountDelete(id, confirmed: true) }) {
             case .success(let r):
-                var t = "Deleted \(r.account)"
+                var t = "Deleted the account \(inQuotes(r.account))"
                 if let e = r.email { t += " (\(e))" }
-                if let tw = r.twin { t += "; its credential lives on as \(tw)" }
+                if let tw = r.twin { t += "; its credential lives on as \(inQuotes(tw))" }
                 store.note = t
                 store.refresh(full: true, profiles: true)
             case .failure(let e):
@@ -223,7 +234,7 @@ struct AccountsPane: View {
     func deleteAlert(_ id: String, _ e: CallError) -> AlertItem {
         switch e.code {
         case "live":
-            return AlertItem(title: "\(id) is in use", message: e.message,
+            return AlertItem(title: "The account \(inQuotes(id)) is in use", message: e.message,
                              hint: e.hint.isEmpty ? "Switch that profile to another account first." : e.hint)
         case "config_changed":
             return AlertItem(title: "The config changed meanwhile", message: e.message,
@@ -232,7 +243,7 @@ struct AccountsPane: View {
             return AlertItem(title: "The daemon did not pick up the change", message: e.message,
                              hint: e.hint.isEmpty ? "Nothing was deleted. Check the daemon in the Daemon pane, then try again." : e.hint)
         default:
-            return AlertItem("Could not delete \(id)", e)
+            return AlertItem("Could not delete \(inQuotes(id))", e)
         }
     }
 }
@@ -288,7 +299,7 @@ struct EmptyPoolRow: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 Image(systemName: "tray.and.arrow.down").foregroundStyle(.tertiary).accessibilityHidden(true)
-                Text("No accounts. Drag one here to move it into \(section.name ?? "this pool").")
+                Text("No accounts. Drag one here to move it into " + (section.name.map { "the pool " + inQuotes($0) } ?? "this pool") + ".")
                     .foregroundStyle(.secondary)
                 Spacer()
             }
@@ -308,7 +319,9 @@ struct AccountRow: View {
     var canLeave = false
     var moveTo: (PoolSection) -> Void = { _ in }
     var leave: () -> Void = {}
-    let shift: (Int) -> Void
+    /// The rotation order with it moved up (-1) or down (1) within its
+    /// section; nil at the section's ends.
+    let moved: (Int) -> [String]?
 
     var view: AccountView? { store.snapshot?.accounts.first { $0.id == id } }
     var record: AccountRecord? { store.state?.accounts[id] }
@@ -323,30 +336,39 @@ struct AccountRow: View {
             Image(systemName: "line.3.horizontal").foregroundStyle(.tertiary).accessibilityHidden(true)
             MiniRings(account: view, size: 34)
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Text(id).bold().lineLimit(1).truncationMode(.middle).help(id).layoutPriority(1)
-                    if let e = email {
-                        Text(e).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).help(e)
+                // The email gives way first, whole; then the name truncates.
+                // The chips never do: "in…" says nothing.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        Text(id).bold().lineLimit(1).fixedSize()
+                        if let e = email {
+                            Text(e).foregroundStyle(.secondary).lineLimit(1).fixedSize().help(e)
+                        }
+                        chips
                     }
-                    chips
+                    HStack(spacing: 8) {
+                        Text(id).bold().lineLimit(1).truncationMode(.middle).help(id).layoutPriority(1)
+                        chips
+                    }
                 }
-                // Whole segments give way from the end, the seat first and who
-                // uses it last: a stub such as "s…" or "Chro…" says nothing.
-                // Truncating is the last resort.
+                .help([id, email ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
+                // Whole segments give way (AccountLine), the figure last: a
+                // stub such as "s…" or "Chro…" says nothing. Truncating is the
+                // last resort.
                 ViewThatFits(in: .horizontal) {
                     ForEach(lineVariants, id: \.self) { v in
-                        detailsRow(v, truncating: false)
+                        Text(v).lineLimit(1).fixedSize()
                     }
-                    detailsRow(lineVariants.last ?? "", truncating: true)
+                    Text(lineVariants.last ?? "").lineLimit(1).truncationMode(.tail)
                 }
                 .font(.caption).foregroundStyle(.secondary)
-                .help([line, loginText ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
+                .help(lineVariants.first ?? "")
             }
             Spacer(minLength: 8)
             if busy { ProgressView().controlSize(.small) }
-            AccountColumns(plan: info?.planLabel ?? "—")
+            AccountColumns(plan: PlanColumn.text(info?.plan))
                 .foregroundStyle(.secondary)
-                .help(info?.plan ?? "No plan recorded yet")
+                .help(PlanColumn.help(info?.plan))
             Menu {
                 actions
             } label: {
@@ -367,11 +389,12 @@ struct AccountRow: View {
     /// "available" (the owner's layout); trouble stays beside it.
     @ViewBuilder var chips: some View {
         if let v = view, !(liveIn != nil && v.status == .available) {
-            StatusChip(status: v.status, now: store.snapshot?.now ?? Date()).fixedSize()
+            StatusChip(status: v.status, now: store.now).fixedSize()
         }
         if let p = liveIn {
             Badge(text: "in use: " + p, color: .csAccent)
-                .help("\(id) is live in \(p)" + (usedBy.count > 1 ? "; the other profiles that use it take another" : ""))
+                .fixedSize()
+                .help("The account \(inQuotes(id)) is live in \(inQuotes(p))" + (usedBy.count > 1 ? "; the other profiles that use it take another" : ""))
         }
     }
 
@@ -393,15 +416,16 @@ struct AccountRow: View {
             }
             .disabled(store.binaryPath == nil)
         }
-        Button("Sign in again…") { store.addAccount = AddAccountRequest(account: id, profile: store.profile(of: id)) }
+        Button("Sign in…") { store.addAccount = AddAccountRequest(account: id, profile: store.profile(of: id)) }
         Divider()
+        // One `priority` call at a time: two quick moves started two.
         Button("Move up") { shift(-1) }
-            .disabled(store.accountIDs.first == id)
+            .disabled(moved(-1) == nil || store.isBusy("priority"))
         Button("Move down") { shift(1) }
-            .disabled(store.accountIDs.last == id)
+            .disabled(moved(1) == nil || store.isBusy("priority"))
         Divider()
         Button("Open Chrome") { store.openChrome(id) }
-            .disabled(store.chrome?.supported == false)
+            .disabled(store.chrome?.supported == false || store.isBusy("chrome:\(id)"))
         Menu("Chrome profile: " + chromeLabel) {
             choiceItem("Same as its profile", selected: chromeChoice == .sameAsProfile) {
                 store.setAccountChrome(id, .sameAsProfile)
@@ -425,6 +449,12 @@ struct AccountRow: View {
         .disabled(store.binaryPath == nil || store.chrome?.supported == false)
         Divider()
         Button("Delete…", role: .destructive, action: delete)
+    }
+
+    /// Also VoiceOver's Move up and Move down, which cannot be greyed out.
+    func shift(_ by: Int) {
+        guard !store.isBusy("priority"), let ids = moved(by) else { return }
+        store.setPriority(ids)
     }
 
     /// C2: the account's Chrome choice, as the CLI last reported it.
@@ -455,59 +485,21 @@ struct AccountRow: View {
         info?.profiles ?? store.profile(of: id).map { [$0] } ?? []
     }
 
-    /// "used by default, work"; nil when nothing says.
-    var usedByText: String? {
-        if !usedBy.isEmpty { return "used by " + usedBy.joined(separator: ", ") }
-        return info?.profiles != nil ? "used by no profile" : nil
-    }
-
-    /// Who uses it, then figure, Chrome and seat.
-    var line: String { lineSegments.joined(separator: " · ") }
-
-    /// Who uses it, the figure, Chrome and the seat, in that order.
-    var lineSegments: [String] { ([usedByText ?? ""] + detailParts).filter { !$0.isEmpty } }
-
-    /// The line with whole segments dropped from the end, longest first.
+    /// Who uses it, the figure, Chrome, the seat and the login, longest
+    /// first (AccountLine).
     var lineVariants: [String] {
-        let s = lineSegments
-        guard !s.isEmpty else { return [""] }
-        return (1...s.count).reversed().map { s.prefix($0).joined(separator: " · ") }
+        let figure = view.flatMap { v in v.bindingPct.map { Format.pct($0) + " " + (Format.windowName(v.bindingWindow) ?? "") } }
+        return AccountLine.variants(
+            usedBy: info?.profiles ?? store.profile(of: id).map { [$0] }, figure: figure,
+            chrome: chromeChoice == .sameAsProfile ? nil : "Chrome " + chromeLabel,
+            seat: record?.seat.map { "seat " + shortSeat($0) }, login: loginText)
     }
 
-    /// One way of drawing the line, with when the login renews kept whole: it
-    /// matters more than the seat.
-    func detailsRow(_ text: String, truncating: Bool) -> some View {
-        HStack(spacing: 0) {
-            if truncating {
-                Text(text).lineLimit(1).truncationMode(.tail)
-            } else {
-                Text(text).lineLimit(1).fixedSize()
-            }
-            if let l = loginText {
-                Text((text.isEmpty ? "" : " · ") + l).lineLimit(1).fixedSize()
-            }
-        }
-    }
-
-    /// Figure, Chrome and seat.
-    var details: String { detailParts.joined(separator: " · ") }
-
-    var detailParts: [String] {
-        var parts: [String] = []
-        if let v = view, let p = v.bindingPct { parts.append(Format.pct(p) + " " + Format.window(v.bindingWindow)) }
-        if chromeChoice != .sameAsProfile { parts.append("Chrome " + chromeLabel) }
-        if let s = record?.seat { parts.append("seat " + shortSeat(s)) }
-        return parts
-    }
-
+    /// When the login renews; nothing once it needs signing in (the chip
+    /// says so).
     var loginText: String? {
-        if let r = record?.refreshExpiry {
-            return (r > Date() ? "login renews until " : "login expired ") + r.formatted(date: .abbreviated, time: .shortened)
-        }
-        if let t = record?.tokenExpiry {
-            return "token " + (t > Date() ? "valid until " : "expired ") + t.formatted(date: .abbreviated, time: .shortened)
-        }
-        return nil
+        Format.login(refresh: record?.refreshExpiry, token: record?.tokenExpiry, now: store.now,
+                     needsSignIn: view?.status == .needsLogin || info?.state == "needs_login")
     }
 
     func shortSeat(_ s: String) -> String {
@@ -525,8 +517,16 @@ struct NewPoolSheet: View {
     @State var picked: Set<String> = []
     @State var error: AppError?
     @State private var pending: PendingAction?
+    /// What Create has done so far: once the pool exists, trying again
+    /// makes only the moves left.
+    @State private var run: NewPoolRun?
 
     var selected: [String] { store.accountIDs.filter(picked.contains) }
+    var created: Bool { run?.created == true }
+    /// What Create would do now.
+    var plan: NewPoolPlan { NewPoolPlan.make(name: name, selected: selected, pools: store.pools) }
+    /// Create ("Create…" when it asks first), then the moves left.
+    var action: String { (created ? run : nil)?.action ?? NewPoolRun(plan).action }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -536,21 +536,28 @@ struct NewPoolSheet: View {
                     Text("Name").frame(width: NewProfileSheet.labelWidth, alignment: .leading)
                     TextField("Name", text: $name, prompt: Text("e.g. team")).labelsHidden()
                         .textFieldStyle(.roundedBorder)
+                        .disabled(created)
                 }
                 GridRow(alignment: .top) {
                     Text("Accounts").frame(width: NewProfileSheet.labelWidth, alignment: .leading)
-                    accounts
+                    accounts.disabled(created)
                 }
             }
             Text("No profile uses a new pool until one lists it: in Profiles, open a profile and choose Change… beside its pools.")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            if let e = error { InlineError(message: e.message, hint: e.hint) }
+            if !created, let s = NewPoolPlan.stops(name: name, selected: selected, pools: store.pools,
+                                                   defaultExists: store.profiles.map { $0.profile(StateFile.defaultProfile) != nil } ?? true) {
+                Label(s, systemImage: "exclamationmark.triangle")
+                    .font(.caption).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let e = error { SheetError(message: e.message, hint: e.hint) }
             HStack(spacing: 8) {
                 if store.isBusy("newpool") { ProgressView().controlSize(.small) }
                 Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Create") { ask() }
+                Button(run?.cancel ?? "Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(action) { ask() }
                     .keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
                     .disabled(name.isEmpty || store.isBusy("newpool"))
             }
@@ -560,7 +567,8 @@ struct NewPoolSheet: View {
         .confirming($pending)
     }
 
-    /// Every account, with the pool it would leave; capped in height.
+    /// Every account, with the pool it is in, or would leave once checked;
+    /// capped in height.
     var accounts: some View {
         let ids = store.accountIDs
         let rows = VStack(alignment: .leading, spacing: 4) {
@@ -570,7 +578,7 @@ struct NewPoolSheet: View {
                                      set: { on in if on { picked.insert(id) } else { picked.remove(id) } })) {
                     HStack(spacing: 4) {
                         Text(id).lineLimit(1).truncationMode(.middle)
-                        if let n = NewPoolPlan.note(for: id, pools: store.pools) {
+                        if let n = NewPoolText.note(for: id, checked: picked.contains(id), name: name, pools: store.pools) {
                             Text(n).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
                         }
                     }
@@ -590,32 +598,32 @@ struct NewPoolSheet: View {
         }
     }
 
+    /// Create, confirmed first when accounts leave their pools; once the
+    /// pool exists, the moves left, already confirmed.
     func ask() {
-        let plan = NewPoolPlan.make(name: name, selected: selected, pools: store.pools)
+        if let r = run, r.created { create(r); return }
+        let plan = self.plan
         if let c = plan.confirmation {
-            pending = PendingAction(confirmation: c) { create(plan) }
+            pending = PendingAction(confirmation: c) { create(NewPoolRun(plan)) }
         } else {
-            create(plan)
+            create(NewPoolRun(plan))
         }
     }
 
-    func create(_ plan: NewPoolPlan) {
+    func create(_ start: NewPoolRun) {
         error = nil
+        run = start
         Task {
-            if let e = await store.poolCall("newpool", { $0.poolCreate(plan.name, accounts: plan.create) }) {
-                error = AppError(code: e.code ?? "failed", message: e.message, hint: e.hint)
-                return
-            }
-            for d in plan.moves {
-                guard case .move(let a, _, let to) = d else { continue }
-                if let e = await store.poolCall("newpool", { $0.poolMove(a, to: to) }) {
-                    error = AppError(code: e.code ?? "failed",
-                                     message: "\(plan.name) was created, but \(a) could not be moved in: " + e.message,
-                                     hint: e.hint)
+            var r = start
+            for s in r.steps {
+                if let e = await store.poolCall("newpool", { s.run($0) }) {
+                    error = AppError(code: e.code ?? "failed", message: r.failure(s, e.message), hint: e.hint)
                     return
                 }
+                r.done(s)
+                run = r
             }
-            store.note = "Created the pool \(plan.name); add it to a profile in Profiles"
+            store.note = "Created the pool \(inQuotes(r.plan.name)); add it to a profile in Profiles"
             dismiss()
         }
     }
@@ -629,7 +637,10 @@ struct AccountColumns: View {
     let plan: String
 
     var body: some View {
-        Text(plan).lineLimit(1).truncationMode(.tail).frame(width: 112, alignment: .leading)
+        // The plan before its parenthesis (PlanColumn), the whole in the
+        // tooltip: cut in the middle, "Max 5x (…rise seat)" said nothing. A
+        // long one wraps to a second line before it is cut at the end.
+        Text(plan).lineLimit(2).truncationMode(.tail).frame(width: 112, alignment: .leading)
             .font(.callout)
     }
 }
@@ -674,26 +685,37 @@ struct RenameSheet: View {
     @State private var name = ""
     @State private var error: AppError?
 
+    /// The button's state, and Return's in the field: Return would
+    /// otherwise rename with the name unchanged, empty, or twice.
+    var canSave: Bool { !name.isEmpty && name != old && !store.isBusy("rename") }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Rename \(old)").font(.title3.bold())
-            TextField("New name", text: $name).textFieldStyle(.roundedBorder).onSubmit(save)
+            Text("Rename the account \(inQuotes(old))").font(.title3.bold())
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16) {
+                GridRow {
+                    Text("New name")
+                    TextField("New name", text: $name).labelsHidden().textFieldStyle(.roundedBorder).onSubmit(save)
+                }
+            }
             Text("A running daemon is stopped for a moment while the account is renamed, then started again.")
                 .font(.caption).foregroundStyle(.secondary)
-            if let e = error { InlineError(message: e.message, hint: e.hint) }
+                .fixedSize(horizontal: false, vertical: true)
+            if let e = error { SheetError(message: e.message, hint: e.hint) }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Rename", action: save).keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
-                    .disabled(name.isEmpty || name == old || store.isBusy("rename"))
+                    .disabled(!canSave)
             }
         }
         .padding(24)
-        .frame(width: 400)
+        .frame(width: 440)
         .onAppear { name = old }
     }
 
     func save() {
+        guard canSave else { return }
         let (o, n) = (old, name)
         Task {
             let r = await store.call("rename", { $0.accountRenamePausingDaemon(o, to: n) })
@@ -704,7 +726,9 @@ struct RenameSheet: View {
                 dismiss()
                 if let e = p.restartError {
                     store.alertBinding(.settings).wrappedValue =
-                        AlertItem("Renamed \(o) to \(n), but the daemon did not start again", e)
+                        AlertItem(AccountRename.note(o, to: n) + ", but the daemon did not start again", e)
+                } else {
+                    store.note = AccountRename.note(o, to: n)
                 }
             case .failure(.app(let e)): error = e
             case .failure(let e): error = AppError(code: "failed", message: e.message, hint: e.hint)
@@ -719,10 +743,13 @@ struct RecoverySection: View {
     @EnvironmentObject var store: Store
     @State private var pending: PendingAction?
 
+    var busy: Bool { store.isBusy("recovery") }
+
     var body: some View {
         Section {
+            header
             if let items = store.recovery {
-                if items.isEmpty { Text("No recovery copies.").foregroundStyle(.secondary) }
+                if items.isEmpty { Text("No recovery copies.").foregroundStyle(.secondary).padding(.horizontal, AccountsPane.inset) }
                 ForEach(items) { item in
                     HStack(spacing: 12) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -736,23 +763,15 @@ struct RecoverySection: View {
                             }
                         }
                         .fixedSize()
-                        .disabled(item.error != nil)
+                        .disabled(item.error != nil || busy)
                         Button("Clear…") { clear(item) }
+                            .disabled(busy)
                     }
+                    .padding(.horizontal, AccountsPane.inset)
                 }
             } else {
                 Text("Copies of credentials kept when a sign-in replaced them.").foregroundStyle(.secondary)
-            }
-        } header: {
-            HStack {
-                Text("Recovery copies")
-                Spacer()
-                if store.isBusy("recovery") { ProgressView().controlSize(.mini) }
-                Button(store.recovery == nil ? "Show" : "Reload") { store.loadRecovery(identify: false) }
-                    .buttonStyle(.borderless)
-                Button("Identify") { store.loadRecovery(identify: true) }
-                    .buttonStyle(.borderless)
-                    .help("Look up who each copy signs in as (one identity call each)")
+                    .padding(.horizontal, AccountsPane.inset)
             }
         }
         // The action carries its own slot: a dialog clears its binding before
@@ -760,10 +779,32 @@ struct RecoverySection: View {
         .confirming($pending)
     }
 
+    /// As a pool's header, a row with no rule: its name in capitals,
+    /// semibold; its controls drawn as buttons, so they do not read as
+    /// labels.
+    var header: some View {
+        HStack(spacing: 8) {
+            Text("RECOVERY COPIES").fontWeight(.semibold).font(.subheadline).foregroundStyle(.secondary)
+            if busy { ProgressView().controlSize(.mini) }
+            Spacer()
+            Group {
+                Button(store.recovery == nil ? "Show" : "Reload") { store.loadRecovery(identify: false) }
+                Button("Identify") { store.loadRecovery(identify: true) }
+                    .help("Look up who each copy signs in as (one identity call each)")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(busy)
+        }
+        .padding(.horizontal, AccountsPane.inset)
+        .padding(.top, 14)
+        .listRowSeparator(.hidden)
+    }
+
     func clear(_ item: RecoveryItem) {
         let s = item.slot
         pending = PendingAction(confirmation: Confirm.recoveryClear(slot: s, account: item.account)) {
-            store.act("recovery", title: "Could not clear \(s)", { $0.recoveryClear(s) }) { _ in
+            store.act("recovery", title: "Could not clear \(inQuotes(s))", { $0.recoveryClear(s) }) { _ in
                 store.loadRecovery(identify: false)
             }
         }
@@ -773,7 +814,7 @@ struct RecoverySection: View {
         if let e = i.error { return e }
         var p: [String] = []
         if let pr = i.profile { p.append("from " + pr) }
-        if let k = i.keptAt { p.append("kept " + Format.age(k, now: Date())) }
+        if let k = i.keptAt { p.append("kept " + Format.age(k, now: store.now)) }
         if let w = i.who { p.append(w) } else if let s = i.seat { p.append("seat " + s.prefix(8) + "…") }
         p.append(i.renewable ? "renewable" : "not renewable")
         return p.joined(separator: " · ")
@@ -787,8 +828,8 @@ struct RecoverySection: View {
     }
 
     func restore(_ slot: String, _ account: String, force: Bool) {
-        store.act("recovery", title: "Could not restore \(slot)", { $0.recoveryRestore(slot, account: account, force: force) }) { r in
-            store.note = "Restored \(r.slot) to \(r.account)"
+        store.act("recovery", title: "Could not restore \(inQuotes(slot))", { $0.recoveryRestore(slot, account: account, force: force) }) { r in
+            store.note = "Restored \(inQuotes(r.slot)) to \(inQuotes(r.account))"
             store.loadRecovery(identify: false)
         }
     }
@@ -806,25 +847,31 @@ struct RenamePoolSheet: View {
     var own: Bool { store.pools?.pool(name)?.own ?? false }
     var trimmed: String { newName.trimmingCharacters(in: .whitespacesAndNewlines) }
     var busy: Bool { store.isBusy("pool:\(name)") }
+    /// The button's state, and Return's in the field.
+    var canRename: Bool { !trimmed.isEmpty && trimmed != name && !busy }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Rename pool \(name)").font(.title3.bold())
-            TextField("New name", text: $newName, prompt: Text(name))
-                .textFieldStyle(.roundedBorder)
-                .onSubmit(rename)
-            Text(own
-                 ? "\(name) is profile \(name)'s own pool. Renamed, it becomes a pool of its own, with the same accounts, that \(name) uses."
-                 : "Every profile that uses it keeps using it, in the same place in its order.")
+            Text("Rename the pool \(inQuotes(name))").font(.title3.bold())
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16) {
+                GridRow {
+                    Text("New name")
+                    TextField("New name", text: $newName, prompt: Text(name))
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit(rename)
+                }
+            }
+            Text(PoolRename.note(name: name, own: own, to: trimmed))
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            if let e = error { InlineError(message: e.message, hint: e.hint) }
+            if let e = error { SheetError(message: e.message, hint: e.hint) }
             HStack(spacing: 8) {
                 if busy { ProgressView().controlSize(.small) }
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Rename", action: rename).keyboardShortcut(.defaultAction).buttonStyle(PrimaryButtonStyle())
-                    .disabled(trimmed.isEmpty || trimmed == name || busy)
+                    .disabled(!canRename)
             }
         }
         .padding(24)
@@ -832,14 +879,14 @@ struct RenamePoolSheet: View {
     }
 
     func rename() {
-        guard !trimmed.isEmpty, trimmed != name else { return }
+        guard canRename else { return }
         error = nil
         let (old, new) = (name, trimmed)
         Task {
             if let e = await store.poolCall("pool:\(old)", { $0.poolRename(old, to: new) }) {
                 if case .app(let a) = e { error = a } else { error = AppError(code: "failed", message: e.message, hint: e.hint) }
             } else {
-                store.note = "Renamed the pool \(old) to \(new)"
+                store.note = "Renamed the pool \(inQuotes(old)) to \(inQuotes(new))"
                 dismiss()
             }
         }
@@ -862,9 +909,9 @@ struct DeletePoolSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Delete pool \(name)?").font(.title3.bold())
+            Text("Delete the pool \(inQuotes(name))?").font(.title3.bold())
             if let p = plan {
-                if !p.accounts.isEmpty {
+                if let caption = p.caption {
                     Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 4) {
                         GridRow {
                             Text("Move its accounts to")
@@ -875,7 +922,7 @@ struct DeletePoolSheet: View {
                         }
                         GridRow {
                             Color.clear.frame(width: 1, height: 1)
-                            Text(p.accounts.joined(separator: ", "))
+                            Text(caption)
                                 .font(.caption).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -885,12 +932,12 @@ struct DeletePoolSheet: View {
                     .font(.callout)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if let e = error { InlineError(message: e.message, hint: e.hint) }
+            if let e = error { SheetError(message: e.message, hint: e.hint) }
             HStack(spacing: 8) {
                 if busy { ProgressView().controlSize(.small) }
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Delete \(name)", role: .destructive, action: delete)
+                Button("Delete \(inQuotes(name))", role: .destructive, action: delete)
                     .buttonStyle(.borderedProminent)
                     .tint(.red)
                     .disabled(busy || plan == nil)
@@ -907,7 +954,7 @@ struct DeletePoolSheet: View {
             if let e = await store.poolCall("pool:\(n)", { $0.poolDelete(n, to: dest) }) {
                 if case .app(let a) = e { error = a } else { error = AppError(code: "failed", message: e.message, hint: e.hint) }
             } else {
-                store.note = "Deleted the pool \(n)"
+                store.note = "Deleted the pool \(inQuotes(n))"
                 dismiss()
             }
         }

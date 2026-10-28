@@ -124,7 +124,7 @@ func TestSessionOneProfile(t *testing.T) {
 func TestSessionTextLabelsSwitches(t *testing.T) {
 	path := sessionWorld(t)
 	out := captureStdout(t, func() error { return cmdSession([]string{"--config", path, "--since", "4h"}) })
-	for _, want := range []string{"2 SWITCH(ES) IN THIS SPAN", "work", "w2 → w1", "default", "spare → personal"} {
+	for _, want := range []string{"2 SWITCHES IN THIS SPAN", "work", "w2 → w1", "default", "spare → personal"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in\n%s", want, out)
 		}

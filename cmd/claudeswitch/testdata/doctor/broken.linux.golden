@@ -31,4 +31,4 @@
   [info] status line     not set; `cs statusline install` adds it
   [info] claude plugin   not installed; see README, "Inside Claude Code"
 
-exit: 1 (4 doctor check(s) failed)
+exit: 1 (4 doctor checks failed)

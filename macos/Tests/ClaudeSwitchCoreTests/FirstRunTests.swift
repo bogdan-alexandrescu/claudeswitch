@@ -57,6 +57,78 @@ import Testing
         #expect(f.current == .addAccounts)
     }
 
+    // QA 2026-10-28, second pass: Open and Add another on a finished step
+    // did nothing. A step whose fact is true stayed done whatever reopen
+    // cleared, and Add another only cleared a mark.
+
+    @Test func testAStepOpenedAgainWinsOverWhatIsTrue() {
+        var f = SetupFlow(facts: SetupFacts(accounts: 2))
+        f.complete(.addAccounts)
+        #expect(f.current == .workProfile)
+        f.reopen(.saveLogin)
+        #expect(f.status(.saveLogin) == .pending, "open again, though an account is saved")
+        #expect(f.current == .saveLogin)
+        #expect(f.canContinue(.saveLogin), "what it does is true already: Continue moves on")
+        f.complete(.saveLogin)
+        #expect(f.status(.saveLogin) == .done)
+        #expect(f.current == .workProfile)
+        f.reopen(.saveLogin)
+        f.skip(.saveLogin)
+        #expect(f.status(.saveLogin) == .done, "skipped, it is again what is true says")
+        #expect(f.current == .workProfile)
+    }
+
+    /// Do it now on a skipped step, and then doing it, finishes it as it
+    /// did before: what it does was not true when it opened again.
+    @Test func testDoingAStepOpenedAgainFinishesIt() {
+        var f = SetupFlow()
+        f.skip(.saveLogin)
+        f.reopen(.saveLogin)
+        #expect(f.current == .saveLogin)
+        f.facts.accounts = 1
+        #expect(f.status(.saveLogin) == .done, "saved: done, no Continue to press")
+        #expect(f.current == .addAccounts)
+        f.complete(.addAccounts)
+        f.skip(.workProfile)
+        f.reopen(.workProfile)
+        f.facts.profiles = 1
+        #expect(f.status(.workProfile) == .done)
+        #expect(f.current == .daemon)
+    }
+
+    @Test func testTheStepOpenedLastIsTheCurrentOne() {
+        var f = SetupFlow()
+        for s in SetupStep.allCases { f.skip(s) }
+        f.reopen(.addAccounts)
+        f.reopen(.workProfile)
+        #expect(f.current == .workProfile, "the link pressed opens its own step, after an earlier one too")
+        f.skip(.workProfile)
+        #expect(f.current == .addAccounts)
+        f.skip(.addAccounts)
+        #expect(f.finished)
+    }
+
+    @Test func testWhatAFinishedStepsLinkDoes() {
+        #expect(SetupStep.addAccounts.reopenAction(.done) == .run, "Add another opens the Add account sheet")
+        #expect(SetupStep.workProfile.reopenAction(.done) == .run, "Add another opens the New profile sheet")
+        #expect(SetupStep.saveLogin.reopenAction(.done) == .reopen)
+        #expect(SetupStep.daemon.reopenAction(.done) == .daemonSettings, "Settings → Daemon, never Install")
+        for s in SetupStep.allCases { #expect(s.reopenAction(.skipped) == .reopen, "Do it now") }
+    }
+
+    @Test func testContinueOnceThereIsSomethingToMoveOnFrom() {
+        var f = SetupFlow()
+        for s in SetupStep.allCases { #expect(!f.canContinue(s)) }
+        f.facts.accounts = 1
+        #expect(f.canContinue(.addAccounts), "one account saved")
+        f.facts.daemonInstalled = true
+        f.reopen(.daemon)
+        #expect(f.current == .daemon, "opened again once installed: it stays open")
+        #expect(f.daemonOffer() == .settings)
+        #expect(f.canContinue(.daemon))
+        #expect(f.note(.daemon, daemonMode: "live") == "Installed, live", "its line, while it is open again")
+    }
+
     // 0.6.1: "Don't show this again". Set, the window no longer opens by
     // itself at launch (⋯ → Set up… still opens it); kept in UserDefaults.
 

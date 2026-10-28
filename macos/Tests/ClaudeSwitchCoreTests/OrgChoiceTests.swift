@@ -38,8 +38,8 @@ import Testing
             ]}
             """#.utf8)))
         #expect(AddForm.organizations(list) == [
-            OrgChoice(id: "org-2", label: "Same as own"),
-            OrgChoice(id: "org-1", label: "Same as team-a, team-b"),
+            OrgChoice(id: "org-2", label: "Same organization as “own”"),
+            OrgChoice(id: "org-1", label: "Same organization as “team-a”, “team-b”"),
         ], "by their first account's name")
         #expect(AddForm.organizations(nil).isEmpty)
     }

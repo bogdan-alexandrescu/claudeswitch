@@ -269,7 +269,7 @@ func settings() []setting {
 		{name: "clean", kind: "bool",
 			get:  func(c *config.Config) string { return strconv.FormatBool(c.CleanOn()) },
 			set:  boolSetter(func(c *config.Config) **bool { return &c.Clean }),
-			help: "clean up after Claude on a schedule: what is merged, unused and unchanged goes to the Trash (cs clean)"},
+			help: "clean up after Claude on a schedule: what is merged, unused and unchanged goes to the Trash (claudeswitch clean)"},
 		{name: "clean_every", kind: "duration", min: num(config.MinCleanEvery.Seconds()),
 			get:  func(c *config.Config) string { return c.CleanInterval().String() },
 			set:  durPtrSetter(func(c *config.Config) **config.Duration { return &c.CleanEvery }),

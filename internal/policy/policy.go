@@ -247,7 +247,7 @@ type candidate struct {
 // weekly figure: "Modelname weekly".
 func (c candidate) windowLabel() string {
 	if c.model != "" && c.window == usage.SevenDayKey {
-		return c.model + " weekly"
+		return c.model + " week"
 	}
 	return windowName(c.window)
 }
@@ -330,15 +330,15 @@ func Decide(in Input) Decision {
 			// A counted model's limit with no figure: the account's weekly
 			// standing is unknown, which holds like any unknown reading.
 			return Decision{Kind: Stay, Reason: fmt.Sprintf(
-				"active account's %s weekly limit has no figure; holding until it can be read", active.unreadable)}
+				"active account's %s limit for the week has no figure; holding until it can be read", active.unreadable)}
 		}
 		if active.obs == nil || active.obs.Last == nil {
 			// Unknown is not "fine". But rotating away from a working session on
 			// no evidence is worse, so hold and let the poller catch up.
 			return Decision{Kind: Stay, Reason: "active account's usage is unknown; holding until it can be read"}
 		}
-		return Decision{Kind: Stay, Reason: fmt.Sprintf("active account at %.0f%%, under the %.0f%% trigger",
-			active.worst, active.trigger(in.Cfg))}
+		return Decision{Kind: Stay, Reason: fmt.Sprintf("active account at %.0f%% of its %s, under the %.0f%% trigger",
+			active.worst, active.windowLabel(), active.trigger(in.Cfg))}
 	}
 
 	// Cooldown damps flapping between two marginal accounts — but never delays
@@ -347,8 +347,8 @@ func Decide(in Input) Decision {
 	if !activeBurnt && !forced && !in.LastSwitch.IsZero() {
 		if elapsed := in.Now.Sub(in.LastSwitch); elapsed < in.Cfg.Cooldown.Duration {
 			return Decision{Kind: Stay, Reason: fmt.Sprintf(
-				"active account at %.0f%% but only %s since the last switch (cooldown %s)",
-				active.worst, elapsed.Round(time.Second), in.Cfg.Cooldown.Duration)}
+				"active account at %.0f%% of its %s but only %s since the last switch (cooldown %s)",
+				active.worst, active.windowLabel(), inWords(elapsed), inWords(in.Cfg.Cooldown.Duration))}
 		}
 	}
 
@@ -363,14 +363,14 @@ func Decide(in Input) Decision {
 		if short, has := bestWithin(all, in, 0, false); has {
 			if !forced && !activeBurnt {
 				return Decision{Kind: Stay, Reason: fmt.Sprintf(
-					"active account at %.0f%%, over the %.0f%% trigger, but %s; holding until the %.0f%% hard floor",
-					active.worst, active.trigger(in.Cfg), shortList(all, in), in.Cfg.HardFloor)}
+					"active account at %.0f%% of its %s, over the %.0f%% trigger, but %s; holding until the %.0f%% hard floor",
+					active.worst, active.windowLabel(), active.trigger(in.Cfg), shortList(all, in), in.Cfg.HardFloor)}
 			}
 			c, ok, note = short, true, shortNote(short, in)
 		}
 	}
 	if !ok {
-		why := fmt.Sprintf("active account at %.0f%% and nothing else is usable", active.worst)
+		why := fmt.Sprintf("active account at %.0f%% of its %s and nothing else is usable", active.worst, active.windowLabel())
 		if activeBurnt {
 			why = "active account was refused and nothing else is usable"
 		}
@@ -388,7 +388,7 @@ func Decide(in Input) Decision {
 	reason := fmt.Sprintf("active account at %.0f%% of its %s, over the %.0f%% trigger",
 		active.worst, active.windowLabel(), active.trigger(in.Cfg))
 	if activeBurnt {
-		reason = fmt.Sprintf("active account was refused on its %s window", active.obs.BurntWin)
+		reason = fmt.Sprintf("active account was refused on its %s window", windowName(active.obs.BurntWin))
 	}
 	if e := expiringNote(c, in); e != "" {
 		note += "; " + e
@@ -501,7 +501,7 @@ func PinLifted(a *state.Account, now time.Time) string {
 		return "it is out of quota"
 	case !a.RefreshExpiry.IsZero() && now.After(a.RefreshExpiry),
 		state.NeedsLoginErr(a.LastErr) && a.ReadFails > 0:
-		return "it needs a sign-in"
+		return "it needs sign-in"
 	}
 	return ""
 }
@@ -591,7 +591,7 @@ func failover(all []candidate, in Input, active candidate) Decision {
 	if !in.LastSwitch.IsZero() {
 		if elapsed := in.Now.Sub(in.LastSwitch); elapsed < in.Cfg.Cooldown.Duration {
 			return Decision{Kind: Stay, Reason: fmt.Sprintf("%s, but only %s since the last switch (cooldown %s)",
-				why, elapsed.Round(time.Second), in.Cfg.Cooldown.Duration)}
+				why, inWords(elapsed), inWords(in.Cfg.Cooldown.Duration))}
 		}
 	}
 	c, ok := bestWithin(all, in, in.Cfg.Margin(), true)
@@ -809,9 +809,11 @@ func expiringNote(c candidate, in Input) string {
 	return fmt.Sprintf("%s resets in %s with %.0f%% unused, so it goes first", c.acct.ID, inWords(r.Sub(in.Now)), unused)
 }
 
-// inWords is a span as a person says it: "40m", "9h", "2d 5h".
+// inWords is a span as a person says it: "45s", "40m", "9h", "2d 5h".
 func inWords(d time.Duration) string {
 	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
 	case d < time.Hour:
 		return fmt.Sprintf("%dm", int(d.Minutes()))
 	case d < 48*time.Hour:
@@ -1004,7 +1006,11 @@ func Explain(in Input) (Decision, []Verdict) {
 			Worst:  c.worst,
 		}
 		if c.obs != nil && c.obs.Last != nil {
-			v.Window, _ = c.obs.Last.Worst()
+			// The window Worst was judged on, nearest its own trigger; the
+			// higher figure's window named a window the figure is not from.
+			if v.Window = c.window; v.Window == "" {
+				v.Window, _ = c.obs.Last.Worst()
+			}
 			if r := earliestReset(c); !r.IsZero() {
 				v.ClearsAt = r
 			}
@@ -1042,36 +1048,33 @@ func Explain(in Input) (Decision, []Verdict) {
 			v.Eligible = true
 			switch {
 			case c.unreadable != "":
-				v.Why = fmt.Sprintf("its %s weekly limit has no figure; holding until it can be read", c.unreadable)
+				v.Why = fmt.Sprintf("its %s limit for the week has no figure; holding until it can be read", c.unreadable)
 			case c.over:
-				v.Why = fmt.Sprintf("at %.0f%%, over the %.0f%% %s trigger",
-					c.worst, c.trigger(in.Cfg), c.windowLabel())
+				v.Why = fmt.Sprintf("at %.0f%% of its %s, over the %.0f%% trigger",
+					c.worst, c.windowLabel(), c.trigger(in.Cfg))
 			default:
-				v.Why = fmt.Sprintf("at %.0f%%, %.0f points of room", c.worst, -c.exceedance)
+				v.Why = fmt.Sprintf("at %.0f%% of its %s, %.0f points of room", c.worst, c.windowLabel(), -c.exceedance)
 			}
 		case c.avail == state.Burnt:
-			v.Why = "refused on its " + c.obs.BurntWin + " window"
+			v.Why = "refused on its " + windowName(c.obs.BurntWin) + " window"
 		case c.avail == state.Unknown:
 			v.Why = "no usable reading"
 			switch {
 			case c.obs != nil && c.obs.ExpiredAt(in.Now):
 				v.Why = "its window reset — being re-read"
 			case c.unreadable != "":
-				v.Why = fmt.Sprintf("its %s weekly limit has no figure — unknown, never a target", c.unreadable)
+				v.Why = fmt.Sprintf("its %s limit for the week has no figure — unknown, never a target", c.unreadable)
 			}
 		case c.avail == state.Reserved:
 			v.Why = fmt.Sprintf("held in reserve above %.0f%%", c.acct.Reserve)
 		case c.over:
-			v.Why = fmt.Sprintf("at %.0f%%, no headroom", c.worst)
-			if c.model != "" && c.window == usage.SevenDayKey {
-				v.Why += " on its " + c.windowLabel() + " limit"
-			}
+			v.Why = fmt.Sprintf("at %.0f%% of its %s, no headroom", c.worst, c.windowLabel())
 		case sessionRoom(c, in) < in.Cfg.Margin():
 			v.Why = fmt.Sprintf("session at %.0f%%, only %.0f points below its %.0f%% trigger — short of the %g-point landing margin; a target only past the hard floor or after a refusal",
 				c.obs.Last.FiveHour.Pct(), sessionRoom(c, in), in.Cfg.TriggerFor(usage.FiveHourKey), in.Cfg.Margin())
 		default:
 			v.Eligible = true
-			v.Why = fmt.Sprintf("at %.0f%%, ready", c.worst)
+			v.Why = fmt.Sprintf("at %.0f%% of its %s, ready", c.worst, c.windowLabel())
 			if first {
 				// The first ready account in the order is the one rotation
 				// takes; say when prefer = "expiring" is why.
@@ -1110,10 +1113,11 @@ func explainOrder(all []candidate, in Input, ownFirst bool) []candidate {
 	return out
 }
 
-// windowName is how a window is referred to in something a person reads.
+// windowName is how a window is referred to in something a person reads:
+// the session and the week, as the app says them.
 func windowName(key string) string {
 	if key == usage.SevenDayKey {
-		return "weekly"
+		return "week"
 	}
 	return "session"
 }

@@ -79,7 +79,7 @@ func TestARefillBeyondAnHourIsStillNoHeadroom(t *testing.T) {
 			row := statusRow(t, "work-c",
 				usage.Window{Utilization: ptr(3), ResetsAt: at(time.Hour)},
 				usage.Window{Utilization: ptr(95), ResetsAt: at(tc.in)})
-			if !strings.Contains(row, "no headroom · 7d") {
+			if !strings.Contains(row, "no headroom · week") {
 				t.Errorf("a reset %s out is not a refill worth waiting for:\n%s", tc.in, row)
 			}
 		})
@@ -95,7 +95,7 @@ func TestTheCountdownComesFromTheWindowThatBlocked(t *testing.T) {
 	if strings.Contains(row, "refills in") {
 		t.Errorf("the five-hour clearing does not unblock a spent weekly:\n%s", row)
 	}
-	if !strings.Contains(row, "no headroom · 7d") {
+	if !strings.Contains(row, "no headroom · week") {
 		t.Errorf("want the weekly verdict:\n%s", row)
 	}
 }
@@ -125,7 +125,7 @@ func TestAContradictoryConfigIsWarnedAboutInStatus(t *testing.T) {
 	if !strings.Contains(out, "WARNINGS") || !strings.Contains(out, "hard_floor (96)") {
 		t.Errorf("the mismatch must be reported where the thresholds are shown:\n%s", out)
 	}
-	if !strings.Contains(out, "switch ≥85% session / ≥98% weekly") {
+	if !strings.Contains(out, "rotates at session ≥85% / week ≥98%") {
 		t.Errorf("footer must quote the configured thresholds:\n%s", out)
 	}
 }

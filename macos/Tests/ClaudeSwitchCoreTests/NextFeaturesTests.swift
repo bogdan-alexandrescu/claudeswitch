@@ -42,10 +42,11 @@ private func at(_ s: String) -> Date { GoTime.parse(s)! }
         #expect(!schema.settings(in: .rotation).map(\.key).contains("prefer"))
     }
 
-    @Test func testOtherEnumsStillReadAsTheirValues() throws {
+    @Test func testAnEnumWithoutWordsReadsAsItsValue() throws {
         let schema = try #require(ConfigSchema(data: try fixture("cli-config-schema.json")))
         let when = try #require(schema.setting("switch_when"))
-        #expect(SettingNames.value(when, "idle") == "idle")
+        #expect(SettingNames.value(when, "idle") == "Between turns", "switch_when has words since 2026-10-28")
+        #expect(SettingNames.value(when, "later") == "later", "a choice without words reads as itself")
     }
 
     @Test func testAProfileChoiceOffersInheritThenEveryValue() throws {
@@ -102,10 +103,10 @@ private func at(_ s: String) -> Date { GoTime.parse(s)! }
         #expect(Runway.when(at("2026-10-16T08:00:00Z"), now: now, timeZone: utc) == "16 Oct 08:00")
     }
 
-    @Test func testAPassedTimeIsNow() {
+    @Test func testAPassedTimeHasRunDry() {
         let now = at("2026-10-08T02:46:41Z")
         #expect(Runway.poolLine(profile: "work", dryAt: at("2026-10-08T02:00:00Z"), now: now, timeZone: utc)
-                == "work pool: runs dry now at this pace")
+                == "work pool: has run dry")
     }
 
     @Test func testWithinTwoHoursIsUrgent() {
@@ -221,7 +222,7 @@ private func at(_ s: String) -> Date { GoTime.parse(s)! }
         let l = try #require(AccountList(data: try fixture("cli-account-list-next.json")))
         let due = ReloginReminders.due(l, now: now, sent: [:], calendar: utcCalendar())
         #expect(due.map(\.account) == ["personal"], "work-1 is 43 days out; work-2's expiry is unknown")
-        #expect(due.first?.body == "personal needs signing in within 2 days")
+        #expect(due.first?.body == "personal needs sign-in within 2 days")
     }
 
     @Test func testOncePerAccountPerDay() throws {
@@ -244,7 +245,7 @@ private func at(_ s: String) -> Date { GoTime.parse(s)! }
         let json = #"{"accounts":[{"id":"a","enabled":true,"refresh_expires_at":"2026-10-07T00:00:00Z"}]}"#
         let l = try #require(AccountList(data: Data(json.utf8)))
         let due = ReloginReminders.due(l, now: now, sent: [:], calendar: utcCalendar())
-        #expect(due.first?.body == "a needs signing in: its login has expired")
+        #expect(due.first?.body == "a needs sign-in: its login has expired")
     }
 
     @Test func testUnknownOrDisabledIsNeverReminded() throws {

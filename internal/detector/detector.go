@@ -101,8 +101,12 @@ const (
 type Rejection struct {
 	Type     string    // five_hour | seven_day
 	ResetsAt time.Time // authoritative
-	SeenAt   time.Time
-	File     string
+	// At is when the refusal happened: its earliest record's own timestamp,
+	// or that file's modification time for a record without one. Backfill
+	// sets it; the live stream has SeenAt.
+	At     time.Time
+	SeenAt time.Time
+	File   string
 
 	// Latency is the gap between the transcript record being written and this
 	// detector emitting it. The reactive path is only worth having if it beats
@@ -416,6 +420,19 @@ func parseQuota(b []byte) []quotaLimit {
 	return nil
 }
 
+// recordAt is a transcript record's own time, or fallback when it has none.
+func recordAt(b []byte, fallback time.Time) time.Time {
+	var l line
+	if json.Unmarshal(b, &l) != nil || l.Timestamp == "" {
+		return fallback
+	}
+	at, err := time.Parse(time.RFC3339Nano, l.Timestamp)
+	if err != nil {
+		return fallback
+	}
+	return at
+}
+
 // toolLine is the subset of a transcript record that names the tools it
 // calls: an assistant message's content blocks. A person's message has a
 // string there instead, which does not decode as blocks and is skipped.
@@ -553,15 +570,27 @@ func Backfill(root string, since time.Duration, log *slog.Logger) ([]Rejection, 
 			if !strings.Contains(string(b), marker) {
 				continue
 			}
+			at := recordAt(b, fi.ModTime())
 			for _, q := range parseQuota(b) {
 				if q.Status != "rejected" || q.ResetsAt == 0 {
 					continue
 				}
 				raw++
-				r := Rejection{Type: q.RateLimitType, ResetsAt: time.Unix(q.ResetsAt, 0), File: p}
-				if prev, ok := dedup[r.Key()]; !ok || fi.ModTime().Before(prev.SeenAt) {
-					r.SeenAt = fi.ModTime()
+				r := Rejection{Type: q.RateLimitType, ResetsAt: time.Unix(q.ResetsAt, 0), File: p, At: at,
+					SeenAt: fi.ModTime()}
+				prev, ok := dedup[r.Key()]
+				switch {
+				case !ok:
 					dedup[r.Key()] = r
+				default:
+					// Every retry writes another record: the first says when.
+					if r.At.Before(prev.At) {
+						prev.At = r.At
+					}
+					if r.SeenAt.Before(prev.SeenAt) {
+						prev.SeenAt, prev.File = r.SeenAt, r.File
+					}
+					dedup[r.Key()] = prev
 				}
 			}
 		}

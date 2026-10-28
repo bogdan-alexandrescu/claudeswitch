@@ -10,6 +10,7 @@ import (
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/keychain"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/policy"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/render"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/state"
 )
 
@@ -98,7 +99,7 @@ func releaseFrom(ctx context.Context, v swapVault, cfg *config.Config, st *state
 		a := st.Get(c.ID)
 		a.Last, a.LastAt, a.OrgID = res.Usage, res.Usage.FetchedAt, res.OrgID
 	}
-	reason := fmt.Sprintf("released %s for %s: %s idle %s", account, wantedBy, holder, idle.Round(time.Minute))
+	reason := fmt.Sprintf("released %s for %s: %s idle %s", account, wantedBy, holder, render.Duration(idle))
 	if record != nil {
 		record(audit.Event{Kind: "switch", Profile: holder, From: account, To: c.ID, Reason: reason})
 	}

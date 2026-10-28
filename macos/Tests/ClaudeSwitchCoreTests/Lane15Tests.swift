@@ -107,7 +107,7 @@ import Testing
 
         let work = try #require(l.profile("work"))
         let text = ProfileRemoval.summary(work, to: "default")
-        #expect(text.contains("w1, w2") && text.contains("default"))
+        #expect(text.contains("“w1”, “w2”") && text.contains("default"))
         #expect(text.contains("guarded"), "names the ghost behaviour")
         #expect(text.contains("stay"), "says the folder and the login stay")
         #expect(!ProfileRemoval.summary(try #require(l.profile("lab")), to: "default").contains("guarded"),

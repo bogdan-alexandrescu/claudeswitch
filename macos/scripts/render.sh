@@ -10,6 +10,10 @@
 #   pools        RenderFixtures/pools over them: shared pools, an empty pool,
 #                an account in no pool and one in use by another profile
 #   older-cli    RenderFixtures/older-cli over them: a binary from before pools
+#   states       RenderFixtures/states over them: a stale daemon, a hard pin,
+#                already on the best, a pool running dry, a lifted pin
+#   min          the many set, Settings only, at the least the window and its
+#                sidebar can be (760 x 520, sidebar 182 pt)
 #
 #   macos/scripts/render.sh <out-dir> [set...]
 #
@@ -22,8 +26,10 @@ set -eu
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${1:?usage: render.sh <out-dir> [set...]}"
 shift
-SETS="${*:-base many one-profile hero tutorial pools older-cli}"
+SETS="${*:-base many one-profile hero tutorial pools older-cli states min}"
 FIXED_NOW="2026-10-08T02:46:41Z"
+# The release the renders show, as plugin.json (bumped every release) says.
+VERSION="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$HERE/../plugin/.claude-plugin/plugin.json")"
 
 swift build --package-path "$HERE" >/dev/null
 BIN="$(swift build --package-path "$HERE" --show-bin-path)/ClaudeSwitchBar"
@@ -32,13 +38,16 @@ for set in $SETS; do
   work="$(mktemp -d)"
   cp "$HERE/Tests/ClaudeSwitchCoreTests/Fixtures/"*.json "$work/"
   now=""
-  if [ "$set" != base ]; then
-    cp "$HERE/RenderFixtures/$set/"*.json "$work/"
+  fx="$set" least=""
+  if [ "$set" = min ]; then fx=many least="--min"; fi
+  if [ "$fx" != base ]; then
+    # *.jsonl too: a set may bring audit log lines (render-audit.jsonl).
+    cp "$HERE/RenderFixtures/$fx/"*.json "$HERE/RenderFixtures/$fx/"*.jsonl "$work/" 2>/dev/null || true
     now="--now $FIXED_NOW"
   fi
   mkdir -p "$OUT/$set"
-  # shellcheck disable=SC2086 # $now is empty or two words
-  "$BIN" --render "$work" "$OUT/$set" $now
+  # shellcheck disable=SC2086 # $now and $least are empty or whole words
+  "$BIN" --render "$work" "$OUT/$set" $now --version "$VERSION" $least
   rm -rf "$work"
   echo "$OUT/$set"
 done

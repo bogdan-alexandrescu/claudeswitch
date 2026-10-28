@@ -20,15 +20,15 @@ import Testing
     @Test func testEveryPoolIsOfferedWithWhoUsesItThenNoPool() throws {
         let options = NewAccountPool.options(pools: try sharedPools(), profiles: try sharedProfiles())
         #expect(options.map(\.pick) == [.pool("personal"), .pool("team"), .pool("ops"), .pool("spare"), .none])
-        #expect(options.first { $0.pick == .pool("team") }?.label == "team — used by default, work")
-        #expect(options.first { $0.pick == .pool("spare") }?.label == "spare — no profile uses it")
-        #expect(options.last?.label == "No pool — default uses it last")
+        #expect(options.first { $0.pick == .pool("team") }?.label == "“team”, used by “default” and “work”")
+        #expect(options.first { $0.pick == .pool("spare") }?.label == "“spare”, which no profile uses")
+        #expect(options.last?.label == "No pool, which “default” uses last")
     }
 
     @Test func testALegacyConfigOffersEachProfilesOwnPool() throws {
         let legacy = try #require(PoolList(data: try fixture("cli-pool-list.json")))
         let options = NewAccountPool.options(pools: legacy, profiles: nil)
-        #expect(options.first?.label == "default — default's own")
+        #expect(options.first?.label == "“default”, a profile’s own pool", "not “default — default's own”")
     }
 
     @Test func testItStartsOnAPoolOnlyThatProfileUses() throws {

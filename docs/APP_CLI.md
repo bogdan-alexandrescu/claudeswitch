@@ -327,7 +327,9 @@ lines directly above it go with it):
   ghost from the state's record meanwhile.
 - `confirmation_required` without `--yes`: its `message` says where the
   accounts go, that the folder and login stay, and whether an account
-  stays guarded — the app's confirmation text. Errors also: `not_found`
+  stays guarded. The app does not show it: its Remove sheet says this in
+  its own words (`ProfileRemoval.summary`) and runs `--yes` from there.
+  Errors also: `not_found`
   (the profile or `--to`), `usage` (`--to` itself), `last_profile`,
   `config_invalid`.
 
@@ -593,7 +595,7 @@ that does not use it, and for a disabled account no profile's pool holds;
 
 The pin safety valve (contract 2, additive, IMPROVEMENTS F3): when the
 pinned account is refused (a 429 in the transcripts), out of quota (a
-current reading at 100% on either window) or needs a sign-in (its refresh
+current reading at 100% on either window) or needs sign-in (its refresh
 token has expired, or its last read failed, counted, with an error only a
 sign-in cures), a live daemon lifts the pin and rotates as usual, saying so
 in its log, a notification and the audit log:
@@ -733,7 +735,7 @@ keeps its pool. With a source
 other than the target (owner decision: allowed) the credential stays signed
 in where it was: no profile swaps in an account live in another (§3). When
 the source may not use the account, its daemon moves off it, and the answer
-carries `"note": "still signed in in S — S will move off it; T can use it
+carries `"note": "it is still the login in S, which will move off it — T can use it
 after"`; when the source may use it too (a pool both list, D31), the source
 keeps it until its own rotation moves on (D34), and the note is `"still
 signed in in S, which uses it too — T can use it once S rotates off it"`.
@@ -910,7 +912,7 @@ whose time falls after `pool_refills_at`. Example, one profile, `work-1`
 live at 40% and rising a point a minute, `work-team` at 5%:
 
 ```json
-{"decision": {"kind": "stay", "reason": "active account at 42%, under the 85% trigger"},
+{"decision": {"kind": "stay", "reason": "active account at 42% of its session, under the 85% trigger"},
  "accounts": [
    {"id": "work-1", "active": true, "trigger_at": "2026-10-09T14:45:00Z",
     "weekly_resets_at": "2026-10-14T09:00:00Z", "weekly_unused": 90, …},

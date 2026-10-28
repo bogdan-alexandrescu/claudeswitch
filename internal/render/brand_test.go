@@ -124,13 +124,13 @@ func TestDotBarPlain(t *testing.T) {
 }
 
 // Healthy dots are the accent, a warning keeps its own colour, the threshold
-// is a bold dot in the default foreground, and unlit dots are dim.
+// is a bold ◉ in the default foreground, and unlit dots are dim.
 func TestDotBarColoured(t *testing.T) {
 	SetDepth(Depth256)
 	t.Cleanup(func() { SetColor(false) })
 
 	ok := dotBar(40, 85, 12, levelFor(40, 85, ""), false)
-	want := pal.Glacier + "●●●●●" + reset + dim + "·····" + reset + bold + "●" + reset + dim + "·" + reset
+	want := pal.Glacier + "●●●●●" + reset + dim + "·····" + reset + bold + "◉" + reset + dim + "·" + reset
 	if ok != want {
 		t.Errorf("healthy bar = %q, want %q", ok, want)
 	}
@@ -149,18 +149,20 @@ func TestDotBarColoured(t *testing.T) {
 	if !strings.HasPrefix(frozen, pal.Grey) || strings.Contains(frozen, pal.Glacier) {
 		t.Errorf("a frozen bar must be grey, got %q", frozen)
 	}
-	if strings.Contains(stripColor(ok), dotThreshold) {
-		t.Error("with colour the threshold is a bold ●, not ◉")
+	// The threshold is ◉ with colour as without: a bold ● told it from a
+	// used dot by weight alone.
+	if !strings.Contains(stripColor(ok), dotThreshold) {
+		t.Error("with colour the threshold is ◉ too")
 	}
 }
 
 // The table keeps inside MaxTable, and inside the terminal when that is
 // narrower, whatever the account names.
 func TestLayoutWithinBudget(t *testing.T) {
-	const fixed = 2 + 1 + 2 + 2 + 6 + 2 + 6 + 2 + 17 // indent, marker, gaps, numbers, state
+	const fixed = 2 + 1 + 2 + 2 + 7 + 2 + 6 + 2 + 17 // indent, marker, gaps, numbers, state
 	for _, width := range []int{60, 72, 80, 90, 100, 120, 200} {
 		for _, name := range []int{7, 9, 12, 16} {
-			l := layoutFor(width, name)
+			l := layoutFor(width, name, 17)
 			w := fixed + name
 			if l.clears {
 				w += 2 + 6
@@ -179,10 +181,10 @@ func TestLayoutWithinBudget(t *testing.T) {
 			}
 		}
 	}
-	if l := layoutFor(100, 9); l.dots != barDots || !l.plan {
+	if l := layoutFor(100, 9, 17); l.dots != barDots || !l.plan {
 		t.Errorf("a 100-column terminal should have full bars and the plan: %+v", l)
 	}
-	if l := layoutFor(80, 9); l.dots != barDotsNarrow {
+	if l := layoutFor(80, 9, 17); l.dots != barDotsNarrow {
 		t.Errorf("an 80-column terminal should keep narrow bars: %+v", l)
 	}
 }

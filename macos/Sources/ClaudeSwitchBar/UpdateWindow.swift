@@ -45,6 +45,31 @@ enum UpdateWindow {
     static func close() { window?.close() }
 }
 
+/// The update's progress bar, drawn rather than the system's: in this
+/// window and the popover's foot the system bar came out grey, and in dark
+/// its track, (28,28,28) on (30,30,30), all but vanished (visual QA
+/// 2026-10-28). The accent on a track that shows in both themes.
+struct UpdateBar: View {
+    var value: Double
+    var height: CGFloat = 6
+
+    var body: some View {
+        let v = min(1, max(0, value))
+        GeometryReader { g in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.primary.opacity(0.15))
+                Capsule()
+                    .fill(Color.csAccent)
+                    .frame(width: v > 0 ? max(height, g.size.width * v) : 0)
+            }
+        }
+        .frame(height: height)
+        .animation(.easeOut(duration: 0.2), value: v)
+        .accessibilityElement()
+        .accessibilityValue("\(Int((v * 100).rounded())) percent")
+    }
+}
+
 /// What the window draws for each state: the app's icon, a title, a line
 /// that says what is going on, then what the state has (what is new, the
 /// progress bar) and its buttons, the default one last.
@@ -63,11 +88,7 @@ struct UpdateDialogView: View {
             .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 10) {
                 Text(d.title).font(.system(size: 15, weight: .semibold))
-                Text(d.message)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
+                messageLine(d)
                 content(d)
                 buttons(d).padding(.top, 4)
             }
@@ -77,20 +98,40 @@ struct UpdateDialogView: View {
         .frame(width: 500)
     }
 
+    /// The line under the title. While checking, a spinner beside it (a bar
+    /// with no value read as stuck at 0%), not alone on a line of its own.
+    @ViewBuilder func messageLine(_ d: UpdateDialog) -> some View {
+        let text = Text(d.message)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+        if d == .checking {
+            HStack(spacing: 8) {
+                ProgressView().progressViewStyle(.circular).controlSize(.small)
+                text
+            }
+        } else {
+            text
+        }
+    }
+
     @ViewBuilder func content(_ d: UpdateDialog) -> some View {
         switch d {
-        case .checking:
-            ProgressView().progressViewStyle(.linear).tint(Color.csAccent)
         case .available(_, _, let notes, _, _):
             if let notes {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("What's new").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Text("What’s new").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     ScrollView {
-                        Text(Self.markdown(notes))
-                            .font(.callout)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
-                            .padding(10)
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(Array(UpdateNotes.lines(notes).enumerated()), id: \.offset) { _, line in
+                                note(line)
+                            }
+                        }
+                        .font(.callout)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                        .padding(10)
                     }
                     .frame(maxHeight: 180)
                     .fixedSize(horizontal: false, vertical: true)
@@ -99,18 +140,25 @@ struct UpdateDialogView: View {
                 }
             }
             if let detail = d.detail {
-                Text(detail).font(.caption).foregroundStyle(.tertiary)
+                Text(detail).font(.caption).foregroundStyle(.secondary)
             }
         case .installing(_, let step):
             HStack(spacing: 10) {
-                ProgressView(value: step.fraction).progressViewStyle(.linear).tint(Color.csAccent)
-                Text("\(Int((step.fraction * 100).rounded()))%")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .frame(width: 34, alignment: .trailing)
+                UpdateBar(value: step.fraction)
+                // Only while there is a figure: an empty column kept the
+                // bar 34 points short of the edge in the quick steps.
+                if let percent = step.percent {
+                    Text(percent)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(width: 34, alignment: .trailing)
+                }
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel(step.label)
+            if let note = step.note {
+                Text(note).font(.caption).foregroundStyle(.secondary)
+            }
         default:
             EmptyView()
         }
@@ -122,19 +170,20 @@ struct UpdateDialogView: View {
             case .checking:
                 Spacer()
                 Button("Cancel") { updates.closeDialog() }.keyboardShortcut(.cancelAction)
-            case .upToDate, .installed:
+            case .checkOff:
+                Spacer()
+                Button("Close") { updates.closeDialog() }.keyboardShortcut(.cancelAction)
+                primary("Turn On") { updates.turnOn() }
+            case .upToDate, .versionUnknown, .installed:
                 Spacer()
                 primary("OK") { updates.closeDialog() }
+                    .background { escape { updates.closeDialog() } }
             case .checkFailed:
                 Spacer()
                 Button("OK") { updates.closeDialog() }.keyboardShortcut(.cancelAction)
                 primary("Try Again") { updates.checkNow() }
-            case .available(_, _, _, _, let page):
-                if let page {
-                    Button("Release Notes on GitHub") { NSWorkspace.shared.open(page) }
-                        .buttonStyle(.link)
-                        .font(.callout)
-                }
+            case .available:
+                pageLink(d)
                 Spacer()
                 Button("Later") { updates.closeDialog() }.keyboardShortcut(.cancelAction)
                 primary("Install Update") { updates.update() }
@@ -146,6 +195,7 @@ struct UpdateDialogView: View {
                     .help(step.cancellable ? "Stops before anything is replaced."
                           : "Too late to stop: the new files are going in.")
             case .failed:
+                pageLink(d)
                 Spacer()
                 Button("Close") { updates.closeDialog() }.keyboardShortcut(.cancelAction)
                 primary("Try Again") {
@@ -161,6 +211,39 @@ struct UpdateDialogView: View {
             .buttonStyle(PrimaryButtonStyle())
             .fixedSize()
             .keyboardShortcut(.defaultAction)
+    }
+
+    /// Release Notes on GitHub on the offer; Release page on GitHub after a
+    /// failure, where the release can be downloaded by hand.
+    @ViewBuilder func pageLink(_ d: UpdateDialog) -> some View {
+        if let page = d.page, let label = d.pageLabel {
+            Button(label) { NSWorkspace.shared.open(page) }
+                .buttonStyle(.link)
+                .font(.callout)
+        }
+    }
+
+    /// Escape, where the only button is the default one: a button takes one
+    /// shortcut, so OK keeps Return and an unseen one takes Escape (as the
+    /// popover's ⌘R and ⌘Q do).
+    func escape(_ action: @escaping () -> Void) -> some View {
+        Button("Close", action: action)
+            .keyboardShortcut(.cancelAction)
+            .opacity(0)
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+    }
+
+    /// A line of What's new; a bullet's wrapped lines hang under its text.
+    @ViewBuilder func note(_ line: UpdateNoteLine) -> some View {
+        if line.bullet {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("•")
+                Text(Self.markdown(line.text)).fixedSize(horizontal: false, vertical: true)
+            }
+        } else {
+            Text(Self.markdown(line.text.isEmpty ? " " : line.text)).fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     /// Inline Markdown, keeping the release's line breaks.

@@ -8,7 +8,7 @@ import Testing
 @Suite struct ConfirmationTests {
     @Test func testForgettingAGhostSaysItStopsBeingGuarded() {
         let c = Confirm.forgetGhost(profile: "old", account: "work-2")
-        #expect(c.title == "Forget old?")
+        #expect(c.title == "Forget “old”?")
         #expect(c.message.contains("work-2"))
         #expect(c.message.contains("no longer guarded"))
         #expect(c.destructive)
@@ -16,7 +16,7 @@ import Testing
 
     @Test func testClearingARecoveryCopy() {
         let c = Confirm.recoveryClear(slot: "r1", account: "personal")
-        #expect(c.title == "Clear recovery copy r1?")
+        #expect(c.title == "Clear the recovery copy “r1”?")
         #expect(c.message.contains("personal"))
         #expect(c.destructive)
         #expect(Confirm.recoveryClear(slot: "r2", account: nil).message.contains("r2"))
@@ -24,7 +24,7 @@ import Testing
 
     @Test func testRestoringToAnotherAccountIsCalledOut() {
         let same = Confirm.recoveryRestore(slot: "r1", to: "personal", itsAccount: "personal")
-        #expect(same.title == "Restore r1 to personal?")
+        #expect(same.title == "Restore “r1” to “personal”?")
         #expect(!same.message.contains("another account"))
         let other = Confirm.recoveryRestore(slot: "r1", to: "work-1", itsAccount: "personal")
         #expect(other.message.contains("another account"))

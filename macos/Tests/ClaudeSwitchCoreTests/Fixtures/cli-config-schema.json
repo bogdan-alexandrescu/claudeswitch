@@ -283,7 +283,7 @@
     },
     {
       "default": "false",
-      "description": "clean up after Claude on a schedule: what is merged, unused and unchanged goes to the Trash (cs clean)",
+      "description": "clean up after Claude on a schedule: what is merged, unused and unchanged goes to the Trash (claudeswitch clean)",
       "enum": [],
       "key": "clean",
       "max": null,

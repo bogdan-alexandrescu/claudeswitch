@@ -409,7 +409,7 @@ func checkSeed(cfg *config.Config, st *state.State, v seedVault, o createOptions
 		return fmt.Errorf("--seed %s: %w", o.seed, err)
 	}
 	if cred.RefreshDead() {
-		return fmt.Errorf("--seed %s: its vaulted credential has expired and needs a login "+
+		return fmt.Errorf("--seed %s: its vaulted credential has expired and needs sign-in "+
 			"(`claudeswitch login %s --direct`)", o.seed, o.seed)
 	}
 	exists, err := liveExistsFor(dir)
@@ -676,7 +676,12 @@ func profileList(w io.Writer, cfgPath string) error {
 	}
 	fmt.Fprintln(w)
 	for _, in := range cfg.EffectiveProfiles() {
+		// Every dir as ~/…, as the one without a dir is: a home path in
+		// full beside ~/.claude read as two kinds of place.
 		dir := in.Dir
+		if p, err := ccdir.ExpandHome(dir); err == nil && dir != "" {
+			dir = tilde(p)
+		}
 		switch {
 		case in.FromEnv:
 			dir = "this shell's CLAUDE_CONFIG_DIR (no [[profile]] blocks)"
@@ -695,7 +700,7 @@ func profileList(w io.Writer, cfgPath string) error {
 			}
 		}
 		fmt.Fprintf(w, "  %s\n", in.Name)
-		fmt.Fprintf(w, "    dir   %s\n", dir)
+		writeWrapped(w, dir, "    dir   ", "          ", false)
 		if i := declaredIndex(cfg, in.Name); i >= 0 && len(cfg.Profiles[i].Pools) > 0 {
 			// The pools it lists, in the order it uses them (D33).
 			var tiers []string
@@ -706,14 +711,18 @@ func profileList(w io.Writer, cfgPath string) error {
 				}
 				tiers = append(tiers, fmt.Sprintf("%s (%s)", label, nonEmpty(strings.Join(in.Tiers[t], ", "), "empty")))
 			}
-			fmt.Fprintf(w, "    pools %s\n", strings.Join(tiers, ", then "))
+			label := "    pools "
+			if len(tiers) == 1 {
+				label = "    pool  "
+			}
+			writeWrapped(w, strings.Join(tiers, ", then "), label, "          ", false)
 		} else {
-			fmt.Fprintf(w, "    pool  %s\n", nonEmpty(strings.Join(in.Pool, ", "), "(empty)"))
+			writeWrapped(w, nonEmpty(strings.Join(in.Pool, ", "), "(empty)"), "    pool  ", "          ", false)
 		}
 		if len(in.Paths) > 0 {
-			fmt.Fprintf(w, "    paths %s\n", strings.Join(in.Paths, ", "))
+			writeWrapped(w, strings.Join(in.Paths, ", "), "    paths ", "          ", false)
 		}
-		fmt.Fprintf(w, "    live  %s\n", live)
+		writeWrapped(w, live, "    live  ", "          ", false)
 	}
 	fmt.Fprintln(w)
 	return nil

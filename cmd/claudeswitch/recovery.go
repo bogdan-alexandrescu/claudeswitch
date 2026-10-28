@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/render"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/usage"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/vault"
 )
@@ -261,7 +262,7 @@ func doctorRecoveryLine(items []vault.RecoveryItem, now time.Time) string {
 			oldest = it.KeptAt
 		}
 	}
-	s := fmt.Sprintf("  [warn] recovery        %d kept credential(s) a swap could not file", len(items))
+	s := fmt.Sprintf("  [warn] recovery        %s a swap could not file", render.Plural(len(items), "kept credential", "kept credentials"))
 	if !oldest.IsZero() {
 		s += fmt.Sprintf(", oldest %s ago", ageShort(now.Sub(oldest)))
 	}

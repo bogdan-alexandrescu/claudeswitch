@@ -21,6 +21,9 @@ Flags can come before or after the positional arguments, written `--name` or
 | `1` | the command failed or refused; the message is on stderr as `claudeswitch: <message>`. With `--json`, one error object on stdout instead: `{"error": {"code", "message", "hint"}}` ([error codes](../APP_CLI.md#error-codes)) |
 | `2` | an unknown command, no command, or (for `use`, `login`, `add`, `accounts`, `refresh`, `rename`, `forget`, `identify` and `recovery` without `--json`) a flag the command does not know |
 
+`help` (or `--help`, `-h`) on a command, or `cs help <command>`, prints its
+synopsis and flags on stdout and exits 0.
+
 `account`, `priority` and `remove` report a bad flag as a `usage` error with
 status 1.
 
@@ -177,7 +180,7 @@ another profile; the message suggests `--direct`.
 | `--org ID` | the account's pinned organization | with `--direct`: the organization to sign in to, sent as `orgUUID` (the parameter Claude Code's `forceLoginOrgUUID` sends). An account the config pins asks for its own without it, and is refused another |
 | `--email ADDR` | none | sent as `login_hint`: the address of the account you want |
 | `--prompt VALUE` | none | the authorize `prompt` parameter: `select_account` forces the account chooser, `login` forces re-authentication |
-| `--pin-org` | off | send `organization_uuid` in the authorize URL. The endpoint accepts and ignores it; for experiment only |
+| `--pin-org` | off | accepted for old scripts and not listed in `--help`: it sends `organization_uuid` in the authorize URL, which the endpoint accepts and ignores |
 | `--json` | off | machine-readable output, with `--direct` or `--code` only; never prompts |
 
 A login is whichever person the browser is signed in as. With `--direct` it
@@ -290,6 +293,13 @@ seat, login expiry and its last reading (`five_hour`, `seven_day`,
 `binding`, `refused_until`, `error`). This is what Settings → Accounts
 shows. Shape: [APP_CLI.md → account](../APP_CLI.md#account).
 
+Without `--json` it is a table of the same, in brief: ACCOUNT (`(pinned)`
+when pinned), PROFILES (every profile that may use it, `*` on the one it is
+live in), STATE (`needs sign-in` for `needs_login`), SESSION and WEEK (the
+last reading), PLAN and EMAIL. The email goes last, cut with `…` when the
+terminal is too narrow for it. The pool and the expiries are in `--json`
+only.
+
 `refresh_expires_at` (in `--json`) is when the account's refresh token
 expires, as state.json last recorded it — never read from the keychain, so
 the app's re-login reminders (IMPROVEMENTS F5) can poll it. The daemon
@@ -320,7 +330,7 @@ account (`pinned to work-1, but work-2 is live; going back to the pin`).
 
 **The pin safety valve.** If the pinned account is refused (a 429 in the
 transcripts), is out of quota (a current reading at 100% on either window)
-or needs a sign-in (its refresh token has expired, or its last read failed
+or needs sign-in (its refresh token has expired, or its last read failed
 with an error only a sign-in cures), the daemon lifts the pin and rotates as
 usual. It says why in its log, in a notification and in the audit log
 (`kind: unpin`): `pin on work-1 lifted: it was refused`. `cs why` shows the

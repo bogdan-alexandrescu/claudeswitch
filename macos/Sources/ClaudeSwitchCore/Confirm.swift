@@ -12,27 +12,30 @@ public struct Confirmation: Equatable {
 
 public enum Confirm {
     public static func forgetGhost(profile: String, account: String) -> Confirmation {
-        Confirmation(title: "Forget \(profile)?",
-                     message: "The last login of the old profile \(profile) (\(account)) is no longer guarded: "
-                        + "claudeswitch stops treating \(account) as possibly live there.",
-                     action: "Forget", destructive: true)
+        let (p, a) = (inQuotes(profile), inQuotes(account))
+        return Confirmation(title: "Forget \(p)?",
+                            message: "The last login of the old profile \(p) (\(a)) is no longer guarded: "
+                                + "claudeswitch stops treating \(a) as possibly live there.",
+                            action: "Forget", destructive: true)
     }
 
     public static func recoveryClear(slot: String, account: String?) -> Confirmation {
-        Confirmation(title: "Clear recovery copy \(slot)?",
-                     message: "The kept credential in \(slot)" + (account.map { " (\($0))" } ?? "")
+        Confirmation(title: "Clear the recovery copy \(inQuotes(slot))?",
+                     message: "The kept credential in \(inQuotes(slot))" + (account.map { " (\(inQuotes($0)))" } ?? "")
                         + " is deleted. It cannot be restored afterwards.",
                      action: "Clear", destructive: true)
     }
 
     public static func recoveryRestore(slot: String, to account: String, itsAccount: String?) -> Confirmation {
-        var m = "The credential kept in \(slot) replaces \(account)'s stored credential."
+        let (s, a) = (inQuotes(slot), inQuotes(account))
+        var m = "The credential kept in \(s) replaces the stored credential of \(a)."
         var destructive = false
         if let its = itsAccount, its != account {
-            m += " The copy belongs to \(its): restoring it to another account stores \(its)'s login under \(account)."
+            m += " The copy belongs to \(inQuotes(its)): restoring it to another account stores the login of "
+                + "\(inQuotes(its)) under \(a)."
             destructive = true
         }
-        return Confirmation(title: "Restore \(slot) to \(account)?", message: m, action: "Restore",
+        return Confirmation(title: "Restore \(s) to \(a)?", message: m, action: "Restore",
                             destructive: destructive)
     }
 

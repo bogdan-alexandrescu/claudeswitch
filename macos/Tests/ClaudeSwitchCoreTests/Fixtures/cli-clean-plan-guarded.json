@@ -1,0 +1,20 @@
+{
+  "plan": {
+    "at": "2026-10-26T09:12:40-07:00",
+    "items": [
+      {"kind": "worktree", "path": "/Users/me/src/app/.claude/worktrees/agent-f4", "repo": "/Users/me/src/app",
+       "branch": "lane/f4", "sha": "33dd", "remove": false,
+       "why": "1 commit not in main; pull requests not checked: gh not found"},
+      {"kind": "branch", "path": "/Users/me/src/app", "repo": "/Users/me/src/app", "branch": "feat/y",
+       "sha": "22cc", "remove": false, "why": "3 commits not in main; pull requests not checked: gh not found"},
+      {"kind": "clone", "path": "/Users/me/src/app-integrate-2", "repo": "/Users/me/src/app", "remove": false,
+       "why": "branch lane/i2: 2 commits not in main; pull requests not checked: gh not found"},
+      {"kind": "worktree", "path": "/Users/me/src/app/.claude/worktrees/agent-g5", "repo": "/Users/me/src/app",
+       "branch": "lane/g5", "sha": "44ee", "remove": false, "why": "a live Claude Code session (app-3f) works in it"},
+      {"kind": "scratch", "path": "/private/tmp/claude-501/-Users-me-src-app/6c2f", "remove": true,
+       "why": "the scratch folder of an ended session", "bytes": 2097152}
+    ],
+    "guarded": ["/Users/me/Desktop/taxes", "/Users/me/Documents"]
+  },
+  "kinds": {"worktrees": true, "clones": true, "temp": true, "remote_branches": false}
+}

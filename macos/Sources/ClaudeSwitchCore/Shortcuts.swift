@@ -106,6 +106,19 @@ public struct HotKey: Equatable {
         !modifiers.intersection([.command, .option, .control]).isEmpty && KeyNames.name(keyCode) != nil
     }
 
+    /// Why a key pressed while recording is not taken, or nil. Two of ⌘, ⌥
+    /// and ⌃ (one with a function key): ⌘ alone would take a command from
+    /// every app (⌘Q, ⌘C), ⌥ alone a typed character (⌥S is ß), ⌃ alone a
+    /// terminal's (⌃C). A key saved before keeps working (isUsable).
+    public var recordRefusal: String? {
+        guard KeyNames.name(keyCode) != nil else { return "That key has no name to show; try another." }
+        let held = modifiers.intersection([.command, .option, .control])
+        let count = [HotKeyModifiers.command, .option, .control].filter { held.contains($0) }.count
+        let function = (KeyNames.name(keyCode) ?? "").hasPrefix("F") && (KeyNames.name(keyCode) ?? "").count > 1
+        if count >= 2 || (function && count == 1) { return nil }
+        return "Hold two of ⌘, ⌥ and ⌃ with the key: one alone is taken by apps and typing."
+    }
+
     /// "<keyCode>:<modifiers>", for the app's defaults.
     public var stored: String { "\(keyCode):\(modifiers.rawValue)" }
 
@@ -149,5 +162,15 @@ public enum StatusLine {
         if a.status != .available && a.status != .unknown { s += " · \(a.status.label)" }
         if c.pinned != nil { s += " · pinned" }
         return s
+    }
+}
+
+/// What the hotkey or a claudeswitch:// URL says when Switch to best does
+/// nothing (QA 2026-10-28: it said "already on its best account" when there
+/// was no account to switch to at all).
+public enum ShortcutAnswer {
+    public static func noBest(profile: String, alreadyOnBest: Bool, why: String?) -> String {
+        if alreadyOnBest { return "\(profile) is already on its best account." }
+        return "\(profile) has no account to switch to" + (why.map { ": " + $0 } ?? ".")
     }
 }

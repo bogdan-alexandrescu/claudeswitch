@@ -338,7 +338,7 @@ func TestWhyJSONBestSkipsAccountsLiveElsewhereOrNeedingLogin(t *testing.T) {
 	st.Default().SetActive("personal")
 	st.Get("w2").LastErr = "usage API: 401 Unauthorized"
 	work = whyBlock(t, whyJSON(cfg, st, time.Now(), ""), "work")
-	if work["best"] != nil || !strings.Contains(work["best_why"].(string), "w2: needs a sign-in") {
+	if work["best"] != nil || !strings.Contains(work["best_why"].(string), "w2: needs sign-in") {
 		t.Fatalf("work: best %v, why %v", work["best"], work["best_why"])
 	}
 }
@@ -360,7 +360,7 @@ func whyBlock(t *testing.T, out map[string]any, name string) map[string]any {
 func TestAddAcrossProfilesSaysWhatHappens(t *testing.T) {
 	cfg := loadOrFail(t, writeConfig(t, profilesTOML)) // w1 is work's alone
 	if got := crossProfileNote(cfg, "default", "work", "w1"); got !=
-		"still signed in in default — default will move off it; work can use it after" {
+		"it is still the login in default, which will move off it — work can use it after" {
 		t.Fatalf("note = %q", got)
 	}
 	if got := crossProfileNote(cfg, "work", "work", "w1"); got != "" {

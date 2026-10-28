@@ -47,11 +47,13 @@ make one for each account at the end, and the sign-in banner below has
 - **Open Chrome** in Settings → Profiles and in an account's ⋯ menu does the
   same for that profile's live account, or that account.
 
+Each is greyed out while it opens, so a double click opens one window.
+
 CLI: `cs chrome open <id>`.
 
 ## The Chrome banner
 
-<p align="center"><img src="../images/popover-chrome-signin.png" width="384" alt="The work card: Claude in Chrome in &quot;Work&quot; does not follow switches to work-team, with a Give work-team its own Chrome profile button and a close button"></p>
+<p align="center"><img src="../images/popover-chrome-signin.png" width="384" alt="The popover with the work card open: Claude in Chrome in &quot;Work&quot; does not follow switches to work-team, with a Give work-team its own Chrome profile button and a close button"></p>
 
 An account with a Chrome profile of its own needs nothing here: after every
 switch to it, claudeswitch opens that profile in the background and Claude in
@@ -60,7 +62,12 @@ rotation moved the profile to another account, the shared profile cannot
 follow, and its card says so. **Give work-team its own Chrome profile**
 creates one and opens it at the claude.ai and Claude in Chrome sign-in pages
 (`cs chrome add work-team`): sign in to both as work-team, once. It never asks
-for a sign-in after a rotation. × hides the banner until the next rotation.
+for a sign-in after a rotation. The banner goes once that worked; if it
+failed, the banner stays and the popover says why. × hides the banner
+until the next rotation.
+
+[Settings → Overview](settings-overview.md) lists the same notice under
+**Needs you**, with the same button.
 
 When Chrome is not supported on the machine, the globe and the Chrome
 controls are hidden or greyed out.
