@@ -6,9 +6,10 @@
 #   ./install-app.sh --no-open    ... and do not
 #   ./install-app.sh --uninstall  quit it and remove it
 #
-# Needs only the Command Line Tools (xcode-select --install), not Xcode. A copy
-# built here was never downloaded, so it carries no quarantine flag and opens
-# without a Gatekeeper warning; no Apple Developer account is involved.
+# Needs only the Command Line Tools (xcode-select --install), not Xcode. The
+# copy is signed ad hoc, not with the release's Developer ID, but it was never
+# downloaded, so it carries no quarantine flag and opens without a Gatekeeper
+# warning.
 #
 # The app only reads: it runs `claudeswitch why --json` / `config --json`,
 # reads ~/.local/state/claudeswitch/state.json, and switches by running

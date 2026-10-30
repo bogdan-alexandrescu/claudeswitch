@@ -8,10 +8,60 @@ permissions:
   contents: write
 
 jobs:
+  # The macOS binaries, built on macOS so that they can be signed with the
+  # Developer ID and notarized when the repository holds the signing secrets
+  # (without them they are built exactly as the build job builds the rest).
+  # The build job packs and publishes them.
+  darwin-cli:
+    runs-on: macos-latest
+    env:
+      SIGNING: ${{ secrets.MACOS_CERT_P12 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Build
+        run: |
+          set -eu
+          for arch in arm64 amd64; do
+            mkdir -p "darwin/$arch"
+            CGO_ENABLED=0 GOOS=darwin GOARCH="$arch" go build \
+              -trimpath \
+              -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
+              -o "darwin/$arch/claudeswitch" ./cmd/claudeswitch
+          done
+      - name: Developer ID certificate and notary key
+        if: env.SIGNING == 'true'
+        env:
+          CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+        run: macos/scripts/ci-keychain.sh
+      - name: Sign and notarize
+        if: env.SIGNING == 'true'
+        env:
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: macos/scripts/sign-cli.sh darwin/arm64/claudeswitch darwin/amd64/claudeswitch
+      - name: Remove the signing keychain
+        if: always() && env.SIGNING == 'true'
+        run: macos/scripts/ci-keychain.sh --remove
+      - uses: actions/upload-artifact@v4
+        with:
+          name: darwin-cli
+          path: darwin/
+          if-no-files-found: error
+
   build:
+    needs: darwin-cli
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: darwin-cli
+          path: darwin
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23'
@@ -51,13 +101,21 @@ jobs:
           export SOURCE_DATE_EPOCH
           echo "source date epoch: $SOURCE_DATE_EPOCH"
 
+          # The darwin binaries come from the darwin-cli job (signed, when it
+          # could sign: a signature carries its own time, so those two archives
+          # are reproducible only unsigned). The artifact drops the mode bits.
           for target in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do
             os="${target%/*}"; arch="${target#*/}"
-            echo "building $os/$arch"
-            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build \
-              -trimpath \
-              -ldflags "-s -w -X main.version=${version}" \
-              -o "dist/claudeswitch" ./cmd/claudeswitch
+            if [ "$os" = darwin ]; then
+              echo "packing $os/$arch"
+              install -m 0755 "darwin/$arch/claudeswitch" dist/claudeswitch
+            else
+              echo "building $os/$arch"
+              CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build \
+                -trimpath \
+                -ldflags "-s -w -X main.version=${version}" \
+                -o "dist/claudeswitch" ./cmd/claudeswitch
+            fi
             tar --sort=name --format=gnu \
               --owner=0 --group=0 --numeric-owner \
               --mtime="@${SOURCE_DATE_EPOCH}" \
@@ -134,18 +192,47 @@ jobs:
           exit 1
 
   # The menu-bar app, built on macOS and attached to the release the build job
-  # created. Unsigned (ad-hoc signed): the README gives the one-time "Open
-  # Anyway" steps, and ./install-app.sh builds it locally without any warning.
+  # created. Signed with the Developer ID, notarized and stapled when the
+  # repository holds the signing secrets; without them it is ad-hoc signed and
+  # a downloaded copy needs the one-time "Open Anyway" steps.
   macos-app:
     needs: build
     runs-on: macos-latest
+    env:
+      SIGNING: ${{ secrets.MACOS_CERT_P12 != '' }}
     steps:
       - uses: actions/checkout@v4
+      - name: Developer ID certificate and notary key
+        if: env.SIGNING == 'true'
+        env:
+          CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+        run: macos/scripts/ci-keychain.sh
       - name: Build the app zip
+        env:
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER_ID }}
         run: |
           set -eu
           macos/scripts/app-zip.sh dist
           ls -l dist
+      - name: Remove the signing keychain
+        if: always() && env.SIGNING == 'true'
+        run: macos/scripts/ci-keychain.sh --remove
+      # Unzip what will be published, mark it downloaded, and ask Gatekeeper
+      # what it will tell the person who opens it.
+      - name: Gatekeeper accepts the zip
+        if: env.SIGNING == 'true'
+        run: |
+          set -eu
+          check="$RUNNER_TEMP/check"
+          mkdir -p "$check"
+          ditto -x -k dist/ClaudeSwitch-*-macos.zip "$check"
+          xattr -w com.apple.quarantine "0081;$(printf '%x' "$(date +%s)");Safari;" "$check/ClaudeSwitch.app"
+          spctl --assess --type execute --verbose=2 "$check/ClaudeSwitch.app" 2>&1 | tee "$RUNNER_TEMP/spctl.txt"
+          grep -q 'source=Notarized Developer ID' "$RUNNER_TEMP/spctl.txt" || {
+            echo "::error::Gatekeeper does not see a notarized Developer ID app"; exit 1; }
       - name: Version matches the tag
         run: |
           set -eu

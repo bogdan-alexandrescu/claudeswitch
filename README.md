@@ -7,7 +7,7 @@ stands, and hot-swaps Claude Code onto a fresh account before the current one
 hits its limit: no restart, no lost session. It ships as a Go CLI plus daemon
 (macOS and Linux), a native macOS menu-bar app and a Claude Code plugin.
 
-Latest release: **v0.8.19**
+Latest release: **v0.8.20**
 ([releases](https://github.com/bogdan-alexandrescu/claudeswitch/releases)).
 
 <p align="center"><img src="docs/images/popover.png" width="384" alt="The ClaudeSwitch menu-bar popover: the daemon is live, the default profile is on work-1 and the work profile is on work-team"></p>
@@ -141,7 +141,7 @@ arm64, and a `checksums.txt`. The archives are reproducible: the same tag
 always produces the same bytes.
 
 ```sh
-VERSION=v0.8.19
+VERSION=v0.8.20
 TARGET=darwin_arm64            # darwin_amd64, linux_amd64, linux_arm64
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 curl -LO "$BASE/claudeswitch_${VERSION}_${TARGET}.tar.gz"
@@ -167,7 +167,7 @@ cd claudeswitch
 symlink, and installs the daemon in dry-run (see [Daemon](#daemon)). To build
 the binary alone: `go build -o bin/claudeswitch ./cmd/claudeswitch`.
 
-**Verify it worked:** `cs version` prints `claudeswitch v0.8.19` for the release
+**Verify it worked:** `cs version` prints `claudeswitch v0.8.20` for the release
 binary (a build from source prints `claudeswitch dev`). If the shell cannot
 find `cs`, add `~/.local/bin` to your `PATH`.
 
@@ -222,10 +222,27 @@ readings".
 
 ### Menu-bar app (macOS)
 
-Building it on your Mac is the recommended way. It needs only the Command Line
-Tools (`xcode-select --install`), not Xcode and not an Apple Developer
-account. A copy built locally was never downloaded, so it opens without a
-Gatekeeper warning.
+Download it from a release: a universal build, signed with a Developer ID and
+notarized by Apple, so it opens like any other app.
+
+```sh
+VERSION=v0.8.20
+BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
+ZIP="ClaudeSwitch-${VERSION#v}-macos.zip"
+curl -LO "$BASE/$ZIP"
+curl -LO "$BASE/$ZIP.sha256"
+shasum -a 256 -c "$ZIP.sha256"
+ditto -x -k "$ZIP" .
+mv ClaudeSwitch.app /Applications/
+open /Applications/ClaudeSwitch.app
+```
+
+Downloading the zip in a browser and double-clicking it works just as well.
+From then on the app updates itself (and the `claudeswitch` binary with it).
+
+Or build it from source. That needs only the Command Line Tools
+(`xcode-select --install`), not Xcode; the copy is signed ad hoc, and since it
+was never downloaded it opens without a Gatekeeper warning too:
 
 ```sh
 ./install-app.sh               # build, install in /Applications, offer to open it
@@ -235,28 +252,6 @@ Gatekeeper warning.
 It goes to `/Applications`, or `~/Applications` if that is not writable.
 Re-run it after pulling to update.
 
-From a release, as a universal build:
-
-```sh
-VERSION=v0.8.19
-BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
-ZIP="ClaudeSwitch-${VERSION#v}-macos.zip"
-curl -LO "$BASE/$ZIP"
-curl -LO "$BASE/$ZIP.sha256"
-shasum -a 256 -c "$ZIP.sha256"
-ditto -x -k "$ZIP" .
-mv ClaudeSwitch.app /Applications/
-```
-
-The release app is **not** signed with a Developer ID or notarized, so macOS
-blocks its first launch. Either open it once, click **Done**, then go to
-**System Settings > Privacy & Security** and click **Open Anyway**, or remove
-the quarantine flag yourself:
-
-```sh
-xattr -dr com.apple.quarantine /Applications/ClaudeSwitch.app
-```
-
 The app needs the `claudeswitch` binary, version 0.5.1 or later. It looks in
 the path set in Settings > Advanced, then `~/.local/bin`, then `PATH` and the
 usual Homebrew and Go locations. Without one, its menu says so and shows how
@@ -264,7 +259,7 @@ to install it. [macos/README.md](macos/README.md) has the details.
 
 **Verify it worked:** the Twin rings glyph with the live account and its
 utilization appears in the menu bar, and **About ClaudeSwitch** in its ⋯ menu
-shows version 0.8.19. If you see nothing on a MacBook with a notch, see
+shows version 0.8.20. If you see nothing on a MacBook with a notch, see
 [Troubleshooting](#troubleshooting).
 
 ### Claude Code plugin

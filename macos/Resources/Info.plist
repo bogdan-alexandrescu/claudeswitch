@@ -43,6 +43,9 @@
 			</array>
 		</dict>
 	</array>
+	<!-- Shown when Open Claude Code first drives Terminal or iTerm. -->
+	<key>NSAppleEventsUsageDescription</key>
+	<string>ClaudeSwitch opens Claude Code in your terminal app when you ask it to.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Built from the claudeswitch source.</string>
 </dict>

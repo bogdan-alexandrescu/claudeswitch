@@ -88,11 +88,14 @@ func TestTemplates(t *testing.T) {
 	}
 	c := read(t, "claudeswitch-app.rb")
 	for _, want := range []string{`cask "claudeswitch-app"`, `version "0.0.0"`, `sha256 "` + zeros + `"`,
-		`ClaudeSwitch-#{version}-macos.zip`, `app "ClaudeSwitch.app"`, "caveats", "Open Anyway",
-		"com.apple.quarantine"} {
+		`ClaudeSwitch-#{version}-macos.zip`, `app "ClaudeSwitch.app"`} {
 		if !strings.Contains(c, want) {
 			t.Errorf("cask lacks %q", want)
 		}
+	}
+	// The app is signed and notarized: no first-launch steps to explain.
+	if strings.Contains(c, "Open Anyway") || strings.Contains(c, "quarantine") {
+		t.Error("cask still carries the unsigned app's first-launch caveat")
 	}
 }
 

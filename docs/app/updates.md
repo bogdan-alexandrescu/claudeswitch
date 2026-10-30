@@ -118,8 +118,14 @@ not restart on the new binary puts both back and restarts it on the old one
 ("…so the app and the claudeswitch command were put back as they were").
 The popover's foot shows the failure as **Could not update**, until its ×.
 
-The new app is ad-hoc signed like the release zip. Downloaded by the app
-itself, it is not quarantined, so it opens without the Gatekeeper prompt a
-browser download meets.
+Before anything is replaced, both downloads must be signed with the
+ClaudeSwitch Developer ID: `codesign --verify` against a requirement naming
+its team (`UpdateSource.team`). The checksums are published beside the files
+they check, so they catch a broken download but not a swapped one; the
+signature catches that. A file that fails stops the update with nothing
+touched: `The ClaudeSwitch app in 0.9.0 is not signed by the ClaudeSwitch
+developer, so it was not installed. The app and the claudeswitch command were
+not changed. Do not install this release by hand.` Downloaded by the app
+itself, the new app is not quarantined either way.
 
 [← Documentation index](../README.md)

@@ -8,6 +8,13 @@
 # (LSUIElement, so no Dock icon) and signs it ad hoc. An ad-hoc signature is
 # not an identity: it only satisfies Apple silicon's requirement that every
 # binary be signed. No Xcode project and no Apple Developer account involved.
+#
+#   SIGN_IDENTITY="Developer ID Application: …" macos/scripts/build-app.sh
+#
+# signs with that certificate instead (SIGN_KEYCHAIN names the keychain that
+# holds it, if not the default), for a release: app-zip.sh then notarizes it.
+# Either way the signature carries the hardened runtime, so a local build runs
+# under the same rules as a release.
 set -eu
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"   # macos/
@@ -57,7 +64,10 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 cp "$HERE/Resources/AppIcon.icns" "$HERE/Resources/Geist-SemiBold.otf" "$HERE/Resources/Geist-OFL.txt" \
   "$APP/Contents/Resources/"
 
-codesign --force --sign - --timestamp=none "$APP" >&2
-codesign --verify "$APP" >&2
+IDENTITY="${SIGN_IDENTITY:--}"
+if [ "$IDENTITY" = - ]; then STAMP=--timestamp=none; else STAMP=--timestamp; fi
+codesign --force --options runtime --entitlements "$HERE/Resources/ClaudeSwitch.entitlements" \
+  "$STAMP" ${SIGN_KEYCHAIN:+--keychain "$SIGN_KEYCHAIN"} --sign "$IDENTITY" "$APP" >&2
+codesign --verify --strict "$APP" >&2
 
 echo "$APP"

@@ -46,7 +46,7 @@ Pick the archive for your machine (`darwin_arm64` for Apple silicon,
 put the binary in `~/.local/bin` with `cs` as a short name for it:
 
 ```sh
-VERSION=v0.8.19
+VERSION=v0.8.20
 TARGET=darwin_arm64
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 curl -LO "$BASE/claudeswitch_${VERSION}_${TARGET}.tar.gz"
@@ -65,7 +65,7 @@ cs version
 ```
 
 ```
-claudeswitch v0.8.19
+claudeswitch v0.8.20
 ```
 
 If your shell says `cs: command not found`, add `~/.local/bin` to your `PATH`
@@ -85,15 +85,12 @@ curl -LO "$BASE/$ZIP.sha256"
 shasum -a 256 -c "$ZIP.sha256"
 ditto -x -k "$ZIP" .
 mv ClaudeSwitch.app /Applications/
-xattr -dr com.apple.quarantine /Applications/ClaudeSwitch.app
 open /Applications/ClaudeSwitch.app
 ```
 
-The release app is not notarized, which is why the `xattr` line is there:
-without it macOS refuses the first launch. If you would rather not, open it
-once, click **Done**, then **System Settings → Privacy & Security → Open
-Anyway**. Or build it yourself from a checkout with `./install-app.sh`, which
-needs only the Command Line Tools and opens without a warning.
+The release app is signed with a Developer ID and notarized by Apple, so it
+opens without a warning. Or build it yourself from a checkout with
+`./install-app.sh`, which needs only the Command Line Tools.
 
 The rings appear in the menu bar. Until you run setup they have nothing to
 show.

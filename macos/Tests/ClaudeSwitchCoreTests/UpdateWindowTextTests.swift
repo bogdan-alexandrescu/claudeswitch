@@ -42,7 +42,8 @@ import Testing
     @Test func testAFailureSaysTheAppAndTheCommandWereNotChanged() {
         let kept = "The app and the claudeswitch command were not changed."
         let errors: [UpdateError] = [.missingAsset("checksums.txt"), .checksumMissing("a.zip"),
-                                     .checksumMismatch("a.zip"), .download("x: 404"), .install("y"), .cancelled]
+                                     .checksumMismatch("a.zip"), .download("x: 404"), .install("y"), .unsigned("z"),
+                                     .cancelled]
         for e in errors {
             #expect(e.message.contains(" " + kept), "\(e)")
             #expect(!e.message.contains("ClaudeSwitch and claudeswitch"))

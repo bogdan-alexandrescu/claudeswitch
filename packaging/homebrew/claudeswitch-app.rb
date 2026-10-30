@@ -19,12 +19,4 @@ cask "claudeswitch-app" do
   app "ClaudeSwitch.app"
 
   zap trash: "~/Library/Preferences/xyz.claudeswitch.menubar.plist"
-
-  caveats <<~EOS
-    ClaudeSwitch is not signed with a Developer ID or notarized, so macOS
-    blocks its first launch. Open it once, click Done, then go to
-    System Settings > Privacy & Security and click Open Anyway.
-    Or remove the quarantine flag yourself:
-      xattr -dr com.apple.quarantine "#{appdir}/ClaudeSwitch.app"
-  EOS
 end

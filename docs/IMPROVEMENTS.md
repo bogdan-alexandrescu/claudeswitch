@@ -150,6 +150,21 @@ verification, `--direct`, `--browser` and `--sso`; remove the busywork.
   zip on releases, with the one-time "Open Anyway" steps. Signing and
   notarization ($99/yr) can be added later without changing the app. *Not now (owner, 2026-10-08).* Not the
   App Store: sandboxing would forbid running the binary and reading its state.
+  *Amended 2026-10-30 (owner): the Apple Developer account is in place, and
+  releases are signed.* The release workflow signs the app with a Developer
+  ID (hardened runtime, the Apple-events entitlement for Open Claude Code),
+  notarizes and staples it, and checks Gatekeeper accepts it; the two darwin
+  `claudeswitch` binaries are signed and notarized too, so their tarballs are
+  reproducible only unsigned. Secrets: `MACOS_CERT_P12`,
+  `MACOS_CERT_PASSWORD`, `NOTARY_KEY_P8`, `NOTARY_KEY_ID`,
+  `NOTARY_ISSUER_ID`; without them the workflow builds ad hoc as before. The
+  certificate's key and signing request were made with openssl on the
+  owner's Mac (no keychain prompts); notarytool uses an App Store Connect API
+  key (Team key, Developer role). The release zip is now the recommended
+  install and `./install-app.sh` the way to build from source. The updater
+  installs an app or binary only if it is signed by the team
+  (`UpdateSource.team`), since the checksums sit on the same release as the
+  files they check.
 
 ## The app manages everything (decided 2026-10-07)
 
@@ -774,8 +789,8 @@ exact key names may grow, but these keys must exist.
   line marked with its target, `bin/claudeswitch` and the `cs` link, a
   caveat to re-run `daemon install` after an upgrade) and
   `claudeswitch-app.rb` (a cask for `ClaudeSwitch-<ver>-macos.zip`, macOS
-  13+, depending on the formula, with the unsigned app's first-launch
-  caveat). Both carry `0.0.0` and zero sha256 placeholders.
+  13+, depending on the formula; its unsigned-app first-launch caveat went
+  when releases were signed, M2 2026-10-30). Both carry `0.0.0` and zero sha256 placeholders.
   `update.sh <version> <checksums.txt> [<formula> [<cask>]]` fills them in
   place (POSIX sh and awk): all four archive sums are required, the app
   zip's line is optional (without it the cask is left alone), and every

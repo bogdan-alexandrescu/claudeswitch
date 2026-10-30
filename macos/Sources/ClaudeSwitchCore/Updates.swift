@@ -29,6 +29,13 @@ public enum UpdateSource {
     public static func releasePage(_ version: String) -> URL? {
         URL(string: home + "/releases/tag/v" + version)
     }
+
+    /// The Team ID of the Developer ID that signs every release's app and
+    /// macOS binaries. The updater installs neither unless it is signed by
+    /// this team: the checksums are published beside the files they check,
+    /// so they catch a broken download but not a swapped one. nil skips the
+    /// check. Releases are signed with it from 0.8.20.
+    public static let team: String? = "Z68S6VMA5V"
 }
 
 /// A release version: major.minor.patch, an optional pre-release after "-"
@@ -146,6 +153,8 @@ public enum UpdateError: Error, Equatable {
     case download(String)
     case install(String)
     case daemon(String)
+    /// A downloaded file not signed by UpdateSource.team.
+    case unsigned(String)
     /// Cancel, while nothing had been replaced yet.
     case cancelled
 
@@ -166,6 +175,9 @@ public enum UpdateError: Error, Equatable {
         case .checksumMismatch(let s): return "\(s) does not match its published checksum." + instead
         case .download(let s): return "A download failed (\(s))." + kept
         case .install(let s): return "Could not install the update: \(s)." + kept
+        case .unsigned(let s):
+            return "\(s) is not signed by the ClaudeSwitch developer, so it was not installed." + kept
+                + " Do not install this release by hand."
         case .daemon(let s):
             return "The daemon did not restart on the new claudeswitch (\(s)), so the app and the claudeswitch "
                 + "command were put back as they were."
@@ -329,13 +341,27 @@ public struct Updater {
     public var system: UpdateSystem
     public var arch: UpdateArch
     public var repo: String
+    /// The team both downloads must be signed by; nil installs them unchecked.
+    public var team: String?
 
     public init(network: UpdateNetwork, system: UpdateSystem, arch: UpdateArch = .current,
-                repo: String = UpdateSource.repo) {
+                repo: String = UpdateSource.repo, team: String? = UpdateSource.team) {
         self.network = network
         self.system = system
         self.arch = arch
         self.repo = repo
+        self.team = team
+    }
+
+    /// codesign's check that `path` is validly signed with a Developer ID
+    /// Application certificate issued to `team`. Not --strict: that also
+    /// refuses extended attributes an unzipped copy can pick up.
+    static func signatureCheck(_ path: String, team: String) -> [String] {
+        let requirement = "anchor apple generic"
+            + " and certificate 1[field.1.2.840.113635.100.6.2.6] exists"  // the Developer ID CA
+            + " and certificate leaf[field.1.2.840.113635.100.6.1.13] exists"  // a Developer ID Application
+            + " and certificate leaf[subject.OU] = \"\(team)\""
+        return ["/usr/bin/codesign", "--verify", "-R=" + requirement, path]
     }
 
     public func latest() -> Result<Release, UpdateError> {
@@ -430,6 +456,13 @@ public struct Updater {
         guard system.exists(newBinary) else { return .failure(.install("the archive holds no claudeswitch binary")) }
         guard let newApp = ["ClaudeSwitch.app", appName].map({ appDir + "/" + $0 }).first(where: system.exists) else {
             return .failure(.install("the zip holds no ClaudeSwitch.app"))
+        }
+        if let team {
+            for (path, what) in [(newBinary, "The claudeswitch binary"), (newApp, "The ClaudeSwitch app")] {
+                do { try system.run(Self.signatureCheck(path, team: team)) } catch {
+                    return .failure(.unsigned("\(what) in \(version)"))
+                }
+            }
         }
 
         // 3. The binary, where the current one is, keeping a copy. The last

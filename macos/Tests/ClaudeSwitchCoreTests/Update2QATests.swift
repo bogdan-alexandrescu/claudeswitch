@@ -96,7 +96,7 @@ import Testing
             #expect(!words.joined().contains("'"), "\(d)")
         }
         let errors: [UpdateError] = [.noRelease("x"), .missingAsset("x"), .checksumMissing("x"), .checksumMismatch("x"),
-                                     .download("x"), .install("x"), .daemon("x"), .cancelled]
+                                     .download("x"), .install("x"), .daemon("x"), .unsigned("x"), .cancelled]
         #expect(!errors.map(\.message).joined().contains("'"))
     }
 }

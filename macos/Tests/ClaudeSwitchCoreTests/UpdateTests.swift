@@ -222,6 +222,8 @@ final class FakeSystem: UpdateSystem {
             files[argv[4]] = try read(argv[3])
         case "/bin/cp":  // cp -p <src> <dst>
             files[argv[3]] = try read(argv[2])
+        case "/usr/bin/codesign":  // codesign --verify -R=<requirement> <path>; failOn refuses it
+            break
         default:
             throw UpdateError.install("unexpected command \(argv)")
         }
@@ -361,6 +363,55 @@ final class FakeSystem: UpdateSystem {
         #expect(UpdateError.missingAsset("checksums.txt").message.contains("checksums.txt"))
         #expect(UpdateError.download("x: 404").message.contains("404"))
         #expect(UpdateError.install("y").message.contains("were not changed"), "a failure says nothing changed")
+    }
+
+    /// Signed releases: both downloads must carry the team's Developer ID
+    /// before either is put in place.
+    @Test func testEachDownloadIsCheckedAgainstTheTeam() throws {
+        let (net, sys, _) = try setUp()
+        let up = Updater(network: net, system: sys, arch: .arm64, repo: "example/claudeswitch", team: "ABCDE12345")
+        let r = up.install(try fixtureRelease(), binary: Self.binary, app: Self.app) { _ in .success(()) }
+        #expect(try r.get() == "0.5.6")
+        let checks = sys.log.filter { $0.hasPrefix("/usr/bin/codesign --verify -R=anchor apple generic") }
+        #expect(checks.count == 2)
+        #expect(checks.allSatisfy { $0.contains(#"certificate leaf[subject.OU] = "ABCDE12345""#) })
+        #expect(checks.first?.hasSuffix(" /tmp/cs-update-1/bin/claudeswitch") == true)
+        #expect(checks.last?.hasSuffix(" /tmp/cs-update-1/app/ClaudeSwitch.app") == true)
+        let firstCheck = sys.log.firstIndex { $0.hasPrefix("/usr/bin/codesign") } ?? .max
+        let firstInstall = sys.log.firstIndex { $0.hasPrefix("/usr/bin/install") } ?? .min
+        #expect(firstCheck < firstInstall, "checked before anything is replaced")
+    }
+
+    @Test func testAnAppNotSignedByTheTeamChangesNothing() throws {
+        let (net, sys, _) = try setUp()
+        let up = Updater(network: net, system: sys, arch: .arm64, repo: "example/claudeswitch", team: "ABCDE12345")
+        sys.failOn = { $0.hasPrefix("/usr/bin/codesign") && $0.hasSuffix("ClaudeSwitch.app") }
+        let r = up.install(try fixtureRelease(), binary: Self.binary, app: Self.app) { _ in
+            Issue.record("the daemon must not restart")
+            return .success(())
+        }
+        #expect(r.failure == .unsigned("The ClaudeSwitch app in 0.5.6"))
+        #expect(r.failure?.message == "The ClaudeSwitch app in 0.5.6 is not signed by the ClaudeSwitch developer, "
+            + "so it was not installed. The app and the claudeswitch command were not changed. "
+            + "Do not install this release by hand.")
+        #expect(!sys.log.contains { $0.hasPrefix("/usr/bin/install") }, "nothing was installed")
+        expectUntouched(sys)
+    }
+
+    @Test func testABinaryNotSignedByTheTeamChangesNothing() throws {
+        let (net, sys, _) = try setUp()
+        let up = Updater(network: net, system: sys, arch: .arm64, repo: "example/claudeswitch", team: "ABCDE12345")
+        sys.failOn = { $0.hasPrefix("/usr/bin/codesign") && $0.hasSuffix("/bin/claudeswitch") }
+        let r = up.install(try fixtureRelease(), binary: Self.binary, app: Self.app) { _ in .success(()) }
+        #expect(r.failure == .unsigned("The claudeswitch binary in 0.5.6"))
+        expectUntouched(sys)
+    }
+
+    @Test func testWithoutATeamNothingIsChecked() throws {
+        let (net, sys, _) = try setUp()
+        let up = Updater(network: net, system: sys, arch: .arm64, repo: "example/claudeswitch", team: nil)
+        _ = up.install(try fixtureRelease(), binary: Self.binary, app: Self.app) { _ in .success(()) }
+        #expect(!sys.log.contains { $0.hasPrefix("/usr/bin/codesign") })
     }
 }
 

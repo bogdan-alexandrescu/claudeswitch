@@ -123,7 +123,16 @@ binary, again whenever the file changes. Without one, or with one older than
 0.5.1 (the first with the JSON CLI), the menu says so and shows how to
 install or update it.
 
-## Install: build it on your Mac (recommended)
+## Install: from a release zip (recommended)
+
+Each release carries `ClaudeSwitch-<version>-macos.zip`, a universal build
+signed with a Developer ID and notarized by Apple. Unzip it, move
+`ClaudeSwitch.app` to `/Applications` and open it: it opens like any other
+downloaded app, with no Gatekeeper warning to get past. After that it updates
+itself (**Check for updates…**), and installs only an update signed with the
+same Developer ID.
+
+## Install: build it on your Mac
 
 ```sh
 ./install-app.sh
@@ -133,35 +142,39 @@ from a checkout of this repository. It needs only the Command Line Tools
 (`xcode-select --install`), not Xcode. It compiles the app with SwiftPM, wraps
 it in `ClaudeSwitch.app` (no Dock icon), signs it ad hoc, installs it in
 `/Applications` (or `~/Applications` if that is not writable) and offers to
-open it. Because it was built on your Mac rather than downloaded, macOS does
-not quarantine it and it opens without a Gatekeeper warning. No Apple
-Developer account is involved.
+open it. An ad-hoc signature is not the Developer ID, but a copy built on your
+Mac was never downloaded, so macOS does not quarantine it and it opens without
+a Gatekeeper warning too.
 
 `./install-app.sh --open` / `--no-open` skip the question;
 `./install-app.sh --uninstall` quits and removes it. Re-run it after pulling to
 update.
 
-## Install: from a release zip
+## Releases: signing and notarizing
 
-Releases may carry `ClaudeSwitch-<version>-macos.zip`, a universal build. It is
-not signed with a Developer ID or notarized, so the first launch of a
-downloaded copy is blocked. Once:
+`macos/scripts/app-zip.sh` builds the zip (in `macos/dist/`, with a `.sha256`
+beside it). Without a signing identity the app in it is ad-hoc signed, and a
+downloaded copy needs the one-time **System Settings → Privacy & Security →
+Open Anyway**.
 
-1. Unzip it and move `ClaudeSwitch.app` to `/Applications`.
-2. Open it. macOS says it cannot verify the developer; click **Done**.
-3. Open **System Settings → Privacy & Security**, scroll to the message about
-   ClaudeSwitch, click **Open Anyway**, and confirm.
+The release workflow signs it. With the repository secrets
+`MACOS_CERT_P12` (the Developer ID Application certificate and its key, as
+base64), `MACOS_CERT_PASSWORD`, `NOTARY_KEY_P8` (an App Store Connect API key
+with the Developer role), `NOTARY_KEY_ID` and `NOTARY_ISSUER_ID`,
+`scripts/ci-keychain.sh` puts the certificate in a keychain of its own, and:
 
-Or, instead of steps 2–3, remove the quarantine flag yourself:
+- `scripts/build-app.sh` signs with `SIGN_IDENTITY`, always with the hardened
+  runtime and `Resources/ClaudeSwitch.entitlements` (Apple events, for
+  **Open Claude Code** in Terminal or iTerm);
+- `scripts/app-zip.sh` notarizes the app through `scripts/notarize.sh`,
+  staples the ticket and checks Gatekeeper accepts it;
+- `scripts/sign-cli.sh` signs and notarizes the two darwin `claudeswitch`
+  binaries before they are packed into their tarballs.
 
-```sh
-xattr -dr com.apple.quarantine /Applications/ClaudeSwitch.app
-```
-
-Building from source avoids all of this.
-
-To produce the zip: `macos/scripts/app-zip.sh` (writes `macos/dist/`, with a
-`.sha256` beside it).
+Without the secrets the workflow builds everything ad hoc, as before. On a
+Mac, the same scripts run with `SIGN_IDENTITY` and either `NOTARY_PROFILE`
+(from `xcrun notarytool store-credentials`) or `NOTARY_KEY`,
+`NOTARY_KEY_ID` and `NOTARY_ISSUER`.
 
 ## Development
 
