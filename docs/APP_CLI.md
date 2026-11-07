@@ -557,7 +557,8 @@ test fails if it runs `security`), so the app may run it on every refresh:
    "profiles": ["default", "work"], "active_in": "default",
    "pinned": false, "pin_hard": false, "refresh_expires_at": "…", "access_expires_at": "…", "state": "available",
    "reading": {"five_hour": 3, "seven_day": 41, "binding": "seven_day", "at": "…", "error": null,
-               "refused_until": null, "refused_window": null}}]}
+               "refused_until": null, "refused_window": null,
+               "five_hour_resets_at": "…", "seven_day_resets_at": "…"}}]}
 ```
 
 - Order: the enabled accounts in rotation order, then the disabled ones in
@@ -586,7 +587,10 @@ test fails if it runs `security`), so the app may run it on every refresh:
   `available`, `reserved` (over its configured `reserve`) or `unknown`
   (never read, or the reading outlived its window).
 - `reading` is `null` when state holds neither a reading nor an error; its
-  windows are `null` when unknown.
+  windows are `null` when unknown. `five_hour_resets_at` and
+  `seven_day_resets_at` (additive) are when each window clears, as the usage
+  API last said (UTC), `null` when unknown. `claudeswitch list` is the same
+  command as `account list`.
 
 `claudeswitch account rename <old> <new> --json` → `{"account": "new", "previous": "old"}`.
 Errors: `invalid_value` (a bad name), `daemon_running`, `failed`. The app

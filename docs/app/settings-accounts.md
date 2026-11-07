@@ -93,12 +93,13 @@ One row per account. Each row has:
   row is narrow the email goes first, whole, then the name is cut in the
   middle; the state never is;
 - a second line: every profile that may use it (`used by default, work`),
-  its figure with the window it is judged by (`55% 7d`), its own Chrome
+  its figure with the window it is judged by (`55% 7d`), when each window
+  clears (`session clears in 2h 14m, week in 3d 4h`), its own Chrome
   profile if it has one, its seat (shortened), and when its login renews
   (`login renews until Nov 7, 2026 at 6:45 PM`; nothing once it needs
   sign-in). When the line is too long, whole parts give way: the seat
-  first, then Chrome, then the login, then who uses it (named, then
-  counted); the figure stays;
+  first, then Chrome, then the login, then when the windows clear, then
+  who uses it (named, then counted); the figure stays;
 - its plan, in the Plan column: the part before any parenthesis
   (`Max` of `Max (team, enterprise seat)`), the whole plan in its
   tooltip. A long plan wraps to a second line rather than being cut in the
