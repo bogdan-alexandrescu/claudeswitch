@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/render"
@@ -59,6 +60,7 @@ func readingJSON(cfg *config.Config, acct *state.Account, now time.Time) any {
 	m := map[string]any{
 		"five_hour": nil, "seven_day": nil, "binding": nil, "at": timeOrNull(acct.LastAt),
 		"error": orNull(acct.LastErr), "refused_until": nil, "refused_window": nil,
+		"five_hour_resets_at": nil, "seven_day_resets_at": nil,
 	}
 	if u := acct.Last; u != nil {
 		if u.FiveHour.Known() {
@@ -66,6 +68,13 @@ func readingJSON(cfg *config.Config, acct *state.Account, now time.Time) any {
 		}
 		if u.SevenDay.Known() {
 			m["seven_day"] = u.SevenDay.Pct()
+		}
+		// When each window clears, as the usage API last said.
+		if r := u.FiveHour.ResetsAt; r != nil && !r.IsZero() {
+			m["five_hour_resets_at"] = r.UTC()
+		}
+		if r := u.SevenDay.ResetsAt; r != nil && !r.IsZero() {
+			m["seven_day_resets_at"] = r.UTC()
 		}
 		if which, _, _ := u.WorstAgainst(cfg.TriggerFor(usage.FiveHourKey), cfg.TriggerFor(usage.SevenDayKey)); which != "" {
 			m["binding"] = which
@@ -157,15 +166,19 @@ func accountList(w io.Writer, cfgPath string, asJSON bool) error {
 		fmt.Fprintln(w, "  no accounts are configured")
 		return nil
 	}
-	// The email goes last: it is the column a narrow terminal can cut.
-	t := render.NewTable([]string{"ACCOUNT", "PROFILES", "STATE", "SESSION", "WEEK", "PLAN", "EMAIL"}, 3, 4).
-		Fit(render.Width())
 	str := func(v any) string {
 		if s, ok := v.(string); ok {
 			return s
 		}
 		return "-"
 	}
+	type row struct {
+		cells       []string // all but the figures and the email
+		five, seven *float64
+		r5, r7      *time.Time
+		plan, email string
+	}
+	var rows []row
 	for _, m := range list {
 		id := m["id"].(string)
 		if m["pinned"] == true {
@@ -185,18 +198,84 @@ func accountList(w io.Writer, cfgPath string, asJSON bool) error {
 		if m["enabled"] == false {
 			stateWord = "disabled, " + stateWord
 		}
-		five, seven := "-", "-"
+		r := row{cells: []string{id, nonEmpty(strings.Join(profiles, ", "), "-"), stateWord},
+			plan: str(m["plan"]), email: str(m["email"])}
 		if rd, ok := m["reading"].(map[string]any); ok {
 			if v, ok := rd["five_hour"].(float64); ok {
-				five = fmt.Sprintf("%.0f%%", v)
+				r.five = &v
 			}
 			if v, ok := rd["seven_day"].(float64); ok {
-				seven = fmt.Sprintf("%.0f%%", v)
+				r.seven = &v
+			}
+			if v, ok := rd["five_hour_resets_at"].(time.Time); ok {
+				r.r5 = &v
+			}
+			if v, ok := rd["seven_day_resets_at"].(time.Time); ok {
+				r.r7 = &v
 			}
 		}
-		t.Add(id, nonEmpty(strings.Join(profiles, ", "), "-"), stateWord, five, seven, str(m["plan"]), str(m["email"]))
+		rows = append(rows, r)
+	}
+	// Each figure is followed by when its window clears: a time of day
+	// where the terminal has room, else how long until then, else nothing.
+	// The email is the column that gives way first; it keeps emailRoom.
+	const emailRoom = 12
+	width := render.Width()
+	clears := func(at *time.Time, form int) string {
+		switch {
+		case form == 2 || at == nil:
+			return ""
+		case !at.After(now):
+			return " · now"
+		case form == 0:
+			return " · " + render.When(*at, now)
+		}
+		return " · " + render.Duration(at.Sub(now))
+	}
+	figure := func(v *float64, at *time.Time, form int) string {
+		if v == nil {
+			return "-"
+		}
+		return fmt.Sprintf("%.0f%%", *v) + clears(at, form)
+	}
+	head := []string{"ACCOUNT", "PROFILES", "STATE", "SESSION", "WEEK", "PLAN", "EMAIL"}
+	build := func(form int) [][]string {
+		var out [][]string
+		for _, r := range rows {
+			out = append(out, append(append([]string{}, r.cells...),
+				figure(r.five, r.r5, form), figure(r.seven, r.r7, form), r.plan, r.email))
+		}
+		return out
+	}
+	var cells [][]string
+	for form := 0; form <= 2; form++ {
+		cells = build(form)
+		if form == 2 || tableWidth(head, cells)+emailRoom <= width {
+			break
+		}
+	}
+	// The email goes last: it is the column a narrow terminal can cut.
+	t := render.NewTable(head, 3, 4).Fit(width)
+	for _, c := range cells {
+		t.Add(c...)
 	}
 	fmt.Fprintf(w, "\n%s", t.Render("  "))
-	fmt.Fprintln(w, "\n  * where the account is live · emails, plans and figures as last recorded")
+	fmt.Fprintln(w, "\n  * where the account is live · beside each figure, when its window clears ·\n"+
+		"  emails, plans and figures as last recorded")
 	return nil
+}
+
+// tableWidth is how wide a render.Table of head and rows is, indented two
+// columns, without its last column.
+func tableWidth(head []string, rows [][]string) int {
+	n := len(head) - 1
+	w := 2 + 2*n
+	for i := 0; i < n; i++ {
+		c := utf8.RuneCountInString(head[i])
+		for _, r := range rows {
+			c = max(c, utf8.RuneCountInString(r[i]))
+		}
+		w += c
+	}
+	return w
 }
