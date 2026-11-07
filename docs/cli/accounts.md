@@ -268,6 +268,12 @@ What is in the vault: one row per configured account in rotation order, with
 plan and its organization. An account with no stored credential reads
 `not vaulted`.
 
+Plans are named as Anthropic names them: `Pro`, `Max` and `Ultra` (the plans
+were called Max 5x and Max 20x before 2026-10-30), with `team` after a team
+seat's and `+overflow` when extra usage is on. The plan is recorded when the
+account is signed in, so one vaulted earlier keeps its old name until
+[`cs identify --force`](#cs-identify) reads it again.
+
 `--json` returns an array; each element has `id`, `vaulted`, `active`, the
 profile keys, and `seat`, `org_id`, `email` and `plan` when known.
 
@@ -448,7 +454,7 @@ here, which is what the Claude in Chrome sign-in steps name.
 
 | flag | default | meaning |
 |---|---|---|
-| `--force` | off | re-read every account even if already identified |
+| `--force` | off | re-read every account even if already identified, which also renames a plan recorded under an older name (Max 20x is now Ultra) |
 
 When the usage API call budget is spent, the accounts left over are listed as
 "not done yet", with a note to run `claudeswitch identify` again in a few

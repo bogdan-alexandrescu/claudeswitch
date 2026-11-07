@@ -100,7 +100,7 @@ One row per account. Each row has:
   first, then Chrome, then the login, then who uses it (named, then
   counted); the figure stays;
 - its plan, in the Plan column: the part before any parenthesis
-  (`Max 5x` of `Max 5x (team, enterprise seat)`), the whole plan in its
+  (`Max` of `Max (team, enterprise seat)`), the whole plan in its
   tooltip. A long plan wraps to a second line rather than being cut in the
   middle.
 

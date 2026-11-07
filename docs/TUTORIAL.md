@@ -237,7 +237,7 @@ The top line is the daemon: **Live** (green) or **Dry run** (orange), and when
 it last polled. Below it, one card per profile. The card for the profile the
 menu bar follows is open and marked **Menu bar**:
 
-- **personal · Max 5x** is the live account and its plan. Click it to pick
+- **personal · Max** is the live account and its plan. Click it to pick
   another account from the pool by hand.
 - The two **dials** are the live account's session and week. The blue dots
   fill up to the reading, and the figure is in the middle. The **larger dark

@@ -552,7 +552,7 @@ test fails if it runs `security`), so the app may run it on every refresh:
 
 ```json
 {"accounts": [
-  {"id": "work-1", "email": "person1@example.com", "plan": "Max 20x",
+  {"id": "work-1", "email": "person1@example.com", "plan": "Ultra",
    "seat": "aaaaaaaa-…@11111111-…", "enabled": true, "profile": "default", "pool": "team",
    "profiles": ["default", "work"], "active_in": "default",
    "pinned": false, "pin_hard": false, "refresh_expires_at": "…", "access_expires_at": "…", "state": "available",
