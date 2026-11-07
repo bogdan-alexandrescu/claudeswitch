@@ -516,8 +516,11 @@ struct AccountRow: View {
     /// first (AccountLine).
     var lineVariants: [String] {
         let figure = view.flatMap { v in v.bindingPct.map { Format.pct($0) + " " + (Format.windowName(v.bindingWindow) ?? "") } }
+        let clears = AccountLine.clears(fiveHour: view?.fiveHour?.resetsAt ?? info?.reading?.fiveHourResetsAt,
+                                        sevenDay: view?.sevenDay?.resetsAt ?? info?.reading?.sevenDayResetsAt,
+                                        now: store.now)
         return AccountLine.variants(
-            usedBy: info?.profiles ?? store.profile(of: id).map { [$0] }, figure: figure,
+            usedBy: info?.profiles ?? store.profile(of: id).map { [$0] }, figure: figure, clears: clears,
             chrome: chromeChoice == .sameAsProfile ? nil : "Chrome " + chromeLabel,
             seat: record?.seat.map { "seat " + shortSeat($0) }, login: loginText)
     }

@@ -81,14 +81,42 @@ func Why(out io.Writer, o WhyOptions) {
 			mark = paint(red, "✗")
 		}
 		why := v.Why
-		if !v.Eligible && !v.ClearsAt.IsZero() && time.Until(v.ClearsAt) > 0 {
-			why += paint(grey, fmt.Sprintf(" · clears in %s", shortDur(time.Until(v.ClearsAt))))
+		if c := windowClears(o.St, v.ID, time.Now()); c != "" {
+			why += paint(grey, " · "+c)
 		}
 		t.add(mark, name, why)
 	}
 	fmt.Fprint(out, t.render("  "))
 	weeklySection(out, o)
 	fmt.Fprintln(out)
+}
+
+// windowClears is when each window of an account's last reading clears:
+// "session clears in 2h 59m (today 17:40), week in 4d 1h (Wed 15:00)". It
+// said when only for an account that was not a candidate, and only for the
+// window it was judged on; which window binds changes as figures move, and
+// "when does it reset?" is asked of every account. Empty without a reading,
+// and a window whose reset has passed is left out.
+func windowClears(st *state.State, id string, now time.Time) string {
+	if st == nil || st.Accounts[id] == nil || st.Accounts[id].Last == nil {
+		return ""
+	}
+	u := st.Accounts[id].Last
+	var parts []string
+	for _, w := range []struct {
+		name string
+		at   *time.Time
+	}{{"session", u.FiveHour.ResetsAt}, {"week", u.SevenDay.ResetsAt}} {
+		if w.at == nil || !w.at.After(now) {
+			continue
+		}
+		verb := " clears in "
+		if len(parts) > 0 {
+			verb = " in "
+		}
+		parts = append(parts, fmt.Sprintf("%s%s%s (%s)", w.name, verb, shortDur(w.at.Sub(now)), When(*w.at, now)))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // InUseVerdict is v as the profile self shows it: an account state records

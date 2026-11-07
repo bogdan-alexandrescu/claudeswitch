@@ -3,8 +3,8 @@
   active account at 90% of its session, over the 85% trigger
 
   CONSIDERED, in order
-  ▸  a  at 90% of its session, over the 85% trigger
-  ✓  b  at 10% of its session, ready
+  ▸  a  at 90% of its session, over the 85% trigger · session clears in 2h 30m (<time>), week in 3d 0h (<time>)
+  ✓  b  at 10% of its session, ready · session clears in 2h 30m (<time>), week in 3d 0h (<time>)
 
   WEEK, at the pace so far
      a  20% used · 57% of the week gone · 37 points behind · ~65% would expire unused at reset

@@ -120,6 +120,9 @@ func main() {
 		err = cmdRemove(args)
 	case "account":
 		err = cmdAccount(args)
+	case "list":
+		// `cs list` is `cs account list`, the table people reach for most.
+		err = cmdAccount(append([]string{"list"}, args...))
 	case "priority":
 		err = cmdPriority(args)
 	case "daemon":
@@ -206,6 +209,8 @@ func usageText(w io.Writer) {
              or --no-pool: where a new account goes)
   use <id>   switch Claude Code onto a vaulted account (hot; no restart needed)
   accounts   what is in the vault
+  list       every account: its state, figures, when each window clears, plan
+             and email (the same as account list; --json for scripts)
   plan       the rotation decision right now (changes nothing)
   why        the same decision, account by account, with the reasoning
   top        a live view that refreshes in place (ctrl-c to leave)

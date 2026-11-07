@@ -728,7 +728,7 @@ command in more depth: [docs/GUIDE.md → Commands](docs/GUIDE.md#commands).
 | command | what it does |
 |---|---|
 | `cs priority <id>... [--json]` | set the rotation order (also `cs account priority`) |
-| `cs account list [--json]` | accounts with email and plan |
+| `cs list [--json]` | every account: state, figures, when each window clears, plan and email (also `cs account list`) |
 | `cs account pin <id> [--profile P]` / `cs account unpin [<id>] [--profile P]` | stop and resume automatic rotation in the profile the account is live in, or `--profile` |
 | `cs rename <old> <new>` | re-file an account under another id, in config, state and vault (also `cs account rename`) |
 | `cs remove <id> [--yes] [--json]` | delete an account everywhere: credential, config block, pool and priority entries, observations (also `cs account delete`) |

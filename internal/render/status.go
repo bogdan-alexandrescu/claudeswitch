@@ -388,6 +388,10 @@ func statusCompact(out io.Writer, o Options) {
 	if lay.dots > 0 {
 		head = append(head, "")
 	}
+	if lay.clearsBoth {
+		head = append(head, "CLEARS")
+		right[len(head)-1] = true
+	}
 	head = append(head, "WEEK")
 	right[len(head)-1] = true
 	if lay.dots > 0 {
@@ -433,6 +437,9 @@ func statusCompact(out io.Writer, o Options) {
 			if lay.dots > 0 {
 				row = append(row, "")
 			}
+			if lay.clearsBoth {
+				row = append(row, "-")
+			}
 			row = append(row, "-")
 			if lay.dots > 0 {
 				row = append(row, "")
@@ -466,8 +473,18 @@ func statusCompact(out io.Writer, o Options) {
 		// one STATE speaks of — or, for a refused account, when the refusal
 		// lifts.
 		clears := until(j.resetOf())
+		// With a CLEARS per window, each is its own window's reset.
+		fiveClears, sevenClears := until(acct.Last.FiveHour.ResetsAt), until(acct.Last.SevenDay.ResetsAt)
 		if acct.Availability(a.Reserve) == state.Burnt {
 			clears = until(&acct.BurntTil)
+			if acct.BurntWin == usage.SevenDayKey {
+				sevenClears = clears
+			} else {
+				fiveClears = clears
+			}
+		}
+		if lay.clearsBoth {
+			clears = sevenClears
 		}
 
 		// Figures for an account that cannot be read again are leftovers. They
@@ -490,6 +507,9 @@ func statusCompact(out io.Writer, o Options) {
 		row = append(row, five)
 		if lay.dots > 0 {
 			row = append(row, bar(acct.Last.FiveHour.Pct(), cfg.TriggerFor(usage.FiveHourKey), "five_hour"))
+		}
+		if lay.clearsBoth {
+			row = append(row, fiveClears)
 		}
 		row = append(row, seven)
 		if lay.dots > 0 {

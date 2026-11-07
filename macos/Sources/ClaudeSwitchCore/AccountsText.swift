@@ -11,14 +11,16 @@ public enum AccountLine {
     /// then Chrome, then the login, then who uses it (named, then counted);
     /// the figure goes last. `usedBy` nil when the CLI does not say, empty
     /// when no profile uses it.
-    public static func variants(usedBy: [String]?, figure: String?, chrome: String?, seat: String?,
-                                login: String?) -> [String] {
+    /// `clears` (when each window clears) gives way after the login.
+    public static func variants(usedBy: [String]?, figure: String?, clears: String? = nil, chrome: String?,
+                                seat: String?, login: String?) -> [String] {
         let named = usedBy.map { $0.isEmpty ? "used by no profile" : "used by " + $0.joined(separator: ", ") }
         let counted = (usedBy?.count ?? 0) > 1 ? "used by \(usedBy!.count) profiles" : nil
         let steps: [[String?]] = [
-            [named, figure, chrome, seat, login],
-            [named, figure, chrome, login],
-            [named, figure, login],
+            [named, figure, clears, chrome, seat, login],
+            [named, figure, clears, chrome, login],
+            [named, figure, clears, login],
+            [named, figure, clears],
             [named, figure],
             [counted, figure],
             [figure],
@@ -29,6 +31,18 @@ public enum AccountLine {
             if !line.isEmpty, !out.contains(line) { out.append(line) }
         }
         return out.isEmpty ? [""] : out
+    }
+
+    /// When each window clears, in the words of `cs why`: "session clears
+    /// in 2h 14m, week in 3d 4h". A reset that has passed is left out; nil
+    /// when neither is ahead.
+    public static func clears(fiveHour: Date?, sevenDay: Date?, now: Date) -> String? {
+        var parts: [String] = []
+        for (name, at) in [("session", fiveHour), ("week", sevenDay)] {
+            guard let at = at, at > now else { continue }
+            parts.append(name + (parts.isEmpty ? " clears in " : " in ") + Format.duration(at.timeIntervalSince(now)))
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
     }
 }
 

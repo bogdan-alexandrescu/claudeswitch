@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 
@@ -129,8 +130,13 @@ func TestPinSingleProfileStatusline(t *testing.T) {
 // checkGolden compares output with testdata/pin/<name>.golden, written from
 // the code before profiles reached the CLI. CLAUDESWITCH_UPDATE_GOLDEN=1
 // rewrites it, which must only ever be done on purpose.
+// clockTime is a time of day as render.When writes one, in brackets: the
+// goldens hold "(<time>)", so they do not depend on when the test runs.
+var clockTime = regexp.MustCompile(`\((today|[A-Z][a-z]{2}|\d{1,2} [A-Z][a-z]{2}( \d{4})?) \d\d:\d\d\)`)
+
 func checkGolden(t *testing.T, name, got string) {
 	t.Helper()
+	got = clockTime.ReplaceAllString(got, "(<time>)")
 	path := filepath.Join("testdata", "pin", name+".golden")
 	if os.Getenv("CLAUDESWITCH_UPDATE_GOLDEN") == "1" {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

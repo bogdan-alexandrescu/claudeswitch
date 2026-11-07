@@ -42,4 +42,25 @@ import Testing
                 == ["token valid until x"])
         #expect(AccountLine.variants(usedBy: nil, figure: nil, chrome: nil, seat: nil, login: nil) == [""])
     }
+
+    /// When each window clears: the CLI's `cs why` words, the session's
+    /// first. It gives way after the login, before who uses it.
+    @Test func testTheLineSaysWhenEachWindowClears() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let clears = AccountLine.clears(fiveHour: now.addingTimeInterval(2 * 3600 + 14 * 60),
+                                        sevenDay: now.addingTimeInterval(3 * 86_400 + 4 * 3600), now: now)
+        #expect(clears == "session clears in 2h 14m, week in 3d 4h")
+        #expect(AccountLine.clears(fiveHour: nil, sevenDay: now.addingTimeInterval(3600), now: now)
+                == "week clears in 1h")
+        #expect(AccountLine.clears(fiveHour: now.addingTimeInterval(-60), sevenDay: nil, now: now) == nil,
+                "a reset that has passed says nothing")
+        #expect(AccountLine.variants(usedBy: ["default"], figure: "12% week", clears: clears, chrome: nil,
+                                     seat: "seat abc@def", login: "login renews x") == [
+            "used by default · 12% week · " + clears! + " · seat abc@def · login renews x",
+            "used by default · 12% week · " + clears! + " · login renews x",
+            "used by default · 12% week · " + clears!,
+            "used by default · 12% week",
+            "12% week",
+        ])
+    }
 }

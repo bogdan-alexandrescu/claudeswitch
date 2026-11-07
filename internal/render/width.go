@@ -56,8 +56,11 @@ type layout struct {
 	width  int
 	dots   int // dots per bar; zero drops the bars
 	clears bool
-	plan   bool
-	burn   bool
+	// clearsBoth gives each window a CLEARS of its own, after its figure,
+	// where clears alone is the judged window's.
+	clearsBoth bool
+	plan       bool
+	burn       bool
 }
 
 // layoutFor chooses the columns for a terminal width, an account column of
@@ -103,6 +106,14 @@ func layoutFor(width, nameWidth, stateWidth int) layout {
 	// Burn rate lives inside the state column, so it needs room there rather
 	// than a column of its own.
 	l.burn = width >= need+12
+	if l.burn {
+		need += 12
+	}
+	// The other window's CLEARS goes last: the judged window's says when the
+	// account is usable again, which is what matters most.
+	if l.clears && width >= need+gap+clearW {
+		l.clearsBoth = true
+	}
 	return l
 }
 

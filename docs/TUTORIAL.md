@@ -196,7 +196,8 @@ top:
   room left.
 - The table, one row per account. `▸` marks the live one. **5H** and **7D**
   are the session and weekly utilization, with a dot bar and a larger dot at
-  the threshold. **CLEARS** is when the binding window resets. **STATE** is
+  the threshold. **CLEARS** is when the binding window resets; a wide
+  terminal shows a CLEARS for each window, after its figure. **STATE** is
   `available`, `refused` (the API turned it away; it shows which window and
   when it clears), `no headroom` and so on. `!` after a figure means the API
   itself flagged it.

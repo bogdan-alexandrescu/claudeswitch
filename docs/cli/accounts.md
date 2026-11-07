@@ -280,7 +280,7 @@ profile keys, and `seat`, `org_id`, `email` and `plan` when known.
 ## cs account
 
 ```
-cs account list [--json]
+cs account list [--json]                       (also: cs list)
 cs account rename <old> <new> [--json]
 cs account delete <id> [--yes] [--json]        (also: account remove)
 cs account pin <id> [--profile NAME] [--hard] [--json]
@@ -292,19 +292,34 @@ The account commands the app runs. Each takes `--json` and `--config`.
 
 ### cs account list
 
+`cs list` (or `claudeswitch list`) is the same command, shorter: it takes
+the same flags and prints the same table or JSON.
+
 Every account, with its pool, every profile that may use it (`profiles`;
 `profile` is the first), the profile it is live in, whether it is
 pinned (and whether hard, `pin_hard`), its state (`available`, `needs_login`, `refused`, ...), plan, email,
 seat, login expiry and its last reading (`five_hour`, `seven_day`,
-`binding`, `refused_until`, `error`). This is what Settings → Accounts
+`five_hour_resets_at`, `seven_day_resets_at`, `binding`, `refused_until`,
+`error`). This is what Settings → Accounts
 shows. Shape: [APP_CLI.md → account](../APP_CLI.md#account).
 
 Without `--json` it is a table of the same, in brief: ACCOUNT (`(pinned)`
 when pinned), PROFILES (every profile that may use it, `*` on the one it is
 live in), STATE (`needs sign-in` for `needs_login`), SESSION and WEEK (the
-last reading), PLAN and EMAIL. The email goes last, cut with `…` when the
-terminal is too narrow for it. The pool and the expiries are in `--json`
-only.
+last reading, each figure followed by when its window clears), PLAN and
+EMAIL. The email goes last, cut with `…` when the terminal is too narrow
+for it:
+
+```
+  ACCOUNT  PROFILES  STATE                 SESSION             WEEK  PLAN   EMAIL
+  work-1   default*  available    3% · today 17:40  41% · Sun 15:00  Ultra  person1@example.com
+  work-2   default   refused    100% · today 15:05  75% · Sat 09:00  Max    person2@example.com
+```
+
+When a time of day does not fit, the figure says how long until its window
+clears instead (`3% · 2h 30m`, `41% · 3d 10h`); in a terminal too narrow
+for that as well, the figures stand alone. The pool and the expiries are in
+`--json` only.
 
 `refresh_expires_at` (in `--json`) is when the account's refresh token
 expires, as state.json last recorded it — never read from the keychain, so

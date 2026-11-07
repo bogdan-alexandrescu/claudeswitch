@@ -83,6 +83,9 @@ Each profile block shows:
   that window's figure is carried forward by its burn rate and marked `~`
   when that changes it; the same figure is the one STATE and the headline
   use. **CLEARS** is when that window resets (for a refused account, when
+  the refusal lifts). Where the terminal has room, each window has a
+  **CLEARS** of its own, after its figure: when the session resets, then
+  when the week does (the refused window's, for a refused account, is when
   the refusal lifts). **STATE** is the account's state
   (`available`, `refused · session`, `no headroom · week`, `needs sign-in`
   for a credential only a sign-in brings back (a warning gives the command,
@@ -217,9 +220,11 @@ Each profile block gives:
   pool in the order the profile lists them and in rotation order within
   each, `▸` for the live one, `✓` for an eligible target, `✗` for one that
   cannot be used, with why, naming the window it is judged on (`refused on
-  its session window · clears in 37m`, `at 88% of its session, over the 85%
+  its session window`, `at 88% of its session, over the 85%
   trigger`, `at 20% of its week, ready`, or `in use by work` for one
-  live in another profile that shares its pool);
+  live in another profile that shares its pool), then when each of its
+  windows clears (`session clears in 2h 59m (today 17:40), week in 4d 1h
+  (Wed 15:00)`; a window whose reset has passed is left out);
 - **WEEK, at the pace so far**: each account's use of its week against how much
   of the week has gone, and whether it is on pace to use it all, how much
   would expire unused, or, ahead of pace, when it runs out (`on pace to run

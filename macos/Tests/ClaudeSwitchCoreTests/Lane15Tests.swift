@@ -35,12 +35,15 @@ import Testing
         #expect(w.state == "available")
         #expect(w.reading?.fiveHour == 3)
         #expect(w.reading?.sevenDay == 41)
+        #expect(w.reading?.fiveHourResetsAt == ISO8601DateFormatter().date(from: "2026-10-08T09:00:00Z"))
+        #expect(w.reading?.sevenDayResetsAt == ISO8601DateFormatter().date(from: "2026-10-12T15:00:00Z"))
 
         let p = try #require(l.account("personal"))
         #expect(p.plan == nil)
         #expect(p.profile == "review" && p.activeIn == "review" && p.pinned)
         #expect(p.state == "needs_login")
         #expect(p.reading?.error?.contains("401") == true)
+        #expect(p.reading?.fiveHourResetsAt == nil, "a CLI older than the field: unknown")
 
         let r = try #require(l.account("work-2"))
         #expect(r.state == "refused")

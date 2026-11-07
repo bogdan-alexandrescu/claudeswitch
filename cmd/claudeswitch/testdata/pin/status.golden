@@ -1,9 +1,9 @@
 
   a at 40% of its session · 45 points before its trigger
 
-     ACCOUNT  PLAN  SESSION                  WEEK                CLEARS  STATE
-  ▸  a        -        40%   ●●●●●·····◉·    20%   ●●·········◉  2h 30m  available
-     b        -        10%   ●·········◉·     5%   ●··········◉  2h 30m  available
+     ACCOUNT  PLAN  SESSION                CLEARS    WEEK                CLEARS  STATE
+  ▸  a        -        40%   ●●●●●·····◉·  2h 30m    20%   ●●·········◉   3d 0h  available
+     b        -        10%   ●·········◉·  2h 30m     5%   ●··········◉   3d 0h  available
 
   no daemon running: nothing rotates (claudeswitch daemon start)
   rotates at session ≥85% / week ≥95% · at an idle gap, or mid-turn after 30s

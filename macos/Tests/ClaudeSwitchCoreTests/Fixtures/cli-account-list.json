@@ -44,9 +44,11 @@
         "binding": "seven_day",
         "error": null,
         "five_hour": 3,
+        "five_hour_resets_at": "2026-10-08T09:00:00Z",
         "refused_until": null,
         "refused_window": null,
-        "seven_day": 41
+        "seven_day": 41,
+        "seven_day_resets_at": "2026-10-12T15:00:00Z"
       },
       "refresh_expires_at": null,
       "seat": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa@11111111-1111-1111-1111-111111111111",
