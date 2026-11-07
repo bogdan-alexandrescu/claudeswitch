@@ -1,0 +1,177 @@
+{
+  "agents": [
+    {
+      "description": "Reviews a diff for bugs before it is pushed",
+      "name": "code-reviewer"
+    },
+    {
+      "description": "Writes the failing test first",
+      "name": "test-writer"
+    }
+  ],
+  "commands": [
+    {
+      "description": "",
+      "name": "git/sync"
+    },
+    {
+      "description": "Runs the checks, then opens a pull request",
+      "name": "ship"
+    },
+    {
+      "description": "Yesterday's commits as a stand-up note",
+      "name": "standup"
+    }
+  ],
+  "dir": "/Users/example/.claude",
+  "instructions": {
+    "lines": 42,
+    "modified": "2026-10-06T02:46:41Z",
+    "path": "/Users/example/.claude/CLAUDE.md",
+    "target": "/Users/example/.claude/CLAUDE.md"
+  },
+  "plugins": [
+    {
+      "enabled": true,
+      "id": "cs@claudeswitch",
+      "marketplace": "claudeswitch",
+      "name": "cs",
+      "version": "0.8.19"
+    },
+    {
+      "enabled": true,
+      "id": "figma-tools@example-marketplace",
+      "marketplace": "example-marketplace",
+      "name": "figma-tools",
+      "version": "0.3.2"
+    },
+    {
+      "enabled": true,
+      "id": "github@claude-plugins-official",
+      "marketplace": "claude-plugins-official",
+      "name": "github",
+      "version": "1.4.0"
+    },
+    {
+      "enabled": false,
+      "id": "slack@claude-plugins-official",
+      "marketplace": "claude-plugins-official",
+      "name": "slack",
+      "version": "2.1.0"
+    }
+  ],
+  "profiles": [
+    {
+      "base": true,
+      "dir": "/Users/example/.claude",
+      "name": "default"
+    },
+    {
+      "base": false,
+      "dir": "/Users/example/.claude-review",
+      "items": [
+        {
+          "item": "CLAUDE.md",
+          "state": "shared",
+          "summary": "42 lines"
+        },
+        {
+          "item": "settings.json",
+          "state": "own",
+          "summary": "model sonnet · 3 allowed"
+        },
+        {
+          "item": "skills",
+          "state": "elsewhere",
+          "summary": "3 skills"
+        },
+        {
+          "item": "commands",
+          "state": "shared",
+          "summary": "3 commands"
+        },
+        {
+          "item": "agents",
+          "state": "missing",
+          "summary": ""
+        }
+      ],
+      "name": "review",
+      "plugins": [
+        {
+          "enabled": true,
+          "id": "cs@claudeswitch",
+          "marketplace": "claudeswitch",
+          "name": "cs",
+          "version": "0.8.19"
+        }
+      ],
+      "servers": 3
+    }
+  ],
+  "servers": [
+    {
+      "name": "browser",
+      "target": "npx",
+      "type": "stdio"
+    },
+    {
+      "name": "linear",
+      "target": "mcp.linear.example",
+      "type": "http"
+    },
+    {
+      "name": "postgres-local",
+      "target": "npx",
+      "type": "stdio"
+    }
+  ],
+  "settings": {
+    "allow": 12,
+    "deny": 2,
+    "env": [
+      "DISABLE_TELEMETRY",
+      "HTTP_PROXY",
+      "NODE_OPTIONS"
+    ],
+    "error": null,
+    "hooks": [
+      "PreToolUse",
+      "Stop"
+    ],
+    "model": "opus",
+    "path": "/Users/example/.claude/settings.json",
+    "status_line": true,
+    "target": "/Users/example/.claude/settings.json"
+  },
+  "skills": [
+    {
+      "description": "Keeps CHANGELOG.md in step with the tags",
+      "name": "changelog"
+    },
+    {
+      "description": "Writes a database migration and checks it runs both ways",
+      "name": "db-migrate"
+    },
+    {
+      "description": "Deploys the current branch to staging",
+      "name": "deploy-staging"
+    },
+    {
+      "description": "Reviews a screen against the design system",
+      "name": "design-review"
+    },
+    {
+      "description": "Turns a Markdown file into a PDF",
+      "name": "pdf-export"
+    },
+    {
+      "description": "Drafts release notes from merged pull requests",
+      "name": "release-notes"
+    },
+    {
+      "description": "",
+      "name": "screenshot-diff"
+    }
+  ]
+}

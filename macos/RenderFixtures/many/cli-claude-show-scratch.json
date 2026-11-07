@@ -1,0 +1,34 @@
+{
+ "agents": [],
+ "base": false,
+ "commands": [],
+ "dir": "/Users/example/.claude-scratch",
+ "instructions": null,
+ "plugins": [],
+ "profile": "scratch",
+ "servers": [],
+ "settings": null,
+ "shares": [
+  {
+   "item": "CLAUDE.md",
+   "state": "missing"
+  },
+  {
+   "item": "settings.json",
+   "state": "missing"
+  },
+  {
+   "item": "skills",
+   "state": "missing"
+  },
+  {
+   "item": "commands",
+   "state": "missing"
+  },
+  {
+   "item": "agents",
+   "state": "missing"
+  }
+ ],
+ "skills": []
+}

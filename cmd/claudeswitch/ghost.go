@@ -432,15 +432,20 @@ const profileUsage = "usage: claudeswitch profile create <name> [--dir PATH] [--
 	"       claudeswitch profile set <name> <key> <value|inherit>\n" +
 	"       claudeswitch profile which [--dir PATH]\n" +
 	"       claudeswitch profile hook zsh|bash|fish\n" +
+	"       claudeswitch profile recent [<name>]\n" +
+	"       claudeswitch profile share|own <name> <item>\n" +
 	"  each takes --json; forget releases the guard on a removed or re-pointed profile's old credential"
 
-// cmdProfile is `cs profile create|seed|list|remove|forget|pools|pool|set|which|hook`.
+// cmdProfile is `cs profile create|seed|list|remove|forget|pools|pool|set|which|hook|recent|share|own`.
 func cmdProfile(args []string) error {
 	if len(args) == 0 {
 		return appErr(codeUsage, profileUsage, "name a profile command")
 	}
-	if args[0] == "create" {
+	switch args[0] {
+	case "create":
 		return cmdProfileCreate(args[1:])
+	case "recent", "share", "own":
+		return cmdProfileSetup(args[0], args[1:])
 	}
 	fs := appFlags("profile " + args[0])
 	cfgPath := fs.String("config", "", "path to config.toml")

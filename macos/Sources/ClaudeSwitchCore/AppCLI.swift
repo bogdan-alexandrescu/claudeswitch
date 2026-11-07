@@ -136,9 +136,10 @@ enum Argv {
 
 /// The JSON CLI. Every method blocks: call it off the main thread.
 public extension CLI {
-    /// Runs one command and reads its one JSON object.
-    func call(_ args: [String], timeout: TimeInterval = 60) -> Result<JSON, CallError> {
-        let r = runner.run(path, args, timeout: timeout)
+    /// Runs one command and reads its one JSON object. `input` goes to its
+    /// stdin (`claude write`).
+    func call(_ args: [String], timeout: TimeInterval = 60, input: Data? = nil) -> Result<JSON, CallError> {
+        let r = runner.run(path, args, input: input, timeout: timeout)
         let what = args.prefix(while: { !$0.hasPrefix("-") }).joined(separator: " ")
         if r.timedOut { return .failure(.cli(.failed("`claudeswitch \(what)` did not finish in time."))) }
         if let j = JSON(data: r.stdout), j.raw is [String: Any] {

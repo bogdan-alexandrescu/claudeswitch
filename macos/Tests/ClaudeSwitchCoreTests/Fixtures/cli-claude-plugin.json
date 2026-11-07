@@ -1,0 +1,5 @@
+{
+  "enabled": true,
+  "plugin": "slack@claude-plugins-official",
+  "profile": "default"
+}

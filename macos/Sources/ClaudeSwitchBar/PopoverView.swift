@@ -73,6 +73,7 @@ struct PopoverView: View {
             store.acting(in: .popover)
             login.reload()
             store.refresh(full: true, profiles: true)
+            store.loadRecentFolders()
         }
     }
 
@@ -283,14 +284,7 @@ struct ProfileCardView: View {
             PoolLine(card: card, now: now)
             RefillLine(card: card, now: now)
             HStack(spacing: 8) {
-                Button {
-                    store.openClaudeCode(card.name)
-                } label: {
-                    Text("Open Claude Code").lineLimit(1).frame(maxWidth: .infinity, minHeight: 32)
-                }
-                .buttonStyle(PillButtonStyle(primary: false))
-                .disabled(store.binaryPath == nil || !card.canOpen || store.isBusy("run:\(card.name)"))
-                .help(card.openBlocked ?? "Open Claude Code in \(card.name)")
+                OpenClaudeCodePill(card: card)
                 BestButton(card: card)
             }
             .padding(.top, 4)
@@ -642,7 +636,7 @@ struct CompactCardView: View {
             }
             Spacer(minLength: 8)
             IconButton(symbol: "play.fill", label: card.openBlocked ?? "Open Claude Code in \(card.name)",
-                       busy: store.isBusy("run:\(card.name)")) { store.openClaudeCode(card.name) }
+                       busy: store.isBusy("run:\(card.name)")) { store.openInLastFolder(card.name) }
                 // As the open card's Open Claude Code: greyed without a binary too.
                 .disabled(store.binaryPath == nil || !card.canOpen)
             IconButton(symbol: "chevron.down", label: "Expand \(card.name)", action: expand)

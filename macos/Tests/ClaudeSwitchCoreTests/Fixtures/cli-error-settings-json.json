@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "invalid_value",
+    "hint": "",
+    "message": "settings.json is not valid JSON: invalid character } looking for beginning of object key string (line 8, column 1)"
+  }
+}

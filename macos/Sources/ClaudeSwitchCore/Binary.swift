@@ -71,7 +71,15 @@ public struct CommandResult: Equatable {
 }
 
 public protocol CommandRunning {
-    func run(_ executable: String, _ args: [String], timeout: TimeInterval) -> CommandResult
+    /// `input`: written to the program's stdin, which is then closed; nil
+    /// gives it /dev/null.
+    func run(_ executable: String, _ args: [String], input: Data?, timeout: TimeInterval) -> CommandResult
+}
+
+public extension CommandRunning {
+    func run(_ executable: String, _ args: [String], timeout: TimeInterval) -> CommandResult {
+        run(executable, args, input: nil, timeout: timeout)
+    }
 }
 
 /// Runs a program and collects its output. Blocking: call it off the main
@@ -93,12 +101,13 @@ public struct ProcessRunner: CommandRunning {
         return env
     }
 
-    public func run(_ executable: String, _ args: [String], timeout: TimeInterval) -> CommandResult {
+    public func run(_ executable: String, _ args: [String], input: Data?, timeout: TimeInterval) -> CommandResult {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: executable)
         p.arguments = args
         p.environment = environment
-        p.standardInput = FileHandle.nullDevice
+        let stdin = input.map { _ in Pipe() }
+        p.standardInput = stdin ?? FileHandle.nullDevice
         let out = Pipe(), err = Pipe()
         p.standardOutput = out
         p.standardError = err
@@ -116,6 +125,18 @@ public struct ProcessRunner: CommandRunning {
         // they wait, and a pool of blocked workers must not be what the
         // drains are queued behind.
         let outDrain = Drain(out.fileHandleForReading), errDrain = Drain(err.fileHandleForReading)
+        // Fed on a thread of its own, then closed: more than a pipe holds
+        // blocks until the child reads it.
+        if let stdin, let input {
+            let w = stdin.fileHandleForWriting
+            Thread {
+                // A child that exits without reading closes the pipe: the
+                // write then fails, which is its business, not a crash here.
+                signal(SIGPIPE, SIG_IGN)
+                try? w.write(contentsOf: input)
+                try? w.close()
+            }.start()
+        }
 
         var timedOut = false
         if done.wait(timeout: .now() + timeout) == .timedOut {

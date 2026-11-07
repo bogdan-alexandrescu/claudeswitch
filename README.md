@@ -7,7 +7,7 @@ stands, and hot-swaps Claude Code onto a fresh account before the current one
 hits its limit: no restart, no lost session. It ships as a Go CLI plus daemon
 (macOS and Linux), a native macOS menu-bar app and a Claude Code plugin.
 
-Latest release: **v0.8.21**
+Latest release: **v0.8.22**
 ([releases](https://github.com/bogdan-alexandrescu/claudeswitch/releases)).
 
 <p align="center"><img src="docs/images/popover.png" width="384" alt="The ClaudeSwitch menu-bar popover: the daemon is live, the default profile is on work-1 and the work profile is on work-team"></p>
@@ -80,6 +80,11 @@ the full manual. This README covers installing it and finding your way around.
   them to the Trash with a journal and `cs clean undo`. Nothing in use,
   unmerged or recently changed is touched; turn on `clean` and the daemon does
   it daily ([→ rules](docs/cli/clean.md#the-rules)).
+- **Claude Code's own setup, in one place.** Settings → Claude Code lists
+  what `~/.claude` holds (CLAUDE.md, settings, skills, agents, commands,
+  plugins with on/off switches, MCP servers), edits CLAUDE.md and
+  settings.json in place, and shows each profile's share of it. Open Claude
+  Code starts in the project folder you pick.
 - **A menu-bar app, a status line and a plugin**, all reading the same state.
   The app draws each account's session and week as dials or bars, follows
   light and dark mode (or stays in one), and shows its state in a live
@@ -141,7 +146,7 @@ arm64, and a `checksums.txt`. The archives are reproducible: the same tag
 always produces the same bytes.
 
 ```sh
-VERSION=v0.8.21
+VERSION=v0.8.22
 TARGET=darwin_arm64            # darwin_amd64, linux_amd64, linux_arm64
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 curl -LO "$BASE/claudeswitch_${VERSION}_${TARGET}.tar.gz"
@@ -167,7 +172,7 @@ cd claudeswitch
 symlink, and installs the daemon in dry-run (see [Daemon](#daemon)). To build
 the binary alone: `go build -o bin/claudeswitch ./cmd/claudeswitch`.
 
-**Verify it worked:** `cs version` prints `claudeswitch v0.8.21` for the release
+**Verify it worked:** `cs version` prints `claudeswitch v0.8.22` for the release
 binary (a build from source prints `claudeswitch dev`). If the shell cannot
 find `cs`, add `~/.local/bin` to your `PATH`.
 
@@ -226,7 +231,7 @@ Download it from a release: a universal build, signed with a Developer ID and
 notarized by Apple, so it opens like any other app.
 
 ```sh
-VERSION=v0.8.21
+VERSION=v0.8.22
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 ZIP="ClaudeSwitch-${VERSION#v}-macos.zip"
 curl -LO "$BASE/$ZIP"
@@ -259,7 +264,7 @@ to install it. [macos/README.md](macos/README.md) has the details.
 
 **Verify it worked:** the Twin rings glyph with the live account and its
 utilization appears in the menu bar, and **About ClaudeSwitch** in its ⋯ menu
-shows version 0.8.21. If you see nothing on a MacBook with a notch, see
+shows version 0.8.22. If you see nothing on a MacBook with a notch, see
 [Troubleshooting](#troubleshooting).
 
 ### Claude Code plugin
@@ -443,7 +448,10 @@ small buttons at the top right, the ⋯ menu, or Settings → Advanced. The
 choice is remembered.
 
 The card's buttons are **Open Claude Code** (your terminal running
-`cs run <profile>`: Terminal, iTerm, Ghostty or Warp), **Switch to Best**
+`cs run <profile>`: Terminal, iTerm, Ghostty or Warp), which starts in the
+profile's last project folder, named on the button; its folder line lists
+the folders that profile was used in, with **Choose Folder…** and **Home
+Folder**. Then **Switch to Best**
 (which names the account it would move to and its utilization, or says there
 is none), the globe that opens the account's Chrome profile, and **Pin**,
 which keeps the profile on its account until you unpin it. The other profiles
@@ -517,8 +525,22 @@ next rotation.
     <code>switch_at_weekly</code>, <code>hard_floor</code>,
     <code>landing_margin</code>, <code>prefer</code>, <code>models</code>).
     Choose the profile's <b>Chrome profile</b>, from the profiles your Chrome
-    has, or Chrome's last used. Open Claude Code or Chrome for it, show it in
-    the menu bar, or remove it. Forget a removed profile's old credential.</td>
+    has, or Chrome's last used. A line says what it shares with
+    <code>~/.claude</code>; <b>Show in Claude Code</b> opens its setup. Open
+    Claude Code or Chrome for it, show it in the menu bar, or remove it.
+    Forget a removed profile's old credential.</td>
+  </tr>
+  <tr>
+    <td width="440"><img src="docs/images/settings-claude-code.png" width="440" alt="Settings, Claude Code pane: a folding row each for Instructions, Settings, Skills, Agents, Commands, Plugins and MCP Servers, with counts and Open or Reveal"></td>
+    <td><b>Claude Code.</b> What Claude Code reads from <code>~/.claude</code>
+    in every profile that shares it: CLAUDE.md, settings (model, permissions,
+    hooks; environment variables by name only), skills, agents, commands,
+    plugins and MCP servers. Each row unfolds to its items; <b>Edit…</b>
+    changes CLAUDE.md or settings.json in the app (settings.json is checked
+    before it is saved), files also open in your editor and folders in
+    Finder, and plugins have on/off switches. <b>Showing</b> picks one
+    profile: what it shares with <code>~/.claude</code> and what is its own,
+    with <b>Make Own Copy</b>, <b>Use Shared…</b> and <b>Share</b>.</td>
   </tr>
   <tr>
     <td width="440"><img src="docs/images/settings-accounts.png" width="440" alt="Settings, Accounts pane: the accounts grouped by pool (default's personal and research, work's work-1 and work-team), each with small rings, its state, who uses it, plan and login expiry, and the recovery copies"></td>

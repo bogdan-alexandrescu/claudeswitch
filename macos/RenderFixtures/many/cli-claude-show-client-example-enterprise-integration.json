@@ -1,0 +1,81 @@
+{
+ "agents": [
+  {
+   "description": "Reviews a diff for bugs before it is pushed",
+   "name": "code-reviewer"
+  }
+ ],
+ "base": false,
+ "commands": [],
+ "dir": "/Users/example/Projects/clients/example/very/deep/path/.claude-enterprise",
+ "instructions": {
+  "lines": 18,
+  "modified": "2026-10-03T02:46:41Z",
+  "path": "/Users/example/Projects/clients/example/very/deep/path/.claude-enterprise/CLAUDE.md",
+  "target": "/Users/example/Projects/clients/example/very/deep/path/.claude-enterprise/CLAUDE.md"
+ },
+ "plugins": [
+  {
+   "enabled": true,
+   "id": "cs@claudeswitch",
+   "marketplace": "claudeswitch",
+   "name": "cs",
+   "version": "0.8.19"
+  }
+ ],
+ "profile": "client-example-enterprise-integration",
+ "servers": [
+  {
+   "name": "browser",
+   "target": "npx",
+   "type": "stdio"
+  }
+ ],
+ "settings": {
+  "allow": 5,
+  "deny": 1,
+  "env": [
+   "HTTP_PROXY"
+  ],
+  "error": null,
+  "hooks": [
+   "Stop"
+  ],
+  "model": "haiku",
+  "path": "/Users/example/Projects/clients/example/very/deep/path/.claude-enterprise/settings.json",
+  "status_line": true,
+  "target": "/Users/example/dotfiles/claude/settings.json"
+ },
+ "shares": [
+  {
+   "item": "CLAUDE.md",
+   "state": "own"
+  },
+  {
+   "item": "settings.json",
+   "state": "elsewhere"
+  },
+  {
+   "item": "skills",
+   "state": "own"
+  },
+  {
+   "item": "commands",
+   "state": "missing"
+  },
+  {
+   "item": "agents",
+   "state": "own"
+  }
+ ],
+ "skills": [
+  {
+   "description": "Keeps CHANGELOG.md in step with the tags",
+   "name": "changelog"
+  },
+  {
+   "description": "Writes a database migration and checks it runs both ways",
+   "name": "db-migrate"
+  }
+ ]
+}

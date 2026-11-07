@@ -150,11 +150,25 @@ public struct OverviewTile: Equatable, Identifiable {
     public var target: OverviewTarget
 }
 
+/// One line of Recent.
 public struct OverviewEvent: Equatable, Identifiable {
-    public var id: String { "\(at.timeIntervalSince1970) " + text }
+    public enum Kind: Equatable, Sendable { case switched, cleanup }
+
+    public var id: String { "\(at.timeIntervalSince1970) " + title }
     public var at: Date
     public var when: String
-    public var text: String
+    public var kind: Kind
+    /// "atlas-max → cedar-max", or "Cleanup removed 198 items".
+    public var title: String
+    /// The profile it happened in, with several.
+    public var profile: String? = nil
+    /// The reason in a few words ("week 98%"), or what a cleanup freed.
+    public var detail: String? = nil
+    /// The whole of it, for a tooltip: what, why, and the date and time.
+    public var help: String
+
+    /// As the Rotation and Cleanup tiles draw them.
+    public var symbol: String { kind == .cleanup ? "trash" : "arrow.triangle.2.circlepath" }
 }
 
 public struct Overview: Equatable {
@@ -367,19 +381,36 @@ public struct Overview: Equatable {
     /// The last few switches and the last cleanup, newest first.
     static func recent(_ i: OverviewInput) -> [OverviewEvent] {
         var events: [OverviewEvent] = []
+        func date(_ at: Date) -> String { at.formatted(date: .abbreviated, time: .shortened) }
         for s in i.switches {
-            var text = "\(s.from ?? "?") → \(s.to ?? "?")"
-            if let p = s.profile { text = p + ": " + text }
-            if let r = s.reason, !r.isEmpty { text += " (\(r))" }
-            events.append(OverviewEvent(at: s.at, when: when(s.at, now: i.now), text: text))
+            let title = "\(s.from ?? "?") → \(s.to ?? "?")"
+            let help = [s.profile.map { $0 + ": " + title } ?? title, s.reason ?? "", date(s.at)]
+                .filter { !$0.isEmpty }.joined(separator: "\n")
+            events.append(OverviewEvent(at: s.at, when: when(s.at, now: i.now), kind: .switched, title: title,
+                                        profile: s.profile, detail: s.reason.flatMap(shortReason), help: help))
         }
         if let c = i.clean, let at = c.lastAt {
-            events.append(OverviewEvent(at: at, when: when(at, now: i.now),
-                                        text: "cleanup removed \(c.lastRemoved) item\(c.lastRemoved == 1 ? "" : "s") · "
-                                            + Format.bytes(c.lastBytes)
-                                            + (c.lastPutBack > 0 ? " · \(c.lastPutBack) put back" : "")))
+            let title = "Cleanup removed \(c.lastRemoved) item\(c.lastRemoved == 1 ? "" : "s")"
+            let size = Format.bytes(c.lastBytes) + (c.lastPutBack > 0 ? " · \(c.lastPutBack) put back" : "")
+            events.append(OverviewEvent(at: at, when: when(at, now: i.now), kind: .cleanup, title: title, detail: size,
+                                        help: title + " · " + size + "\n" + date(at)))
         }
-        return Array(events.sorted { $0.at > $1.at }.prefix(4))
+        return Array(events.sorted { $0.at > $1.at }.prefix(5))
+    }
+
+    /// A switch's reason in a few words: "week 98%" for the daemon's "active
+    /// account at 98% of its week, over the 98% trigger", "by hand" for `cs use`;
+    /// any other reason as it is, for the row to cut. Nil with none.
+    public static func shortReason(_ reason: String) -> String? {
+        guard !reason.isEmpty else { return nil }
+        if reason.hasPrefix("requested with") { return "by hand" }
+        if reason.contains("refused") { return "refused" }
+        if let m = reason.firstMatch(of: #/at (\d+)% of (?:its|the) (session|weekly|week)/#) {
+            return (m.2 == "session" ? "session " : "week ") + m.1 + "%"
+        }
+        if let m = reason.firstMatch(of: #/active account at (\d+)%, over/#) { return m.1 + "%" }
+        if reason.hasPrefix("pin on"), reason.contains("lifted") { return "pin lifted" }
+        return reason
     }
 
     /// The time today, the date before, in the person's own locale ("5:46 PM"

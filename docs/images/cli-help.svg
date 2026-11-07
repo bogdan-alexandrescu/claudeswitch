@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="820" height="2324" viewBox="0 0 820 2324" role="img" aria-label="cs">
-<rect x="0.5" y="0.5" width="819" height="2323" rx="9" fill="#17181b" stroke="#2c2f35"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="2626" viewBox="0 0 820 2626" role="img" aria-label="cs">
+<rect x="0.5" y="0.5" width="819" height="2625" rx="9" fill="#17181b" stroke="#2c2f35"/>
 <path d="M0.5 32 V9.5 a9 9 0 0 1 9 -9 H810.5 a9 9 0 0 1 9 9 V32 Z" fill="#1f2125" stroke="#2c2f35"/>
 <circle cx="18" cy="16" r="5.5" fill="#3a3d43"/>
 <circle cx="36" cy="16" r="5.5" fill="#3a3d43"/>
@@ -8,7 +8,7 @@
 <g font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="13.0" fill="#dfe4ea" style="font-variant-ligatures:none;font-feature-settings:'liga' 0,'calt' 0" xml:space="preserve">
 <text x="20.0" y="60.0" fill="#5f6670" textLength="7.8" lengthAdjust="spacingAndGlyphs">$</text>
 <text x="35.6" y="60.0" fill="#f4f7fa" font-weight="700" textLength="15.6" lengthAdjust="spacingAndGlyphs">cs</text>
-<text x="20.0" y="78.8" textLength="585.0" lengthAdjust="spacingAndGlyphs">claudeswitch v0.8.21 — keeps Claude Code on an account that still has quota</text>
+<text x="20.0" y="78.8" textLength="585.0" lengthAdjust="spacingAndGlyphs">claudeswitch v0.8.22 — keeps Claude Code on an account that still has quota</text>
 <text x="35.6" y="116.6" textLength="46.8" lengthAdjust="spacingAndGlyphs">status</text>
 <text x="121.4" y="116.6" textLength="452.4" lengthAdjust="spacingAndGlyphs">what every configured account&#x27;s quota looks like right now</text>
 <text x="35.6" y="135.4" textLength="39.0" lengthAdjust="spacingAndGlyphs">watch</text>
@@ -122,32 +122,48 @@
 <text x="35.6" y="1700.0" textLength="202.8" lengthAdjust="spacingAndGlyphs">profile hook zsh|bash|fish</text>
 <text x="121.4" y="1718.8" textLength="436.8" lengthAdjust="spacingAndGlyphs">a shell hook that sets CLAUDE_CONFIG_DIR to the folder&#x27;s</text>
 <text x="121.4" y="1737.7" textLength="101.4" lengthAdjust="spacingAndGlyphs">profile on cd</text>
-<text x="35.6" y="1756.5" textLength="249.6" lengthAdjust="spacingAndGlyphs">run [&lt;profile&gt;] [-- claude args]</text>
-<text x="121.4" y="1775.4" textLength="483.6" lengthAdjust="spacingAndGlyphs">start Claude Code in a profile (CLAUDE_CONFIG_DIR set for it);</text>
-<text x="121.4" y="1794.2" textLength="273.0" lengthAdjust="spacingAndGlyphs">with no name, this folder&#x27;s profile</text>
-<text x="35.6" y="1813.1" textLength="366.6" lengthAdjust="spacingAndGlyphs">chrome add &lt;account&gt; [--existing &lt;name|folder&gt;]</text>
-<text x="121.4" y="1831.9" textLength="507.0" lengthAdjust="spacingAndGlyphs">open a new Chrome profile for that account, for Claude in Chrome;</text>
-<text x="121.4" y="1850.8" textLength="397.8" lengthAdjust="spacingAndGlyphs">--existing uses one of your Chrome profiles instead</text>
-<text x="35.6" y="1869.6" textLength="195.0" lengthAdjust="spacingAndGlyphs">chrome [open] [&lt;account&gt;]</text>
-<text x="121.4" y="1888.5" textLength="444.6" lengthAdjust="spacingAndGlyphs">open its Chrome profile (no account: the one live in this</text>
-<text x="121.4" y="1907.3" textLength="452.4" lengthAdjust="spacingAndGlyphs">shell&#x27;s profile): its own, else its profile&#x27;s chrome, else</text>
-<text x="121.4" y="1926.2" textLength="140.4" lengthAdjust="spacingAndGlyphs">Chrome&#x27;s last used</text>
-<text x="35.6" y="1945.0" textLength="195.0" lengthAdjust="spacingAndGlyphs">chrome signin [&lt;account&gt;]</text>
-<text x="121.4" y="1963.9" textLength="475.8" lengthAdjust="spacingAndGlyphs">open that Chrome profile at the sign-in pages, to sign Claude</text>
-<text x="121.4" y="1982.7" textLength="210.6" lengthAdjust="spacingAndGlyphs">in Chrome in as the account</text>
-<text x="35.6" y="2001.6" textLength="117.0" lengthAdjust="spacingAndGlyphs">chrome profiles</text>
-<text x="121.4" y="2020.4" textLength="483.6" lengthAdjust="spacingAndGlyphs">your Chrome profiles, and which profiles and accounts use each</text>
-<text x="35.6" y="2039.3" textLength="218.4" lengthAdjust="spacingAndGlyphs">chrome check [--profile &lt;p&gt;]</text>
-<text x="121.4" y="2058.1" textLength="483.6" lengthAdjust="spacingAndGlyphs">whether Claude in Chrome can connect in a profile, and why not</text>
-<text x="35.6" y="2076.9" textLength="234.0" lengthAdjust="spacingAndGlyphs">chrome list | forget &lt;account&gt;</text>
-<text x="35.6" y="2114.7" textLength="577.2" lengthAdjust="spacingAndGlyphs">Several Claude Code profiles ([[profile]] in the config): use, add, login,</text>
-<text x="35.6" y="2133.5" textLength="592.8" lengthAdjust="spacingAndGlyphs">whoami, status, top, why and plan take --profile NAME. Without it, a command</text>
-<text x="35.6" y="2152.4" textLength="561.6" lengthAdjust="spacingAndGlyphs">acts on the profile this shell&#x27;s CLAUDE_CONFIG_DIR belongs to (use, add,</text>
-<text x="35.6" y="2171.2" textLength="499.2" lengthAdjust="spacingAndGlyphs">login, whoami), or shows every profile (status, top, why, plan).</text>
-<text x="35.6" y="2208.9" textLength="553.8" lengthAdjust="spacingAndGlyphs">help &lt;command&gt; (or &lt;command&gt; --help) shows a command&#x27;s usage and flags.</text>
-<text x="35.6" y="2246.6" textLength="585.0" lengthAdjust="spacingAndGlyphs">For scripts and the menu-bar app: config, profile, pool, account, priority,</text>
-<text x="35.6" y="2265.5" textLength="569.4" lengthAdjust="spacingAndGlyphs">remove, recovery, use, add, login --direct/--code and daemon take --json,</text>
-<text x="35.6" y="2284.3" textLength="491.4" lengthAdjust="spacingAndGlyphs">never prompt, and fail with {&quot;error&quot;:{&quot;code&quot;,&quot;message&quot;,&quot;hint&quot;}}</text>
-<text x="35.6" y="2303.2" textLength="475.8" lengthAdjust="spacingAndGlyphs">(docs/APP_CLI.md). version --json names the contract version.</text>
+<text x="35.6" y="1756.5" textLength="179.4" lengthAdjust="spacingAndGlyphs">profile recent [&lt;name&gt;]</text>
+<text x="121.4" y="1775.4" textLength="483.6" lengthAdjust="spacingAndGlyphs">the folders Claude Code was used in under each profile, newest</text>
+<text x="121.4" y="1794.2" textLength="39.0" lengthAdjust="spacingAndGlyphs">first</text>
+<text x="35.6" y="1813.1" textLength="366.6" lengthAdjust="spacingAndGlyphs">profile share &lt;name&gt; &lt;item&gt; | own &lt;name&gt; &lt;item&gt;</text>
+<text x="121.4" y="1831.9" textLength="483.6" lengthAdjust="spacingAndGlyphs">link a profile&#x27;s CLAUDE.md, settings.json, skills, commands or</text>
+<text x="121.4" y="1850.8" textLength="483.6" lengthAdjust="spacingAndGlyphs">agents to ~/.claude&#x27;s (its own one kept beside it), or make it</text>
+<text x="121.4" y="1869.6" textLength="132.6" lengthAdjust="spacingAndGlyphs">a copy of its own</text>
+<text x="35.6" y="1888.5" textLength="249.6" lengthAdjust="spacingAndGlyphs">run [&lt;profile&gt;] [-- claude args]</text>
+<text x="121.4" y="1907.3" textLength="483.6" lengthAdjust="spacingAndGlyphs">start Claude Code in a profile (CLAUDE_CONFIG_DIR set for it);</text>
+<text x="121.4" y="1926.2" textLength="273.0" lengthAdjust="spacingAndGlyphs">with no name, this folder&#x27;s profile</text>
+<text x="35.6" y="1945.0" textLength="210.6" lengthAdjust="spacingAndGlyphs">claude show [--profile &lt;p&gt;]</text>
+<text x="121.4" y="1963.9" textLength="460.2" lengthAdjust="spacingAndGlyphs">what Claude Code reads from ~/.claude (CLAUDE.md, settings,</text>
+<text x="121.4" y="1982.7" textLength="475.8" lengthAdjust="spacingAndGlyphs">skills, agents, commands, plugins, MCP servers) and what each</text>
+<text x="121.4" y="2001.6" textLength="452.4" lengthAdjust="spacingAndGlyphs">profile shares with it; --profile: what that profile reads</text>
+<text x="35.6" y="2020.4" textLength="405.6" lengthAdjust="spacingAndGlyphs">claude write CLAUDE.md|settings.json [--profile &lt;p&gt;]</text>
+<text x="121.4" y="2039.3" textLength="444.6" lengthAdjust="spacingAndGlyphs">replace the file a profile reads with what is on stdin (a</text>
+<text x="121.4" y="2058.1" textLength="405.6" lengthAdjust="spacingAndGlyphs">shared one changes for every profile that shares it)</text>
+<text x="35.6" y="2076.9" textLength="413.4" lengthAdjust="spacingAndGlyphs">claude plugin enable|disable &lt;plugin&gt; [--profile &lt;p&gt;]</text>
+<text x="121.4" y="2095.8" textLength="444.6" lengthAdjust="spacingAndGlyphs">turn a plugin on or off in a profile, through Claude Code</text>
+<text x="35.6" y="2114.7" textLength="366.6" lengthAdjust="spacingAndGlyphs">chrome add &lt;account&gt; [--existing &lt;name|folder&gt;]</text>
+<text x="121.4" y="2133.5" textLength="507.0" lengthAdjust="spacingAndGlyphs">open a new Chrome profile for that account, for Claude in Chrome;</text>
+<text x="121.4" y="2152.4" textLength="397.8" lengthAdjust="spacingAndGlyphs">--existing uses one of your Chrome profiles instead</text>
+<text x="35.6" y="2171.2" textLength="195.0" lengthAdjust="spacingAndGlyphs">chrome [open] [&lt;account&gt;]</text>
+<text x="121.4" y="2190.1" textLength="444.6" lengthAdjust="spacingAndGlyphs">open its Chrome profile (no account: the one live in this</text>
+<text x="121.4" y="2208.9" textLength="452.4" lengthAdjust="spacingAndGlyphs">shell&#x27;s profile): its own, else its profile&#x27;s chrome, else</text>
+<text x="121.4" y="2227.8" textLength="140.4" lengthAdjust="spacingAndGlyphs">Chrome&#x27;s last used</text>
+<text x="35.6" y="2246.6" textLength="195.0" lengthAdjust="spacingAndGlyphs">chrome signin [&lt;account&gt;]</text>
+<text x="121.4" y="2265.5" textLength="475.8" lengthAdjust="spacingAndGlyphs">open that Chrome profile at the sign-in pages, to sign Claude</text>
+<text x="121.4" y="2284.3" textLength="210.6" lengthAdjust="spacingAndGlyphs">in Chrome in as the account</text>
+<text x="35.6" y="2303.2" textLength="117.0" lengthAdjust="spacingAndGlyphs">chrome profiles</text>
+<text x="121.4" y="2322.0" textLength="483.6" lengthAdjust="spacingAndGlyphs">your Chrome profiles, and which profiles and accounts use each</text>
+<text x="35.6" y="2340.9" textLength="218.4" lengthAdjust="spacingAndGlyphs">chrome check [--profile &lt;p&gt;]</text>
+<text x="121.4" y="2359.7" textLength="483.6" lengthAdjust="spacingAndGlyphs">whether Claude in Chrome can connect in a profile, and why not</text>
+<text x="35.6" y="2378.6" textLength="234.0" lengthAdjust="spacingAndGlyphs">chrome list | forget &lt;account&gt;</text>
+<text x="35.6" y="2416.2" textLength="577.2" lengthAdjust="spacingAndGlyphs">Several Claude Code profiles ([[profile]] in the config): use, add, login,</text>
+<text x="35.6" y="2435.1" textLength="592.8" lengthAdjust="spacingAndGlyphs">whoami, status, top, why and plan take --profile NAME. Without it, a command</text>
+<text x="35.6" y="2454.0" textLength="561.6" lengthAdjust="spacingAndGlyphs">acts on the profile this shell&#x27;s CLAUDE_CONFIG_DIR belongs to (use, add,</text>
+<text x="35.6" y="2472.8" textLength="499.2" lengthAdjust="spacingAndGlyphs">login, whoami), or shows every profile (status, top, why, plan).</text>
+<text x="35.6" y="2510.5" textLength="553.8" lengthAdjust="spacingAndGlyphs">help &lt;command&gt; (or &lt;command&gt; --help) shows a command&#x27;s usage and flags.</text>
+<text x="35.6" y="2548.2" textLength="585.0" lengthAdjust="spacingAndGlyphs">For scripts and the menu-bar app: config, profile, pool, account, priority,</text>
+<text x="35.6" y="2567.1" textLength="569.4" lengthAdjust="spacingAndGlyphs">remove, recovery, use, add, login --direct/--code, daemon and claude take</text>
+<text x="35.6" y="2585.9" textLength="553.8" lengthAdjust="spacingAndGlyphs">--json, never prompt, and fail with {&quot;error&quot;:{&quot;code&quot;,&quot;message&quot;,&quot;hint&quot;}}</text>
+<text x="35.6" y="2604.8" textLength="475.8" lengthAdjust="spacingAndGlyphs">(docs/APP_CLI.md). version --json names the contract version.</text>
 </g>
 </svg>

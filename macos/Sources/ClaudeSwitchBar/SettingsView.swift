@@ -3,16 +3,21 @@ import ClaudeSwitchCore
 import SwiftUI
 
 enum Pane: String, CaseIterable, Identifiable {
-    case overview = "Overview", profiles = "Profiles", accounts = "Accounts", rotation = "Rotation", polling = "Polling",
-         daemon = "Daemon", cleanup = "Cleanup", history = "History", health = "Health", advanced = "Advanced"
+    case overview = "Overview", profiles = "Profiles", accounts = "Accounts", claudeCode = "Claude Code",
+         rotation = "Rotation", polling = "Polling", daemon = "Daemon", cleanup = "Cleanup", history = "History",
+         health = "Health", advanced = "Advanced"
 
     var id: String { rawValue }
+
+    /// Its name in file names: "claude-code".
+    var slug: String { rawValue.lowercased().replacingOccurrences(of: " ", with: "-") }
 
     var symbol: String {
         switch self {
         case .overview: return "square.grid.2x2"
         case .profiles: return "person.2"
         case .accounts: return "person.crop.circle"
+        case .claudeCode: return "terminal"
         case .rotation: return "arrow.triangle.2.circlepath"
         case .polling: return "timer"
         case .daemon: return "gearshape.2"
@@ -40,6 +45,8 @@ struct SettingsView: View {
     var renderSidebar = false
     /// --render only: the sidebar's width, its ideal unless drawn at its least.
     var sidebarWidth: CGFloat = 190
+    /// --render only: the Claude Code pane's rows drawn unfolded.
+    var claudeUnfolded: Set<SetupKind> = []
 
     var body: some View {
         Group {
@@ -109,6 +116,7 @@ struct SettingsView: View {
                 case .overview: OverviewPane(go: { pane = $0 })
                 case .profiles: ProfilesPane()
                 case .accounts: AccountsPane()
+                case .claudeCode: ClaudeCodePane(unfolded: claudeUnfolded)
                 case .rotation: SchemaPane(pane: .rotation, title: "Rotation",
                                            subtitle: "When an account is rotated away from, and where to.")
                 case .polling: SchemaPane(pane: .polling, title: "Polling",

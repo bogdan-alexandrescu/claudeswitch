@@ -84,7 +84,7 @@ this document's contract. Plain `claudeswitch version` still prints
 | `wrong_account` | the login (or the live credential, for `add`) is another seat, or another organization than the one asked for (`--org`); nothing stored |
 | `already_vaulted` | that credential is already vaulted under another name |
 | `daemon_not_loaded` | a seed, or an account delete, timed out waiting for the running daemon to load the edited config |
-| `config_changed` | a command could not undo its own config edit because something else changed the config meanwhile; that change is kept (and so is the credential) |
+| `config_changed` | a command could not undo its own config edit because something else changed the config meanwhile; that change is kept (and so is the credential). Also `claude write --if-unchanged`: the file changed since the editor opened it; nothing was written |
 | `last_profile` | `profile remove`: the only profile (or the implicit one, with no `[[profile]]` blocks) cannot be removed |
 | `binary_not_durable` | `daemon install` from a temporary, translocated or `go run` path |
 | `exists` | `init`: a config is already at that path; nothing was written |
@@ -368,6 +368,62 @@ undeclared implicit one, or a pool), `invalid_value` (a pool named twice),
 may be live there, or one a profile starts using while it is live in a
 profile that cannot use it), `config_invalid`. Sharing an account with the
 profile it is live in is not refused: one profile uses it at a time (D34).
+
+### Recent folders, and what a profile shares (owner picks OC1, CC3)
+
+Additive within contract 2. None of these reads the state, a credential or
+the keychain. An unknown profile is `invalid_value` here (not `not_found`).
+
+`claudeswitch profile recent [<name>] --json` — the folders Claude Code has
+been used in under each profile (every profile without a name), newest
+first; Open Claude Code starts in the first:
+
+```json
+{"profiles": [
+  {"profile": "default", "folders": [
+    {"path": "/Users/x/code/claudeswitch", "last_used": "2026-10-28T10:02:11Z"},
+    {"path": "/Users/x/code/website", "last_used": null}
+  ]}
+]}
+```
+
+- The folders are the keys of `projects` in the profile's `.claude.json`
+  (`~/.claude.json` for the profile with no dir, else `<dir>/.claude.json`,
+  as Claude Code resolves it); nothing else of that file is read.
+- `last_used` is the newest modification time of a `*.jsonl` directly in
+  `<dir>/projects/<encoded>/`, `<encoded>` being the path with every
+  character but `[A-Za-z0-9]` replaced by `-` (`/Users/x/code/a.b` →
+  `-Users-x-code-a-b`); `null` when there is none.
+- Only folders that exist now, sorted by `last_used` (newest first, `null`
+  last), then by path; at most 12 per profile. A missing or unreadable
+  `.claude.json` is an empty list.
+
+`claudeswitch profile share <name> <item> --json` — `<item>` is one of
+`CLAUDE.md`, `settings.json`, `skills`, `commands`, `agents`: the profile's
+becomes a symlink to `~/.claude/<item>`.
+
+```json
+{"profile": "work", "item": "settings.json", "state": "shared",
+ "backup": "/Users/x/.claude-work/settings.json.claudeswitch-20261028-101500"}
+```
+
+- An item of the profile's own is first renamed to
+  `<item>.claudeswitch-<YYYYMMDD-HHMMSS>` (local time) beside it, `-2`,
+  `-3`… added if that name is taken; `backup` is that path, `null` when
+  nothing was moved (missing, or a link, which is replaced). Already shared:
+  success, nothing changed, `backup` `null`.
+- Errors: `invalid_value` for the base profile (`"default is ~/.claude
+  itself"`: its dir is `~/.claude`, compared as real paths), an unknown
+  profile or item; `not_found` when `~/.claude/<item>` does not exist (hint
+  `create it in ~/.claude first`).
+
+`claudeswitch profile own <name> <item> --json` → `{"profile": "work",
+"item": "skills", "state": "own"}`. A shared (or elsewhere) link is replaced
+by a copy of what it leads to: files with their mode (and times), folders
+copied whole, links inside copied as links. The copy is made beside it
+first, so a failure leaves the link. Already own: success, nothing changed.
+Errors: `not_found` (missing, or a link to nothing), `invalid_value` (the
+base profile, an unknown profile or item).
 
 ## pool
 
@@ -1203,3 +1259,155 @@ time it records is in the future.
 - Errors: `usage` (anything but `heartbeat`), `failed`. A binary before
   0.6.1 has no `app` command (usage text, exit 2): the app reads that as
   too old, stops nothing, and the daemon keeps notifying.
+
+## claude
+
+What Claude Code reads, for Settings → Claude Code (owner picks CC1, CC2,
+CC3), additive within contract 2. Paths are absolute; times RFC 3339 UTC.
+Nothing reads a credential, the keychain, or any key of a `.claude.json`
+but `projects` (its keys) and `mcpServers`. Never shown: a value of
+settings.json's `env` (only its names), an MCP server's arguments, env,
+headers, or URL path and query. An unknown profile is `invalid_value`.
+
+`claudeswitch claude show --json` — `~/.claude`, and what each profile
+shares with it:
+
+```json
+{
+  "dir": "/Users/x/.claude",
+  "instructions": {"path": "/Users/x/.claude/CLAUDE.md", "target": "/Users/x/.claude/CLAUDE.md",
+                   "lines": 42, "modified": "2026-10-26T09:00:00Z"},
+  "settings": {"path": "/Users/x/.claude/settings.json", "target": "/Users/x/.claude/settings.json",
+               "model": "opus", "allow": 12, "deny": 2, "hooks": ["PreToolUse", "Stop"],
+               "status_line": true, "env": ["DISABLE_TELEMETRY", "HTTP_PROXY"], "error": null},
+  "skills":   [{"name": "release-notes", "description": "Drafts release notes from merged pull requests",
+                "path": "/Users/x/.claude/skills/release-notes"}],
+  "agents":   [{"name": "code-reviewer", "description": "Reviews a diff for bugs before it is pushed",
+                "path": "/Users/x/.claude/agents/code-reviewer.md"}],
+  "commands": [{"name": "standup", "description": "Yesterday's commits as a stand-up note",
+                "path": "/Users/x/.claude/commands/standup.md"}],
+  "plugins":  [{"id": "cs@claudeswitch", "name": "cs", "marketplace": "claudeswitch", "version": "0.8.19",
+                "enabled": true}],
+  "servers":  [{"name": "linear", "type": "http", "target": "mcp.linear.example"}],
+  "profiles": [
+    {"name": "default", "dir": "/Users/x/.claude", "base": true},
+    {"name": "work", "dir": "/Users/x/.claude-work", "base": false,
+     "items": [
+       {"item": "CLAUDE.md",     "state": "shared",  "summary": "42 lines"},
+       {"item": "settings.json", "state": "own",     "summary": "model sonnet · 3 allowed"},
+       {"item": "skills",        "state": "shared",  "summary": "7 skills"},
+       {"item": "commands",      "state": "shared",  "summary": "3 commands"},
+       {"item": "agents",        "state": "missing", "summary": ""}
+     ],
+     "plugins": [{"id": "cs@claudeswitch", "name": "cs", "marketplace": "claudeswitch", "version": "0.8.19",
+                  "enabled": true}],
+     "servers": 3}
+  ]
+}
+```
+
+- `instructions`: `null` without a `CLAUDE.md`. `lines` counts newlines,
+  plus one for a last line without one. `path` is in the dir read (a link
+  or not), `target` the real path it reads (`path` when it is not a link).
+- `settings`: `null` without a `settings.json`. One that is not a JSON
+  object has every field empty (`model` `null`, counts `0`, lists `[]`,
+  `status_line` `false`) and `error` the parser's sentence, with the line
+  and column (`invalid character '}' looking for beginning of object key
+  string (line 3, column 1)`); otherwise `error` is `null`. `model` is the
+  `model` string or `null`; `allow` and `deny` the lengths of
+  `permissions.allow` and `permissions.deny`; `hooks` and `env` the keys of
+  `hooks` and `env`, sorted; `status_line` whether `statusLine` is set.
+- `skills`: each folder (or link to one) in `skills/` holding a `SKILL.md`;
+  `agents`: each `agents/*.md`; `commands`: each `commands/**/*.md`. A
+  skill's or agent's `name` is its front matter's `name:`, else the folder
+  or file name (without `.md`); a command's is its path below `commands/`
+  without `.md` (`git/sync`). `description` is the front matter's
+  `description:`, its first line, at most 200 characters, `""` when absent.
+  Front matter is the block between a first line of `---` and the next
+  `---` line. `path` is the skill's folder or the agent's or command's
+  file, for the app to open or reveal.
+  Each list is sorted by name.
+- `plugins`: `plugins/installed_plugins.json`'s `plugins`, one per
+  `name@marketplace` key, `version` from its first install record
+  (`marketplace` and `version` `null` when absent); `enabled` is
+  settings.json's `enabledPlugins[id] == true`. Sorted by id; `[]` without
+  the file.
+- `servers`: `~/.claude.json`'s top-level `mcpServers` (user scope).
+  `type` is the server's `type`, `stdio` when it has a `command` and no
+  type, `null` when neither. `target` is a URL's host alone, or a stdio
+  command's program name (`npx`; of a command written as a shell line, its
+  program only); `null` when there is neither. Sorted by name.
+- `profiles`: every profile, in config order. `base` is whether the
+  profile's dir is `~/.claude`, compared as real paths; a base profile has
+  no other keys. For the others, `items` in this order: CLAUDE.md,
+  settings.json, skills, commands, agents. `state` is `shared` (a link
+  reaching the same item in `~/.claude`), `elsewhere` (a link reaching
+  anything else), `own` (a file or folder of its own) or `missing` (absent,
+  or a link to nothing). `summary` is what the profile reads there:
+  `42 lines`; `model sonnet · 3 allowed` (the model when set, then the
+  allowed count; `no settings` for `{}`, `not valid JSON` for one that is
+  not); `7 skills`, `3 commands`, `2 agents`; `""` when missing.
+  `plugins` is the profile's own `plugins/installed_plugins.json`, `enabled`
+  from the settings.json it reads (which may be the shared one); `servers`
+  the number of `mcpServers` in its `.claude.json`.
+
+`claudeswitch claude show --profile <name> --json` (amendment 1, owner
+pick CC3 B: one pane with a profile picker) — what one profile reads: the
+same top-level keys (`dir`, `instructions`, `settings`, `skills`, `agents`,
+`commands`, `plugins`, `servers`) for the profile's own dir, as Claude Code
+sees it through its links (a shared `skills/` lists `~/.claude`'s skills),
+and no `profiles` key. Plus:
+
+```json
+{"profile": "work", "base": false,
+ "shares": [{"item": "CLAUDE.md", "state": "shared"}, {"item": "settings.json", "state": "own"},
+            {"item": "skills", "state": "shared"}, {"item": "commands", "state": "shared"},
+            {"item": "agents", "state": "missing"}]}
+```
+
+`shares` is in the five items' order, `[]` for the base profile.
+`instructions.path` and `settings.path` are in the profile's dir (the
+link), `target` where it leads. `plugins` come from the profile's own
+`plugins/installed_plugins.json`, `enabled` from the settings.json it reads;
+`servers` from its `.claude.json` (`~/.claude.json` for the profile with no
+dir), redacted the same way.
+
+`claudeswitch claude write CLAUDE.md|settings.json [--profile <name>]
+[--if-unchanged <sha256>] --json` (amendment 1, owner pick CC2 B: an
+in-app editor) — replaces the file the profile reads (`default` without
+`--profile`) with stdin:
+
+```json
+{"path": "/Users/x/.claude/settings.json", "bytes": 1234,
+ "sha256": "…", "shared_with": ["work"]}
+```
+
+- It writes the file the profile's item resolves to: a shared settings.json
+  changes `~/.claude`'s, for every profile that shares it. `path` is that
+  real path; `shared_with` the other profiles whose same item is that file
+  (`[]` when none). A link to nothing is written through, at the place it
+  names.
+- The write is whole: a temp file in the same folder, renamed over the old
+  one. The file keeps its mode; a new `CLAUDE.md` is 0644, a new
+  `settings.json` 0600.
+- `settings.json` must be a JSON object: else `invalid_value`, `message`
+  `settings.json is not valid JSON: <the parser's sentence>` (with the line
+  and column of a syntax error), nothing written.
+- `--if-unchanged`: the hex SHA-256 of the content the editor opened (an
+  absent file's is that of the empty string). When the file now differs:
+  `config_changed`, `message` `<path> changed since it was opened; nothing
+  was written`, `hint` `reopen it to see the change`.
+- Errors also: `invalid_value` for stdin over 1 MiB, a file other than the
+  two, a `--if-unchanged` that is not 64 hex characters, or an unknown
+  profile; `failed` for a write that fails.
+
+`claudeswitch claude plugin enable|disable <plugin> [--profile <name>] --json`
+→ `{"plugin": "slack@claude-plugins-official", "profile": "default",
+"enabled": false}`. It runs `claude plugin enable|disable <plugin>`, `claude`
+found on `PATH` as `run` finds it, with `CLAUDE_CONFIG_DIR` the profile's
+dir, absolute (unset for a profile whose dir is `~/.claude`, whatever the
+caller's environment says; no `--profile` is `default`), for at most 30
+seconds. Errors: `failed` when `claude` is not on `PATH` (hint `install
+Claude Code, or put claude on PATH`), when it exits non-zero (`message` its
+stderr's last line) or takes longer; `invalid_value` for an unknown profile
+or a plugin id starting with `-`.

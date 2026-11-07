@@ -24,7 +24,7 @@ struct OverviewPane: View {
                           lastAt: last?.at, lastBytes: last?.bytes ?? 0, lastRemoved: last?.removed ?? 0,
                           lastPutBack: last?.undone ?? 0)
         }
-        let switches = (store.next.history?.switches ?? []).suffix(6).map {
+        let switches = (store.next.history?.switches ?? []).suffix(8).map {
             OverviewSwitch(at: $0.at, profile: cards.count > 1 ? $0.profile : nil, from: $0.from, to: $0.to,
                            reason: $0.reason)
         }
@@ -125,16 +125,64 @@ struct OverviewPane: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// A card like the tiles above it: a line per event, with the way on to
+    /// History. The whole reason and the date are in a line's tooltip.
     func recent(_ events: [OverviewEvent]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("RECENT").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            ForEach(events) { e in
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text(e.when).font(.callout.monospacedDigit()).foregroundStyle(.secondary)
-                        .frame(width: 52, alignment: .leading)
-                    Text(e.text).font(.callout).lineLimit(1).truncationMode(.tail)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("RECENT").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Spacer()
+                Button { go(.history) } label: {
+                    HStack(spacing: 2) {
+                        Text("History")
+                        Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
+                    }
+                }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundStyle(Color.csAccent)
+                .help("Open History")
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(events) { e in
+                    // The reason whole or not at all: cut, it read "C…".
+                    ViewThatFits(in: .horizontal) {
+                        recentRow(e, detail: true)
+                        recentRow(e, detail: false)
+                    }
+                    .padding(.vertical, 6)
+                    .help(e.help)
+                    .accessibilityElement(children: .combine)
+                    if e.id != events.last?.id { Divider() }
                 }
             }
+            .padding(.horizontal, 14).padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(nsColor: .separatorColor)))
+        }
+    }
+
+    /// What happened, in whose profile, why in a few words, and when. The time
+    /// takes the width it needs and never breaks: in a fixed 52 pt column,
+    /// "12:12 PM" put its "M" on a second line.
+    func recentRow(_ e: OverviewEvent, detail: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: e.symbol).font(.caption).foregroundStyle(.secondary)
+                .frame(width: 18, alignment: .center)
+                .accessibilityHidden(true)
+            Text(e.title).font(.callout.weight(.medium)).lineLimit(1).truncationMode(.middle)
+                .fixedSize(horizontal: detail, vertical: false)
+            if let p = e.profile {
+                Text(p).font(.caption).foregroundStyle(.secondary).lineLimit(1).fixedSize()
+            }
+            Spacer(minLength: 8)
+            if detail, let d = e.detail {
+                Text(d).font(.caption).foregroundStyle(.secondary).lineLimit(1).fixedSize()
+            }
+            Text(e.when).font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+                .lineLimit(1).fixedSize()
+                .frame(minWidth: 62, alignment: .trailing)
         }
     }
 

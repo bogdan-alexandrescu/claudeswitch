@@ -1,0 +1,126 @@
+{
+ "agents": [
+  {
+   "description": "Reviews a diff for bugs before it is pushed",
+   "name": "code-reviewer"
+  },
+  {
+   "description": "Writes the failing test first",
+   "name": "test-writer"
+  }
+ ],
+ "base": false,
+ "commands": [
+  {
+   "description": "Runs the checks, then opens a pull request",
+   "name": "ship"
+  },
+  {
+   "description": "Yesterday's commits as a stand-up note",
+   "name": "standup"
+  },
+  {
+   "description": "Labels new issues",
+   "name": "triage"
+  }
+ ],
+ "dir": "/Users/example/.claude-client",
+ "instructions": {
+  "lines": 18,
+  "modified": "2026-10-03T02:46:41Z",
+  "path": "/Users/example/.claude-client/CLAUDE.md",
+  "target": "/Users/example/.claude-client/CLAUDE.md"
+ },
+ "plugins": [
+  {
+   "enabled": true,
+   "id": "cs@claudeswitch",
+   "marketplace": "claudeswitch",
+   "name": "cs",
+   "version": "0.8.19"
+  },
+  {
+   "enabled": false,
+   "id": "slack@claude-plugins-official",
+   "marketplace": "claude-plugins-official",
+   "name": "slack",
+   "version": "2.1.0"
+  }
+ ],
+ "profile": "client",
+ "servers": [
+  {
+   "name": "browser",
+   "target": "npx",
+   "type": "stdio"
+  },
+  {
+   "name": "linear",
+   "target": "mcp.linear.example",
+   "type": "http"
+  }
+ ],
+ "settings": {
+  "allow": 3,
+  "deny": 0,
+  "env": [],
+  "error": null,
+  "hooks": [],
+  "model": "sonnet",
+  "path": "/Users/example/.claude-client/settings.json",
+  "status_line": false,
+  "target": "/Users/example/.claude-client/settings.json"
+ },
+ "shares": [
+  {
+   "item": "CLAUDE.md",
+   "state": "own"
+  },
+  {
+   "item": "settings.json",
+   "state": "own"
+  },
+  {
+   "item": "skills",
+   "state": "shared"
+  },
+  {
+   "item": "commands",
+   "state": "shared"
+  },
+  {
+   "item": "agents",
+   "state": "shared"
+  }
+ ],
+ "skills": [
+  {
+   "description": "Keeps CHANGELOG.md in step with the tags",
+   "name": "changelog"
+  },
+  {
+   "description": "Writes a database migration and checks it runs both ways",
+   "name": "db-migrate"
+  },
+  {
+   "description": "Deploys the current branch to staging",
+   "name": "deploy-staging"
+  },
+  {
+   "description": "Reviews a screen against the design system",
+   "name": "design-review"
+  },
+  {
+   "description": "Turns a Markdown file into a PDF",
+   "name": "pdf-export"
+  },
+  {
+   "description": "Drafts release notes from merged pull requests",
+   "name": "release-notes"
+  },
+  {
+   "description": "Compares two screenshots and lists what moved",
+   "name": "screenshot-diff"
+  }
+ ]
+}

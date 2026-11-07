@@ -1,0 +1,99 @@
+{
+  "agents": [],
+  "base": false,
+  "commands": [
+    {
+      "description": "",
+      "name": "git/sync"
+    },
+    {
+      "description": "Runs the checks, then opens a pull request",
+      "name": "ship"
+    },
+    {
+      "description": "Yesterday's commits as a stand-up note",
+      "name": "standup"
+    }
+  ],
+  "dir": "/Users/example/.claude-review",
+  "instructions": {
+    "lines": 42,
+    "modified": "2026-10-06T02:46:41Z",
+    "path": "/Users/example/.claude-review/CLAUDE.md",
+    "target": "/Users/example/.claude/CLAUDE.md"
+  },
+  "plugins": [
+    {
+      "enabled": true,
+      "id": "cs@claudeswitch",
+      "marketplace": "claudeswitch",
+      "name": "cs",
+      "version": "0.8.19"
+    }
+  ],
+  "profile": "review",
+  "servers": [
+    {
+      "name": "browser",
+      "target": "npx",
+      "type": "stdio"
+    },
+    {
+      "name": "linear",
+      "target": "mcp.linear.example",
+      "type": "http"
+    },
+    {
+      "name": "postgres-local",
+      "target": "npx",
+      "type": "stdio"
+    }
+  ],
+  "settings": {
+    "allow": 3,
+    "deny": 0,
+    "env": [],
+    "error": null,
+    "hooks": [],
+    "model": "sonnet",
+    "path": "/Users/example/.claude-review/settings.json",
+    "status_line": false,
+    "target": "/Users/example/.claude-review/settings.json"
+  },
+  "shares": [
+    {
+      "item": "CLAUDE.md",
+      "state": "shared"
+    },
+    {
+      "item": "settings.json",
+      "state": "own"
+    },
+    {
+      "item": "skills",
+      "state": "elsewhere"
+    },
+    {
+      "item": "commands",
+      "state": "shared"
+    },
+    {
+      "item": "agents",
+      "state": "missing"
+    }
+  ],
+  "skills": [
+    {
+      "description": "Keeps CHANGELOG.md in step with the tags",
+      "name": "changelog"
+    },
+    {
+      "description": "Reviews a screen against the design system",
+      "name": "design-review"
+    },
+    {
+      "description": "Drafts release notes from merged pull requests",
+      "name": "release-notes"
+    }
+  ]
+}

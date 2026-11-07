@@ -37,7 +37,8 @@ A compact row has the live account's small rings (session outside, week
 inside, as in the [menu-bar glyph](menu-bar.md#the-glyph); a warning mark
 when the account needs sign-in or was refused, an empty ring when no
 account is live), the profile's name (with a pin when it is pinned), one
-line, a **▶** that opens Claude Code in that profile, and a chevron that
+line, a **▶** that opens Claude Code in that profile, in its last folder
+(see [Open Claude Code](#open-claude-code-and-its-folder)), and a chevron that
 opens the card. The ▶ is greyed out when the profile is not signed in, which
 the row then says under it (`scratch is not signed in. Sign it in from
 Settings → Profiles.`), unless its line already says the live account needs
@@ -63,11 +64,46 @@ An open card shows, top to bottom:
 | sign-in or refusal line | an account that needs sign-in says **needs sign-in · last read 2h ago**, with **Sign In…**, which opens Settings → Accounts with [Add account](add-account.md) signing that account in again. A refused one says which window and when it clears (`refused · session · clears in 36m`). Any other failed reading gives its error (a timeout, say) | `cs login <id> --direct`; [cs setup → doctor](../cli/setup.md) |
 | pool line | when the profile's pool has no eligible account left at this pace: `work pool: runs dry Thu 14:00 at this pace`. Within 2 hours it counts down, amber with a warning triangle: `work pool: runs dry in 40m (20:26) at this pace`; once the time has passed, `work pool: has run dry`. Hidden when the CLI does not know (too few readings). Compact cards show it too | `cs why --json` (`pool_dry_at`) |
 | next refill | the soonest refill among the profile's other accounts, as much as it frees and when: `Next refill: cedar-max in 48m · 62% of session`. Hover it for the next four, named in full with their times; click it for [Refills](settings-accounts.md#refills) in Settings → Accounts, which says what counts. The live account's own resets are on its dials. With nothing to come there is no line | worked out from `state.json` |
-| **Open Claude Code** | opens your terminal running Claude Code in this profile. The terminal is set in [Settings → Advanced](settings-advanced.md). Greyed out while it opens, and for a profile that is not signed in, which says under the buttons `work is not signed in. Sign it in from Settings → Profiles.` When the live account itself needs sign-in, its **Sign In…** above is the one remedy shown | `cs run <p>` |
+| **Open Claude Code** | opens your terminal running Claude Code in this profile, in the folder named under it: `in claudeswitch ⌄`, the profile's last folder, or `in your home folder` when it has none. Click that line, or right-click the button, for [its folder menu](#open-claude-code-and-its-folder). The terminal is set in [Settings → Advanced](settings-advanced.md). Greyed out while it opens, and for a profile that is not signed in, which says under the buttons `work is not signed in. Sign it in from Settings → Profiles.` When the live account itself needs sign-in, its **Sign In…** above is the one remedy shown | `cd <folder> && cs run <p>`; folders from `cs profile recent` |
 | **Switch to Best** | moves the profile to the account rotation would choose now, named under the button with its utilization (`work-2 · 12%`). It is the filled button only when the daemon would switch or wait anyway; while the daemon stays it is a quiet one. Greyed out, with the reason below it (beside Open Claude Code's, when both are greyed), when there is none: it never offers an account live in another profile (`work-2 is in use by work`), one that needs sign-in, or one outside the profile's pools. When the best has no more room than the live account it reads **Already on the Best**, greyed out, with the next best underneath (`next: work-2 · 12%`), which stays at full strength so it reads; room is points below each window's own trigger, as `cs why --json` reports it (`on_best`). When even the best has little room, the CLI's warning shows under it in amber | `cs use <best> --profile <p>` |
 | **Next:** | what rotation will do next. A routine stay says how far the live account is from rotating, from the daemon's own figures: `Next: stay · 57 points left on the week` (or `on the session`; neither when the two triggers are the same). Any other decision gives the daemon's reason: `Next: switch → work-2 — …`, `Next: stay — pinned to …`, `Next: wait — …`. Hidden while `cs why` judged another account live than the card shows | `cs why --profile <p>` |
 | **Pin** / **Pinned** | Pin holds the profile on its live account and turns rotation off for it, until that account is refused or needs sign-in: then the daemon lifts the pin and rotates. **Pinned** (filled in the accent colour) lets it rotate again. Next, Pin and ⋯ sit on the first line's baseline | `cs account pin <id>` / `cs account unpin --profile <p>` |
 | **⋯** beside Pin | **Pin, Even If It Runs Out…** (on a pin already made, **Keep the Pin Even If It Runs Out…**): asks first ("Keep work on work-2 even if it runs out?"), then makes a pin the daemon never lifts, shown as **Pinned (Hard)**. Only with a CLI that reports `pin_hard` | `cs account pin <id> --hard` |
+
+### Open Claude Code and its folder
+
+<p align="center"><img src="../images/menu-folders-default.png" width="460" alt="The folder menu of default: Recent in default, then claudeswitch ~/code · 2h checked, website ~/code · 1d, api-gateway ~/clients/northwind · 3d, notes ~/code · 1w, a long name cut in its middle · 2w, then Choose Folder… and Home Folder"></p>
+
+Claude Code starts in a folder, and **Open Claude Code** names the one it
+will use: the profile's last folder. That is the newer of the folder you last
+chose for the profile here and the folder Claude Code was last used in under
+that profile (its newest session there). A chosen folder that no longer
+exists is passed over; with none, it starts in your home folder.
+
+The button's second line is a menu, and a right-click anywhere on the button
+opens the same one:
+
+- **Recent in default**: the folders Claude Code has been used in under this
+  profile, newest first, each with where it is and how long ago
+  (`website  ~/code · 1d`); a long name is cut in its middle. The one the
+  button names is checked. A profile never opened in one says `No folders
+  yet: work has not been opened in one`.
+- **Choose Folder…**: any folder, starting at the current one.
+- **Home Folder**.
+
+Choosing one opens Claude Code there and remembers it for the profile, so
+the button names it from then on. The collapsed card's ▶ and **Open Claude
+Code** in [Settings → Profiles](settings-profiles.md) start in the same
+folder, and Settings' button holds the same menu. The terminal runs `cd
+'<folder>' && claudeswitch run <profile>` (Ghostty is given the folder as its
+working directory).
+
+The recent folders are one `cs profile recent --json` read when the popover
+opens and when Settings → Profiles shows. A claudeswitch from before 0.8.20
+has no such command: the menu then lists none, and the button says `in your
+home folder` until you choose one. The image above is drawn by the app's
+render mode as a facsimile of the menu, from the same lines, since a live
+menu cannot be captured off screen.
 
 ### Dials and bars
 

@@ -5,7 +5,7 @@ what happened last. Each tile opens its own pane.
 
 See also: [Popover](popover.md) · [Settings → Profiles](settings-profiles.md) · [Updates](updates.md)
 
-<p align="center"><img src="../images/settings-overview.png" width="880" alt="Settings, Overview: tiles for Daemon (Live, polled 1m ago), Profiles (2 profiles, default: work-1 · work: work-team), Accounts (4 accounts, all available · 2 pools), Rotation (Next: stay, default: session 85% · week 98%), Cleanup (Schedule off, last run 2h ago · 512 MB) and Updates (Up to date, this release's version · checked 1h ago), then Recent: cleanup removed 2 items · 512 MB and three switches in default"></p>
+<p align="center"><img src="../images/settings-overview.png" width="880" alt="Settings, Overview: tiles for Daemon (Live, polled 1m ago), Profiles (2 profiles, default: work-1 · work: work-team), Accounts (4 accounts, all available · 2 pools), Rotation (Next: stay, default: session 85% · week 98%), Cleanup (Schedule off, last run 2h ago · 512 MB) and Updates (Up to date, this release's version · checked 1h ago), then Recent, a card with a History link: Cleanup removed 2 items, 512 MB, 1 put back, at 5:46 PM, and four switches in default, each with its reason in a few words and its date"></p>
 
 **Needs you** appears only when something does, each with a button that
 acts on it or goes where it is fixed:
@@ -35,8 +35,21 @@ drawn in amber.
 | **Updates** | Up to date, a newer version (`0.5.6 available`), Last check failed, Not checked yet (before the first check), Version unknown (a build with no version, from `swift run`), or Check is off; then this version (`This is 0.8.18`) and when it last checked or failed |
 
 **Recent** lists the last few switches (from `cs history --usage`, read
-again once it is five minutes old) and the last cleanup run (`cleanup
-removed 2 items · 512 MB`), newest first, four at most. With several
-profiles each switch names its profile.
+again once it is five minutes old) and the last cleanup run, newest first, five
+at most, in a card with **History ›** on its way to the [History
+pane](settings-history.md). Each line has what happened (`work-1 → work-team`,
+`Cleanup removed 2 items`), its profile when there are several, the reason in a
+few words, and the time, or the date for an older day:
+
+| the daemon says | the line says |
+|---|---|
+| `active account at 98% of its week, over the 98% trigger` | `week 98%` |
+| `active account at 86% of its session, over the 85% trigger` | `session 86%` |
+| `requested with cs use` | `by hand` |
+| `active account was refused on its five_hour window` | `refused` |
+
+Any other reason is shown as it is. A reason that does not fit the line is left
+out of it. Hover a line for all of it: its profile, the whole reason, and the date
+and time.
 
 [← Documentation index](../README.md)

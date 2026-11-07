@@ -1781,6 +1781,46 @@ picked A on all four:
 `BrandContrastTests` holds the light-mode figures at 4.5:1 or more, and
 docs/BRAND.md lists the tokens.
 
+## Claude Code folders and setup (owner request and picks, 2026-10-28)
+
+The owner asked: "the open claude code button should offer the user a way to
+select their project directory before launching a terminal window so that
+claude code terminal lands in the right project directory from the
+beginning", and for "a dedicated section in the settings main app to manage
+claude configs, skills, plugins, and other config files usually managed by
+claude behind the scenes", adding: "could be done in profiles for profile
+specific configs files etc, and in a separate section for global settings,
+skills, plugins etc that are not profile specific but apply for claude across
+all profiles". CLD built a picks page of real renders
+(`.claude/mockups/claude-code-setup/`, local). The owner first answered A on
+all four, then pasted the page's own picks, OC1 A, CC1 A, CC2 B, CC3 B, and
+confirmed those:
+- **OC1 where Open Claude Code starts:** in the profile's last folder, named
+  on the button ("in claudeswitch ⌄"); the folder line (or a right-click)
+  opens the profile's recent folders, Choose Folder… and Home Folder. The
+  terminal runs `cd <folder> && claudeswitch run <profile>`. Rejected: asking
+  every time; one folder per profile set in Settings. A split button with its
+  own ▾ was tried first and did not fit the popover's button width.
+- **CC1 the Claude Code pane:** a new Settings pane for what lives in
+  ~/.claude and every profile that shares it: one page, a folding row per
+  kind (Instructions, Settings, Skills, Agents, Commands, Plugins, MCP
+  Servers) with its count and summary. Rejected: tabs by kind.
+- **CC2 how much it edits:** files open in the default editor and folders
+  reveal in Finder; plugins get on/off switches set through `claude plugin
+  enable|disable`; and Edit… on CLAUDE.md and settings.json opens an editor
+  sheet in the app, which checks settings.json is valid JSON before saving
+  and refuses to save over a file changed since it was opened. Rejected:
+  opening in the editor only; look only.
+- **CC3 a profile's own setup:** one place for it, the Claude Code pane: a
+  Showing picker (every profile, meaning ~/.claude, or one profile) shows
+  what that profile reads, each of CLAUDE.md, settings.json, skills,
+  commands and agents marked shared with ~/.claude or its own, with Make Own
+  Copy, Use Shared… (the own one kept as a backup) and Share. Settings →
+  Profiles shows a one-line summary and Show in Claude Code. Rejected: a
+  setup section in each profile's editor.
+Never shown: settings.json `env` values, MCP servers' arguments, headers and
+URL paths.
+
 ## Next refill (owner request and picks, 2026-11-06)
 
 The owner asked: "one great feature would be to show when an account will be
@@ -1813,3 +1853,18 @@ owner picked:
   by amount.
 The app works all of it out from state.json (`Refills.swift`), so it needs no new
 CLI command and no newer binary.
+
+## Overview's Recent section (owner request and pick, 2026-11-06)
+
+The owner, trying 0.8.21: "we should fix how the lines in Recent section on the
+Overview page of the settings area display. right now the PM after time is
+wrapped on a second ro below. lets fix and make that section better designed
+overall". The time sat in a fixed 52 pt column, too narrow for `12:12 PM`. CLD
+built a picks page of real renders (`.claude/mockups/overview-recent/`, local),
+and the owner picked CLD's recommendation, **one clean row per event**: a card
+like the tiles, what happened, its profile, the reason in a few words (`week 98%`),
+and the time, which takes the width it needs. A **History ›** link leads to the
+rest, and a line's tooltip has the whole reason and the date. The list holds five
+at most, up from four. Rejected: two lines per event (twice the height, and the
+fifth event fell below the window), grouping by day (headings add more than they
+explain for five events), and fixing only the wrap.

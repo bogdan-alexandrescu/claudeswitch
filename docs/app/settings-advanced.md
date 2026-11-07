@@ -14,7 +14,7 @@ These are stored by the app, not in claudeswitch's config.
 |---|---|---|
 | **Appearance** | System follows your Mac. Light or Dark keeps ClaudeSwitch in one appearance whatever the system uses. Also in the menu-bar icon's menu (right-click) | System |
 | **Usage in the popover** | Dials or Bars for the session and week. The switch in the popover and **Show Usage As** in the icon's menu change it too | Dials |
-| **Open Claude Code in** | the terminal **Open Claude Code** and **▶** use: Terminal, iTerm, Ghostty or Warp. It runs `cs run <profile>` there | Terminal |
+| **Open Claude Code in** | the terminal **Open Claude Code** and **▶** use: Terminal, iTerm, Ghostty or Warp. It runs `cs run <profile>` there, in the profile's last folder ([Popover → Open Claude Code](popover.md#open-claude-code-and-its-folder)) | Terminal |
 | **Icon only in the menu bar** | hides the profile, account and percentage next to the rings | off |
 | **Open ClaudeSwitch at login** | starts the app when you log in (under Daemon before 0.8.18). When the app does not run from its bundle (a `swift run` build) the row says it is available once the app is installed in Applications | off |
 | **claudeswitch** | the binary the app runs (with `~` for your home folder) and its version. **Choose…** picks another one; **Reset**, shown once one is chosen, goes back to looking where installers put it. Without a choice the app looks in `~/.local/bin`, then `PATH` and the usual Homebrew and Go locations. A chosen file that cannot be run is passed over, and the row says so: `The chosen ~/bin/claudeswitch cannot be run; using ~/.local/bin/claudeswitch.` | found automatically |

@@ -44,7 +44,11 @@ struct ProfilesPane: View {
             }
             .padding(24)
         }
-        .onAppear { if editing == nil { editing = store.snapshot?.followed(store.menuProfile) } }
+        .onAppear {
+            if editing == nil { editing = store.snapshot?.followed(store.menuProfile) }
+            store.loadRecentFolders()
+            store.loadClaudeSetup()
+        }
         .sheet(isPresented: $creating) { NewProfileSheet().environmentObject(store) }
     }
 }
@@ -122,6 +126,8 @@ struct ProfileEditor: View {
                 if let paths = profile.paths { FoldersField(profile: profile, paths: paths) }
                 OverridesEditor(profile: profile)
                 ProfileChromePicker(profile: profile)
+                // CC3 B: in one line; the pane, showing it, has the rest.
+                ProfileSetupLine(profile: profile)
             }
             // One row while it fits; at the window's least width Remove
             // profile… takes a line of its own rather than squeeze "Shown
@@ -154,7 +160,15 @@ struct ProfileEditor: View {
         // Off while one opens, so a double click opens one, as the popover
         // card's ▶ does.
         let running = store.isBusy("run:\(profile.name)")
-        Button("Open Claude Code") { if !running { store.openClaudeCode(profile.name) } }
+        // OC1: a click opens it in the profile's last folder; the menu holds
+        // the popover's folder items.
+        Menu {
+            FolderMenuItems(profile: profile.name)
+        } label: {
+            Text("Open Claude Code")
+        } primaryAction: {
+            if !running { store.openInLastFolder(profile.name) }
+        }
             .disabled(store.binaryPath == nil || profile.signedIn == "no" || running)
             .help(ProfilesText.openHelp(profile.name, signedIn: profile.signedIn))
             .fixedSize()

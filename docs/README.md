@@ -26,8 +26,8 @@ the CLI command it runs, and its default.
 - [Menu bar](app/menu-bar.md): the label, the live glyph's four states, and
   Icon only.
 - [Popover](app/popover.md): the cards, dials and bars, Switch to Best, Open
-  Claude Code, the Chrome globe, Pin, banners, and the menu-bar icon's menu
-  (right-click).
+  Claude Code and its folder menu, the Chrome globe, Pin, banners, and the
+  menu-bar icon's menu (right-click).
 - [Settings → Overview](app/settings-overview.md): the first page: what needs
   you, a tile per area, and recent activity.
 - [Settings → Profiles](app/settings-profiles.md): pools, per-profile
@@ -36,6 +36,9 @@ the CLI command it runs, and its default.
   dragging to reorder or to move between pools, New Pool, a pool's Rename
   and Delete, each account's menu, recovery copies, and Refills: when each
   account gives more quota next.
+- [Settings → Claude Code](app/settings-claude-code.md): what Claude Code
+  reads from ~/.claude or one profile, Edit…, plugin switches, and what a
+  profile shares.
 - [Settings → Rotation](app/settings-rotation.md): when and where rotation
   moves a profile.
 - [Settings → Polling](app/settings-polling.md): how often accounts are read,
@@ -80,7 +83,8 @@ One page per command group, with every subcommand and flag, an example, the
 - [Clean](cli/clean.md): `clean`, `clean --apply`, `clean undo`: what Claude
   left behind once merged, to the Trash.
 - [Claude Code](cli/claude-code.md): `statusline`, `context`, `session`,
-  `history`, `audit`, and the plugin's `/cs` commands.
+  `history`, `audit`, `claude show`, `claude write`, `claude plugin`, and
+  the plugin's `/cs` commands.
 - [Setup](cli/setup.md): `setup`, `init`, `doctor`, `version`.
 
 ## In-depth documents

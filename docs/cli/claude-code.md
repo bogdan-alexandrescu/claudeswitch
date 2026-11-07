@@ -1,6 +1,6 @@
 # cs and Claude Code
 
-The commands Claude Code itself runs (the status line and the session-start context), the usage and history reports, and the plugin's `/cs` commands.
+The commands Claude Code itself runs (the status line and the session-start context), the usage and history reports, what Claude Code reads from `~/.claude` and each profile (`claude show`, `claude write`, `claude plugin`), and the plugin's `/cs` commands.
 
 See also: [cs status](status.md) · [cs chrome](chrome.md) · [setup](setup.md) · [GUIDE → Inside Claude Code](../GUIDE.md#inside-claude-code) · [GUIDE → Sessions that span accounts](../GUIDE.md#sessions-that-span-accounts)
 
@@ -15,6 +15,9 @@ cs session                     [--since DURATION] [--profile NAME] [--detail] [-
 cs history                     [--days N] [--profile NAME] [--config PATH]
 cs history --usage             [--days N] [--json] [--config PATH]
 cs audit                       [-n N] [--kind KIND] [--since DURATION] [--json]
+cs claude show                 [--profile NAME] [--json] [--config PATH]
+cs claude write CLAUDE.md|settings.json [--profile NAME] [--if-unchanged SHA256] [--json]
+cs claude plugin enable|disable <plugin> [--profile NAME] [--json]
 ```
 
 Flags may come before or after the arguments. An unknown flag prints the
@@ -313,6 +316,101 @@ filters: `no events match --kind unpin (the log holds 412 events)`.
 read; 2 for an argument, an `-n` under 1 or a kind it does not know (the
 message lists the kinds). The rows above show the layout; their values are
 illustrative.
+
+## cs claude show
+
+What Claude Code reads from `~/.claude`, and what every profile shares with
+it. It reads files only: no state, no credential, no keychain.
+
+```
+  ~/.claude
+    CLAUDE.md      42 lines, changed 2d ago
+    settings.json  model opus · 12 allowed · 2 denied · hooks PreToolUse, Stop · status line · env
+                   DISABLE_TELEMETRY, HTTP_PROXY
+    skills         release-notes  Drafts release notes from merged pull requests
+    agents         code-reviewer  Reviews a diff for bugs before it is pushed
+    commands       git/sync  Pull and rebase
+                   standup   Yesterday's commits as a stand-up note
+    plugins        cs@claudeswitch 0.8.19, on
+                   slack@claude-plugins-official 1.0.0, off
+    MCP servers    files   stdio, npx
+                   linear  http, mcp.linear.example
+
+  profiles
+    default        ~/.claude
+    work           ~/.claude-work
+      CLAUDE.md      shared    42 lines
+      settings.json  own       model sonnet · 3 allowed
+      skills         shared    7 skills
+      commands       shared    3 commands
+      agents         missing
+      plugins        cs@claudeswitch (on)
+      MCP servers    3
+```
+
+- **CLAUDE.md**: its lines and when it last changed.
+- **settings.json**: the model, how many permission rules allow and deny,
+  the hooks set, whether a status line is, and the *names* of its `env`
+  variables, never their values. One that is not valid JSON says so, with
+  the parser's line and column.
+- **skills**, **agents**, **commands**: each with the `description:` of its
+  front matter. A skill is a folder in `skills/` with a `SKILL.md`; an agent
+  an `agents/*.md`; a command any `.md` below `commands/`, named by its path
+  (`git/sync`).
+- **plugins**: what `plugins/installed_plugins.json` lists, each on or off
+  as settings.json's `enabledPlugins` says.
+- **MCP servers**: the user-scope servers in `~/.claude.json`, each with its
+  type and target only: a URL's host, or a command's program name. Their
+  arguments, env, headers and URL paths are never shown.
+- **profiles**: for each profile other than `~/.claude` itself, whether each
+  of the five items `profile create` links is `shared` (a link to
+  `~/.claude`'s), `own`, `elsewhere` (a link to somewhere else) or `missing`,
+  and what the profile reads there; then its own plugins and how many MCP
+  servers its `.claude.json` has. `cs profile share` and `cs profile own`
+  change an item ([Profiles](profiles.md#profile-share)).
+
+`--profile NAME` shows what that one profile reads instead, through its
+links (a shared `skills/` lists `~/.claude`'s), with a `shares` line, its
+own plugins and its own MCP servers. An unknown profile is `invalid_value`.
+`--json` is in [APP_CLI → claude](../APP_CLI.md#claude).
+
+## cs claude write
+
+```sh
+cs claude write settings.json --profile work < settings.json
+```
+
+Replaces the `CLAUDE.md` or `settings.json` a profile reads (`default`
+without `--profile`) with what is on stdin: the app's editor saves this way.
+Where the profile shares the file, the shared one changes, for every profile
+that shares it, and it says which:
+
+```
+  wrote ~/.claude/settings.json (1234 bytes)
+  profile work reads it too
+```
+
+The new file replaces the old one whole (a temp file renamed over it), with
+the old one's mode; a new `CLAUDE.md` is 0644 and a new `settings.json`
+0600. A `settings.json` that is not a JSON object is refused with the
+parser's line and column, and nothing is written; so is more than 1 MiB.
+`--if-unchanged SHA256` takes the hex SHA-256 of the content the editor
+opened, and refuses (`config_changed`: reopen it to see the change) when
+the file has changed since.
+
+## cs claude plugin
+
+```sh
+cs claude plugin disable slack@claude-plugins-official
+cs claude plugin enable cs@claudeswitch --profile work
+```
+
+Turns a plugin on or off by running Claude Code's own `claude plugin
+enable|disable` in the profile: `CLAUDE_CONFIG_DIR` set to its dir, or unset
+for `~/.claude`, whatever your shell has. Without `--profile` it is
+`default`. It prints `  cs@claudeswitch is on in profile work`. It fails if
+`claude` is not on `PATH`, if `claude` fails (its last line of error output
+is the message), or after 30 seconds.
 
 ## The plugin
 

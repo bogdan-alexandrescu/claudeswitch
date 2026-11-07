@@ -5345,80 +5345,31 @@
  "from": "2026-09-08T02:46:41Z",
  "switches": [
   {
-   "at": "2026-09-11T06:46:41Z",
+   "at": "2026-10-06T22:30:00Z",
    "from": "atlas-max",
    "profile": "default",
-   "reason": "atlas-max at 93% of the week",
-   "to": "boreal-max"
-  },
-  {
-   "at": "2026-09-12T02:46:41Z",
-   "from": "boreal-max",
-   "profile": "default",
-   "reason": "boreal-max at 22% of the week",
+   "reason": "restored after vaulting another account",
    "to": "cedar-max"
   },
   {
-   "at": "2026-09-16T02:46:41Z",
+   "at": "2026-10-07T16:05:00Z",
    "from": "cedar-max",
    "profile": "default",
-   "reason": "cedar-max at 64% of the week",
+   "reason": "active account unreadable for 3 consecutive polls (not polled: backing off after a 429); failing over to a healthy account",
    "to": "atlas-max"
   },
   {
-   "at": "2026-09-19T06:46:41Z",
-   "from": "atlas-max",
-   "profile": "default",
-   "reason": "atlas-max at 93% of the week",
-   "to": "boreal-max"
+   "at": "2026-10-07T17:46:00Z",
+   "from": "boreal-team",
+   "profile": "work",
+   "reason": "pin on boreal-team lifted: it is out of quota; active account at 99% of its week, over the 98% trigger",
+   "to": "research-team-extremely-long-account-name"
   },
   {
-   "at": "2026-09-20T02:46:41Z",
-   "from": "boreal-max",
+   "at": "2026-10-07T19:12:00Z",
+   "from": "research-team-extremely-long-account-name",
    "profile": "default",
-   "reason": "boreal-max at 13% of the week",
-   "to": "cedar-max"
-  },
-  {
-   "at": "2026-09-24T02:46:41Z",
-   "from": "cedar-max",
-   "profile": "default",
-   "reason": "cedar-max at 0% of the week",
-   "to": "atlas-max"
-  },
-  {
-   "at": "2026-09-27T06:46:41Z",
-   "from": "atlas-max",
-   "profile": "default",
-   "reason": "atlas-max at 93% of the week",
-   "to": "boreal-max"
-  },
-  {
-   "at": "2026-09-28T02:46:41Z",
-   "from": "boreal-max",
-   "profile": "default",
-   "reason": "boreal-max at 22% of the week",
-   "to": "cedar-max"
-  },
-  {
-   "at": "2026-10-02T02:46:41Z",
-   "from": "cedar-max",
-   "profile": "default",
-   "reason": "cedar-max at 16% of the week",
-   "to": "atlas-max"
-  },
-  {
-   "at": "2026-10-05T06:46:41Z",
-   "from": "atlas-max",
-   "profile": "default",
-   "reason": "atlas-max at 93% of the week",
-   "to": "boreal-max"
-  },
-  {
-   "at": "2026-10-06T02:46:41Z",
-   "from": "boreal-max",
-   "profile": "default",
-   "reason": "boreal-max at 22% of the week",
+   "reason": "Claude Code was logged in as research-team-extremely-long-account-name, not atlas-max",
    "to": "atlas-max"
   }
  ],

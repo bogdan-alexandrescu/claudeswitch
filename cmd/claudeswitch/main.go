@@ -114,6 +114,8 @@ func main() {
 		err = cmdPool(args)
 	case "run":
 		err = cmdRun(args)
+	case "claude":
+		err = cmdClaude(args)
 	case "remove":
 		err = cmdRemove(args)
 	case "account":
@@ -260,9 +262,25 @@ func usageText(w io.Writer) {
   profile hook zsh|bash|fish
              a shell hook that sets CLAUDE_CONFIG_DIR to the folder's
              profile on cd
+  profile recent [<name>]
+             the folders Claude Code was used in under each profile, newest
+             first
+  profile share <name> <item> | own <name> <item>
+             link a profile's CLAUDE.md, settings.json, skills, commands or
+             agents to ~/.claude's (its own one kept beside it), or make it
+             a copy of its own
   run [<profile>] [-- claude args]
              start Claude Code in a profile (CLAUDE_CONFIG_DIR set for it);
              with no name, this folder's profile
+  claude show [--profile <p>]
+             what Claude Code reads from ~/.claude (CLAUDE.md, settings,
+             skills, agents, commands, plugins, MCP servers) and what each
+             profile shares with it; --profile: what that profile reads
+  claude write CLAUDE.md|settings.json [--profile <p>]
+             replace the file a profile reads with what is on stdin (a
+             shared one changes for every profile that shares it)
+  claude plugin enable|disable <plugin> [--profile <p>]
+             turn a plugin on or off in a profile, through Claude Code
   chrome add <account> [--existing <name|folder>]
              open a new Chrome profile for that account, for Claude in Chrome;
              --existing uses one of your Chrome profiles instead
@@ -287,8 +305,8 @@ func usageText(w io.Writer) {
   help <command> (or <command> --help) shows a command's usage and flags.
 
   For scripts and the menu-bar app: config, profile, pool, account, priority,
-  remove, recovery, use, add, login --direct/--code and daemon take --json,
-  never prompt, and fail with {"error":{"code","message","hint"}}
+  remove, recovery, use, add, login --direct/--code, daemon and claude take
+  --json, never prompt, and fail with {"error":{"code","message","hint"}}
   (docs/APP_CLI.md). version --json names the contract version.
 
 `)

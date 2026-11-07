@@ -88,6 +88,9 @@ final class Store: ObservableObject {
     @Published private(set) var recovery: [RecoveryItem]?
     /// F3, F5, F7, F12 (Store+Next.swift).
     @Published var next = NextState()
+    /// OC1, CC1-CC3: recent folders and the Claude Code setup
+    /// (Store+ClaudeCode.swift).
+    @Published var claude = ClaudeCodeState()
 
     /// Keys of the actions running now, for progress indicators.
     @Published private(set) var busy: Set<String> = []
@@ -228,6 +231,7 @@ final class Store: ObservableObject {
         terminal = defaults.string(forKey: Keys.terminal).flatMap(TerminalApp.init(rawValue:)) ?? .default
         appearance = AppPrefs(defaults).appearance
         usageMode = AppPrefs(defaults).usageMode
+        claude.remembered = RememberedFolder.load(defaults.dictionary(forKey: ClaudeCodeState.rememberedKey))
         if CommandLine.arguments.contains("--render") { return }
         DispatchQueue.main.async { [weak self] in self?.start() }
     }
@@ -260,6 +264,10 @@ final class Store: ObservableObject {
         next.cleanPlan = fixtures.cleanPlan
         next.cleanRuns = fixtures.cleanRuns
         next.pinLifts = fixtures.pinLifts
+        claude.recent = fixtures.recent
+        claude.reports = fixtures.claudeReports
+        claude.unsupported = fixtures.claudeUnsupported
+        if let h = fixtures.home { claude.home = h }
     }
 
     func start() {
@@ -528,8 +536,10 @@ final class Store: ObservableObject {
         }
     }
 
-    /// Opens the user's terminal running `claudeswitch run <profile>`.
-    func openClaudeCode(_ profile: String) {
+    /// Opens the user's terminal running `claudeswitch run <profile>`, in
+    /// `folder` when given (OC1: the profile's last folder, or one chosen
+    /// from its folder menu); nil starts where the terminal does.
+    func openClaudeCode(_ profile: String, in folder: String? = nil) {
         let origin = surface
         cardErrors.begin(card: profile)
         guard let bin = binaryPath else {
@@ -541,9 +551,14 @@ final class Store: ObservableObject {
                  card: profile, on: origin)
             return
         }
+        if let f = folder, !TerminalLauncher.usableDir(f) {
+            fail("Could not open Claude Code", .app(AppError(code: "failed", message: "The folder “\(f)” cannot be opened in a terminal.")),
+                 card: profile, on: origin)
+            return
+        }
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("claudeswitch-run", isDirectory: true)
         let script = dir.appendingPathComponent("run-\(profile).command").path
-        let plan = TerminalLauncher.plan(terminal, argv: argv, scriptPath: script)
+        let plan = TerminalLauncher.plan(terminal, argv: argv, scriptPath: script, dir: folder)
         let app = terminal.rawValue
         Task {
             let r: Result<Bool, CallError> = await call("run:\(profile)") { _ in
@@ -743,6 +758,12 @@ struct PreviewData {
     var pinLifts: [String: PinLift] = [:]
     var cleanPlan: CleanPlan?
     var cleanRuns: [CleanRunSummary]?
+    /// `profile recent --json`; `claude show --json` by scope ("" for every
+    /// profile); a binary from before them; the home the set's paths are in.
+    var recent: RecentFolders?
+    var claudeReports: [String: ClaudeSetup] = [:]
+    var claudeUnsupported = false
+    var home: String?
 }
 
 /// Watches a directory for entries being written, created or renamed — which

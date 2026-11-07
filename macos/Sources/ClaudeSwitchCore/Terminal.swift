@@ -29,6 +29,12 @@ public struct LaunchPlan: Equatable {
 ///   word by word, since both terminals hand it to a shell.
 /// - Ghostty: `open -na Ghostty --args -e <argv…>`, the vector as is.
 /// - Warp: no way to pass a command, so a one-line script file it opens.
+///
+/// With a working directory (OC1, the owner's pick 2026-10-28: Open Claude
+/// Code starts in the profile's last folder), Terminal and iTerm run
+/// `cd '<dir>' && <command line>`, Ghostty gets `--working-directory=<dir>`
+/// before `-e`, and Warp's script does `cd '<dir>' && exec …`. Without one,
+/// each starts where it always did.
 public enum TerminalLauncher {
     /// `claudeswitch run <profile>`, or nil when the profile name could be
     /// read as a flag.
@@ -46,8 +52,18 @@ public enum TerminalLauncher {
         argv.map(shellQuote).joined(separator: " ")
     }
 
-    public static func plan(_ app: TerminalApp, argv: [String], scriptPath: String) -> LaunchPlan {
-        let line = commandLine(argv)
+    /// A working directory a plan can use: absolute, and with no control
+    /// character (a newline would end the line Terminal types).
+    public static func usableDir(_ dir: String) -> Bool {
+        dir.hasPrefix("/") && !dir.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
+    }
+
+    /// `dir`: where the command starts; nil keeps the terminal's own start
+    /// (as before OC1). Pass only a `usableDir`.
+    public static func plan(_ app: TerminalApp, argv: [String], scriptPath: String, dir: String? = nil) -> LaunchPlan {
+        let run = commandLine(argv)
+        let cd = dir.map { "cd " + shellQuote($0) + " && " } ?? ""
+        let line = cd + run
         switch app {
         case .terminal:
             return osascript([
@@ -69,11 +85,13 @@ public enum TerminalLauncher {
                 "end run",
             ], line)
         case .ghostty:
-            return LaunchPlan(executable: "/usr/bin/open", arguments: ["-na", "Ghostty", "--args", "-e"] + argv,
+            // Its config flags go before -e: everything after -e is the command.
+            let wd = dir.map { ["--working-directory=" + $0] } ?? []
+            return LaunchPlan(executable: "/usr/bin/open", arguments: ["-na", "Ghostty", "--args"] + wd + ["-e"] + argv,
                               script: nil)
         case .warp:
             return LaunchPlan(executable: "/usr/bin/open", arguments: ["-a", "Warp", scriptPath],
-                              script: "#!/bin/sh\nexec \(line)\n")
+                              script: "#!/bin/sh\n\(cd)exec \(run)\n")
         }
     }
 

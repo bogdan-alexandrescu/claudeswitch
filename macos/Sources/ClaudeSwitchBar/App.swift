@@ -210,6 +210,7 @@ enum Render {
         if let version { fx.daemon?.daemonVersion = version }
         // F3: a set may bring audit log lines, for a lifted pin's notice.
         fx.pinLifts = data("render-audit.jsonl").map(PinLift.latest(jsonl:)) ?? [:]
+        claudeFixtures(&fx, dir: fixtures, data: data)
         let store = Store(preview: snap, binaryPath: "~/.local/bin/claudeswitch", binaryVersion: version, fixtures: fx)
         AppHub.updates.preview(version: version ?? "0.0.0", lastCheck: now.addingTimeInterval(-3600), now: now)
         if least {
@@ -221,7 +222,7 @@ enum Render {
                     save(SettingsView(pane: pane, renderSidebar: true, sidebarWidth: SettingsView.sidebarLeast).environmentObject(store)
                         .environmentObject(LoginItem()),
                          size: CGSize(width: 760, height: 520), dark: dark,
-                         to: out + "/settings-\(pane.rawValue.lowercased())-min\(dark ? "-dark" : "").png")
+                         to: out + "/settings-\(pane.slug)-min\(dark ? "-dark" : "").png")
                 }
                 store.next.accountsView = .refills
                 save(SettingsView(pane: .accounts, renderSidebar: true, sidebarWidth: SettingsView.sidebarLeast).environmentObject(store)
@@ -243,7 +244,7 @@ enum Render {
             for pane in Pane.allCases {
                 save(SettingsView(pane: pane, renderSidebar: true).environmentObject(store).environmentObject(login),
                      size: CGSize(width: 880, height: 640), dark: dark,
-                     to: out + "/settings-\(pane.rawValue.lowercased())\(suffix).png")
+                     to: out + "/settings-\(pane.slug)\(suffix).png")
             }
             save(AddAccountSheet(request: AddAccountRequest(profile: profiles?.profiles.first?.name)).environmentObject(store),
                  size: nil, dark: dark, to: out + "/add-account\(suffix).png")
@@ -366,8 +367,9 @@ enum Render {
         for pane in [Pane.rotation, .polling, .cleanup, .advanced, .daemon] {
             save(SettingsView(pane: pane, renderSidebar: true).environmentObject(store).environmentObject(login),
                  size: CGSize(width: 880, height: 1500), dark: dark,
-                 to: out + "/settings-\(pane.rawValue.lowercased())-tall\(sfx).png")
+                 to: out + "/settings-\(pane.slug)-tall\(sfx).png")
         }
+        claudeCode(store: store, login: login, snap: snap, dark: dark, out: out)
         // A binary older than this app speaks to runs nothing: what the app
         // has is state.json alone, and the banner takes the cards' place.
         var oldFx = PreviewData()

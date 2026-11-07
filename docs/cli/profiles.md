@@ -1,7 +1,8 @@
 # cs profile
 
 Create, list, seed, edit and remove Claude Code profiles, share pools of
-accounts between them, and start Claude Code in one.
+accounts between them, see the folders each was used in, share its setup
+with `~/.claude` or give it its own, and start Claude Code in one.
 
 See also: [Concepts → profiles and pools](../concepts.md) · [Settings → Profiles](../app/settings-profiles.md) · [GUIDE → Multiple Claude Code profiles](../GUIDE.md#multiple-claude-code-profiles) · [docs/PROFILES.md](../PROFILES.md) · [APP_CLI → profile](../APP_CLI.md#profile)
 
@@ -27,6 +28,9 @@ claudeswitch profile pool <name> add|remove <account> [--to <profile>]
 claudeswitch profile set <name> <key> <value|inherit>
 claudeswitch profile which [--dir PATH]
 claudeswitch profile hook zsh|bash|fish
+claudeswitch profile recent [<name>]
+claudeswitch profile share <name> <item>
+claudeswitch profile own <name> <item>
 claudeswitch run [<profile>] [-- claude arguments]
 
 claudeswitch pool list
@@ -403,6 +407,85 @@ the next change of folder.
 
 `profile which --hook` prints the one line the hook reads: `set <dir>`,
 `unset` or `keep`.
+
+## profile recent
+
+```sh
+cs profile recent
+cs profile recent work --json
+```
+
+The folders Claude Code has been used in under each profile, newest first,
+each with how long ago its last session wrote to its transcript (`-` for
+none kept). With a name, that profile's alone. The app's Open Claude Code
+starts in a profile's first folder, and its menu lists the rest.
+
+```
+  default
+    2h    ~/code/claudeswitch
+    3d    ~/code/website
+    -     ~/code/old
+  work
+    1d    ~/code/claudeswitch
+```
+
+The folders are the projects Claude Code records in the profile's
+`.claude.json` (`~/.claude.json` for the profile with no `dir`), and only
+those that are still folders; at most 12 per profile. When each was last
+used comes from the newest `*.jsonl` transcript in the profile's
+`projects/` folder for it. Nothing else in `.claude.json` is read. A
+profile whose `.claude.json` is missing has no folders yet; an unknown
+profile name fails with `invalid_value`. The JSON shape is in
+[APP_CLI → profile](../APP_CLI.md#recent-folders-and-what-a-profile-shares-owner-picks-oc1-cc3).
+
+## profile share
+
+```sh
+cs profile share work settings.json
+```
+
+Makes the profile's `<item>` a symlink to `~/.claude/<item>`, so the
+profile reads the same file or folder as `~/.claude` and every other
+profile that shares it. `<item>` is one of `CLAUDE.md`, `settings.json`,
+`skills`, `commands` and `agents`, the five `profile create` links.
+
+```
+  work: settings.json is shared with ~/.claude now; its own was kept as ~/.claude-work/settings.json.claudeswitch-20261028-101500
+```
+
+The profile's own item is never deleted: it is renamed beside it to
+`<item>.claudeswitch-<date>-<time>` first. A missing item, or a link to
+somewhere else, is replaced by the link with nothing to keep. One shared
+already is left alone (`nothing changed`). It refuses the profile whose dir
+is `~/.claude` itself and an unknown profile or item (`invalid_value`),
+and an item `~/.claude` does not have (`not_found`: create it there first).
+
+`--json`: `{"profile": "work", "item": "settings.json", "state": "shared",
+"backup": "/Users/person1/.claude-work/settings.json.claudeswitch-20261028-101500"}`
+(`backup` is `null` when nothing was moved).
+
+## profile own
+
+```sh
+cs profile own work skills
+```
+
+Replaces a shared item (a symlink) with a copy of what it leads to, so the
+profile's changes stay its own from then on: a file with its mode, a folder
+with everything in it, symlinks inside it copied as symlinks. The copy is
+made beside the link first, so a failure leaves the link as it was.
+
+```
+  work: skills is its own copy now, of ~/.claude/skills; changes to it stay in work
+```
+
+An item that is the profile's own already is left alone. A missing item, or
+a link to nothing, is `not_found`; the base profile and an unknown profile
+or item are `invalid_value`. `--json`: `{"profile": "work", "item":
+"skills", "state": "own"}`.
+
+`cs claude show` lists, for every profile, which of the five it shares and
+which are its own ([Claude Code](claude-code.md#cs-claude-show)).
 
 ## run
 

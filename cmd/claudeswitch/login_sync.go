@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bogdan-alexandrescu/claudeswitch/internal/ccdir"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/cclogin"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/state"
@@ -17,13 +16,7 @@ import (
 // identityPathOf is the .claude.json Claude Code in profile in reads, which
 // records the login it believes it has (P1). Paths only, no keychain.
 func identityPathOf(in config.Profile) string {
-	var p ccdir.Paths
-	var err error
-	if in.FromEnv {
-		p, err = ccdir.FromEnv()
-	} else {
-		p, err = ccdir.For(in.Dir)
-	}
+	p, err := ccPathsOf(in)
 	if err != nil {
 		return ""
 	}

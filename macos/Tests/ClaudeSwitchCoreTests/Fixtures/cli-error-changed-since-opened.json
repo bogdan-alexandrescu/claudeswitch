@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "config_changed",
+    "hint": "reopen it to see the change",
+    "message": "CLAUDE.md changed since it was opened"
+  }
+}

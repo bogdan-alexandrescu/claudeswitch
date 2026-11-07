@@ -56,8 +56,8 @@ import Testing
     @Test func testTheCleanupTileAndRecentSayWhatTheCleanupPaneSays() throws {
         let o = Overview.build(try input())
         #expect(o.tiles.first { $0.title == "Cleanup" }?.primary == "Schedule off")
-        #expect(o.recent.contains { $0.text == "cleanup removed 1 item · " + Format.bytes(512_000_000) },
-                "\(o.recent.map(\.text))")
+        #expect(o.recent.contains { $0.title == "Cleanup removed 1 item" && $0.detail == Format.bytes(512_000_000) },
+                "\(o.recent.map(\.title))")
     }
 
     @Test func testTheDaemonTileBelievesTheServiceOnceItIsRead() throws {
@@ -106,7 +106,7 @@ import Testing
     @Test func testRecentSaysWhatAnUndoPutBack() throws {
         var i = try input()
         i.clean?.lastPutBack = 1
-        #expect(Overview.build(i).recent.contains { $0.text.hasSuffix(" · 1 put back") })
+        #expect(Overview.build(i).recent.contains { $0.detail?.hasSuffix(" · 1 put back") == true })
     }
 }
 

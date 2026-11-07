@@ -1,0 +1,63 @@
+{
+ "profiles": [
+  {
+   "folders": [
+    {
+     "last_used": "2026-10-08T00:46:41Z",
+     "path": "/Users/example/code/claudeswitch"
+    },
+    {
+     "last_used": "2026-10-07T00:46:41Z",
+     "path": "/Users/example/code/website"
+    },
+    {
+     "last_used": "2026-10-05T02:46:41Z",
+     "path": "/Users/example/clients/northwind/api-gateway"
+    },
+    {
+     "last_used": "2026-09-30T02:46:41Z",
+     "path": "/Users/example/code/notes"
+    },
+    {
+     "last_used": "2026-09-23T02:46:41Z",
+     "path": "/Users/example/clients/northwind/enterprise-integration-service-for-the-warehouse"
+    }
+   ],
+   "profile": "default"
+  },
+  {
+   "folders": [
+    {
+     "last_used": "2026-10-08T01:46:41Z",
+     "path": "/Users/example/work/payments-service"
+    },
+    {
+     "last_used": "2026-10-06T02:46:41Z",
+     "path": "/Users/example/work/infra"
+    },
+    {
+     "last_used": "2026-10-02T02:46:41Z",
+     "path": "/Users/example/work/mobile-app"
+    }
+   ],
+   "profile": "work"
+  },
+  {
+   "folders": [],
+   "profile": "review"
+  },
+  {
+   "folders": [
+    {
+     "last_used": null,
+     "path": "/Users/example/Projects/clients/example/an-enterprise-integration-for-the-regional-warehouses"
+    }
+   ],
+   "profile": "client-example-enterprise-integration"
+  },
+  {
+   "folders": [],
+   "profile": "scratch"
+  }
+ ]
+}

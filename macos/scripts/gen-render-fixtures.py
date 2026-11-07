@@ -37,6 +37,12 @@ The sets before pools are configs with no [[pool]] blocks: write() gives
 them what the CLI reports for one (each profile its own pool, named after
 it, and the accounts no pool lists), unless a set brings its own.
 
+Every set also gets, from its own profiles, `profile recent --json`
+(cli-profile-recent.json) and `claude show --json` (cli-claude-show.json),
+with each profile's `claude show --profile <p> --json`
+(cli-claude-show-<p>.json): default is ~/.claude, and the others share with
+it as the set says (SHARES). older-cli answers both with `usage`.
+
     python3 macos/scripts/gen-render-fixtures.py
 """
 import datetime
@@ -286,9 +292,168 @@ def agree(files, mixed):
         files["cli-daemon-status.json"] = d
 
 
-def write(name, files, mixed=False):
+# OC1 and CC1-CC3 (docs/IMPROVEMENTS.md, "Claude Code folders and setup"):
+# what `profile recent` and `claude show` report for the set's own profiles,
+# with invented folders and files under the example home.
+HOME = "/Users/example"
+CC = HOME + "/.claude"
+ELSEWHERE = HOME + "/dotfiles/claude"
+ITEMS = ["CLAUDE.md", "settings.json", "skills", "commands", "agents"]
+
+
+def ago(**kw):
+    return (when(RENDER_NOW) - datetime.timedelta(**kw)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def entries(pairs):
+    return [{"name": n, "description": d} for n, d in sorted(pairs)]
+
+
+SKILLS = entries([
+    ("release-notes", "Drafts release notes from merged pull requests"),
+    ("db-migrate", "Writes a database migration and checks it runs both ways"),
+    ("design-review", "Reviews a screen against the design system"),
+    ("changelog", "Keeps CHANGELOG.md in step with the tags"),
+    ("screenshot-diff", "Compares two screenshots and lists what moved"),
+    ("deploy-staging", "Deploys the current branch to staging"),
+    ("pdf-export", "Turns a Markdown file into a PDF")])
+AGENTS = entries([("code-reviewer", "Reviews a diff for bugs before it is pushed"),
+                  ("test-writer", "Writes the failing test first")])
+COMMANDS = entries([("standup", "Yesterday's commits as a stand-up note"), ("triage", "Labels new issues"),
+                    ("ship", "Runs the checks, then opens a pull request")])
+
+
+def plugin(id, version, on):
+    name, market = id.split("@")
+    return {"id": id, "name": name, "marketplace": market, "version": version, "enabled": on}
+
+
+PLUGINS = [plugin("cs@claudeswitch", "0.8.19", True), plugin("figma-tools@example-marketplace", "0.3.2", True),
+           plugin("github@claude-plugins-official", "1.4.0", True),
+           plugin("slack@claude-plugins-official", "2.1.0", False)]
+SERVERS = [{"name": "browser", "type": "stdio", "target": "npx"},
+           {"name": "linear", "type": "http", "target": "mcp.linear.example"},
+           {"name": "postgres-local", "type": "stdio", "target": "npx"}]
+# settings.json as each kind of file reads; env by name only.
+SETTINGS = {
+    "shared": {"model": "opus", "allow": 12, "deny": 2, "hooks": ["PreToolUse", "Stop"], "status_line": True,
+               "env": ["DISABLE_TELEMETRY", "HTTP_PROXY", "NODE_OPTIONS"], "error": None},
+    "own": {"model": "sonnet", "allow": 3, "deny": 0, "hooks": [], "status_line": False, "env": [], "error": None},
+    "elsewhere": {"model": "haiku", "allow": 5, "deny": 1, "hooks": ["Stop"], "status_line": True,
+                  "env": ["HTTP_PROXY"], "error": None}}
+LISTS = {"skills": {"shared": SKILLS, "own": SKILLS[:2], "elsewhere": SKILLS[2:5], "missing": []},
+         "agents": {"shared": AGENTS, "own": AGENTS[:1], "elsewhere": AGENTS, "missing": []},
+         "commands": {"shared": COMMANDS, "own": COMMANDS[:1], "elsewhere": COMMANDS[1:], "missing": []}}
+LINES = {"shared": (42, {"days": 2}), "own": (18, {"days": 5}), "elsewhere": (27, {"days": 9})}
+# What a profile shares with ~/.claude: a state per item, its own plugins
+# and how many MCP servers its .claude.json holds.
+SHARES = {
+    "usual": ({"CLAUDE.md": "shared", "settings.json": "own", "skills": "shared", "commands": "shared",
+               "agents": "missing"}, ["cs@claudeswitch", "github@claude-plugins-official"], 3),
+    "all": ({i: "shared" for i in ITEMS}, ["cs@claudeswitch"], 3),
+    "mixed": ({"CLAUDE.md": "own", "settings.json": "elsewhere", "skills": "own", "commands": "missing",
+               "agents": "own"}, ["cs@claudeswitch"], 1),
+    "fresh": ({i: "missing" for i in ITEMS}, [], 0),
+    "own": ({"CLAUDE.md": "own", "settings.json": "own", "skills": "shared", "commands": "shared",
+             "agents": "shared"}, ["cs@claudeswitch", "slack@claude-plugins-official"], 2),
+}
+# Recent folders: (path under the home, how long ago, or None for no
+# transcript left).
+FOLDERS = {
+    "default": [("code/claudeswitch", {"hours": 2}), ("code/website", {"hours": 26}),
+                ("clients/northwind/api-gateway", {"days": 3}), ("code/notes", {"days": 8}),
+                ("clients/northwind/enterprise-integration-service-for-the-warehouse", {"days": 15})],
+    "work": [("work/payments-service", {"hours": 1}), ("work/infra", {"days": 2}), ("work/mobile-app", {"days": 6})],
+}
+
+
+def abs_dir(d):
+    if d is None:
+        return CC
+    return HOME + d[1:] if d.startswith("~") else d
+
+
+def base_files(d):
+    return ({"path": d + "/CLAUDE.md", "target": CC + "/CLAUDE.md", "lines": 42, "modified": ago(days=2)},
+            dict(SETTINGS["shared"], path=d + "/settings.json", target=CC + "/settings.json"))
+
+
+def view(name, d, kind):
+    """`claude show --profile <name> --json` for a profile that is not
+    ~/.claude: what it reads, following its links."""
+    shares, own_plugins, n = SHARES[kind]
+
+    def target(item, st):
+        return {"shared": CC, "elsewhere": ELSEWHERE, "own": d}[st] + "/" + item
+    st = shares["CLAUDE.md"]
+    lines, edited = LINES.get(st, (0, {}))
+    instructions = None if st == "missing" else {"path": d + "/CLAUDE.md", "target": target("CLAUDE.md", st),
+                                                 "lines": lines, "modified": ago(**edited)}
+    st = shares["settings.json"]
+    settings = None if st == "missing" else dict(SETTINGS[st], path=d + "/settings.json",
+                                                 target=target("settings.json", st))
+    out = {"dir": d, "profile": name, "base": False,
+           "shares": [{"item": i, "state": shares[i]} for i in ITEMS],
+           "instructions": instructions, "settings": settings,
+           "plugins": [p for p in PLUGINS if p["id"] in own_plugins], "servers": SERVERS[:n]}
+    for k in ("skills", "agents", "commands"):
+        out[k] = LISTS[k][shares[k]]
+    return out
+
+
+def item_summary(v, item):
+    """What `claude show`'s profiles say a profile reads there."""
+    if item == "CLAUDE.md":
+        return "" if v["instructions"] is None else plural(v["instructions"]["lines"], "line")
+    if item == "settings.json":
+        s = v["settings"]
+        if s is None:
+            return ""
+        parts = (["model " + s["model"]] if s["model"] else []) + (["%d allowed" % s["allow"]] if s["allow"] else [])
+        return " · ".join(parts) or "no settings"
+    return plural(len(v[item]), item[:-1]) if v[item] else ""
+
+
+def claude_show(files, kinds):
+    """`claude show --json` and each profile's `--profile` view, for the
+    set's profiles: default (or one with no dir) is ~/.claude; the others
+    share as `kinds` says, "usual" when it does not name them."""
+    instr, sett = base_files(CC)
+    top = {"dir": CC, "instructions": instr, "settings": sett, "skills": SKILLS, "agents": AGENTS,
+           "commands": COMMANDS, "plugins": PLUGINS, "servers": SERVERS, "profiles": []}
+    for p in files["cli-profile-list.json"]["profiles"]:
+        d = abs_dir(p.get("dir"))
+        if d == CC:
+            top["profiles"].append({"name": p["name"], "dir": d, "base": True})
+            files["cli-claude-show-%s.json" % p["name"]] = dict(
+                {k: v for k, v in top.items() if k != "profiles"}, profile=p["name"], base=True, shares=[])
+            continue
+        v = view(p["name"], d, kinds.get(p["name"], "usual"))
+        files["cli-claude-show-%s.json" % p["name"]] = v
+        top["profiles"].append({"name": p["name"], "dir": d, "base": False,
+                                "items": [{"item": i, "state": s["state"], "summary": item_summary(v, i)}
+                                          for i, s in zip(ITEMS, v["shares"])],
+                                "plugins": v["plugins"], "servers": len(v["servers"])})
+    files["cli-claude-show.json"] = top
+
+
+def recent(files, extra):
+    """`profile recent --json` for the set's profiles, newest first."""
+    out = []
+    for p in files["cli-profile-list.json"]["profiles"]:
+        folders = extra.get(p["name"], FOLDERS.get(p["name"], []))
+        out.append({"profile": p["name"], "folders": [
+            {"path": HOME + "/" + f, "last_used": ago(**a) if a else None} for f, a in folders]})
+    files["cli-profile-recent.json"] = {"profiles": out}
+
+
+def write(name, files, mixed=False, cc=None, folders=None):
     if "cli-pool-list.json" not in files:
         own_pools(files)
+    if "cli-claude-show.json" not in files:
+        claude_show(files, cc or {})
+    if "cli-profile-recent.json" not in files:
+        recent(files, folders or {})
     agree(files, mixed)
     d = os.path.join(OUT, name)
     if os.path.exists(d):
@@ -354,7 +519,11 @@ alist = {"accounts": [info(a, "work", "work" if a == "w01" else None) for a in w
          email="someone.with.a.really.long.address@enterprise-client.example.com"),
     info("old-sso", "review", "review", state="needs_login")]}
 write("many", {"state.json": state, "cli-profile-list.json": plist, "why-profiles.json": why,
-               "cli-account-list.json": alist}, mixed=True)  # its Health pictures failing checks and Fix
+               "cli-account-list.json": alist}, mixed=True,  # its Health pictures failing checks and Fix
+      # Every way a profile can have its items; a folder whose name is long
+      # and has no transcript left; profiles never opened in one.
+      cc={"review": "all", LONGP: "mixed", "scratch": "fresh"},
+      folders={LONGP: [("Projects/clients/example/an-enterprise-integration-for-the-regional-warehouses", None)]})
 
 # No [[profile]] blocks: the implicit default profile.
 s1 = dict(state)
@@ -579,6 +748,10 @@ write("older-cli", {
                                                 dir="~/.claude-work", live="work-team", sa=85, sw=98)],
                               "ghosts": []},
     "cli-pool-list.json": {"error": {"code": "usage", "message": "unknown command \"pool\"", "hint": ""}},
+    # Nor `claude show` and `profile recent` (0.8.20).
+    "cli-claude-show.json": {"error": {"code": "usage", "message": "unknown command \"claude\"", "hint": ""}},
+    "cli-profile-recent.json": {"error": {"code": "usage", "message": "unknown profile command \"recent\"",
+                                          "hint": ""}},
     "why-profiles.json": {"dir": "/Users/example", "profiles": [
         hero_why("default", ["work-1", "personal"], "work-1",
                  "active account at 41%, under the 98% trigger", "personal"),
@@ -698,7 +871,9 @@ write("states", {
         st_info("lab-1", "lab"),
         st_info("lab-2", "lab", plan="Max 5x"),
         st_info("client-1", "client", plan="Team"),
-        st_info("client-2", "client", plan="Team")]}})
+        st_info("client-2", "client", plan="Team")]}},
+      cc={"lab": "all", "client": "own"},
+      folders={"lab": [("lab/experiments", {"hours": 3})], "client": [("clients/northwind/api-gateway", {"days": 5})]})
 with open(os.path.join(OUT, "states", "render-audit.jsonl"), "w") as f:
     f.write(json.dumps({"kind": "unpin", "profile": "work", "account": "work-2", "at": LIFTED,
                         "reason": "it was refused"}, sort_keys=True) + "\n")
@@ -752,9 +927,10 @@ RF_PROFILES = {"default": (RF_TEAM, ["team"]), "work": (RF_TEAM + ["fjord-team"]
                "personal": (["personal-max"], ["mine"])}
 
 
-def rf_set(name, accounts, live, decisions):
-    """A set from its records, the live account of each profile and each
-    profile's (decision, best, best_why)."""
+def rf_set(name, accounts, live, decisions, switches=()):
+    """A set from its records, the live account of each profile, each
+    profile's (decision, best, best_why), and its recent switches as (when,
+    profile, from, to, reason)."""
     def verdict(a, active):
         u = accounts[a]["last_usage"]
         fh, sd = u["five_hour"]["utilization"] or 0, u["seven_day"]["utilization"] or 0
@@ -793,7 +969,7 @@ def rf_set(name, accounts, live, decisions):
         i["pool"], i["profiles"] = pool, used
         return i
 
-    write(name, {
+    files = {
         "state.json": {"version": 1, "accounts": accounts,
                        "profiles": {n: {"active_account": live[n], "active_at": NOW, "last_switch": NOW}
                                     for n in RF_PROFILES},
@@ -802,7 +978,13 @@ def rf_set(name, accounts, live, decisions):
         "cli-profile-list.json": {"profiles": profs, "ghosts": [], "pools": rf_pools},
         "cli-pool-list.json": {"pools": rf_pools, "unlisted": []},
         "why-profiles.json": {"dir": "/Users/example", "profiles": [why_block(n) for n in RF_PROFILES]},
-        "cli-account-list.json": {"accounts": [rinfo(a) for a in RF_ALL]}})
+        "cli-account-list.json": {"accounts": [rinfo(a) for a in RF_ALL]}}
+    if switches:
+        h = history(files)
+        h["switches"] = [{"at": at, "profile": p, "from": f, "to": t, "reason": r}
+                         for at, p, f, t, r in sorted(switches)]
+        files["cli-history-usage.json"] = h
+    write(name, files)
 
 
 rf_accounts = {
@@ -822,13 +1004,25 @@ rf_accounts = {
     "personal-max": rf_rec("personal-max", 0, 7, None, dict(d=6)),
 }
 RF_LIVE = {"default": "atlas-max", "work": "boreal-max", "personal": "personal-max"}
+# In the app's words as the daemon writes them. Times of the day with the widest
+# clock figures on a US Mac ("12:12 PM"): a fixed column once wrapped its "PM".
+RF_SWITCHES = [
+    ("2026-10-07T19:12:00Z", "default", "boreal-team", "atlas-max",
+     "active account at 98% of its week, over the 98% trigger"),
+    ("2026-10-07T17:46:00Z", "work", "cedar-team", "boreal-max",
+     "active account at 86% of its session, over the 85% trigger"),
+    ("2026-10-07T16:05:00Z", "default", "ember-max", "boreal-team", "requested with `cs use`"),
+    ("2026-10-06T22:30:00Z", "default", "dune-max", "ember-max",
+     "active account at 99% of its week, over the 98% trigger"),
+    ("2026-10-05T20:10:00Z", "work", "ember-team", "cedar-team", "active account was refused on its five_hour window"),
+]
 rf_set("refills", rf_accounts, RF_LIVE, {
     "default": ({"kind": "stay", "reason": "active account at 80% of its session, under the 85% trigger"},
                 "cedar-max", None),
     "work": ({"kind": "stay", "reason": "active account at 22% of its week, under the 98% trigger"},
              "cedar-max", None),
     "personal": ({"kind": "stay", "reason": "active account at 7% of its week, under the 98% trigger"}, None,
-                 "no other account in personal can be switched to")})
+                 "no other account in personal can be switched to")}, RF_SWITCHES)
 
 # The whole pool shut: the next refill is the only good news, and a long name
 # comes first, to show what the line does with one.
@@ -845,4 +1039,13 @@ rf_set("refills-wait", rf_wait, RF_LIVE, {
                 "no other account in default has room (each is over its trigger, refused, reserved or unread)"),
     "work": ({"kind": "stay", "reason": "active account at 88% of its session, over the 85% trigger"}, None, None),
     "personal": ({"kind": "stay", "reason": "active account at 7% of its week, under the 98% trigger"}, None,
-                 "no other account in personal can be switched to")})
+                 "no other account in personal can be switched to")}, [
+    ("2026-10-07T19:12:00Z", "default", LONG, "atlas-max",
+     "Claude Code was logged in as " + LONG + ", not atlas-max"),
+    ("2026-10-07T17:46:00Z", "work", "boreal-team", LONG,
+     "pin on boreal-team lifted: it is out of quota; active account at 99% of its week, over the 98% trigger"),
+    ("2026-10-07T16:05:00Z", "default", "cedar-max", "atlas-max",
+     "active account unreadable for 3 consecutive polls (not polled: backing off after a 429); failing over to a "
+     "healthy account"),
+    ("2026-10-06T22:30:00Z", "default", "atlas-max", "cedar-max", "restored after vaulting another account"),
+])
