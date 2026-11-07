@@ -8,7 +8,8 @@ import UniformTypeIdentifiers
 /// VoiceOver); drag a row onto another pool to move it there. Per account:
 /// rename, move to a pool, sign in again, Chrome, delete; then the recovery
 /// copies. With no [[profile]] blocks, or a binary from before pools, one
-/// list in rotation order.
+/// list in rotation order. A switch at the top shows Refills instead: when
+/// each account gives more quota next (RefillViews).
 struct AccountsPane: View {
     @EnvironmentObject var store: Store
     @State private var renaming: String?
@@ -36,42 +37,39 @@ struct AccountsPane: View {
         store.pools.map { PoolLayout.sections($0, order: store.accountIDs, profiles: store.profiles) } ?? []
     }
 
+    /// Short enough to sit beside the switch and Add Account on one line.
+    var subtitle: String {
+        if store.next.accountsView == .refills {
+            return RefillText.summary(store.snapshot.map(Refills.all) ?? [], now: store.now)
+        }
+        return grouped ? "Drag to reorder, or onto another pool to move it."
+                       : "Drag to change the order rotation spends them in."
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            PaneHeader(title: "Accounts",
-                       subtitle: grouped ? "Drag to reorder within a pool, or onto another pool to move it there."
-                                         : "Drag to change the order rotation spends them in.") {
-                Button("Add Account") {
-                    store.addAccount = AddAccountRequest(profile: AddForm.initialTarget(requested: nil, list: store.profiles))
+            PaneHeader(title: "Accounts", subtitle: subtitle) {
+                HStack(spacing: 12) {
+                    Picker("View", selection: $store.next.accountsView) {
+                        Text("Accounts").tag(AccountsView.list)
+                        Text("Refills").tag(AccountsView.refills)
+                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                    .help("Accounts: order and pools. Refills: when each gives more quota next.")
+                    Button("Add Account") {
+                        store.addAccount = AddAccountRequest(profile: AddForm.initialTarget(requested: nil, list: store.profiles))
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(store.binaryPath == nil)
+                    .fixedSize()
                 }
-                .buttonStyle(PrimaryButtonStyle())
-                .disabled(store.binaryPath == nil)
             }
             .padding([.horizontal, .top], 24)
-            List {
-                if grouped {
-                    // One ForEach, headers as rows: a List row drops only
-                    // within the ForEach it came from, so one per pool
-                    // offered no other pool a drop spot.
-                    let all = sections
-                    let rows = PoolLayout.rows(all)
-                    ForEach(rows) { r in poolRow(r, all: all).padding(.horizontal, Self.inset) }
-                        .onMove { from, to in moved(rows, all: all, from: from, to: to) }
-                    HStack {
-                        Spacer()
-                        Button("New Pool") { creatingPool = true }
-                            .disabled(store.binaryPath == nil)
-                            .help("A pool groups accounts; profiles list the pools they use")
-                    }
-                    .padding(.horizontal, Self.inset)
-                    .moveDisabled(true)
-                    .listRowSeparator(.hidden)
-                } else {
-                    flat
-                }
-                RecoverySection()
+            if store.next.accountsView == .refills {
+                RefillsTimelineView()
+            } else {
+                list
             }
-            .listStyle(.inset)
         }
         .sheet(item: Binding(get: { renaming.map(RenameTarget.init) }, set: { renaming = $0?.id })) { t in
             RenameSheet(old: t.id).environmentObject(store)
@@ -91,6 +89,35 @@ struct AccountsPane: View {
             Text(ask.message + "\n\nThis cannot be undone.")
         }
         .confirming($pending)
+    }
+
+    /// The accounts, in their pools and in rotation order, and the recovery
+    /// copies.
+    var list: some View {
+        List {
+            if grouped {
+                // One ForEach, headers as rows: a List row drops only
+                // within the ForEach it came from, so one per pool
+                // offered no other pool a drop spot.
+                let all = sections
+                let rows = PoolLayout.rows(all)
+                ForEach(rows) { r in poolRow(r, all: all).padding(.horizontal, Self.inset) }
+                    .onMove { from, to in moved(rows, all: all, from: from, to: to) }
+                HStack {
+                    Spacer()
+                    Button("New Pool") { creatingPool = true }
+                        .disabled(store.binaryPath == nil)
+                        .help("A pool groups accounts; profiles list the pools they use")
+                }
+                .padding(.horizontal, Self.inset)
+                .moveDisabled(true)
+                .listRowSeparator(.hidden)
+            } else {
+                flat
+            }
+            RecoverySection()
+        }
+        .listStyle(.inset)
     }
 
     /// One list in rotation order: no [[profile]] blocks (nothing to

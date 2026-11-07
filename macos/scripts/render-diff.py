@@ -42,6 +42,7 @@ SOURCE = {
     "popover-warnings.png": ("base", "popover-expanded.png"),
     "popover.png": ("hero", "popover.png"),
     "settings-accounts-pools.png": ("pools", "settings-accounts.png"),
+    "settings-accounts-refills.png": ("refills", "settings-accounts-refills.png"),
     "settings-overview.png": ("hero", "settings-overview.png"),
     # The set whose checks fail, so the page's Fix buttons are pictured.
     "settings-health.png": ("many", "settings-health.png"),

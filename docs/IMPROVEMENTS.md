@@ -1780,3 +1780,36 @@ picked A on all four:
   Updates…"); switches, checkboxes and sentences keep sentence case.
 `BrandContrastTests` holds the light-mode figures at 4.5:1 or more, and
 docs/BRAND.md lists the tokens.
+
+## Next refill (owner request and picks, 2026-11-06)
+
+The owner asked: "one great feature would be to show when an account will be
+able to provide more token quota next. We need a way to see in a descrete way
+in the popup window that comes up when we click on the taskbar icon and we need
+a full picture in the accounts section in the main settings window and maybe
+filter them by when they will become available next and how much extra quota
+they will free up at that point in time". CLD built a picks page of real renders
+(`.claude/mockups/next-refill/`, local), on the shape the real pool had that
+day: nearly every account at about 98% of its week, sessions mostly idle. The
+owner picked:
+- **What counts: only what can be spent.** A reset counts only if it gives
+  something the account can use: a session reset before a shut week opens does
+  not, and neither does a reset under 5 points. Amounts are percents of that
+  account's own window. Rejected: every reset (it listed refills that give
+  nothing); weighing by plan (the usage API reports percents only, so sizes
+  would be a guess). CLD's recommendation; the owner agreed.
+- **The popover: one line, the next account.** On the open card, about that
+  profile's other accounts: `Next refill: cedar-max in 48m · 62% of session`.
+  Hovering names the next four; a click opens Settings → Accounts on Refills.
+  Nothing to come, no line. CLD recommended both scales on one line
+  (`+62% session in 48m · +98% week in 1d 19h`); also rejected: a dot strip, and
+  only in the account menu.
+- **Accounts: a Refills timeline.** A switch at the top, Accounts or Refills.
+  Refills is a lane per account and a dot per refill, sized by what it frees, over
+  5 hours, a day or a week, with an amount filter and the refills in time order
+  under it. CLD recommended a sortable table; also rejected: a column in the
+  list. The costs the owner accepted, as the page showed them: accounts with no
+  refill coming have no lane (one needing sign-in, one full), and nothing sorts
+  by amount.
+The app works all of it out from state.json (`Refills.swift`), so it needs no new
+CLI command and no newer binary.

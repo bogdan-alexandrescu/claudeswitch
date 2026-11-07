@@ -23,8 +23,9 @@ settings and the daemon (IMPROVEMENTS M1, M3-M7).
   **Open Claude Code** (your terminal running `claudeswitch run <profile>`:
   Terminal, iTerm, Ghostty or Warp), **Switch account**, Open Chrome for the
   account (`chrome open`, or `chrome add` the first time), Pin (`account pin` /
-  `account unpin --profile`), and what rotation will do next and why. The
-  other profiles are compact rows that expand. **+ Add Account** and
+  `account unpin --profile`), the next refill among the pool's other accounts
+  (`Next refill: cedar-max in 48m · 62% of session`), and what rotation will do
+  next and why. The other profiles are compact rows that expand. **+ Add Account** and
   **Settings…** at the foot.
 - **Settings window:** Profiles (create with a directory, accounts of its
   own, the pools it uses and a seed account; choose and order each
@@ -32,7 +33,8 @@ settings and the daemon (IMPROVEMENTS M1, M3-M7).
   credentials), Accounts (grouped by pool: drag to set the rotation order
   within a pool, or onto another pool to move an account there; new and
   empty pools; rename, sign in again, Chrome, delete after a confirmation
-  naming account and seat; recovery copies), Rotation, Polling
+  naming account and seat; recovery copies; a switch to Refills, a timeline of
+  when each account gives more quota next), Rotation, Polling
   and Advanced (every `cs config` setting, generated from
   `config schema --json`, with inline validation and the CLI's own errors),
   Daemon (status, live or dry run, restart, start/stop, install/uninstall,

@@ -1,0 +1,240 @@
+{
+ "accounts": [
+  {
+   "active_in": "default",
+   "email": null,
+   "enabled": true,
+   "id": "atlas-max",
+   "pinned": false,
+   "plan": "Max 20x",
+   "pool": "team",
+   "profile": "default",
+   "profiles": [
+    "default",
+    "work"
+   ],
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  },
+  {
+   "active_in": "work",
+   "email": null,
+   "enabled": true,
+   "id": "boreal-max",
+   "pinned": false,
+   "plan": "Max 20x",
+   "pool": "team",
+   "profile": "default",
+   "profiles": [
+    "default",
+    "work"
+   ],
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  },
+  {
+   "active_in": null,
+   "email": null,
+   "enabled": true,
+   "id": "cedar-max",
+   "pinned": false,
+   "plan": "Max 20x",
+   "pool": "team",
+   "profile": "default",
+   "profiles": [
+    "default",
+    "work"
+   ],
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  },
+  {
+   "active_in": null,
+   "email": null,
+   "enabled": true,
+   "id": "boreal-team",
+   "pinned": false,
+   "plan": "Team",
+   "pool": "team",
+   "profile": "default",
+   "profiles": [
+    "default",
+    "work"
+   ],
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  },
+  {
+   "active_in": null,
+   "email": null,
+   "enabled": true,
+   "id": "cedar-team",
+   "pinned": false,
+   "plan": "Team",
+   "pool": "team",
+   "profile": "default",
+   "profiles": [
+    "default",
+    "work"
+   ],
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  },
+  {
+   "active_in": null,
+   "email": null,
+   "enabled": true,
+   "id": "dune-max",
+   "pinned": false,
+   "plan": "Max 20x",
+   "pool": "team",
+   "profile": "default",
+   "profiles": [
+    "default",
+    "work"
+   ],
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  },
+  {
+   "active_in": null,
+   "email": null,
+   "enabled": true,
+   "id": "dune-team",
+   "pinned": false,
+   "plan": "Team",
+   "pool": "team",
+   "profile": "default",
+   "profiles": [
+    "default",
+    "work"
+   ],
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  },
+  {
+   "active_in": null,
+   "email": null,
+   "enabled": true,
+   "id": "ember-max",
+   "pinned": false,
+   "plan": "Max 20x",
+   "pool": "team",
+   "profile": "default",
+   "profiles": [
+    "default",
+    "work"
+   ],
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  },
+  {
+   "active_in": null,
+   "email": null,
+   "enabled": true,
+   "id": "ember-team",
+   "pinned": false,
+   "plan": "Team",
+   "pool": "team",
+   "profile": "default",
+   "profiles": [
+    "default",
+    "work"
+   ],
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  },
+  {
+   "active_in": null,
+   "email": null,
+   "enabled": true,
+   "id": "harbor-team",
+   "pinned": false,
+   "plan": "Team",
+   "pool": "team",
+   "profile": "default",
+   "profiles": [
+    "default",
+    "work"
+   ],
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  },
+  {
+   "active_in": null,
+   "email": null,
+   "enabled": true,
+   "id": "gale-max",
+   "pinned": false,
+   "plan": "Max 20x",
+   "pool": "team",
+   "profile": "default",
+   "profiles": [
+    "default",
+    "work"
+   ],
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "needs_login"
+  },
+  {
+   "active_in": null,
+   "email": null,
+   "enabled": true,
+   "id": "research-team-extremely-long-account-name",
+   "pinned": false,
+   "plan": "Team",
+   "pool": "team",
+   "profile": "default",
+   "profiles": [
+    "default",
+    "work"
+   ],
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  },
+  {
+   "active_in": null,
+   "email": null,
+   "enabled": true,
+   "id": "fjord-team",
+   "pinned": false,
+   "plan": "Team",
+   "pool": "devops",
+   "profile": "work",
+   "profiles": [
+    "work"
+   ],
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  },
+  {
+   "active_in": "personal",
+   "email": null,
+   "enabled": true,
+   "id": "personal-max",
+   "pinned": false,
+   "plan": "Max 5x",
+   "pool": "mine",
+   "profile": "personal",
+   "profiles": [
+    "personal"
+   ],
+   "reading": null,
+   "seat": "aaaaaaaa@11111111",
+   "state": "available"
+  }
+ ]
+}

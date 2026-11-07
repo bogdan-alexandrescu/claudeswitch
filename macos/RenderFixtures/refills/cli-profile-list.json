@@ -1,0 +1,171 @@
+{
+ "ghosts": [],
+ "pools": [
+  {
+   "accounts": [
+    "atlas-max",
+    "boreal-max",
+    "cedar-max",
+    "boreal-team",
+    "cedar-team",
+    "dune-max",
+    "dune-team",
+    "ember-max",
+    "ember-team",
+    "harbor-team",
+    "gale-max",
+    "research-team-extremely-long-account-name"
+   ],
+   "name": "team",
+   "own": false,
+   "profiles": [
+    "default",
+    "work"
+   ]
+  },
+  {
+   "accounts": [
+    "fjord-team"
+   ],
+   "name": "devops",
+   "own": false,
+   "profiles": [
+    "work"
+   ]
+  },
+  {
+   "accounts": [
+    "personal-max"
+   ],
+   "name": "mine",
+   "own": false,
+   "profiles": [
+    "personal"
+   ]
+  }
+ ],
+ "profiles": [
+  {
+   "declared": true,
+   "dir": null,
+   "from_env": false,
+   "listed": [
+    "atlas-max",
+    "boreal-max",
+    "cedar-max",
+    "boreal-team",
+    "cedar-team",
+    "dune-max",
+    "dune-team",
+    "ember-max",
+    "ember-team",
+    "harbor-team",
+    "gale-max",
+    "research-team-extremely-long-account-name"
+   ],
+   "live": "atlas-max",
+   "name": "default",
+   "overrides": {},
+   "pinned": null,
+   "pool": [
+    "atlas-max",
+    "boreal-max",
+    "cedar-max",
+    "boreal-team",
+    "cedar-team",
+    "dune-max",
+    "dune-team",
+    "ember-max",
+    "ember-team",
+    "harbor-team",
+    "gale-max",
+    "research-team-extremely-long-account-name"
+   ],
+   "pools": [
+    "team"
+   ],
+   "signed_in": "yes",
+   "thresholds": {
+    "hard_floor": 99,
+    "landing_margin": 10,
+    "switch_at": 85,
+    "switch_at_weekly": 98
+   }
+  },
+  {
+   "declared": true,
+   "dir": "~/.claude-work",
+   "from_env": false,
+   "listed": [
+    "atlas-max",
+    "boreal-max",
+    "cedar-max",
+    "boreal-team",
+    "cedar-team",
+    "dune-max",
+    "dune-team",
+    "ember-max",
+    "ember-team",
+    "harbor-team",
+    "gale-max",
+    "research-team-extremely-long-account-name",
+    "fjord-team"
+   ],
+   "live": "boreal-max",
+   "name": "work",
+   "overrides": {},
+   "pinned": null,
+   "pool": [
+    "atlas-max",
+    "boreal-max",
+    "cedar-max",
+    "boreal-team",
+    "cedar-team",
+    "dune-max",
+    "dune-team",
+    "ember-max",
+    "ember-team",
+    "harbor-team",
+    "gale-max",
+    "research-team-extremely-long-account-name",
+    "fjord-team"
+   ],
+   "pools": [
+    "team",
+    "devops"
+   ],
+   "signed_in": "yes",
+   "thresholds": {
+    "hard_floor": 99,
+    "landing_margin": 10,
+    "switch_at": 85,
+    "switch_at_weekly": 98
+   }
+  },
+  {
+   "declared": true,
+   "dir": "~/.claude-personal",
+   "from_env": false,
+   "listed": [
+    "personal-max"
+   ],
+   "live": "personal-max",
+   "name": "personal",
+   "overrides": {},
+   "pinned": null,
+   "pool": [
+    "personal-max"
+   ],
+   "pools": [
+    "mine"
+   ],
+   "signed_in": "yes",
+   "thresholds": {
+    "hard_floor": 99,
+    "landing_margin": 10,
+    "switch_at": 85,
+    "switch_at_weekly": 98
+   }
+  }
+ ]
+}

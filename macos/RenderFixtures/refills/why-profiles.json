@@ -1,0 +1,302 @@
+{
+ "dir": "/Users/example",
+ "profiles": [
+  {
+   "accounts": [
+    {
+     "active": true,
+     "eligible": true,
+     "id": "atlas-max",
+     "utilization": 80,
+     "why": "at 80% of its session, 5 points of room",
+     "window": "five_hour"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "boreal-max",
+     "utilization": 12,
+     "why": "at 12% of its session, 73 points of room",
+     "window": "five_hour"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "cedar-max",
+     "utilization": 62,
+     "why": "at 62% of its session, 23 points of room",
+     "window": "five_hour"
+    },
+    {
+     "active": false,
+     "eligible": false,
+     "id": "boreal-team",
+     "utilization": 98,
+     "why": "at 98% of its week, over the 98% trigger",
+     "window": "seven_day"
+    },
+    {
+     "active": false,
+     "eligible": false,
+     "id": "cedar-team",
+     "utilization": 98,
+     "why": "at 98% of its week, over the 98% trigger",
+     "window": "seven_day"
+    },
+    {
+     "active": false,
+     "eligible": false,
+     "id": "dune-max",
+     "utilization": 98,
+     "why": "at 98% of its week, over the 98% trigger",
+     "window": "seven_day"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "dune-team",
+     "utilization": 96,
+     "why": "at 96% of its week, 2 points of room",
+     "window": "seven_day"
+    },
+    {
+     "active": false,
+     "eligible": false,
+     "id": "ember-max",
+     "utilization": 98,
+     "why": "at 98% of its week, over the 98% trigger",
+     "window": "seven_day"
+    },
+    {
+     "active": false,
+     "eligible": false,
+     "id": "ember-team",
+     "utilization": 100,
+     "why": "refused on its week window",
+     "window": "seven_day"
+    },
+    {
+     "active": false,
+     "eligible": false,
+     "id": "harbor-team",
+     "utilization": 98,
+     "why": "at 98% of its week, over the 98% trigger",
+     "window": "seven_day"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "gale-max",
+     "utilization": 40,
+     "why": "at 40% of its week, 58 points of room",
+     "window": "seven_day"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "research-team-extremely-long-account-name",
+     "utilization": 0,
+     "why": "at 0% of its session, 85 points of room",
+     "window": "five_hour"
+    }
+   ],
+   "best": "cedar-max",
+   "best_why": null,
+   "current": true,
+   "decision": {
+    "kind": "stay",
+    "reason": "active account at 80% of its session, under the 85% trigger"
+   },
+   "on_best": false,
+   "pool": [
+    "atlas-max",
+    "boreal-max",
+    "cedar-max",
+    "boreal-team",
+    "cedar-team",
+    "dune-max",
+    "dune-team",
+    "ember-max",
+    "ember-team",
+    "harbor-team",
+    "gale-max",
+    "research-team-extremely-long-account-name"
+   ],
+   "profile": "default",
+   "thresholds": {
+    "hard_floor": 99,
+    "landing_margin": 10,
+    "switch_at": 85,
+    "switch_at_weekly": 98
+   }
+  },
+  {
+   "accounts": [
+    {
+     "active": false,
+     "eligible": true,
+     "id": "atlas-max",
+     "utilization": 80,
+     "why": "at 80% of its session, 5 points of room",
+     "window": "five_hour"
+    },
+    {
+     "active": true,
+     "eligible": true,
+     "id": "boreal-max",
+     "utilization": 12,
+     "why": "at 12% of its session, 73 points of room",
+     "window": "five_hour"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "cedar-max",
+     "utilization": 62,
+     "why": "at 62% of its session, 23 points of room",
+     "window": "five_hour"
+    },
+    {
+     "active": false,
+     "eligible": false,
+     "id": "boreal-team",
+     "utilization": 98,
+     "why": "at 98% of its week, over the 98% trigger",
+     "window": "seven_day"
+    },
+    {
+     "active": false,
+     "eligible": false,
+     "id": "cedar-team",
+     "utilization": 98,
+     "why": "at 98% of its week, over the 98% trigger",
+     "window": "seven_day"
+    },
+    {
+     "active": false,
+     "eligible": false,
+     "id": "dune-max",
+     "utilization": 98,
+     "why": "at 98% of its week, over the 98% trigger",
+     "window": "seven_day"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "dune-team",
+     "utilization": 96,
+     "why": "at 96% of its week, 2 points of room",
+     "window": "seven_day"
+    },
+    {
+     "active": false,
+     "eligible": false,
+     "id": "ember-max",
+     "utilization": 98,
+     "why": "at 98% of its week, over the 98% trigger",
+     "window": "seven_day"
+    },
+    {
+     "active": false,
+     "eligible": false,
+     "id": "ember-team",
+     "utilization": 100,
+     "why": "refused on its week window",
+     "window": "seven_day"
+    },
+    {
+     "active": false,
+     "eligible": false,
+     "id": "harbor-team",
+     "utilization": 98,
+     "why": "at 98% of its week, over the 98% trigger",
+     "window": "seven_day"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "gale-max",
+     "utilization": 40,
+     "why": "at 40% of its week, 58 points of room",
+     "window": "seven_day"
+    },
+    {
+     "active": false,
+     "eligible": true,
+     "id": "research-team-extremely-long-account-name",
+     "utilization": 0,
+     "why": "at 0% of its session, 85 points of room",
+     "window": "five_hour"
+    },
+    {
+     "active": false,
+     "eligible": false,
+     "id": "fjord-team",
+     "utilization": 99,
+     "why": "at 99% of its week, over the 98% trigger",
+     "window": "seven_day"
+    }
+   ],
+   "best": "cedar-max",
+   "best_why": null,
+   "current": false,
+   "decision": {
+    "kind": "stay",
+    "reason": "active account at 22% of its week, under the 98% trigger"
+   },
+   "on_best": false,
+   "pool": [
+    "atlas-max",
+    "boreal-max",
+    "cedar-max",
+    "boreal-team",
+    "cedar-team",
+    "dune-max",
+    "dune-team",
+    "ember-max",
+    "ember-team",
+    "harbor-team",
+    "gale-max",
+    "research-team-extremely-long-account-name",
+    "fjord-team"
+   ],
+   "profile": "work",
+   "thresholds": {
+    "hard_floor": 99,
+    "landing_margin": 10,
+    "switch_at": 85,
+    "switch_at_weekly": 98
+   }
+  },
+  {
+   "accounts": [
+    {
+     "active": true,
+     "eligible": true,
+     "id": "personal-max",
+     "utilization": 0,
+     "why": "at 0% of its session, 85 points of room",
+     "window": "five_hour"
+    }
+   ],
+   "best": null,
+   "best_why": "no other account in personal can be switched to",
+   "current": false,
+   "decision": {
+    "kind": "stay",
+    "reason": "active account at 7% of its week, under the 98% trigger"
+   },
+   "on_best": false,
+   "pool": [
+    "personal-max"
+   ],
+   "profile": "personal",
+   "thresholds": {
+    "hard_floor": 99,
+    "landing_margin": 10,
+    "switch_at": 85,
+    "switch_at_weekly": 98
+   }
+  }
+ ]
+}

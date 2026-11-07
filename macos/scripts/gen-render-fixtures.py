@@ -26,6 +26,12 @@ from anyone's state.
                in its picker; lab pinned hard to a refused account, its best
                short of the landing margin; client pinned softly, already
                on its best, a read that timed out and a window reset since
+  refills      a hard-worked pool, for Accounts' Refills view: nearly every
+               account at its weekly trigger, each week resetting on its own
+               day, sessions mostly idle, one refused, one needing sign-in,
+               one reset since it was read, one full with a long name
+  refills-wait the same pool shut: the live account refused, the next refill
+               on the account with the long name
 
 The sets before pools are configs with no [[pool]] blocks: write() gives
 them what the CLI reports for one (each profile its own pool, named after
@@ -696,3 +702,147 @@ write("states", {
 with open(os.path.join(OUT, "states", "render-audit.jsonl"), "w") as f:
     f.write(json.dumps({"kind": "unpin", "profile": "work", "account": "work-2", "at": LIFTED,
                         "reason": "it was refused"}, sort_keys=True) + "\n")
+
+# Next refill (2026-11-06): the shape a hard-worked fleet really has. Nearly
+# every account sits at its weekly trigger, each week resetting on its own day;
+# the session windows are mostly idle, so the next session reset on most of
+# them gives nothing anyone can spend. One is live and climbing, a few have
+# room, one is refused, one needs sign-in, one reset since it was last read,
+# and one is full with a long name.
+RF_NOW = when(RENDER_NOW)
+
+
+def rf_in(d=0, h=0, m=0):
+    return (RF_NOW + datetime.timedelta(days=d, hours=h, minutes=m)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def rf_rec(id, fh, sd, fh_in=None, sd_in=None, err=None, burnt=None, last=NOW):
+    """A record whose session and week reset when given; a session of None is
+    one with no window open, as an idle account's reads."""
+    fh_at, sd_at = rf_in(**fh_in) if fh_in else None, rf_in(**sd_in) if sd_in else None
+    limits = [{"kind": "weekly_all", "group": "weekly", "percent": sd, "severity": "normal",
+               "is_active": True, "resets_at": sd_at, "scope": None}]
+    r = {"id": id, "org_id": "11111111-1111-1111-1111-111111111111", "seat": SEAT,
+         "last_usage": {"five_hour": {"utilization": fh, "resets_at": fh_at},
+                        "seven_day": {"utilization": sd, "resets_at": sd_at},
+                        "limits": limits},
+         "last_at": last, "prev_at": Z, "burnt_until": burnt or Z,
+         "refresh_expiry": "2026-11-08T02:45:41Z", "token_expiry": Z}
+    if burnt:
+        r["burnt_window"] = "seven_day" if sd >= 100 else "five_hour"
+    if err:
+        r["last_error"] = err
+    return r
+
+
+RF_TEAM = ["atlas-max", "boreal-max", "cedar-max", "boreal-team", "cedar-team", "dune-max", "dune-team",
+           "ember-max", "ember-team", "harbor-team", "gale-max", LONG]
+RF_ALL = RF_TEAM + ["fjord-team", "personal-max"]
+RF_PLAN = {"personal-max": "Max 5x"}
+
+
+def rf_plan(a):
+    return RF_PLAN.get(a) or ("Max 20x" if a.endswith("-max") else "Team")
+
+
+rf_pools = [{"name": "team", "accounts": RF_TEAM, "profiles": ["default", "work"], "own": False},
+            {"name": "devops", "accounts": ["fjord-team"], "profiles": ["work"], "own": False},
+            {"name": "mine", "accounts": ["personal-max"], "profiles": ["personal"], "own": False}]
+RF_PROFILES = {"default": (RF_TEAM, ["team"]), "work": (RF_TEAM + ["fjord-team"], ["team", "devops"]),
+               "personal": (["personal-max"], ["mine"])}
+
+
+def rf_set(name, accounts, live, decisions):
+    """A set from its records, the live account of each profile and each
+    profile's (decision, best, best_why)."""
+    def verdict(a, active):
+        u = accounts[a]["last_usage"]
+        fh, sd = u["five_hour"]["utilization"] or 0, u["seven_day"]["utilization"] or 0
+        burnt = accounts[a]["burnt_until"] != Z
+        session = fh - 85 >= sd - 98
+        worst, label, trig = (fh, "session", 85) if session else (sd, "week", 98)
+        if burnt:
+            why = "refused on its %s window" % label
+        elif worst >= trig:
+            why = "at %d%% of its %s, over the %d%% trigger" % (worst, label, trig)
+        else:
+            why = "at %d%% of its %s, %d points of room" % (worst, label, trig - worst)
+        return {"id": a, "active": a == active, "eligible": not burnt and worst < trig, "utilization": worst,
+                "window": "five_hour" if session else "seven_day", "why": why}
+
+    profs = []
+    for n, (pool, pools) in RF_PROFILES.items():
+        p = prof(n, pool, pool, dir=None if n == "default" else "~/.claude-" + n, live=live[n], sa=85, sw=98)
+        p["thresholds"]["hard_floor"] = 99
+        p["pools"] = pools
+        profs.append(p)
+
+    def why_block(n):
+        pool = RF_PROFILES[n][0]
+        d, best, best_why = decisions[n]
+        return {"profile": n, "pool": pool, "accounts": [verdict(a, live[n]) for a in pool], "decision": d,
+                "current": n == "default", "best": best, "best_why": best_why, "on_best": False,
+                "thresholds": {"switch_at": 85, "switch_at_weekly": 98, "hard_floor": 99, "landing_margin": 10}}
+
+    def rinfo(a):
+        pool = next(p["name"] for p in rf_pools if a in p["accounts"])
+        used = [n for n, (ids, _) in RF_PROFILES.items() if a in ids]
+        live_in = next((n for n, v in live.items() if v == a), None)
+        i = info(a, used[0], live_in, plan=rf_plan(a), email=None,
+                 state="needs_login" if accounts[a].get("last_error") else "available")
+        i["pool"], i["profiles"] = pool, used
+        return i
+
+    write(name, {
+        "state.json": {"version": 1, "accounts": accounts,
+                       "profiles": {n: {"active_account": live[n], "active_at": NOW, "last_switch": NOW}
+                                    for n in RF_PROFILES},
+                       "emails": {}, "daemon_live": True, "daemon_since": "2026-10-08T01:00:00Z",
+                       "daemon_build_time": Z, "saved_at": NOW},
+        "cli-profile-list.json": {"profiles": profs, "ghosts": [], "pools": rf_pools},
+        "cli-pool-list.json": {"pools": rf_pools, "unlisted": []},
+        "why-profiles.json": {"dir": "/Users/example", "profiles": [why_block(n) for n in RF_PROFILES]},
+        "cli-account-list.json": {"accounts": [rinfo(a) for a in RF_ALL]}})
+
+
+rf_accounts = {
+    "atlas-max": rf_rec("atlas-max", 80, 16, dict(h=1, m=36), dict(d=1, h=14)),
+    "boreal-max": rf_rec("boreal-max", 12, 22, dict(h=4, m=10), dict(d=6, h=14)),
+    "cedar-max": rf_rec("cedar-max", 62, 41, dict(m=48), dict(d=5, h=2)),
+    "boreal-team": rf_rec("boreal-team", None, 98, None, dict(d=1, h=19)),
+    "cedar-team": rf_rec("cedar-team", 0, 98, None, dict(d=1, h=22)),
+    "dune-max": rf_rec("dune-max", 4, 98, dict(h=1), dict(d=2, h=23)),
+    "dune-team": rf_rec("dune-team", 0, 96, None, dict(d=2, h=15)),
+    "ember-max": rf_rec("ember-max", None, 98, None, dict(d=3, h=11)),
+    "ember-team": rf_rec("ember-team", None, 100, None, dict(d=2, h=8), burnt=rf_in(d=2, h=8)),
+    "harbor-team": rf_rec("harbor-team", None, 98, None, dict(m=-20), last="2026-10-08T01:40:00Z"),
+    "gale-max": rf_rec("gale-max", 0, 40, None, dict(d=3), err="HTTP 401: invalid_grant"),
+    LONG: rf_rec(LONG, 0, 0),
+    "fjord-team": rf_rec("fjord-team", 17, 99, dict(h=1, m=18), dict(d=4, h=18)),
+    "personal-max": rf_rec("personal-max", 0, 7, None, dict(d=6)),
+}
+RF_LIVE = {"default": "atlas-max", "work": "boreal-max", "personal": "personal-max"}
+rf_set("refills", rf_accounts, RF_LIVE, {
+    "default": ({"kind": "stay", "reason": "active account at 80% of its session, under the 85% trigger"},
+                "cedar-max", None),
+    "work": ({"kind": "stay", "reason": "active account at 22% of its week, under the 98% trigger"},
+             "cedar-max", None),
+    "personal": ({"kind": "stay", "reason": "active account at 7% of its week, under the 98% trigger"}, None,
+                 "no other account in personal can be switched to")})
+
+# The whole pool shut: the next refill is the only good news, and a long name
+# comes first, to show what the line does with one.
+rf_wait = dict(rf_accounts)
+rf_wait.update({
+    "atlas-max": rf_rec("atlas-max", 100, 16, dict(h=1, m=36), dict(d=1, h=14), burnt=rf_in(h=1, m=36)),
+    "boreal-max": rf_rec("boreal-max", 88, 22, dict(h=4, m=10), dict(d=6, h=14)),
+    "cedar-max": rf_rec("cedar-max", 90, 41, dict(m=48), dict(d=5, h=2)),
+    "dune-team": rf_rec("dune-team", 0, 98, None, dict(d=2, h=15)),
+    LONG: rf_rec(LONG, 92, 30, dict(m=12), dict(d=4)),
+})
+rf_set("refills-wait", rf_wait, RF_LIVE, {
+    "default": ({"kind": "wait", "reason": "active account was refused and nothing else is usable"}, None,
+                "no other account in default has room (each is over its trigger, refused, reserved or unread)"),
+    "work": ({"kind": "stay", "reason": "active account at 88% of its session, over the 85% trigger"}, None, None),
+    "personal": ({"kind": "stay", "reason": "active account at 7% of its week, under the 98% trigger"}, None,
+                 "no other account in personal can be switched to")})

@@ -25,6 +25,9 @@ struct NextState {
     var dismissedLifts: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "dismissedPinLifts") ?? [])
     /// Asks the Settings window to open on a pane (a notification's action).
     var settingsRequest: SettingsRequest?
+    /// What Settings → Accounts shows: kept here so the popover's refill line
+    /// can open it on Refills, and it stays there across panes.
+    var accountsView = AccountsView.list
     /// Cleanup (owner decisions 2026-10-25): the last plan, the last run
     /// this app made or undid, and the journals.
     var cleanPlan: CleanPlan?
@@ -38,6 +41,11 @@ struct NextState {
 struct SettingsRequest: Equatable {
     let id = UUID()
     var pane: Pane?
+}
+
+/// Settings → Accounts' two views.
+enum AccountsView: Hashable {
+    case list, refills
 }
 
 extension Store {
@@ -161,6 +169,12 @@ extension Store {
     /// nil keeps the pane an open window shows.
     func openSettings(_ pane: Pane?) {
         next.settingsRequest = SettingsRequest(pane: pane)
+    }
+
+    /// The popover's refill line: Settings → Accounts, on Refills.
+    func showRefills() {
+        next.accountsView = .refills
+        openSettings(.accounts)
     }
 
     /// Signing an account in again, from a reminder or a Health fix.

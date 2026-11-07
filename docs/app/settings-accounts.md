@@ -1,10 +1,43 @@
 # Settings → Accounts
 
-Every stored account, grouped by the pool it is in and in rotation order within each, with what you can do to each, and the recovery copies.
+Every stored account, grouped by the pool it is in and in rotation order within each, with what you can do to each, and the recovery copies. A switch at the top shows [Refills](#refills) instead: when each account gives more quota next.
 
 See also: [cs accounts](../cli/accounts.md) · [cs pool](../cli/profiles.md#pool) · [Settings → Profiles](settings-profiles.md) · [Add account](add-account.md) · [Claude in Chrome in the app](chrome.md) · [GUIDE → Recovery copies](../GUIDE.md#recovery-copies)
 
 <p align="center"><img src="../images/settings-accounts-pools.png" width="880" alt="Settings, Accounts pane grouped by pool: PERSONAL used by default (1st), personal in use by default; TEAM used by default (2nd) and work (2nd), team-1 needing sign-in, team-2 in use by work, team-3 available; OPS used by work (1st), ops-1 available; SPARE, which no profile uses, empty; and loose-1 in no pool, which default uses last. Each row has its rings, its state, a line with who uses it, its figure and its login, and its plan; each pool header has a ⋯ menu, and New Pool is at the foot"></p>
+
+## Refills
+
+**Refills**, in the switch at the top, shows when each account gives more quota
+next and how much. The subtitle counts the accounts with room now and says when
+the next refill comes (`7 of 14 have room now · next refill in 48m`).
+
+<p align="center"><img src="../images/settings-accounts-refills.png" width="880" alt="Settings, Accounts pane on Refills: 7 of 14 have room now, next refill in 48 minutes. A lane per account over one week, with a dot for each refill sized by what it frees: cedar-max 62% of its session within the hour and 41% of its week in five days, boreal-team 98% of its week in under two days, and so on up to personal-max 7% in six days. The refills are listed in time order under it"></p>
+
+| control | what it does | default |
+|---|---|---|
+| **5 Hours** / **1 Day** / **1 Week** | how far ahead to look | 1 Week |
+| amount menu | only refills that free at least 25%, 50% or 75% | Any Amount |
+
+Each account with a refill to come has a lane. A dot is one refill, larger for
+more freed, blue for a week and green for a session, with its figure beside it;
+hover it for the account, the time and the clock. The same refills are listed
+under it in time order. An account with nothing to come has no lane: one needing
+sign-in (only signing in brings it back), and one with nothing used.
+
+Only what can be spent counts:
+
+- A window's reset gives back what is used of it, as a percent of that account's
+  own session or week. Plans differ in size, and the usage figures do not say by
+  how much, so 50% of one account is not 50% of another.
+- A reset before the account opens again does not count. With its week at its
+  trigger for three days, an account's session reset in an hour gives nothing to
+  spend, so its next refill is the week's.
+- A refused account's refill comes when the refusal clears.
+- A reset under 5 points is left out.
+
+Each account is held to the triggers of the profile it is live in, else the first
+that uses it.
 
 ## Pools
 

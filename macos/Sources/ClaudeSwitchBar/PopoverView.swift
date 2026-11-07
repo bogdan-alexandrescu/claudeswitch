@@ -281,6 +281,7 @@ struct ProfileCardView: View {
                 .padding(.top, 4)
             }
             PoolLine(card: card, now: now)
+            RefillLine(card: card, now: now)
             HStack(spacing: 8) {
                 Button {
                     store.openClaudeCode(card.name)

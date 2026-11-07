@@ -223,6 +223,12 @@ enum Render {
                          size: CGSize(width: 760, height: 520), dark: dark,
                          to: out + "/settings-\(pane.rawValue.lowercased())-min\(dark ? "-dark" : "").png")
                 }
+                store.next.accountsView = .refills
+                save(SettingsView(pane: .accounts, renderSidebar: true, sidebarWidth: SettingsView.sidebarLeast).environmentObject(store)
+                        .environmentObject(LoginItem()),
+                     size: CGSize(width: 760, height: 520), dark: dark,
+                     to: out + "/settings-accounts-refills-min\(dark ? "-dark" : "").png")
+                store.next.accountsView = .list
             }
             return
         }
@@ -490,6 +496,13 @@ enum Render {
     /// New profile with pools checked, and the followed card's account menu.
     static func pools(store: Store, snap: Snapshot, profiles: ProfileList?, dark: Bool, out: String) {
         let sfx = dark ? "-dark" : ""
+        // Accounts' Refills view, at a week and at a day.
+        store.next.accountsView = .refills
+        save(SettingsView(pane: .accounts, renderSidebar: true).environmentObject(store).environmentObject(LoginItem()),
+             size: CGSize(width: 880, height: 640), dark: dark, to: out + "/settings-accounts-refills\(sfx).png")
+        store.next.accountsView = .list
+        save(RefillsTimelineView(zoom: .day).environmentObject(store),
+             size: CGSize(width: 680, height: 420), dark: dark, to: out + "/refills-day\(sfx).png")
         let pools = store.pools
         let sections = pools.map { PoolLayout.sections($0, order: store.accountIDs, profiles: profiles) } ?? []
         let rows = CGFloat(store.accountIDs.count) * 76 + CGFloat(sections.count) * 44

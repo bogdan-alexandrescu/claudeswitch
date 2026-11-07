@@ -1,0 +1,464 @@
+{
+ "accounts": {
+  "atlas-max": {
+   "burnt_until": "2026-10-08T04:22:41Z",
+   "burnt_window": "five_hour",
+   "id": "atlas-max",
+   "last_at": "2026-10-08T02:45:41Z",
+   "last_usage": {
+    "five_hour": {
+     "resets_at": "2026-10-08T04:22:41Z",
+     "utilization": 100
+    },
+    "limits": [
+     {
+      "group": "weekly",
+      "is_active": true,
+      "kind": "weekly_all",
+      "percent": 16,
+      "resets_at": "2026-10-09T16:46:41Z",
+      "scope": null,
+      "severity": "normal"
+     }
+    ],
+    "seven_day": {
+     "resets_at": "2026-10-09T16:46:41Z",
+     "utilization": 16
+    }
+   },
+   "org_id": "11111111-1111-1111-1111-111111111111",
+   "prev_at": "0001-01-01T00:00:00Z",
+   "refresh_expiry": "2026-11-08T02:45:41Z",
+   "seat": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa@11111111-1111-1111-1111-111111111111",
+   "token_expiry": "0001-01-01T00:00:00Z"
+  },
+  "boreal-max": {
+   "burnt_until": "0001-01-01T00:00:00Z",
+   "id": "boreal-max",
+   "last_at": "2026-10-08T02:45:41Z",
+   "last_usage": {
+    "five_hour": {
+     "resets_at": "2026-10-08T06:56:41Z",
+     "utilization": 88
+    },
+    "limits": [
+     {
+      "group": "weekly",
+      "is_active": true,
+      "kind": "weekly_all",
+      "percent": 22,
+      "resets_at": "2026-10-14T16:46:41Z",
+      "scope": null,
+      "severity": "normal"
+     }
+    ],
+    "seven_day": {
+     "resets_at": "2026-10-14T16:46:41Z",
+     "utilization": 22
+    }
+   },
+   "org_id": "11111111-1111-1111-1111-111111111111",
+   "prev_at": "0001-01-01T00:00:00Z",
+   "refresh_expiry": "2026-11-08T02:45:41Z",
+   "seat": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa@11111111-1111-1111-1111-111111111111",
+   "token_expiry": "0001-01-01T00:00:00Z"
+  },
+  "boreal-team": {
+   "burnt_until": "0001-01-01T00:00:00Z",
+   "id": "boreal-team",
+   "last_at": "2026-10-08T02:45:41Z",
+   "last_usage": {
+    "five_hour": {
+     "resets_at": null,
+     "utilization": null
+    },
+    "limits": [
+     {
+      "group": "weekly",
+      "is_active": true,
+      "kind": "weekly_all",
+      "percent": 98,
+      "resets_at": "2026-10-09T21:46:41Z",
+      "scope": null,
+      "severity": "normal"
+     }
+    ],
+    "seven_day": {
+     "resets_at": "2026-10-09T21:46:41Z",
+     "utilization": 98
+    }
+   },
+   "org_id": "11111111-1111-1111-1111-111111111111",
+   "prev_at": "0001-01-01T00:00:00Z",
+   "refresh_expiry": "2026-11-08T02:45:41Z",
+   "seat": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa@11111111-1111-1111-1111-111111111111",
+   "token_expiry": "0001-01-01T00:00:00Z"
+  },
+  "cedar-max": {
+   "burnt_until": "0001-01-01T00:00:00Z",
+   "id": "cedar-max",
+   "last_at": "2026-10-08T02:45:41Z",
+   "last_usage": {
+    "five_hour": {
+     "resets_at": "2026-10-08T03:34:41Z",
+     "utilization": 90
+    },
+    "limits": [
+     {
+      "group": "weekly",
+      "is_active": true,
+      "kind": "weekly_all",
+      "percent": 41,
+      "resets_at": "2026-10-13T04:46:41Z",
+      "scope": null,
+      "severity": "normal"
+     }
+    ],
+    "seven_day": {
+     "resets_at": "2026-10-13T04:46:41Z",
+     "utilization": 41
+    }
+   },
+   "org_id": "11111111-1111-1111-1111-111111111111",
+   "prev_at": "0001-01-01T00:00:00Z",
+   "refresh_expiry": "2026-11-08T02:45:41Z",
+   "seat": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa@11111111-1111-1111-1111-111111111111",
+   "token_expiry": "0001-01-01T00:00:00Z"
+  },
+  "cedar-team": {
+   "burnt_until": "0001-01-01T00:00:00Z",
+   "id": "cedar-team",
+   "last_at": "2026-10-08T02:45:41Z",
+   "last_usage": {
+    "five_hour": {
+     "resets_at": null,
+     "utilization": 0
+    },
+    "limits": [
+     {
+      "group": "weekly",
+      "is_active": true,
+      "kind": "weekly_all",
+      "percent": 98,
+      "resets_at": "2026-10-10T00:46:41Z",
+      "scope": null,
+      "severity": "normal"
+     }
+    ],
+    "seven_day": {
+     "resets_at": "2026-10-10T00:46:41Z",
+     "utilization": 98
+    }
+   },
+   "org_id": "11111111-1111-1111-1111-111111111111",
+   "prev_at": "0001-01-01T00:00:00Z",
+   "refresh_expiry": "2026-11-08T02:45:41Z",
+   "seat": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa@11111111-1111-1111-1111-111111111111",
+   "token_expiry": "0001-01-01T00:00:00Z"
+  },
+  "dune-max": {
+   "burnt_until": "0001-01-01T00:00:00Z",
+   "id": "dune-max",
+   "last_at": "2026-10-08T02:45:41Z",
+   "last_usage": {
+    "five_hour": {
+     "resets_at": "2026-10-08T03:46:41Z",
+     "utilization": 4
+    },
+    "limits": [
+     {
+      "group": "weekly",
+      "is_active": true,
+      "kind": "weekly_all",
+      "percent": 98,
+      "resets_at": "2026-10-11T01:46:41Z",
+      "scope": null,
+      "severity": "normal"
+     }
+    ],
+    "seven_day": {
+     "resets_at": "2026-10-11T01:46:41Z",
+     "utilization": 98
+    }
+   },
+   "org_id": "11111111-1111-1111-1111-111111111111",
+   "prev_at": "0001-01-01T00:00:00Z",
+   "refresh_expiry": "2026-11-08T02:45:41Z",
+   "seat": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa@11111111-1111-1111-1111-111111111111",
+   "token_expiry": "0001-01-01T00:00:00Z"
+  },
+  "dune-team": {
+   "burnt_until": "0001-01-01T00:00:00Z",
+   "id": "dune-team",
+   "last_at": "2026-10-08T02:45:41Z",
+   "last_usage": {
+    "five_hour": {
+     "resets_at": null,
+     "utilization": 0
+    },
+    "limits": [
+     {
+      "group": "weekly",
+      "is_active": true,
+      "kind": "weekly_all",
+      "percent": 98,
+      "resets_at": "2026-10-10T17:46:41Z",
+      "scope": null,
+      "severity": "normal"
+     }
+    ],
+    "seven_day": {
+     "resets_at": "2026-10-10T17:46:41Z",
+     "utilization": 98
+    }
+   },
+   "org_id": "11111111-1111-1111-1111-111111111111",
+   "prev_at": "0001-01-01T00:00:00Z",
+   "refresh_expiry": "2026-11-08T02:45:41Z",
+   "seat": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa@11111111-1111-1111-1111-111111111111",
+   "token_expiry": "0001-01-01T00:00:00Z"
+  },
+  "ember-max": {
+   "burnt_until": "0001-01-01T00:00:00Z",
+   "id": "ember-max",
+   "last_at": "2026-10-08T02:45:41Z",
+   "last_usage": {
+    "five_hour": {
+     "resets_at": null,
+     "utilization": null
+    },
+    "limits": [
+     {
+      "group": "weekly",
+      "is_active": true,
+      "kind": "weekly_all",
+      "percent": 98,
+      "resets_at": "2026-10-11T13:46:41Z",
+      "scope": null,
+      "severity": "normal"
+     }
+    ],
+    "seven_day": {
+     "resets_at": "2026-10-11T13:46:41Z",
+     "utilization": 98
+    }
+   },
+   "org_id": "11111111-1111-1111-1111-111111111111",
+   "prev_at": "0001-01-01T00:00:00Z",
+   "refresh_expiry": "2026-11-08T02:45:41Z",
+   "seat": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa@11111111-1111-1111-1111-111111111111",
+   "token_expiry": "0001-01-01T00:00:00Z"
+  },
+  "ember-team": {
+   "burnt_until": "2026-10-10T10:46:41Z",
+   "burnt_window": "seven_day",
+   "id": "ember-team",
+   "last_at": "2026-10-08T02:45:41Z",
+   "last_usage": {
+    "five_hour": {
+     "resets_at": null,
+     "utilization": null
+    },
+    "limits": [
+     {
+      "group": "weekly",
+      "is_active": true,
+      "kind": "weekly_all",
+      "percent": 100,
+      "resets_at": "2026-10-10T10:46:41Z",
+      "scope": null,
+      "severity": "normal"
+     }
+    ],
+    "seven_day": {
+     "resets_at": "2026-10-10T10:46:41Z",
+     "utilization": 100
+    }
+   },
+   "org_id": "11111111-1111-1111-1111-111111111111",
+   "prev_at": "0001-01-01T00:00:00Z",
+   "refresh_expiry": "2026-11-08T02:45:41Z",
+   "seat": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa@11111111-1111-1111-1111-111111111111",
+   "token_expiry": "0001-01-01T00:00:00Z"
+  },
+  "fjord-team": {
+   "burnt_until": "0001-01-01T00:00:00Z",
+   "id": "fjord-team",
+   "last_at": "2026-10-08T02:45:41Z",
+   "last_usage": {
+    "five_hour": {
+     "resets_at": "2026-10-08T04:04:41Z",
+     "utilization": 17
+    },
+    "limits": [
+     {
+      "group": "weekly",
+      "is_active": true,
+      "kind": "weekly_all",
+      "percent": 99,
+      "resets_at": "2026-10-12T20:46:41Z",
+      "scope": null,
+      "severity": "normal"
+     }
+    ],
+    "seven_day": {
+     "resets_at": "2026-10-12T20:46:41Z",
+     "utilization": 99
+    }
+   },
+   "org_id": "11111111-1111-1111-1111-111111111111",
+   "prev_at": "0001-01-01T00:00:00Z",
+   "refresh_expiry": "2026-11-08T02:45:41Z",
+   "seat": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa@11111111-1111-1111-1111-111111111111",
+   "token_expiry": "0001-01-01T00:00:00Z"
+  },
+  "gale-max": {
+   "burnt_until": "0001-01-01T00:00:00Z",
+   "id": "gale-max",
+   "last_at": "2026-10-08T02:45:41Z",
+   "last_error": "HTTP 401: invalid_grant",
+   "last_usage": {
+    "five_hour": {
+     "resets_at": null,
+     "utilization": 0
+    },
+    "limits": [
+     {
+      "group": "weekly",
+      "is_active": true,
+      "kind": "weekly_all",
+      "percent": 40,
+      "resets_at": "2026-10-11T02:46:41Z",
+      "scope": null,
+      "severity": "normal"
+     }
+    ],
+    "seven_day": {
+     "resets_at": "2026-10-11T02:46:41Z",
+     "utilization": 40
+    }
+   },
+   "org_id": "11111111-1111-1111-1111-111111111111",
+   "prev_at": "0001-01-01T00:00:00Z",
+   "refresh_expiry": "2026-11-08T02:45:41Z",
+   "seat": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa@11111111-1111-1111-1111-111111111111",
+   "token_expiry": "0001-01-01T00:00:00Z"
+  },
+  "harbor-team": {
+   "burnt_until": "0001-01-01T00:00:00Z",
+   "id": "harbor-team",
+   "last_at": "2026-10-08T01:40:00Z",
+   "last_usage": {
+    "five_hour": {
+     "resets_at": null,
+     "utilization": null
+    },
+    "limits": [
+     {
+      "group": "weekly",
+      "is_active": true,
+      "kind": "weekly_all",
+      "percent": 98,
+      "resets_at": "2026-10-08T02:26:41Z",
+      "scope": null,
+      "severity": "normal"
+     }
+    ],
+    "seven_day": {
+     "resets_at": "2026-10-08T02:26:41Z",
+     "utilization": 98
+    }
+   },
+   "org_id": "11111111-1111-1111-1111-111111111111",
+   "prev_at": "0001-01-01T00:00:00Z",
+   "refresh_expiry": "2026-11-08T02:45:41Z",
+   "seat": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa@11111111-1111-1111-1111-111111111111",
+   "token_expiry": "0001-01-01T00:00:00Z"
+  },
+  "personal-max": {
+   "burnt_until": "0001-01-01T00:00:00Z",
+   "id": "personal-max",
+   "last_at": "2026-10-08T02:45:41Z",
+   "last_usage": {
+    "five_hour": {
+     "resets_at": null,
+     "utilization": 0
+    },
+    "limits": [
+     {
+      "group": "weekly",
+      "is_active": true,
+      "kind": "weekly_all",
+      "percent": 7,
+      "resets_at": "2026-10-14T02:46:41Z",
+      "scope": null,
+      "severity": "normal"
+     }
+    ],
+    "seven_day": {
+     "resets_at": "2026-10-14T02:46:41Z",
+     "utilization": 7
+    }
+   },
+   "org_id": "11111111-1111-1111-1111-111111111111",
+   "prev_at": "0001-01-01T00:00:00Z",
+   "refresh_expiry": "2026-11-08T02:45:41Z",
+   "seat": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa@11111111-1111-1111-1111-111111111111",
+   "token_expiry": "0001-01-01T00:00:00Z"
+  },
+  "research-team-extremely-long-account-name": {
+   "burnt_until": "0001-01-01T00:00:00Z",
+   "id": "research-team-extremely-long-account-name",
+   "last_at": "2026-10-08T02:45:41Z",
+   "last_usage": {
+    "five_hour": {
+     "resets_at": "2026-10-08T02:58:41Z",
+     "utilization": 92
+    },
+    "limits": [
+     {
+      "group": "weekly",
+      "is_active": true,
+      "kind": "weekly_all",
+      "percent": 30,
+      "resets_at": "2026-10-12T02:46:41Z",
+      "scope": null,
+      "severity": "normal"
+     }
+    ],
+    "seven_day": {
+     "resets_at": "2026-10-12T02:46:41Z",
+     "utilization": 30
+    }
+   },
+   "org_id": "11111111-1111-1111-1111-111111111111",
+   "prev_at": "0001-01-01T00:00:00Z",
+   "refresh_expiry": "2026-11-08T02:45:41Z",
+   "seat": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa@11111111-1111-1111-1111-111111111111",
+   "token_expiry": "0001-01-01T00:00:00Z"
+  }
+ },
+ "daemon_build_time": "0001-01-01T00:00:00Z",
+ "daemon_live": true,
+ "daemon_since": "2026-10-08T01:00:00Z",
+ "emails": {},
+ "profiles": {
+  "default": {
+   "active_account": "atlas-max",
+   "active_at": "2026-10-08T02:45:41Z",
+   "last_switch": "2026-10-08T02:45:41Z"
+  },
+  "personal": {
+   "active_account": "personal-max",
+   "active_at": "2026-10-08T02:45:41Z",
+   "last_switch": "2026-10-08T02:45:41Z"
+  },
+  "work": {
+   "active_account": "boreal-max",
+   "active_at": "2026-10-08T02:45:41Z",
+   "last_switch": "2026-10-08T02:45:41Z"
+  }
+ },
+ "saved_at": "2026-10-08T02:45:41Z",
+ "version": 1
+}

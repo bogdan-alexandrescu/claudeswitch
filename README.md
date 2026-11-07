@@ -7,7 +7,7 @@ stands, and hot-swaps Claude Code onto a fresh account before the current one
 hits its limit: no restart, no lost session. It ships as a Go CLI plus daemon
 (macOS and Linux), a native macOS menu-bar app and a Claude Code plugin.
 
-Latest release: **v0.8.20**
+Latest release: **v0.8.21**
 ([releases](https://github.com/bogdan-alexandrescu/claudeswitch/releases)).
 
 <p align="center"><img src="docs/images/popover.png" width="384" alt="The ClaudeSwitch menu-bar popover: the daemon is live, the default profile is on work-1 and the work profile is on work-team"></p>
@@ -141,7 +141,7 @@ arm64, and a `checksums.txt`. The archives are reproducible: the same tag
 always produces the same bytes.
 
 ```sh
-VERSION=v0.8.20
+VERSION=v0.8.21
 TARGET=darwin_arm64            # darwin_amd64, linux_amd64, linux_arm64
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 curl -LO "$BASE/claudeswitch_${VERSION}_${TARGET}.tar.gz"
@@ -167,7 +167,7 @@ cd claudeswitch
 symlink, and installs the daemon in dry-run (see [Daemon](#daemon)). To build
 the binary alone: `go build -o bin/claudeswitch ./cmd/claudeswitch`.
 
-**Verify it worked:** `cs version` prints `claudeswitch v0.8.20` for the release
+**Verify it worked:** `cs version` prints `claudeswitch v0.8.21` for the release
 binary (a build from source prints `claudeswitch dev`). If the shell cannot
 find `cs`, add `~/.local/bin` to your `PATH`.
 
@@ -226,7 +226,7 @@ Download it from a release: a universal build, signed with a Developer ID and
 notarized by Apple, so it opens like any other app.
 
 ```sh
-VERSION=v0.8.20
+VERSION=v0.8.21
 BASE=https://github.com/bogdan-alexandrescu/claudeswitch/releases/download/$VERSION
 ZIP="ClaudeSwitch-${VERSION#v}-macos.zip"
 curl -LO "$BASE/$ZIP"
@@ -259,7 +259,7 @@ to install it. [macos/README.md](macos/README.md) has the details.
 
 **Verify it worked:** the Twin rings glyph with the live account and its
 utilization appears in the menu bar, and **About ClaudeSwitch** in its ⋯ menu
-shows version 0.8.20. If you see nothing on a MacBook with a notch, see
+shows version 0.8.21. If you see nothing on a MacBook with a notch, see
 [Troubleshooting](#troubleshooting).
 
 ### Claude Code plugin
@@ -435,6 +435,7 @@ open and shows:
   the profile's switch threshold (85% for the session and 98% for the week by
   default): when the lit dots reach it, rotation moves the profile on;
 - per-model weekly limits, when an account has them;
+- when another of its accounts gives more quota next, and how much;
 - what rotation will do next, and why.
 
 The **bars** show the same dots in two rows. Switch between them with the two
@@ -525,7 +526,9 @@ next rotation.
     in, each pool's header saying which profiles use it. Each row has small
     rings for its week and session, its state (available, in use by a
     profile, no headroom, refused and when it clears), who uses it, plan and
-    login expiry. Drag within a pool to set the rotation order; drag onto
+    login expiry. <b>Refills</b>, in the switch at the top, is a timeline of
+    when each account gives more quota next and how much, over 5 hours, a day
+    or a week. Drag within a pool to set the rotation order; drag onto
     another pool to move it there, after a confirmation. <b>New Pool</b>
     makes a pool, and a pool's ⋯ menu has <b>Rename…</b> and
     <b>Delete…</b>, which asks where its accounts go. From an account's ⋯

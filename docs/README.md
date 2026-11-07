@@ -34,7 +34,8 @@ the CLI command it runs, and its default.
   thresholds, the Chrome profile picker, new and removed profiles.
 - [Settings → Accounts](app/settings-accounts.md): accounts grouped by pool,
   dragging to reorder or to move between pools, New Pool, a pool's Rename
-  and Delete, each account's menu, recovery copies.
+  and Delete, each account's menu, recovery copies, and Refills: when each
+  account gives more quota next.
 - [Settings → Rotation](app/settings-rotation.md): when and where rotation
   moves a profile.
 - [Settings → Polling](app/settings-polling.md): how often accounts are read,

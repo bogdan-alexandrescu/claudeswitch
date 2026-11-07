@@ -1,0 +1,47 @@
+{
+ "pools": [
+  {
+   "accounts": [
+    "atlas-max",
+    "boreal-max",
+    "cedar-max",
+    "boreal-team",
+    "cedar-team",
+    "dune-max",
+    "dune-team",
+    "ember-max",
+    "ember-team",
+    "harbor-team",
+    "gale-max",
+    "research-team-extremely-long-account-name"
+   ],
+   "name": "team",
+   "own": false,
+   "profiles": [
+    "default",
+    "work"
+   ]
+  },
+  {
+   "accounts": [
+    "fjord-team"
+   ],
+   "name": "devops",
+   "own": false,
+   "profiles": [
+    "work"
+   ]
+  },
+  {
+   "accounts": [
+    "personal-max"
+   ],
+   "name": "mine",
+   "own": false,
+   "profiles": [
+    "personal"
+   ]
+  }
+ ],
+ "unlisted": []
+}

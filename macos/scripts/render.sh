@@ -12,6 +12,10 @@
 #   older-cli    RenderFixtures/older-cli over them: a binary from before pools
 #   states       RenderFixtures/states over them: a stale daemon, a hard pin,
 #                already on the best, a pool running dry, a lifted pin
+#   refills      RenderFixtures/refills over them: a hard-worked pool, for
+#                Accounts' Refills view and the popover's next refill
+#   refills-wait RenderFixtures/refills-wait over them: that pool shut, with a
+#                long account name next
 #   min          the many set, Settings only, at the least the window and its
 #                sidebar can be (760 x 520, sidebar 182 pt)
 #
@@ -26,7 +30,7 @@ set -eu
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${1:?usage: render.sh <out-dir> [set...]}"
 shift
-SETS="${*:-base many one-profile hero tutorial pools older-cli states min}"
+SETS="${*:-base many one-profile hero tutorial pools older-cli states refills refills-wait min}"
 FIXED_NOW="2026-10-08T02:46:41Z"
 # The release the renders show, as plugin.json (bumped every release) says.
 VERSION="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$HERE/../plugin/.claude-plugin/plugin.json")"
