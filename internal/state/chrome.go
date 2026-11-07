@@ -102,7 +102,7 @@ func (s *State) SetEmail(account, email string) {
 // EmailOf is an account's recorded email, "" when none was recorded.
 func (s *State) EmailOf(account string) string { return s.Emails[account] }
 
-// SetPlan records the subscription behind an account ("Max 20x"), as the
+// SetPlan records the subscription behind an account ("Ultra"), as the
 // profile endpoint or a vault entry named it. An empty plan records nothing,
 // and recording the plan already recorded changes nothing.
 func (s *State) SetPlan(account, plan string) {

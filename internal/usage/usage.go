@@ -616,17 +616,19 @@ type Profile struct {
 
 // Plan renders the subscription behind a seat in a form a person recognises.
 // The wire values are internal ("default_claude_max_20x", "claude_team"), and
-// what matters day to day is the multiplier: a 5x seat runs out four times
-// sooner than a 20x one, which is exactly the sort of thing you want visible
-// when choosing a rotation order.
+// what matters day to day is which plan it is: a Max seat runs out sooner than
+// an Ultra one, which is exactly the sort of thing you want visible when
+// choosing a rotation order. Anthropic renamed the plans on 2026-10-30 (Max
+// 20x became Ultra, Max 5x became Max) and the tiers kept their old names, so
+// the names here follow the plans.
 func (p *Profile) Plan() string {
 	tier := p.Organization.RateLimitTier
 	name := ""
 	switch {
 	case strings.Contains(tier, "max_20x"):
-		name = "Max 20x"
+		name = "Ultra"
 	case strings.Contains(tier, "max_5x"):
-		name = "Max 5x"
+		name = "Max"
 	case strings.Contains(tier, "pro"):
 		name = "Pro"
 	case tier == "":
