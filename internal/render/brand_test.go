@@ -176,6 +176,9 @@ func TestLayoutWithinBudget(t *testing.T) {
 			if l.plan {
 				w += 2 + 11
 			}
+			if l.clearsBoth {
+				w += 2 + 6
+			}
 			if w > width {
 				t.Errorf("width %d, name %d: table is %d wide", width, name, w)
 			}
