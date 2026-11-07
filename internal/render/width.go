@@ -73,7 +73,7 @@ func layoutFor(width, nameWidth, stateWidth int) layout {
 		numCol = 6  // "~100%!"
 		sessW  = 7  // "SESSION", the header, is wider than any figure
 		clearW = 6  // "2d 12h"
-		planW  = 11 // "Max 5x team"
+		planW  = 11 // "Ultra team", with room to spare
 	)
 	// Always present: indent, marker, name, both numbers, state.
 	need := indent + marker + gap + nameWidth + gap + sessW + gap + numCol + gap + stateWidth

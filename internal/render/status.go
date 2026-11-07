@@ -44,8 +44,8 @@ type Options struct {
 	// interrogated, and the bars took most of the width to say what the number
 	// already said.
 	Detail bool
-	// Plans maps account id to its rendered subscription, e.g. "Max 20x". A 5x
-	// seat exhausts four times sooner than a 20x one, so it belongs next to the
+	// Plans maps account id to its rendered subscription, e.g. "Ultra". A Max
+	// seat exhausts sooner than an Ultra one, so it belongs next to the
 	// numbers rather than a command away.
 	Plans map[string]string
 	// Vaulted lists accounts that have a stored credential. Without it, an

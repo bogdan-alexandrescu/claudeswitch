@@ -592,7 +592,7 @@ type State struct {
 	// reading the keychain. CLI-written and merged like Chrome.
 	Emails       map[string]string `json:"emails,omitempty"`
 	emailTouched map[string]bool
-	// Plans is the subscription behind each account ("Max 20x"), recorded
+	// Plans is the subscription behind each account ("Ultra"), recorded
 	// when the CLI vaults or identifies it and when the daemon reads a vault
 	// entry that names one, so `cs account list` shows it without the
 	// keychain. Either side writes it; a save merges only its own changes.

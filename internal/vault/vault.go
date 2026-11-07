@@ -133,7 +133,7 @@ type Entry struct {
 	// the entry was stored, so callers can record it in state.json and name
 	// the account later without reading the keychain. "" when unknown.
 	Email string
-	// Plan is the subscription the profile endpoint named ("Max 20x"), so
+	// Plan is the subscription the profile endpoint named ("Ultra"), so
 	// callers can record it in state.json; "" when unknown.
 	Plan          string
 	OrgID         string
@@ -170,8 +170,8 @@ func (v *Vault) DescribeOf(accountID string) string {
 	return b.Meta.Email
 }
 
-// PlanOf is the recorded subscription for an entry, e.g. "Max 20x" or
-// "Max 5x team". Empty when the entry predates plan recording.
+// PlanOf is the recorded subscription for an entry, e.g. "Ultra" or
+// "Max team". Empty when the entry predates plan recording.
 func (v *Vault) PlanOf(accountID string) string {
 	b, err := keychain.Read(keychain.VaultService(accountID))
 	if err != nil || b.Meta == nil {
