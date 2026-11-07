@@ -18,6 +18,10 @@ public struct AccountReading: Equatable {
     public var error: String?
     public var refusedUntil: Date?
     public var refusedWindow: String?
+    /// When each window clears; nil when unknown, and from a CLI that
+    /// predates the fields.
+    public var fiveHourResetsAt: Date?
+    public var sevenDayResetsAt: Date?
 
     init?(_ j: JSON) {
         guard j.raw is [String: Any] else { return nil }
@@ -28,6 +32,8 @@ public struct AccountReading: Equatable {
         error = text(j["error"])
         refusedUntil = j["refused_until"].date
         refusedWindow = text(j["refused_window"])
+        fiveHourResetsAt = j["five_hour_resets_at"].date
+        sevenDayResetsAt = j["seven_day_resets_at"].date
     }
 }
 
