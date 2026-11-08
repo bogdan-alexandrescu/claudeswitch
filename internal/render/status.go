@@ -693,7 +693,7 @@ func SharedFooter(out io.Writer, o Options) {
 
 // spare is the calls the budget has spare, in words.
 func spare(b *usage.Budget) string {
-	return Plural(b.Remaining(), "API call", "API calls") + " spare"
+	return Plural(b.Remaining(), "usage check", "usage checks") + " left"
 }
 
 // poolLine is the profile's runway (IMPROVEMENTS F2) in one line: "work
@@ -827,7 +827,7 @@ func (o Options) daemonMode() string {
 func daemonLine(o Options) string {
 	switch o.daemonMode() {
 	case daemonLive:
-		return "daemon live: it polls and rotates; these are its readings"
+		return "daemon live: rotates automatically"
 	case daemonDryRun:
 		return "daemon in dry-run: it rotates nothing, only logs (claudeswitch daemon live)"
 	}
@@ -969,8 +969,8 @@ func rotationParts(cfg *config.Config, b *usage.Budget) []string {
 
 func legend(out io.Writer) {
 	// Every mark the table draws, said once.
-	legend := strings.TrimRight(Joined([]string{"▸ the live account", dotLit + " used", dotThreshold + " its trigger",
-		"! flagged by the API", "~ carried forward from the last reading"}, "  ", terminalWidth()), "\n")
+	legend := strings.TrimRight(Joined([]string{"▸ live now", dotLit + " used", dotThreshold + " rotates here",
+		"! limit warning", "~ estimate"}, "  ", terminalWidth()), "\n")
 	if useColor {
 		// These four are colour swatches, not words to read in sequence. Without
 		// a label and separators they run together into "ok climbing close act

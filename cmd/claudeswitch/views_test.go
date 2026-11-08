@@ -120,12 +120,12 @@ func TestStatusMultiProfileFooterOnce(t *testing.T) {
 	var b bytes.Buffer
 	renderStatus(&b, cfg, st, render.Options{}, nil, time.Now(), "")
 	out := b.String()
-	for _, once := range []string{"! flagged by the API", "at an idle gap"} {
+	for _, once := range []string{"! limit warning", "at an idle gap"} {
 		if n := strings.Count(out, once); n != 1 {
 			t.Fatalf("%q appears %d times, want once:\n%s", once, n, out)
 		}
 	}
-	if strings.Index(out, "! flagged by the API") < strings.Index(out, "profile work") {
+	if strings.Index(out, "! limit warning") < strings.Index(out, "profile work") {
 		t.Fatalf("the legend must come after the last block:\n%s", out)
 	}
 	bl := blocks(t, out)

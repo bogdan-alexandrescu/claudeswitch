@@ -23,7 +23,7 @@ func TestAFlaggedFigureLinesUpWithTheRest(t *testing.T) {
 	Status(&b, Options{Cfg: cfg, St: st, DaemonOwns: true})
 	var at []int
 	for _, line := range strings.Split(b.String(), "\n") {
-		if f := strings.Fields(strings.TrimPrefix(strings.TrimSpace(line), "▸")); len(f) > 3 && f[1] != "at" && (f[0] == "live" || f[0] == "idle") {
+		if f := strings.Fields(strings.TrimPrefix(strings.TrimSpace(line), "▸")); len(f) > 3 && f[1] != "at" && f[1] != "now" && (f[0] == "live" || f[0] == "idle") {
 			// The week's figure: the second percentage on the row, in
 			// columns, not bytes ("▸" is three).
 			first := strings.Index(line, "%")
@@ -67,7 +67,7 @@ func TestTheLegendExplainsTheMarks(t *testing.T) {
 	var b bytes.Buffer
 	Status(&b, Options{Cfg: cfg, St: st, DaemonOwns: true})
 	out := b.String()
-	i := strings.Index(out, "flagged by the API")
+	i := strings.Index(out, "limit warning")
 	if i < 0 {
 		t.Fatalf("no legend:\n%s", out)
 	}

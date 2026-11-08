@@ -8,5 +8,5 @@
   no daemon running: nothing rotates (claudeswitch daemon start)
   rotates at session ≥85% / week ≥95% · at an idle gap, or mid-turn after 30s
   past 98% (the hard floor), mid-turn at once
-  ▸ the live account · ● used · ◉ its trigger · ! flagged by the API · ~ carried forward from the last reading
+  ▸ live now · ● used · ◉ rotates here · ! limit warning · ~ estimate
 

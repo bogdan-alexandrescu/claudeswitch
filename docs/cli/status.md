@@ -114,14 +114,14 @@ Each profile block shows:
   dated `today 15:01`, a weekday within six days, or `18 Oct 09:12` further
   off (`forced` ahead of the reason for a mid-turn switch).
 
-The footer says what the daemon does with these readings (`daemon live: it
-polls and rotates`, `daemon in dry-run: it rotates nothing, only logs`, or
+The footer says what the daemon does with these readings (`daemon live:
+rotates automatically`, `daemon in dry-run: it rotates nothing, only logs`, or
 `no daemon running: nothing rotates`; piped output has no header, so this
 line is where it says so), the triggers and when a rotation goes (`at an
 idle gap, or mid-turn after 30s`, and at once past the hard floor), how
-many API calls are spare,
-and the legend: `▸` the live account, `●` used, `◉` its trigger, `!`
-flagged by the API, `~` carried forward from the last reading.
+many usage checks are left for now,
+and the legend: `▸` live now, `●` used, `◉` where it rotates, `!` a limit
+warning from the API, `~` an estimate carried forward from an older reading.
 
 On a terminal the output starts with the `◎ claudeswitch` header (version,
 daemon, last poll); piped, it does not. `NO_COLOR` turns colour off and
