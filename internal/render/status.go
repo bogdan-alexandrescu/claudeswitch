@@ -971,13 +971,8 @@ func legend(out io.Writer) {
 	// Every mark the table draws, said once.
 	legend := strings.TrimRight(Joined([]string{"▸ live now", dotLit + " used", dotThreshold + " rotates here",
 		"! limit warning", "~ estimate"}, "  ", terminalWidth()), "\n")
-	if useColor {
-		// These four are colour swatches, not words to read in sequence. Without
-		// a label and separators they run together into "ok climbing close act
-		// now", which is what the line looks like the moment colour is stripped
-		// — by a pipe, a paste, or a terminal that does not support it.
-		legend += "\n  colour:  " + paint(meltwater, "ok") + "  ·  " + paint(amber, "climbing") +
-			"  ·  " + paint(orange, "close") + "  ·  " + paint(red, "act now")
+	if key := ColourKey(); key != "" {
+		legend += "\n" + key
 	}
 	fmt.Fprintln(out, legend)
 	fmt.Fprintln(out)
