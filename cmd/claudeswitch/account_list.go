@@ -185,13 +185,7 @@ func accountList(w io.Writer, cfgPath string, asJSON bool) error {
 		}
 		return "-"
 	}
-	type row struct {
-		cells       []string // all but the figures and the email
-		five, seven *float64
-		r5, r7      *time.Time
-		plan, email string
-	}
-	var rows []row
+	var rows []accountRow
 	for _, m := range list {
 		id := m["id"].(string)
 		if m["pinned"] == true {
@@ -215,8 +209,17 @@ func accountList(w io.Writer, cfgPath string, asJSON bool) error {
 		if n, ok := m["number"].(int); ok {
 			number = strconv.Itoa(n)
 		}
-		r := row{cells: []string{number, id, nonEmpty(strings.Join(profiles, ", "), "-"), stateWord},
-			plan: str(m["plan"]), email: str(m["email"])}
+		r := accountRow{cells: []string{number, id, nonEmpty(strings.Join(profiles, ", "), "-"), stateWord},
+			plan: str(m["plan"]), email: str(m["email"]), id: m["id"].(string)}
+		_, r.live = m["active_in"].(string)
+		owners := m["profiles"].([]string)
+		r.profiles = nonEmpty(strings.Join(owners, ", "), "-")
+		if len(owners) > 0 {
+			r.owner = owners[0]
+		}
+		if acct := st.Accounts[r.id]; acct != nil {
+			r.last = acct.Last
+		}
 		if rd, ok := m["reading"].(map[string]any); ok {
 			if v, ok := rd["five_hour"].(float64); ok {
 				r.five = &v
@@ -236,24 +239,15 @@ func accountList(w io.Writer, cfgPath string, asJSON bool) error {
 	// Each figure is followed by when its window clears: a time of day
 	// where the terminal has room, else how long until then, else nothing.
 	// The email is the column that gives way first; it keeps emailRoom.
-	const emailRoom = 12
 	width := render.Width()
-	clears := func(at *time.Time, form int) string {
-		switch {
-		case form == 2 || at == nil:
-			return ""
-		case !at.After(now):
-			return " · now"
-		case form == 0:
-			return " · " + render.When(*at, now)
-		}
-		return " · " + render.Duration(at.Sub(now))
+	if headerOn() && writeAccountBox(w, cfg, st, rows, width, now) {
+		return nil
 	}
 	figure := func(v *float64, at *time.Time, form int) string {
 		if v == nil {
 			return "-"
 		}
-		return fmt.Sprintf("%.0f%%", *v) + clears(at, form)
+		return fmt.Sprintf("%.0f%%", *v) + accountClears(at, form, now)
 	}
 	head := []string{"#", "ACCOUNT", "PROFILES", "STATE", "SESSION", "WEEK", "PLAN", "EMAIL"}
 	build := func(form int) [][]string {
@@ -279,6 +273,107 @@ func accountList(w io.Writer, cfgPath string, asJSON bool) error {
 	fmt.Fprintf(w, "\n%s", t.Render("  "))
 	fmt.Fprintln(w, "\n  cs switch <#> to use that account · * live now · figures as last recorded")
 	return nil
+}
+
+// emailRoom is what the email column keeps when a terminal is too narrow for
+// a whole address.
+const emailRoom = 12
+
+// accountRow is one account in the text forms of `cs account list`.
+type accountRow struct {
+	cells       []string // number, name, profiles, state
+	five, seven *float64
+	r5, r7      *time.Time
+	plan, email string
+	id, owner   string
+	profiles    string // without the piped form's star: ▸ says it here
+	live        bool
+	last        *usage.Usage
+}
+
+// accountClears is what follows a figure: when its window clears, as a time
+// of day (form 0), how long until then (1), or nothing (2).
+func accountClears(at *time.Time, form int, now time.Time) string {
+	switch {
+	case form == 2 || at == nil:
+		return ""
+	case !at.After(now):
+		return " · now"
+	case form == 0:
+		return " · " + render.When(*at, now)
+	}
+	return " · " + render.Duration(at.Sub(now))
+}
+
+// writeAccountBox writes the list as a bordered table in the status view's
+// colours and marks, for a terminal. It gives up what matters least until the
+// table fits: the time of day for a countdown, then the countdown, the email
+// and the plan. It writes nothing and reports false when even that is too
+// wide, and the plain table is drawn instead: a box that wraps is unreadable.
+func writeAccountBox(w io.Writer, cfg *config.Config, st *state.State, rows []accountRow, width int, now time.Time) bool {
+	figure := func(r accountRow, v *float64, at *time.Time, window string, form int) string {
+		if v == nil {
+			return "-"
+		}
+		trigger := cfg.TriggerFor(window)
+		if r.owner != "" {
+			trigger = cfg.TriggerForProfile(r.owner, window)
+		}
+		cell := render.Figure(*v, trigger, r.last, window)
+		if after := accountClears(at, form, now); after != "" {
+			cell += render.Grey(after)
+		}
+		return cell
+	}
+	shapes := []struct {
+		form        int
+		plan, email bool
+	}{{0, true, true}, {1, true, true}, {2, true, true}, {2, true, false}, {2, false, false}}
+	for _, s := range shapes {
+		head := []string{"#", "ACCOUNT", "PROFILES", "STATE", "SESSION", "WEEK"}
+		if s.plan {
+			head = append(head, "PLAN")
+		}
+		if s.email {
+			head = append(head, "EMAIL")
+		}
+		var cells [][]string
+		for _, r := range rows {
+			name := "  " + r.cells[1]
+			if r.live {
+				name = render.Accent("▸") + " " + render.Bold(r.cells[1])
+			}
+			row := []string{r.cells[0], name, r.profiles, render.ColorState(r.cells[3]),
+				figure(r, r.five, r.r5, usage.FiveHourKey, s.form),
+				figure(r, r.seven, r.r7, usage.SevenDayKey, s.form)}
+			if s.plan {
+				row = append(row, r.plan)
+			}
+			if s.email {
+				row = append(row, r.email)
+			}
+			cells = append(cells, row)
+		}
+		lastAtMost := width
+		if s.email {
+			lastAtMost = emailRoom
+		}
+		if render.BoxWidth(head, cells, lastAtMost) > width {
+			continue
+		}
+		t := render.NewTable(head, 0, 4, 5).Fit(width)
+		for _, c := range cells {
+			t.Add(c...)
+		}
+		printHeader(w, st)
+		fmt.Fprintf(w, "\n%s", t.RenderBox())
+		fmt.Fprintln(w, "\n  ▸ live now · ! limit warning · cs switch <#> to use it")
+		if key := render.ColourKey(); key != "" {
+			fmt.Fprintln(w, key)
+		}
+		return true
+	}
+	return false
 }
 
 // tableWidth is how wide a render.Table of head and rows is, indented two
