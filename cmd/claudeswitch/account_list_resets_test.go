@@ -40,7 +40,7 @@ func resetsWorld(t *testing.T, columns string) (path string, now time.Time) {
 
 func rowOf(out, id string) string {
 	for _, line := range strings.Split(out, "\n") {
-		if f := strings.Fields(line); len(f) > 0 && f[0] == id {
+		if f := strings.Fields(line); len(f) > 1 && f[1] == id {
 			return line
 		}
 	}
@@ -72,7 +72,7 @@ func TestAccountListSaysWhenEachWindowClears(t *testing.T) {
 // Where a time of day does not fit, the figure says how long until it
 // clears, and the table still fits the terminal.
 func TestAccountListClearsFitNarrowTerminals(t *testing.T) {
-	for _, cols := range []int{80, 90} {
+	for _, cols := range []int{80, 93} {
 		path, _ := resetsWorld(t, itoa(cols))
 		var buf bytes.Buffer
 		if err := accountList(&buf, path, false); err != nil {
@@ -84,7 +84,7 @@ func TestAccountListClearsFitNarrowTerminals(t *testing.T) {
 				t.Errorf("a %d-column line in a %d-column terminal:\n%s", n, cols, line)
 			}
 		}
-		if cols == 90 && !strings.Contains(rowOf(out, "p1"), "20% · 2h 30m") {
+		if cols == 93 && !strings.Contains(rowOf(out, "p1"), "20% · 2h 30m") {
 			t.Errorf("%d columns: the session's figure gives the time until it clears:\n%s", cols, out)
 		}
 	}

@@ -57,7 +57,7 @@ func TestEveryCommandsHelpHasASynopsis(t *testing.T) {
 		"status":  "usage: claudeswitch status [--profile NAME]",
 		"why":     "usage: claudeswitch why [--profile NAME]",
 		"history": "usage: claudeswitch history",
-		"use":     "usage: claudeswitch use <id>",
+		"use":     "usage: claudeswitch use <id|number>",
 		"login":   "usage: claudeswitch login <id>",
 	} {
 		out, _, _ := runCLISplit(t, name, "--help")

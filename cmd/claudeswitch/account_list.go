@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"io"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -13,8 +15,8 @@ import (
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/usage"
 )
 
-// `cs account list` (lane 15): every configured account from config.toml and
-// state.json alone. It never reads the keychain — no vault entry, no live
+// `cs account list` (lane 15): every configured account from config.toml,
+// state.json and the account numbers alone. It never reads the keychain — no vault entry, no live
 // item — so the app may run it on every refresh without a prompt (M1).
 // What it shows about a credential is what the CLI and the daemon recorded
 // in state: the email and plan when it was vaulted, identified or polled,
@@ -156,8 +158,19 @@ func accountList(w io.Writer, cfgPath string, asJSON bool) error {
 	}
 	now := time.Now()
 	list := make([]map[string]any, 0, len(cfg.Accounts))
+	// The list still answers without its numbers: they are a convenience,
+	// and everything else here is what someone came for.
+	numbers, numErr := state.AccountNumbers(listedIDs(cfg))
 	for _, a := range listedAccounts(cfg) {
-		list = append(list, accountJSON(cfg, st, a, now))
+		m := accountJSON(cfg, st, a, now)
+		m["number"] = nil
+		if n, ok := numbers[a.ID]; ok {
+			m["number"] = n
+		}
+		list = append(list, m)
+	}
+	if numErr != nil {
+		fmt.Fprintf(os.Stderr, "claudeswitch: account numbers are unavailable: %v\n", numErr)
 	}
 	if asJSON {
 		return emitTo(w, map[string]any{"accounts": list})
@@ -198,7 +211,11 @@ func accountList(w io.Writer, cfgPath string, asJSON bool) error {
 		if m["enabled"] == false {
 			stateWord = "disabled, " + stateWord
 		}
-		r := row{cells: []string{id, nonEmpty(strings.Join(profiles, ", "), "-"), stateWord},
+		number := "-"
+		if n, ok := m["number"].(int); ok {
+			number = strconv.Itoa(n)
+		}
+		r := row{cells: []string{number, id, nonEmpty(strings.Join(profiles, ", "), "-"), stateWord},
 			plan: str(m["plan"]), email: str(m["email"])}
 		if rd, ok := m["reading"].(map[string]any); ok {
 			if v, ok := rd["five_hour"].(float64); ok {
@@ -238,7 +255,7 @@ func accountList(w io.Writer, cfgPath string, asJSON bool) error {
 		}
 		return fmt.Sprintf("%.0f%%", *v) + clears(at, form)
 	}
-	head := []string{"ACCOUNT", "PROFILES", "STATE", "SESSION", "WEEK", "PLAN", "EMAIL"}
+	head := []string{"#", "ACCOUNT", "PROFILES", "STATE", "SESSION", "WEEK", "PLAN", "EMAIL"}
 	build := func(form int) [][]string {
 		var out [][]string
 		for _, r := range rows {
@@ -255,12 +272,13 @@ func accountList(w io.Writer, cfgPath string, asJSON bool) error {
 		}
 	}
 	// The email goes last: it is the column a narrow terminal can cut.
-	t := render.NewTable(head, 3, 4).Fit(width)
+	t := render.NewTable(head, 0, 4, 5).Fit(width)
 	for _, c := range cells {
 		t.Add(c...)
 	}
 	fmt.Fprintf(w, "\n%s", t.Render("  "))
-	fmt.Fprintln(w, "\n  * where the account is live · beside each figure, when its window clears ·\n"+
+	fmt.Fprintln(w, "\n  # for cs switch, in place of the name · * where the account is live ·\n"+
+		"  beside each figure, when its window clears ·\n"+
 		"  emails, plans and figures as last recorded")
 	return nil
 }

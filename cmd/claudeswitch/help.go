@@ -33,7 +33,7 @@ var synopses = map[string]string{
 	"init":      "claudeswitch init [--empty] [--json] [--config PATH]",
 	"uninstall": "claudeswitch uninstall [--credentials] [--yes] [--config PATH]",
 	"add":       "claudeswitch add [<id>] [--profile NAME] [--from PROFILE] [--pool NAME | --no-pool] [--force] [--json]",
-	"use":       "claudeswitch use <id> [--profile NAME] [--force] [--dry-run] [--json]",
+	"use":       "claudeswitch use <id|number> [--profile NAME] [--force] [--dry-run] [--json]",
 	"login": "claudeswitch login <id> --direct [--browser APP] [--no-open] [--org ID] [--profile NAME | --pool NAME | --no-pool] [--json]\n" +
 		"       claudeswitch login <id> --code <code> [--json]\n" +
 		"       claudeswitch login <id> [--profile NAME] [--keep] [--sso] [--browser APP]\n" +

@@ -33,10 +33,15 @@ fail instead (`confirmation_required`, `name_required`).
 ## cs use
 
 ```
-cs use <id> [--profile NAME] [--force] [--dry-run] [--json]
+cs use <id|number> [--profile NAME] [--force] [--dry-run] [--json]    (also: cs switch)
 ```
 
-Swaps a profile onto a vaulted account. Only the live credential's
+Swaps a profile onto a vaulted account, named by its id or by the number
+`cs list` shows for it (`cs switch 2`). A number belongs to this machine:
+another machine may number the same account differently. It stays with the
+account through a rename and changes in the rotation order, and a deleted
+account's number is not given out again. An account whose name is all digits
+is still reached by that name: an exact name beats a number. Only the live credential's
 `claudeAiOauth` part changes; MCP logins are carried over unchanged. Running
 Claude Code sessions pick it up from their next request, with no restart.
 
@@ -303,17 +308,17 @@ seat, login expiry and its last reading (`five_hour`, `seven_day`,
 `error`). This is what Settings → Accounts
 shows. Shape: [APP_CLI.md → account](../APP_CLI.md#account).
 
-Without `--json` it is a table of the same, in brief: ACCOUNT (`(pinned)`
-when pinned), PROFILES (every profile that may use it, `*` on the one it is
+Without `--json` it is a table of the same, in brief: `#` (the number
+[`cs use`](#cs-use) and `cs switch` take), ACCOUNT (`(pinned)` when pinned), PROFILES (every profile that may use it, `*` on the one it is
 live in), STATE (`needs sign-in` for `needs_login`), SESSION and WEEK (the
 last reading, each figure followed by when its window clears), PLAN and
 EMAIL. The email goes last, cut with `…` when the terminal is too narrow
 for it:
 
 ```
-  ACCOUNT  PROFILES  STATE                 SESSION             WEEK  PLAN   EMAIL
-  work-1   default*  available    3% · today 17:40  41% · Sun 15:00  Ultra  person1@example.com
-  work-2   default   refused    100% · today 15:05  75% · Sat 09:00  Max    person2@example.com
+  #  ACCOUNT  PROFILES  STATE                 SESSION             WEEK  PLAN   EMAIL
+  1  work-1   default*  available    3% · today 17:40  41% · Sun 15:00  Ultra  person1@example.com
+  2  work-2   default   refused    100% · today 15:05  75% · Sat 09:00  Max    person2@example.com
 ```
 
 When a time of day does not fit, the figure says how long until its window

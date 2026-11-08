@@ -45,7 +45,7 @@ func TestAccountListSaysWhereASharedAccountIsLive(t *testing.T) {
 	out := buf.String()
 	var t1 string
 	for _, line := range strings.Split(out, "\n") {
-		if f := strings.Fields(line); len(f) > 0 && f[0] == "t1" {
+		if f := strings.Fields(line); len(f) > 1 && f[1] == "t1" {
 			t1 = line
 		}
 	}
