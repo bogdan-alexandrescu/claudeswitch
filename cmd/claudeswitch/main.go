@@ -66,6 +66,11 @@ func main() {
 		}
 		cmd, args = args[0], []string{"--help"}
 	}
+	// `cs switch` is `cs use`, named here so everything keyed on the command
+	// sees the one name.
+	if cmd == "switch" {
+		cmd = "use"
+	}
 	asJSON := jsonRequested(args)
 	promptsOff = asJSON || flagPresent(args, "yes")
 	legacyQuiet = quietCommand(cmd, args)
@@ -207,7 +212,11 @@ func usageText(w io.Writer) {
   add <id>   vault the credential that is live right now, as <id>
              (--from <profile>: the one live in that profile; --pool <pool>
              or --no-pool: where a new account goes)
-  use <id>   switch Claude Code onto a vaulted account (hot; no restart needed)
+  use <id|number>
+             switch Claude Code onto a vaulted account (hot; no restart needed);
+             cs list shows each account's number
+  switch <id|number>
+             the same as use
   accounts   what is in the vault
   list       every account: its state, figures, when each window clears, plan
              and email (the same as account list; --json for scripts)
@@ -1924,13 +1933,16 @@ func cmdUse(args []string) error {
 		"or reinstall the account already live")
 	positional := parseInterleaved(fs, args)
 	if len(positional) != 1 {
-		return appErr(codeUsage, "", "usage: claudeswitch use <account-id> [--profile NAME] [--force] [--json]")
+		return appErr(codeUsage, "", "usage: claudeswitch use <account-id|number> [--profile NAME] [--force] [--json]")
 	}
-	id := positional[0]
 
 	cfg, st, err := load(*cfgPath)
 	if err != nil {
 		return wrapErr(codeConfigInvalid, "", err)
+	}
+	id, err := resolveAccountArg(cfg, positional[0])
+	if err != nil {
+		return err
 	}
 	// D5 before anything is read: the refusal must not depend on the vault.
 	target, err := profileForAccount(cfg, *profName, id, false)
@@ -3204,6 +3216,9 @@ func renameAccount(cfgPath, oldID, newID string) error {
 	}
 	st.RenameGhostAccount(oldID, newID)
 	st.RenameChromeAccount(oldID, newID)
+	if err := state.RenameAccountNumber(oldID, newID); err != nil {
+		fmt.Fprintf(os.Stderr, "claudeswitch: %s may get a new number: %v\n", newID, err)
+	}
 	if err := saveRenameState(st); err != nil {
 		return fmt.Errorf("renamed %s → %s in the vault and the config, but the state file could not be "+
 			"saved (%v). Both vault entries are kept, so nothing is lost; do not start the daemon "+

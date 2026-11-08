@@ -207,6 +207,9 @@ func accountDelete(w io.Writer, cfgPath, id string, yes, asJSON bool) error {
 	fresh.Drop(id)
 	fresh.DropVaulted(id)
 	fresh.ForgetIdentity(id)
+	if err := state.ForgetAccountNumber(id); err != nil {
+		fmt.Fprintf(os.Stderr, "claudeswitch: %s keeps its number on file: %v\n", id, err)
+	}
 	for _, ps := range fresh.Profiles {
 		if ps == nil {
 			continue
