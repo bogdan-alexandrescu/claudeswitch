@@ -714,7 +714,7 @@ command in more depth: [docs/GUIDE.md → Commands](docs/GUIDE.md#commands).
 
 | command | what it does |
 |---|---|
-| `cs use <id> [--profile P] [--dry-run] [--json]` | swap a profile onto a vaulted account (hot, no restart) |
+| `cs use <id\|number> [--profile P] [--dry-run] [--json]` | swap a profile onto a vaulted account (hot, no restart; also `cs switch`, and `cs switch 2` takes the number `cs list` shows) |
 | `cs login <id> --direct [--browser APP] [--no-open] [--org ID] [--pool NAME\|--no-pool]` | sign in through a browser, verify the seat, vault it and add it to the config, without touching the live session; `--org` asks for that organization, `--pool` or `--no-pool` says where a new account goes |
 | `cs login` | at a terminal: ask for the name, the pool and the browser, then sign in as `--direct` does |
 | `cs login <id> --code CODE` | finish a `--direct --no-open` login (or one started with no terminal) with the code the browser shows |

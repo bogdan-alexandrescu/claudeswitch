@@ -547,12 +547,12 @@ Errors: `config_invalid`.
 ## account
 
 `claudeswitch account list --json` (lane 15) — every configured account,
-from `config.toml` and `state.json` alone. It never reads the keychain (a
+from `config.toml`, `state.json` and `account-numbers.json` alone. It never reads the keychain (a
 test fails if it runs `security`), so the app may run it on every refresh:
 
 ```json
 {"accounts": [
-  {"id": "work-1", "email": "person1@example.com", "plan": "Ultra",
+  {"id": "work-1", "number": 1, "email": "person1@example.com", "plan": "Ultra",
    "seat": "aaaaaaaa-…@11111111-…", "enabled": true, "profile": "default", "pool": "team",
    "profiles": ["default", "work"], "active_in": "default",
    "pinned": false, "pin_hard": false, "refresh_expires_at": "…", "access_expires_at": "…", "state": "available",
@@ -563,6 +563,8 @@ test fails if it runs `security`), so the app may run it on every refresh:
 
 - Order: the enabled accounts in rotation order, then the disabled ones in
   config order (`enabled: false`).
+- `number` (additive) is the account's number on this machine, which `use`
+  also takes in place of the id; `null` when the numbers cannot be read.
 - `email` and `plan` are what state recorded (`emails`, `plans`): the CLI
   records both when it vaults (`add`, `login`, `setup`) or identifies
   (`identify`) an account, and the daemon records the plan a vault entry
