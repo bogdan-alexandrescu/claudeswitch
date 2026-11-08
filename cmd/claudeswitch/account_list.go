@@ -277,9 +277,7 @@ func accountList(w io.Writer, cfgPath string, asJSON bool) error {
 		t.Add(c...)
 	}
 	fmt.Fprintf(w, "\n%s", t.Render("  "))
-	fmt.Fprintln(w, "\n  # for cs switch, in place of the name · * where the account is live ·\n"+
-		"  beside each figure, when its window clears ·\n"+
-		"  emails, plans and figures as last recorded")
+	fmt.Fprintln(w, "\n  cs switch <#> to use that account · * live now · figures as last recorded")
 	return nil
 }
 

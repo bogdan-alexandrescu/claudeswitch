@@ -64,9 +64,6 @@ func TestAccountListSaysWhenEachWindowClears(t *testing.T) {
 			t.Errorf("p1's row lacks %q:\n%s", want, out)
 		}
 	}
-	if !strings.Contains(out, "when its window clears") {
-		t.Errorf("the footer must say what the time beside a figure is:\n%s", out)
-	}
 }
 
 // Where a time of day does not fit, the figure says how long until it

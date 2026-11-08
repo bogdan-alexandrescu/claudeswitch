@@ -124,3 +124,16 @@ func TestDeleteRetiresAnAccountsNumber(t *testing.T) {
 		t.Errorf("loose = %d after its delete, want a new number, 6", got["loose"])
 	}
 }
+
+func TestListLegendIsOneLineAndSaysHowToSwitch(t *testing.T) {
+	path := appWorld(t, sharedTOML)
+	out, code := runCLI(t, "list", "--config", path)
+	if code != 0 {
+		t.Fatalf("list: exit %d\n%s", code, out)
+	}
+	blocks := strings.Split(strings.TrimSpace(out), "\n\n")
+	legend := blocks[len(blocks)-1]
+	if strings.Contains(legend, "\n") || !strings.Contains(legend, "cs switch <#> to use that account") {
+		t.Errorf("legend:\n%s", legend)
+	}
+}
