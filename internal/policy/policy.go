@@ -254,7 +254,9 @@ func (c candidate) windowLabel() string {
 
 // trigger is the threshold governing whichever window this candidate is judged
 // on, for use in messages that quote it.
-func (c candidate) trigger(cfg *config.Config) float64 { return cfg.TriggerFor(c.window) }
+func (c candidate) trigger(cfg *config.Config) float64 {
+	return cfg.ForAccount(c.acct.ID).TriggerFor(c.window)
+}
 
 // Decide returns what to do now.
 func Decide(in Input) Decision {
@@ -516,13 +518,13 @@ func sessionRoom(c candidate, in Input) float64 {
 	if c.obs == nil || c.obs.Last == nil || !c.obs.Last.FiveHour.Known() {
 		return math.Inf(1)
 	}
-	return in.Cfg.TriggerFor(usage.FiveHourKey) - c.obs.Last.FiveHour.Pct()
+	return in.Cfg.ForAccount(c.acct.ID).TriggerFor(usage.FiveHourKey) - c.obs.Last.FiveHour.Pct()
 }
 
 // shortOf says how a candidate falls short of the landing margin.
 func shortOf(c candidate, in Input) string {
 	return fmt.Sprintf("%s's session window has only %.0f points below its %.0f%% trigger",
-		c.acct.ID, sessionRoom(c, in), in.Cfg.TriggerFor(usage.FiveHourKey))
+		c.acct.ID, sessionRoom(c, in), in.Cfg.ForAccount(c.acct.ID).TriggerFor(usage.FiveHourKey))
 }
 
 // shortNote is appended to a switch that lands inside the landing margin.
@@ -611,6 +613,7 @@ func gather(in Input) []candidate {
 		}
 		obs := in.St.Accounts[a.ID]
 		c := candidate{acct: a, obs: obs, avail: state.Unknown, tier: in.tierOf(a.ID)}
+		acfg := in.Cfg.ForAccount(a.ID)
 		if obs != nil {
 			// Counted models' weekly limits stand in for the weekly window
 			// where higher (I6). With none configured obs is unchanged.
@@ -628,7 +631,7 @@ func gather(in Input) []candidate {
 			if a.ID != in.active() {
 				if obs.Last != nil {
 					c.window, c.worst, c.exceedance = obs.Last.WorstAgainst(
-						in.Cfg.TriggerFor(usage.FiveHourKey), in.Cfg.TriggerFor(usage.SevenDayKey))
+						acfg.TriggerFor(usage.FiveHourKey), acfg.TriggerFor(usage.SevenDayKey))
 					c.over = c.exceedance >= 0
 				}
 				out = append(out, c)
@@ -640,7 +643,7 @@ func gather(in Input) []candidate {
 				// the time it is acted on. Projected() equals the reading when
 				// no burn rate is known, so this is conservative by default.
 				c.window, c.worst, c.exceedance = obs.Last.WorstAgainst(
-					in.Cfg.TriggerFor(usage.FiveHourKey), in.Cfg.TriggerFor(usage.SevenDayKey))
+					acfg.TriggerFor(usage.FiveHourKey), acfg.TriggerFor(usage.SevenDayKey))
 				// The projection applies to the window we are judging, so carry
 				// the same amount of growth onto the exceedance.
 				if proj := obs.ProjectedIn(c.window, in.Now.Add(in.Lookahead)); proj > c.worst {
@@ -731,9 +734,15 @@ func bestWithin(all []candidate, in Input, margin float64, readable bool) (candi
 	return best, found
 }
 
-// ahead reports whether a is chosen before b: an earlier pool first (D33),
-// then better. With one pool it is better.
+// ahead reports whether a is chosen before b: an account with no pick
+// priority before any with one and a lower number before a higher (0 is
+// none, so that is one comparison), then an earlier pool (D33), then better.
+// A pick priority only orders the choice: a held-back account is still taken
+// when nothing ahead of it passes the same test.
 func ahead(a, b candidate, in Input) bool {
+	if a.acct.PickPriority != b.acct.PickPriority {
+		return a.acct.PickPriority < b.acct.PickPriority
+	}
 	if a.tier != b.tier {
 		return a.tier < b.tier
 	}
@@ -1071,7 +1080,7 @@ func Explain(in Input) (Decision, []Verdict) {
 			v.Why = fmt.Sprintf("at %.0f%% of its %s, no headroom", c.worst, c.windowLabel())
 		case sessionRoom(c, in) < in.Cfg.Margin():
 			v.Why = fmt.Sprintf("session at %.0f%%, only %.0f points below its %.0f%% trigger — short of the %g-point landing margin; a target only past the hard floor or after a refusal",
-				c.obs.Last.FiveHour.Pct(), sessionRoom(c, in), in.Cfg.TriggerFor(usage.FiveHourKey), in.Cfg.Margin())
+				c.obs.Last.FiveHour.Pct(), sessionRoom(c, in), in.Cfg.ForAccount(c.acct.ID).TriggerFor(usage.FiveHourKey), in.Cfg.Margin())
 		default:
 			v.Eligible = true
 			v.Why = fmt.Sprintf("at %.0f%% of its %s, ready", c.worst, c.windowLabel())

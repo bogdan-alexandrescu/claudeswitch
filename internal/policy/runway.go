@@ -158,7 +158,8 @@ func Forecast(in Input) Runway {
 	if active.avail != state.Burnt {
 		// From the reading itself, not gather's projection: the forecast is
 		// the projection, carried to the trigger.
-		_, _, exceed := active.obs.Last.WorstAgainst(in.Cfg.TriggerFor(usage.FiveHourKey), in.Cfg.TriggerFor(usage.SevenDayKey))
+		acfg := in.Cfg.ForAccount(active.acct.ID)
+		_, _, exceed := active.obs.Last.WorstAgainst(acfg.TriggerFor(usage.FiveHourKey), acfg.TriggerFor(usage.SevenDayKey))
 		if at := active.obs.LastAt.Add(minutes(-exceed)); exceed < 0 && at.After(in.Now) {
 			r.TriggerAt[active.acct.ID] = at
 			t = at
