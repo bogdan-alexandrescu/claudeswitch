@@ -974,7 +974,8 @@ func (p *Poller) isHot(id string, now time.Time, acct *state.Account) bool {
 	if rate < MovingBurn || now.Sub(moved) >= p.stillAfter(rate) {
 		return false
 	}
-	five, seven := p.cfg.SwitchAt, p.cfg.SwitchAtWeekly
+	cfg := p.cfg.ForAccount(id)
+	five, seven := cfg.SwitchAt, cfg.SwitchAtWeekly
 	if five <= 0 {
 		five = config.DefaultSwitchAt
 	}

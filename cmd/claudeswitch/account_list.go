@@ -52,6 +52,14 @@ func accountState(acct *state.Account, reserve float64, now time.Time) string {
 	return acctUnknown
 }
 
+// setOrNull is an account setting for JSON, where 0 means it has none.
+func setOrNull(v float64) any {
+	if v <= 0 {
+		return nil
+	}
+	return v
+}
+
 // readingJSON is the last reading in brief, or null when state holds
 // neither a reading nor an error for the account. Its binding window is the
 // one nearest its own trigger, as the daemon judges it.
@@ -132,7 +140,8 @@ func accountJSON(cfg *config.Config, st *state.State, a config.Account, now time
 		"profile": orNull(owner), "pool": orNull(pool), "profiles": profiles,
 		"active_in": orNull(activeIn), "pinned": pinned, "pin_hard": pinHard,
 		"refresh_expires_at": nil, "access_expires_at": nil,
-		"state": accountState(acct, a.Reserve, now), "reading": readingJSON(cfg, acct, now),
+		"state": accountState(acct, a.Reserve, now), "reading": readingJSON(cfg.ForAccount(a.ID), acct, now),
+		"ignore_weekly_gte": setOrNull(a.IgnoreWeeklyGTE), "pick_priority": setOrNull(float64(a.PickPriority)),
 	}
 	if acct != nil {
 		m["refresh_expires_at"] = timeOrNull(acct.RefreshExpiry)
@@ -315,11 +324,11 @@ func writeAccountBox(w io.Writer, cfg *config.Config, st *state.State, rows []ac
 		if v == nil {
 			return "-"
 		}
-		trigger := cfg.TriggerFor(window)
+		pcfg := cfg
 		if r.owner != "" {
-			trigger = cfg.TriggerForProfile(r.owner, window)
+			pcfg = cfg.ForProfile(r.owner)
 		}
-		cell := render.Figure(*v, trigger, r.last, window)
+		cell := render.Figure(*v, pcfg.ForAccount(r.id).TriggerFor(window), r.last, window)
 		if after := accountClears(at, form, now); after != "" {
 			cell += render.Grey(after)
 		}

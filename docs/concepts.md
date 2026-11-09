@@ -74,7 +74,9 @@ the app, the larger dot on each dial or bar is that threshold. Above
 **`hard_floor`** (99%) it swaps mid-turn rather than wait for a pause.
 
 Every threshold can be set per profile, in Settings → Profiles or with
-`cs profile set <p> <key> <value>`.
+`cs profile set <p> <key> <value>`. An account can also have an
+`ignore_weekly_gte` in its `[[account]]` block, which replaces the profile's
+weekly threshold for that account.
 
 ## How rotation decides
 
@@ -90,8 +92,10 @@ An account is **eligible** when it can be read, is not refused, is under its
 own `reserve` if it has one, is not live in another profile that shares its
 pool (it reads "in use by" that profile), and has at least
 **`landing_margin`** points (10) of room below the session threshold, so the
-profile does not leave it again at once. A profile goes **pool by pool**, in
-the order it lists them: it takes an account from a later pool only when no
+profile does not leave it again at once. An account with a
+**`pick_priority`** is held back: it is taken only when no account without one
+is eligible, and among those lower numbers go first. Then a profile goes
+**pool by pool**, in the order it lists them: it takes an account from a later pool only when no
 account in an earlier one is eligible. Within a pool, the switch takes the
 eligible account with the most room; **`priority`** order (Settings →
 Accounts, drag to reorder) breaks ties. With **`prefer = "expiring"`**

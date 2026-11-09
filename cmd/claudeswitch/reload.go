@@ -91,7 +91,8 @@ func configChanges(old, next *config.Config) []string {
 		case was.Seat() != a.Seat():
 			repinned = append(repinned, a.ID)
 		case was.Reserve != a.Reserve || was.IsEnabled() != a.IsEnabled() ||
-			was.Label != a.Label:
+			was.Label != a.Label || was.IgnoreWeeklyGTE != a.IgnoreWeeklyGTE ||
+			was.PickPriority != a.PickPriority:
 			other = append(other, a.ID)
 		}
 	}

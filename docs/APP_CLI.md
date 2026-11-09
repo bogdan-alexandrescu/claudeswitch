@@ -556,6 +556,7 @@ test fails if it runs `security`), so the app may run it on every refresh:
    "seat": "aaaaaaaa-…@11111111-…", "enabled": true, "profile": "default", "pool": "team",
    "profiles": ["default", "work"], "active_in": "default",
    "pinned": false, "pin_hard": false, "refresh_expires_at": "…", "access_expires_at": "…", "state": "available",
+   "ignore_weekly_gte": 65, "pick_priority": null,
    "reading": {"five_hour": 3, "seven_day": 41, "binding": "seven_day", "at": "…", "error": null,
                "refused_until": null, "refused_window": null,
                "five_hour_resets_at": "…", "seven_day_resets_at": "…"}}]}
@@ -565,6 +566,9 @@ test fails if it runs `security`), so the app may run it on every refresh:
   config order (`enabled: false`).
 - `number` (additive) is the account's number on this machine, which `use`
   also takes in place of the id; `null` when the numbers cannot be read.
+- `ignore_weekly_gte` and `pick_priority` (additive) are the account's own
+  settings, `null` when it has none; `reading.binding` is judged against its
+  `ignore_weekly_gte`.
 - `email` and `plan` are what state recorded (`emails`, `plans`): the CLI
   records both when it vaults (`add`, `login`, `setup`) or identifies
   (`identify`) an account, and the daemon records the plan a vault entry

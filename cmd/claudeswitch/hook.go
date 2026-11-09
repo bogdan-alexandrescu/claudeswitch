@@ -298,6 +298,7 @@ func ownedBy(cfg *config.Config, owner state.Artifact, live string) bool {
 // standing in words: under both its triggers on its last reading, and not
 // refused. One never read is offered, said as unknown.
 func hasRoom(cfg *config.Config, st *state.State, id string, now time.Time) (bool, string) {
+	cfg = cfg.ForAccount(id)
 	a := st.Accounts[id]
 	if a == nil || a.Last == nil {
 		return true, "its usage is not known yet; `cs status` reads it"

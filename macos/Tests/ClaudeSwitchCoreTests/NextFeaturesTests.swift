@@ -139,6 +139,20 @@ private func at(_ s: String) -> Date { GoTime.parse(s)! }
         #expect(!l.knowsHardPin)
     }
 
+    @Test func testAccountListCarriesRotationSettings() throws {
+        let l = try #require(AccountList(data: try fixture("cli-account-list-next.json")))
+        #expect(l.account("personal")?.ignoreWeeklyGTE == 65)
+        #expect(l.account("personal")?.pickPriority == 2)
+        #expect(l.account("work-1")?.ignoreWeeklyGTE == nil)
+        #expect(l.account("work-1")?.pickPriority == nil)
+    }
+
+    @Test func testAnOlderListHasNoRotationSettings() throws {
+        let l = try #require(AccountList(data: try fixture("cli-account-list.json")))
+        #expect(l.account("personal")?.ignoreWeeklyGTE == nil)
+        #expect(l.account("personal")?.pickPriority == nil)
+    }
+
     @Test func testTheLatestUnpinPerProfileFromTheAuditLog() throws {
         let data = try fixture("audit-unpin.jsonl")
         let lifts = PinLift.latest(jsonl: data)

@@ -327,6 +327,25 @@ func (c *Config) ForProfile(profile string) *Config {
 	return &cp
 }
 
+// ForAccount is the config as it applies to one account: a shallow copy with
+// the account's ignore_weekly_gte as the weekly trigger, or c itself when it
+// has none. Read-only, as ForProfile's copy is. Apply it after ForProfile,
+// which would put the profile's trigger back.
+func (c *Config) ForAccount(id string) *Config {
+	for _, a := range c.Accounts {
+		if a.ID != id {
+			continue
+		}
+		if a.IgnoreWeeklyGTE <= 0 {
+			return c
+		}
+		cp := *c
+		cp.SwitchAtWeekly = a.IgnoreWeeklyGTE
+		return &cp
+	}
+	return c
+}
+
 // ChromeFor is the Chrome profile folder a profile names, "" when none
 // (Chrome's last-used profile then applies). There is no global value.
 func (c *Config) ChromeFor(profile string) string { return c.declared(profile).Chrome }
