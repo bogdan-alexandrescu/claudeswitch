@@ -74,9 +74,9 @@ the app, the larger dot on each dial or bar is that threshold. Above
 **`hard_floor`** (99%) it swaps mid-turn rather than wait for a pause.
 
 Every threshold can be set per profile, in Settings → Profiles or with
-`cs profile set <p> <key> <value>`. An account can also have its own
-`switch_at` or `switch_at_weekly` in its `[[account]]` block; for that account
-and window it replaces the profile's.
+`cs profile set <p> <key> <value>`. An account can also have an
+`ignore_weekly_gte` in its `[[account]]` block, which replaces the profile's
+weekly threshold for that account.
 
 ## How rotation decides
 

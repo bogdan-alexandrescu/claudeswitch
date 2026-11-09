@@ -141,8 +141,7 @@ func accountJSON(cfg *config.Config, st *state.State, a config.Account, now time
 		"active_in": orNull(activeIn), "pinned": pinned, "pin_hard": pinHard,
 		"refresh_expires_at": nil, "access_expires_at": nil,
 		"state": accountState(acct, a.Reserve, now), "reading": readingJSON(cfg.ForAccount(a.ID), acct, now),
-		"switch_at": setOrNull(a.SwitchAt), "switch_at_weekly": setOrNull(a.SwitchAtWeekly),
-		"pick_priority": setOrNull(float64(a.PickPriority)),
+		"ignore_weekly_gte": setOrNull(a.IgnoreWeeklyGTE), "pick_priority": setOrNull(float64(a.PickPriority)),
 	}
 	if acct != nil {
 		m["refresh_expires_at"] = timeOrNull(acct.RefreshExpiry)

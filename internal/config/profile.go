@@ -328,24 +328,19 @@ func (c *Config) ForProfile(profile string) *Config {
 }
 
 // ForAccount is the config as it applies to one account: a shallow copy with
-// the account's own triggers in place of the ones in force, or c itself when
-// it has none. Read-only, as ForProfile's copy is. Apply it after ForProfile,
-// which would put the profile's triggers back.
+// the account's ignore_weekly_gte as the weekly trigger, or c itself when it
+// has none. Read-only, as ForProfile's copy is. Apply it after ForProfile,
+// which would put the profile's trigger back.
 func (c *Config) ForAccount(id string) *Config {
 	for _, a := range c.Accounts {
 		if a.ID != id {
 			continue
 		}
-		if a.SwitchAt <= 0 && a.SwitchAtWeekly <= 0 {
+		if a.IgnoreWeeklyGTE <= 0 {
 			return c
 		}
 		cp := *c
-		if a.SwitchAt > 0 {
-			cp.SwitchAt = a.SwitchAt
-		}
-		if a.SwitchAtWeekly > 0 {
-			cp.SwitchAtWeekly = a.SwitchAtWeekly
-		}
+		cp.SwitchAtWeekly = a.IgnoreWeeklyGTE
 		return &cp
 	}
 	return c

@@ -16,7 +16,7 @@ func TestStatusJudgesAnAccountByItsOwnLimit(t *testing.T) {
 	if row, _ := judgedRow(t, cfg, st, "idle", nil); !strings.Contains(row, "available") {
 		t.Fatalf("70%% of a week under a 98%% trigger is available:\n%s", row)
 	}
-	cfg.Accounts[1].SwitchAtWeekly = 65
+	cfg.Accounts[1].IgnoreWeeklyGTE = 65
 	if row, _ := judgedRow(t, cfg, st, "idle", nil); strings.Contains(row, "available") {
 		t.Errorf("70%% of a week over the account's own 65%% is not available:\n%s", row)
 	}
@@ -26,7 +26,7 @@ func TestStatusDetailFlagsAWindowOverTheAccountsOwnLimit(t *testing.T) {
 	cfg, st := judgedWorld()
 	idle := st.Accounts["idle"]
 	idle.Last.FiveHour.Utilization, idle.Last.SevenDay.Utilization = ptr(5), ptr(70)
-	cfg.Accounts[1].SwitchAtWeekly = 65
+	cfg.Accounts[1].IgnoreWeeklyGTE = 65
 
 	var b bytes.Buffer
 	Status(&b, Options{Cfg: cfg, St: st, DaemonOwns: true, Detail: true})
@@ -43,7 +43,7 @@ func TestStatusDetailFlagsAWindowOverTheAccountsOwnLimit(t *testing.T) {
 
 func TestTheHeadlineCountsRoomToTheAccountsOwnLimit(t *testing.T) {
 	cfg, st := judgedWorld()
-	cfg.Accounts[0].SwitchAtWeekly = 50 // live is at 20% of its week
+	cfg.Accounts[0].IgnoreWeeklyGTE = 50 // live is at 20% of its week
 	var b bytes.Buffer
 	Status(&b, Options{Cfg: cfg, St: st, DaemonOwns: true, Decision: &policy.Decision{Kind: policy.Stay}})
 	if !strings.Contains(b.String(), "30 points before") {

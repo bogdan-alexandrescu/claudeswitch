@@ -108,11 +108,10 @@ type Account struct {
 	// identity and for display; it is not sufficient on its own.
 	OrgID   string  `toml:"org_id"`
 	Reserve float64 `toml:"reserve"` // 0 means "no reserve"
-	// SwitchAt and SwitchAtWeekly are this account's own rotation triggers, in
-	// place of the profile's: it is left at them and not landed on past them.
-	// 0 means "none of its own".
-	SwitchAt       float64 `toml:"switch_at"`
-	SwitchAtWeekly float64 `toml:"switch_at_weekly"`
+	// IgnoreWeeklyGTE takes the account out of rotation once its week reaches
+	// this figure: it stands in for the profile's weekly trigger, so the
+	// account is left at it and not landed on past it. 0 means none.
+	IgnoreWeeklyGTE float64 `toml:"ignore_weekly_gte"`
 	// PickPriority holds an account back as a rotation target: one with no
 	// pick priority (0) is taken before any with one, and among those 1 goes
 	// before 2. Named apart from the top-level `priority` list, which only
@@ -902,8 +901,7 @@ func (c *Config) validateRest() error {
 		"hard_floor": c.HardFloor, "hot_threshold": c.HotThreshold, "landing_margin": c.Margin()}
 	for _, a := range c.Accounts {
 		nums["account "+a.ID+" reserve"] = a.Reserve
-		nums["account "+a.ID+" switch_at"] = a.SwitchAt
-		nums["account "+a.ID+" switch_at_weekly"] = a.SwitchAtWeekly
+		nums["account "+a.ID+" ignore_weekly_gte"] = a.IgnoreWeeklyGTE
 	}
 	for _, in := range c.Profiles {
 		nums["profile "+in.Name+" switch_at"] = in.SwitchAt
@@ -1007,11 +1005,8 @@ func (c *Config) validateRest() error {
 		if a.Reserve < 0 || a.Reserve > 100 {
 			return fmt.Errorf("account %q: reserve must be between 0 and 100", a.ID)
 		}
-		if a.SwitchAt < 0 || a.SwitchAt > 100 {
-			return fmt.Errorf("account %q: switch_at must be between 0 and 100, got %v", a.ID, a.SwitchAt)
-		}
-		if a.SwitchAtWeekly < 0 || a.SwitchAtWeekly > 100 {
-			return fmt.Errorf("account %q: switch_at_weekly must be between 0 and 100, got %v", a.ID, a.SwitchAtWeekly)
+		if a.IgnoreWeeklyGTE < 0 || a.IgnoreWeeklyGTE > 100 {
+			return fmt.Errorf("account %q: ignore_weekly_gte must be between 0 and 100, got %v", a.ID, a.IgnoreWeeklyGTE)
 		}
 		if a.PickPriority < 0 {
 			return fmt.Errorf("account %q: pick_priority must be 1 or more, or left out, got %d", a.ID, a.PickPriority)
@@ -1227,11 +1222,8 @@ func (c *Config) Write(path string) error {
 		if a.Reserve > 0 {
 			fmt.Fprintf(&b, "reserve      = %g\n", a.Reserve)
 		}
-		if a.SwitchAt > 0 {
-			fmt.Fprintf(&b, "switch_at    = %g\n", a.SwitchAt)
-		}
-		if a.SwitchAtWeekly > 0 {
-			fmt.Fprintf(&b, "switch_at_weekly = %g\n", a.SwitchAtWeekly)
+		if a.IgnoreWeeklyGTE > 0 {
+			fmt.Fprintf(&b, "ignore_weekly_gte = %g\n", a.IgnoreWeeklyGTE)
 		}
 		if a.PickPriority > 0 {
 			fmt.Fprintf(&b, "pick_priority = %d\n", a.PickPriority)

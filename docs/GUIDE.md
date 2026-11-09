@@ -549,16 +549,17 @@ priority = ["work-a", "work-b", "personal"]
 [[account]]
 id           = "personal"
 reserve      = 70         # never auto-used above this utilization
-switch_at_weekly = 65     # optional: this account's own trigger (also switch_at)
-pick_priority    = 1      # optional: the last account rotation picks
+ignore_weekly_gte = 65    # optional: out of rotation at 65% of its week
+pick_priority     = 1     # optional: the last account rotation picks
 account_uuid = "…"        # the seat: this person...
 org_id       = "…"        # ...in this organization
 ```
 
-`reserve` only stops rotation moving *onto* an account. An account's own
-`switch_at` or `switch_at_weekly` also moves it *off*, like the profile's
-triggers, which it replaces for that account and window. `pick_priority` is a
-different thing from the `priority` list, which only breaks ties: an account
+`reserve` only stops rotation moving *onto* an account. `ignore_weekly_gte`
+also moves *off* it once its week reaches that figure, standing in for the
+profile's `switch_at_weekly` on that account; if no other account is eligible,
+a live account stays where it is. `pick_priority` is a different thing from
+the `priority` list, which only breaks ties: an account
 with one is taken after every account without, lower numbers first, whatever
 room it has and whichever pool it is in.
 

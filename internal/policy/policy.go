@@ -518,13 +518,13 @@ func sessionRoom(c candidate, in Input) float64 {
 	if c.obs == nil || c.obs.Last == nil || !c.obs.Last.FiveHour.Known() {
 		return math.Inf(1)
 	}
-	return in.Cfg.ForAccount(c.acct.ID).TriggerFor(usage.FiveHourKey) - c.obs.Last.FiveHour.Pct()
+	return in.Cfg.TriggerFor(usage.FiveHourKey) - c.obs.Last.FiveHour.Pct()
 }
 
 // shortOf says how a candidate falls short of the landing margin.
 func shortOf(c candidate, in Input) string {
 	return fmt.Sprintf("%s's session window has only %.0f points below its %.0f%% trigger",
-		c.acct.ID, sessionRoom(c, in), in.Cfg.ForAccount(c.acct.ID).TriggerFor(usage.FiveHourKey))
+		c.acct.ID, sessionRoom(c, in), in.Cfg.TriggerFor(usage.FiveHourKey))
 }
 
 // shortNote is appended to a switch that lands inside the landing margin.
@@ -1080,7 +1080,7 @@ func Explain(in Input) (Decision, []Verdict) {
 			v.Why = fmt.Sprintf("at %.0f%% of its %s, no headroom", c.worst, c.windowLabel())
 		case sessionRoom(c, in) < in.Cfg.Margin():
 			v.Why = fmt.Sprintf("session at %.0f%%, only %.0f points below its %.0f%% trigger — short of the %g-point landing margin; a target only past the hard floor or after a refusal",
-				c.obs.Last.FiveHour.Pct(), sessionRoom(c, in), in.Cfg.ForAccount(c.acct.ID).TriggerFor(usage.FiveHourKey), in.Cfg.Margin())
+				c.obs.Last.FiveHour.Pct(), sessionRoom(c, in), in.Cfg.TriggerFor(usage.FiveHourKey), in.Cfg.Margin())
 		default:
 			v.Eligible = true
 			v.Why = fmt.Sprintf("at %.0f%% of its %s, ready", c.worst, c.windowLabel())

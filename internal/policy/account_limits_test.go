@@ -8,14 +8,14 @@ import (
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/state"
 )
 
-// An account may carry limits of its own (switch_at, switch_at_weekly) and a
-// pick_priority. With neither set, nothing about a decision changes.
+// An account may carry an ignore_weekly_gte and a pick_priority. With neither
+// set, nothing about a decision changes.
 
 func TestDecideLeavesAnAccountAtItsOwnWeeklyLimit(t *testing.T) {
 	later := now.Add(time.Hour)
 	c := cfg()
 	c.SwitchAtWeekly = 98
-	c.Accounts[0].SwitchAtWeekly = 65
+	c.Accounts[0].IgnoreWeeklyGTE = 65
 	d := Decide(Input{Cfg: c, Now: now, St: st("work-a", map[string]*state.Account{
 		"work-a": reading(10, 66, later),
 		"work-b": reading(10, 10, later),
@@ -32,7 +32,7 @@ func TestDecideStaysUnderAnAccountsOwnWeeklyLimit(t *testing.T) {
 	later := now.Add(time.Hour)
 	c := cfg()
 	c.SwitchAtWeekly = 98
-	c.Accounts[0].SwitchAtWeekly = 65
+	c.Accounts[0].IgnoreWeeklyGTE = 65
 	d := Decide(Input{Cfg: c, Now: now, St: st("work-a", map[string]*state.Account{
 		"work-a": reading(10, 64, later),
 		"work-b": reading(10, 10, later),
@@ -46,7 +46,7 @@ func TestAnAccountWithNoLimitGoesByTheProfilesTriggers(t *testing.T) {
 	later := now.Add(time.Hour)
 	c := cfg()
 	c.SwitchAtWeekly = 98
-	c.Accounts[1].SwitchAtWeekly = 65 // another account's limit
+	c.Accounts[1].IgnoreWeeklyGTE = 65 // another account's limit
 	d := Decide(Input{Cfg: c, Now: now, St: st("work-a", map[string]*state.Account{
 		"work-a": reading(10, 66, later),
 		"work-b": reading(10, 10, later),
@@ -60,7 +60,7 @@ func TestDecideDoesNotLandOnAnAccountOverItsOwnLimit(t *testing.T) {
 	later := now.Add(time.Hour)
 	c := cfg()
 	c.SwitchAtWeekly = 98
-	c.Accounts[1].SwitchAtWeekly = 65
+	c.Accounts[1].IgnoreWeeklyGTE = 65
 	d := Decide(Input{Cfg: c, Now: now, St: st("work-a", map[string]*state.Account{
 		"work-a":   reading(91, 30, later),
 		"work-b":   reading(1, 70, later), // most session room, over its own week
@@ -71,16 +71,18 @@ func TestDecideDoesNotLandOnAnAccountOverItsOwnLimit(t *testing.T) {
 	}
 }
 
-func TestAnAccountsOwnSessionLimitSetsItsLandingRoom(t *testing.T) {
+func TestIgnoreWeeklyGTECountsExactlyAtTheFigure(t *testing.T) {
 	later := now.Add(time.Hour)
 	c := cfg()
-	c.Accounts[1].SwitchAt = 30
+	c.SwitchAtWeekly = 98
+	c.Accounts[1].IgnoreWeeklyGTE = 65
 	d := Decide(Input{Cfg: c, Now: now, St: st("work-a", map[string]*state.Account{
-		"work-a": reading(90, 30, later),
-		"work-b": reading(25, 5, later), // 5 points under its own 30, margin is 10
+		"work-a":   reading(91, 30, later),
+		"work-b":   reading(1, 65, later),
+		"personal": reading(20, 30, later),
 	})})
-	if d.Kind != Stay {
-		t.Fatalf("got %v %q (%s), want stay: work-b is short of the margin under its own limit", d.Kind, d.Target, d.Reason)
+	if d.Kind != Switch || d.Target != "personal" {
+		t.Fatalf("got %v %q (%s), want personal: 65 is 65 or above", d.Kind, d.Target, d.Reason)
 	}
 }
 

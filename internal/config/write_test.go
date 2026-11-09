@@ -122,10 +122,10 @@ func TestWriteKeepsEverySetting(t *testing.T) {
 		Accounts: []Account{
 			{ID: "work", AccountUUID: "seat-1",
 				OrgID: "org-1", Reserve: 60, Enabled: &on,
-				SwitchAt: 80, SwitchAtWeekly: 90, PickPriority: 1},
+				IgnoreWeeklyGTE: 90, PickPriority: 1},
 			{ID: "personal", AccountUUID: "seat-2",
 				OrgID: "org-2", Reserve: 70, Enabled: &off,
-				SwitchAt: 70, SwitchAtWeekly: 65, PickPriority: 2},
+				IgnoreWeeklyGTE: 65, PickPriority: 2},
 		},
 		Profiles: []Profile{
 			{Name: "work", Dir: "~/.claude-work", Pools: []string{"shared"},
