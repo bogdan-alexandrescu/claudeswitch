@@ -60,6 +60,12 @@ public struct AccountInfo: Equatable, Identifiable {
     /// F3: pinned with --hard (stays even when refused); nil from a CLI
     /// that predates the pin safety valve.
     public var pinHard: Bool?
+    /// Out of rotation once its week reaches this; nil when it has none, and
+    /// from a CLI that predates the setting.
+    public var ignoreWeeklyGTE: Double?
+    /// Held back as a rotation target: those without one are taken first,
+    /// then the lowest number; nil when it has none.
+    public var pickPriority: Int?
     public var refreshExpiresAt: Date?
     public var accessExpiresAt: Date?
     /// available, reserved, refused, needs_login or unknown (or a word a
@@ -81,6 +87,8 @@ public struct AccountInfo: Equatable, Identifiable {
         activeIn = text(j["active_in"])
         pinned = j["pinned"].bool ?? false
         pinHard = j["pin_hard"].bool
+        ignoreWeeklyGTE = j["ignore_weekly_gte"].double
+        pickPriority = j["pick_priority"].double.map { Int($0) }
         refreshExpiresAt = j["refresh_expires_at"].date
         accessExpiresAt = j["access_expires_at"].date
         state = j["state"].string ?? "unknown"

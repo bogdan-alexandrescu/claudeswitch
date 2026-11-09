@@ -6,6 +6,8 @@
       "email": null,
       "enabled": true,
       "id": "personal",
+      "ignore_weekly_gte": 65,
+      "pick_priority": 2,
       "pin_hard": true,
       "pinned": true,
       "plan": null,
