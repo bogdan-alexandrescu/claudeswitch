@@ -864,6 +864,8 @@ restart.
 | `refresh_probe` | `24h` | also renew each idle account this often, to find a dead refresh token; `0s` disables |
 | `blind_failover_polls` | `3` | after this many unreadable polls of the account in use, fail over to one that can be read (in an idle gap only); `0` holds |
 | `reserve` (per account) | none | never rotate onto this account above this utilization |
+| `switch_at`, `switch_at_weekly` (per account) | none | this account's own triggers, in place of the profile's: rotation moves off it at them and does not land on it past them. Either can be set alone |
+| `pick_priority` (per account) | none | hold this account back as a rotation target: accounts with no pick priority are taken first, then 1, then 2, and so on. It is still taken when nothing ahead of it is eligible |
 
 `cs config` also lists the advanced budget settings
 ([→ Advanced](docs/GUIDE.md#advanced)); change those only if you have measured
@@ -877,6 +879,8 @@ priority = ["work-1", "work-team", "personal", "research"]
 [[account]]
 id           = "personal"
 reserve      = 70          # never auto-used above 70%
+switch_at_weekly = 65      # optional: leave it at 65% of its week
+pick_priority    = 1       # optional: the last account rotation picks
 account_uuid = "…"         # the seat: this person...
 org_id       = "…"         # ...in this organization
 
