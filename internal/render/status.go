@@ -123,6 +123,7 @@ type judgement struct {
 }
 
 func judge(cfg *config.Config, st *state.State, id string, acct *state.Account, now time.Time) judgement {
+	cfg = cfg.ForAccount(id)
 	eff, model, _ := acct.WithModels(cfg.Models)
 	j := judgement{eff: eff, model: model}
 	j.which, j.read, _ = eff.Last.WorstAgainst(cfg.TriggerFor(usage.FiveHourKey), cfg.TriggerFor(usage.SevenDayKey))
@@ -407,6 +408,7 @@ func statusCompact(out io.Writer, o Options) {
 	holdingOff := holdingOffReason(o.Budget)
 
 	for _, a := range accounts {
+		cfg := cfg.ForAccount(a.ID)
 		acct := st.Accounts[a.ID]
 		plan := nonEmpty(o.Plans[a.ID], "-")
 
@@ -650,7 +652,7 @@ func statusCompact(out io.Writer, o Options) {
 // rate, where there is room for it. The marker says which account is active,
 // so STATE does not have to.
 func (o Options) stateCell(a config.Account, withBurn bool) string {
-	cfg, st := o.Cfg, o.St
+	cfg, st := o.Cfg.ForAccount(a.ID), o.St
 	acct := st.Accounts[a.ID]
 	if elsewhere := o.inUseBy(a.ID); elsewhere != "" {
 		// Another profile's for now (D34), whatever its reading says.
@@ -737,7 +739,7 @@ func clockAt(t, now time.Time) string { return When(t, now) }
 // headline is the single line worth reading first: where you stand, and what
 // happens next.
 func headline(o Options) string {
-	st, cfg := o.St, o.Cfg
+	st, cfg := o.St, o.Cfg.ForAccount(o.active())
 	acct := st.Accounts[o.active()]
 	if o.active() == "" || acct == nil || acct.Last == nil {
 		return paint(dim, "no reading for the active account yet")
@@ -982,7 +984,8 @@ func legend(out io.Writer) {
 // under it.
 type detailRow struct {
 	name       string
-	five, week *usage.Window // nil: no reading
+	cfg        *config.Config // with this account's own triggers
+	five, week *usage.Window  // nil: no reading
 	reserve    float64
 	clears     string
 	state      string
@@ -1022,7 +1025,7 @@ func statusDetailed(out io.Writer, o Options) {
 	// The live credential may not match any configured account. Show it plainly
 	// rather than filing it under a guess.
 	if un, ok := st.Accounts[Unattributed]; ok && un.Last != nil {
-		rows = append(rows, detailRow{name: "(live)", five: &un.Last.FiveHour, week: &un.Last.SevenDay,
+		rows = append(rows, detailRow{name: "(live)", cfg: cfg, five: &un.Last.FiveHour, week: &un.Last.SevenDay,
 			clears: until(un.Last.FiveHour.ResetsAt), state: "ACTIVE, unattributed",
 			notes: []string{fmt.Sprintf("org %s is not in your config. Add org_id = %q to the account it "+
 				"belongs to, so its usage is tracked by name.", shortID(un.OrgID), un.OrgID)}})
@@ -1039,7 +1042,7 @@ func statusDetailed(out io.Writer, o Options) {
 		stateW = max(stateW, visibleLen(r.state))
 		for _, w := range []*usage.Window{r.five, r.week} {
 			if w != nil {
-				flagW = max(flagW, visibleLen(windowFlag(*w, cfg, r.reserve, w == r.week)))
+				flagW = max(flagW, visibleLen(windowFlag(*w, r.cfg, r.reserve, w == r.week)))
 			}
 		}
 	}
@@ -1049,11 +1052,11 @@ func statusDetailed(out io.Writer, o Options) {
 	cellW = barW + 9 + flagW
 	stateAt := 2 + nameW + 1 + cellW + 1 + cellW + 1 + clearsW + 1
 
-	cell := func(w *usage.Window, weekly bool, reserve float64) string {
+	cell := func(w *usage.Window, weekly bool, r detailRow) string {
 		if w == nil {
 			return ""
 		}
-		return windowCell(*w, cfg, reserve, weekly, barW)
+		return windowCell(*w, r.cfg, r.reserve, weekly, barW)
 	}
 	line := func(name, five, week, clears, state string) {
 		l := "  " + padRight(name, nameW) + " " + padRight(five, cellW) + " " + padRight(week, cellW) + " " +
@@ -1067,7 +1070,7 @@ func statusDetailed(out io.Writer, o Options) {
 	line("ACCOUNT", "SESSION", "WEEK", "CLEARS", "STATE")
 	notePad := strings.Repeat(" ", 2+nameW+1)
 	for _, r := range rows {
-		line(r.name, cell(r.five, false, r.reserve), cell(r.week, true, r.reserve), r.clears, r.state)
+		line(r.name, cell(r.five, false, r), cell(r.week, true, r), r.clears, r.state)
 		for _, n := range r.notes {
 			marker := "↳ "
 			if strings.HasPrefix(n, "⚠ ") {
@@ -1103,8 +1106,8 @@ func statusDetailed(out io.Writer, o Options) {
 
 // detailRowOf is one configured account's row in status --detail.
 func (o Options) detailRowOf(a config.Account) detailRow {
-	cfg, st := o.Cfg, o.St
-	r := detailRow{name: a.Name(), reserve: a.Reserve, clears: "-"}
+	cfg, st := o.Cfg.ForAccount(a.ID), o.St
+	r := detailRow{name: a.Name(), cfg: cfg, reserve: a.Reserve, clears: "-"}
 	acct := st.Accounts[a.ID]
 	elsewhere := o.inUseBy(a.ID)
 	if acct == nil {

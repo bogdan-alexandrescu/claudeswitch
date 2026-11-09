@@ -2648,6 +2648,13 @@ func cmdStatusline(args []string) error {
 	return err
 }
 
+// slNearTrigger reports whether a figure has reached the lower of the two
+// triggers, the point at which the status line says what rotation will do.
+// An account's own weekly limit can sit below the session trigger.
+func slNearTrigger(worst float64, cfg *config.Config) bool {
+	return worst >= min(cfg.SwitchAt, cfg.TriggerFor(usage.SevenDayKey))
+}
+
 // outdatedMarker ends the status line while the running daemon is older than
 // this binary.
 const outdatedMarker = "⚠ daemon outdated"
@@ -2682,8 +2689,9 @@ func statuslineBody(cfg *config.Config, st *state.State) error {
 		}
 	}
 	name = tag + name
-	// The profile's own thresholds (D4) colour the bars and decide.
-	cfg = view.cfg
+	// The profile's own thresholds (D4), and the account's where it has its
+	// own, colour the bars and decide.
+	cfg = view.cfg.ForAccount(active)
 	now := time.Now()
 	colour := slColorEnabled()
 
@@ -2749,7 +2757,7 @@ func statuslineBody(cfg *config.Config, st *state.State) error {
 	// Saying "switching now" because a number crossed a line promises relief
 	// that may not be coming: when every account is exhausted there is nowhere
 	// to go, and the useful fact is when quota returns instead.
-	if worst >= cfg.SwitchAt {
+	if slNearTrigger(worst, cfg) {
 		dec := policy.Decide(view.input(st, now))
 		switch dec.Kind {
 		case policy.Switch:
@@ -5002,6 +5010,7 @@ func statusJSON(cfg *config.Config, st *state.State, p *poller.Poller, only stri
 					pcfg = cfg.ForProfile(owner)
 				}
 			}
+			pcfg = pcfg.ForAccount(a.ID)
 			eff, _, _ := acct.WithModels(pcfg.Models)
 			which, worst, _ := eff.Last.WorstAgainst(pcfg.TriggerFor(usage.FiveHourKey), pcfg.TriggerFor(usage.SevenDayKey))
 			m["five_hour"] = acct.Last.FiveHour.Pct()
