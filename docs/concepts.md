@@ -162,7 +162,7 @@ the room its accounts have left at the live account's speed (`work pool:
 ~11h of use left across 5 accounts`). It is hours of use, not a clock time:
 it does not guess when you work. Without a speed measured in the last 30
 minutes it is unknown, and says so. `cs forecast` shows it all; `cs list`,
-`cs status` and the status line show their part.
+`cs status`, the status line and the app show their part.
 
 ## Runway
 
