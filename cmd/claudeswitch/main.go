@@ -2571,6 +2571,26 @@ func slPaint(colour, s string, on bool) string {
 	return colour + s + ansiReset
 }
 
+// slDrain is the live account's drain forecast (IMPROVEMENTS "Drain
+// forecast") for the status line: "~4h left" (orange under an hour), "lasts
+// to reset" or "∞ left". Nothing when it is unknown or drained: the week
+// figure already says drained.
+func slDrain(e drain.Estimate, colour bool) string {
+	switch e.Kind {
+	case drain.Hours:
+		c := ansiDim
+		if e.Left < time.Hour {
+			c = ansiOrange
+		}
+		return slPaint(c, render.HoursOfUse(e.Left)+" left", colour)
+	case drain.ToReset:
+		return slPaint(ansiMeltwater, "lasts to reset", colour)
+	case drain.Idle:
+		return slPaint(ansiDim, "∞ left", colour)
+	}
+	return ""
+}
+
 // slWindow renders one usage window. The "▸" marks the binding window — the one
 // that will bite first — so two close figures do not have to be compared by eye.
 func slWindow(label string, w usage.Window, binding bool, trend string, now time.Time,
@@ -2746,6 +2766,9 @@ func statuslineBody(cfg *config.Config, st *state.State) error {
 		slPaint(ansiDim, name, colour),
 		slWindow("session", a.Last.FiveHour, bindKey == usage.FiveHourKey, t5, now, cfg, colour),
 		slWindow("week", a.Last.SevenDay, bindKey == usage.SevenDayKey, t7, now, cfg, colour),
+	}
+	if s := slDrain(drain.For(a, cfg.TriggerFor(usage.SevenDayKey), true, now), colour); s != "" {
+		parts = append(parts, s)
 	}
 	for _, l := range models {
 		parts = append(parts, slModel(l, modelBinds && l.IsActive, now, cfg, colour))
