@@ -1905,6 +1905,11 @@ CLD's calls:
   that use began; a fall (the week cleared) ends a stretch. No stretch in 24
   hours: speed 0, `∞`. Whole-point readings of a slow burn come in level pairs,
   which is why the time runs rise to rise, not pair by pair.
+- **Recent use weighs more.** Each rise's points and time weigh by their age,
+  halving every two hours. A flat 24-hour average read one account at 3
+  points an hour when it was climbing at 6: a slow night averaged with a busy
+  morning. And an account whose last rise is more than an hour old is not
+  being spent now: `∞`, whatever its speed was this morning.
 - **Unknown stays unknown.** No reading, or a speed measured more than 30
   minutes ago (no daemon): `-`. At or past its switch point, or refused on its
   week: `drained`.
@@ -1916,5 +1921,10 @@ CLD's calls:
   accounts`. The runway forecast (F2) stays for the daemon's warning, `cs status
   --detail`'s trigger times and `--json`.
 - Piped `cs list` keeps its columns; the LASTS column is the bordered table's,
-  and gives way after the email and the plan. `cs list --json` gains a `drain`
-  object per account.
+  and gives way after the email and the plan, and is left out until a daemon
+  has measured something. `cs list --json` gains a `drain` object per account.
+- **Words.** `~45m` to the nearest five minutes under an hour and a half,
+  `~4h` past that: a forecast never says more than it knows. The status line
+  appends `~4h left`, `lasts to reset` or `∞ left` after the week, and nothing
+  for unknown or drained (the week figure says drained). `cs status` says an
+  unknown or drained pool only under `--detail`, as it did the runway.
