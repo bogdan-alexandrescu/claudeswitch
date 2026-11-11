@@ -12,11 +12,13 @@ import (
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/audit"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/detector"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/drain"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/keychain"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/oauth"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/policy"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/poller"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/profile"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/readings"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/render"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/state"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/usage"
@@ -223,6 +225,9 @@ type daemon struct {
 
 	// readings keeps each reading for `cs history --usage`; nil keeps none.
 	readings readingsLog
+	// meter keeps the last day of week figures for the drain forecast, and
+	// measureSpeeds writes each account's speed from it; nil measures none.
+	meter *drain.Meter
 
 	// appNotifies reports whether the macOS app's heartbeat is current
 	// (state.AppNotifyingAt): it then posts rotation notices itself and the
@@ -231,9 +236,10 @@ type daemon struct {
 }
 
 // recordReadings hands each configured account's current reading to the
-// readings log. A failure is logged and never stops the daemon.
+// readings log, and its week figure to the meter. A failure is logged and
+// never stops the daemon.
 func (d *daemon) recordReadings() {
-	if d.readings == nil {
+	if d.readings == nil && d.meter == nil {
 		return
 	}
 	for _, a := range d.cfg.Accounts {
@@ -241,10 +247,44 @@ func (d *daemon) recordReadings() {
 		if acct == nil || acct.Last == nil || acct.LastAt.IsZero() {
 			continue
 		}
+		if d.meter != nil && acct.Last.SevenDay.Known() {
+			d.meter.Add(a.ID, acct.LastAt, acct.Last.SevenDay.Pct())
+		}
+		if d.readings == nil {
+			continue
+		}
 		if err := d.readings.Record(a.ID, acct.LastAt, acct.Last); err != nil {
 			d.log.Warn("could not record a reading", "account", a.ID, "err", err)
 		}
 	}
+}
+
+// measureSpeeds writes each configured account's week speed into its record
+// (IMPROVEMENTS "Drain forecast"), for the views to read with drain.For.
+func (d *daemon) measureSpeeds(now time.Time) {
+	if d.meter == nil {
+		return
+	}
+	for _, a := range d.cfg.Accounts {
+		acct := d.st.Accounts[a.ID]
+		if acct == nil {
+			continue
+		}
+		s := d.meter.Speed(a.ID, now)
+		acct.WeekSpeed, acct.WeekSpeedAt, acct.WeekRiseAt = s.PerHour, now, s.LastRise
+	}
+}
+
+// meterFrom is a meter holding the week figures of rs, the readings log's
+// last day, so a restarted daemon knows each account's speed at once.
+func meterFrom(rs []readings.Reading) *drain.Meter {
+	m := drain.NewMeter()
+	for _, r := range rs {
+		if r.SevenDay != nil {
+			m.Add(r.Account, r.At, *r.SevenDay)
+		}
+	}
+	return m
 }
 
 // liveFor resolves a configured profile's live item: the item Claude Code
@@ -1456,6 +1496,7 @@ func (d *daemon) run(ctx context.Context, stop chan struct{}, sig <-chan os.Sign
 				d.releaseGhosts(ctx)
 			}
 			d.recordReadings() // the re-attribution polls above
+			d.measureSpeeds(time.Now())
 			d.noteClaudeAIs()
 			if err := d.save(); err != nil {
 				d.log.Warn("state save failed", "err", err)

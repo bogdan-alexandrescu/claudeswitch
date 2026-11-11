@@ -31,6 +31,7 @@ import (
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/ccdir"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/detector"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/drain"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/keychain"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/notify"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/oauth"
@@ -544,6 +545,13 @@ func cmdWatch(args []string) error {
 	} else {
 		d.readings = rl
 	}
+	// The drain forecast's meter, seeded with the log's last day. Without
+	// the log it starts empty and fills as readings come in.
+	past, err := readings.Read("", time.Now().Add(-drain.Lookback))
+	if err != nil {
+		log.Warn("could not read past readings; speeds start from now", "err", err)
+	}
+	d.meter = meterFrom(past)
 	p.Busy = d.busy
 
 	ctx, cancel := context.WithCancel(context.Background())
