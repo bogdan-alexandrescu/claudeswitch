@@ -75,7 +75,7 @@ func renderForecast(w io.Writer, cfg *config.Config, st *state.State, now time.T
 		e := estimateOf(cfg, st, id, now)
 		elsewhere = elsewhere || e.Elsewhere
 		mark := "  "
-		if liveHere(cfg, st, id) {
+		if activeIn(cfg, st, id) != "" {
 			mark = "▸ "
 		}
 		week, clears := "-", "-"
@@ -123,7 +123,7 @@ func forecastJSON(cfg *config.Config, st *state.State, now time.Time, only strin
 	accounts := []map[string]any{}
 	for _, id := range forecastAccounts(cfg, st, only) {
 		a := st.Accounts[id]
-		m := map[string]any{"id": id, "live": liveHere(cfg, st, id), "week": nil,
+		m := map[string]any{"id": id, "live": activeIn(cfg, st, id) != "", "week": nil,
 			"switch_at": switchPointOf(cfg, id), "week_clears_at": nil,
 			"drain": drainJSON(estimateOf(cfg, st, id, now), drain.Measured(a, now))}
 		if a != nil && a.Last != nil && a.Last.SevenDay.Known() {

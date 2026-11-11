@@ -24,19 +24,9 @@ func switchPointOf(cfg *config.Config, id string) float64 {
 	return pcfg.ForAccount(id).TriggerFor(usage.SevenDayKey)
 }
 
-// liveHere reports whether a configured profile has account id live.
-func liveHere(cfg *config.Config, st *state.State, id string) bool {
-	for _, name := range cfg.ProfileNames() {
-		if ps := st.Profiles[name]; ps != nil && ps.Active == id {
-			return true
-		}
-	}
-	return false
-}
-
 // estimateOf is account id's drain forecast at now.
 func estimateOf(cfg *config.Config, st *state.State, id string, now time.Time) drain.Estimate {
-	return drain.For(st.Accounts[id], switchPointOf(cfg, id), liveHere(cfg, st, id), now)
+	return drain.For(st.Accounts[id], switchPointOf(cfg, id), activeIn(cfg, st, id) != "", now)
 }
 
 // anyMeasured reports whether a running daemon has measured any configured
