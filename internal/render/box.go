@@ -43,6 +43,16 @@ func BoxWidth(head []string, rows [][]string, lastAtMost int) int {
 	return boxTotal(widths)
 }
 
+// Highlight has RenderBox draw a row (counted from 0, as added) on a tinted
+// background, the way a selection stands out. Only with colour, and only
+// where the depth has a tint that keeps the row legible.
+func (t *table) Highlight(row int) {
+	if t.lit == nil {
+		t.lit = map[int]bool{}
+	}
+	t.lit[row] = true
+}
+
 // RenderBox draws the table with borders, for a terminal. A bordered table
 // is for reading; piped output keeps Render, whose columns a script can split.
 func (t *table) RenderBox() string {
@@ -70,9 +80,9 @@ func (t *table) RenderBox() string {
 		return boxIndent + paint(grey, left+strings.Join(segments, mid)+right) + "\n"
 	}
 	bar := paint(grey, "│")
-	line := func(cells []string, weight string) string {
+	line := func(cells []string, weight string, lit bool) string {
 		var b strings.Builder
-		b.WriteString(boxIndent + bar)
+		b.WriteString(bar)
 		for i, w := range widths {
 			c := ""
 			if i < len(cells) {
@@ -88,14 +98,20 @@ func (t *table) RenderBox() string {
 			}
 			b.WriteString(" " + c + " " + bar)
 		}
-		return b.String() + "\n"
+		s := b.String()
+		if lit && useColor && rowBg != "" {
+			// Every painted cell ends in a full reset, which ends the
+			// background too: put it back after each one.
+			s = rowBg + strings.ReplaceAll(s, reset, reset+rowBg) + reset
+		}
+		return boxIndent + s + "\n"
 	}
 	var b strings.Builder
 	b.WriteString(rule("┌", "┬", "┐"))
-	b.WriteString(line(t.head, bold))
+	b.WriteString(line(t.head, bold, false))
 	b.WriteString(rule("├", "┼", "┤"))
-	for _, r := range rows {
-		b.WriteString(line(r, ""))
+	for i, r := range rows {
+		b.WriteString(line(r, "", t.lit[i]))
 	}
 	b.WriteString(rule("└", "┴", "┘"))
 	return b.String()

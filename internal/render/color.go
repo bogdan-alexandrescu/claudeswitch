@@ -3,6 +3,7 @@ package render
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -34,6 +35,7 @@ func detectColor() bool {
 func SetColor(on bool) {
 	useColor = on
 	pal = PaletteFor(DepthFromEnv(os.Getenv))
+	rowBg = rowHighlight(DepthFromEnv(os.Getenv), LightBackground(os.Getenv))
 }
 
 // SetDepth turns colour on at a given depth, for tests and screenshots;
@@ -41,7 +43,46 @@ func SetColor(on bool) {
 func SetDepth(d Depth) {
 	useColor = d != DepthNone
 	pal = PaletteFor(d)
+	rowBg = rowHighlight(d, LightBackground(os.Getenv))
 }
+
+// LightBackground is whether the terminal says its background is light.
+// COLORFGBG ("15;0", white on black) is the one hint terminals give: rxvt
+// started it, and iTerm2, Konsole and others set it. Its last field is the
+// background, and 7 and 9 to 15 are the light ones. Without it, dark, as most
+// terminals are.
+func LightBackground(getenv func(string) string) bool {
+	v := getenv("COLORFGBG")
+	i := strings.LastIndex(v, ";")
+	if i < 0 {
+		return false
+	}
+	bg, err := strconv.Atoi(v[i+1:])
+	return err == nil && (bg == 7 || bg >= 9 && bg <= 15)
+}
+
+// rowHighlight is the background of the row a table points at (cs list's live
+// account): a quiet tint that leaves every colour on it legible. None at
+// sixteen colours, where the only grey background is the grey secondary text
+// is drawn in, which would vanish on it.
+func rowHighlight(d Depth, light bool) string {
+	switch d {
+	case DepthTrue:
+		if light {
+			return "\033[48;2;221;233;245m" // #dde9f5
+		}
+		return "\033[48;2;38;52;68m" // #263444, slate with a little glacier in it
+	case Depth256:
+		if light {
+			return "\033[48;5;254m"
+		}
+		return "\033[48;5;236m"
+	}
+	return ""
+}
+
+// rowBg is the highlight in use, kept beside pal for the same reason.
+var rowBg = rowHighlight(DepthFromEnv(os.Getenv), LightBackground(os.Getenv))
 
 // Depth is how many colours the terminal can show. The brand palette (see
 // docs/BRAND.md) is defined at every depth, so the same role reads the same
@@ -350,6 +391,7 @@ type table struct {
 	right map[int]bool // columns to right-align
 	fit   int          // when set, the width rows are cut to (Fit)
 	wrap  int          // when set, the width rows are wrapped to (Wrap)
+	lit   map[int]bool // rows RenderBox highlights (Highlight)
 }
 
 func (t *table) add(cells ...string) { t.rows = append(t.rows, cells) }
