@@ -98,6 +98,30 @@ func TestBorderedListIsPaintedLikeStatusAndStillLinesUp(t *testing.T) {
 	checkBox(t, out, 160)
 }
 
+// The live account's row stands out the way a selection would, and only it.
+func TestBorderedListHighlightsTheLiveRow(t *testing.T) {
+	const bg = "\x1b[48;5;236m"
+	path := boxWorld(t, "160")
+	t.Setenv("COLORFGBG", "")
+	render.SetDepth(render.Depth256)
+	t.Cleanup(func() { render.SetColor(false) })
+	out := listText(t, path)
+	lit := 0
+	for _, l := range strings.Split(out, "\n") {
+		if !strings.Contains(l, bg) {
+			continue
+		}
+		lit++
+		if plain := ansi.ReplaceAllString(l, ""); !strings.Contains(plain, "▸ p1") {
+			t.Errorf("a background on a row that is not live:\n%s", plain)
+		}
+	}
+	if lit != 1 {
+		t.Errorf("%d highlighted lines, want the live row alone:\n%q", lit, out)
+	}
+	checkBox(t, out, 160)
+}
+
 func TestBorderedListGivesUpColumnsBeforeWrapping(t *testing.T) {
 	for _, columns := range []string{"120", "100", "80"} {
 		out := listText(t, boxWorld(t, columns))

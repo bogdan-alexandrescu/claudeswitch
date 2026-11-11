@@ -371,8 +371,11 @@ func writeAccountBox(w io.Writer, cfg *config.Config, st *state.State, rows []ac
 			continue
 		}
 		t := render.NewTable(head, 0, 4, 5).Fit(width)
-		for _, c := range cells {
+		for i, c := range cells {
 			t.Add(c...)
+			if rows[i].live {
+				t.Highlight(i)
+			}
 		}
 		printHeader(w, st)
 		fmt.Fprintf(w, "\n%s", t.RenderBox())
