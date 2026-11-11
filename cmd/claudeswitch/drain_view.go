@@ -48,6 +48,18 @@ func round1(v float64) float64 { return math.Round(v*10) / 10 }
 // drained or unknown), hours_left (hours of use before the switch point,
 // null unless hours or lasts_to_reset), speed_per_hour (week points an hour
 // of use, null unless measured lately) and used_elsewhere.
+// poolDrainJSON is a pool's drain forecast as the JSON gives it (why and
+// status --json's pool_drain, each pool of forecast --json): its state
+// (hours, idle, drained or unknown), accounts (how many have room), and
+// hours_left and speed_per_hour (null unless hours).
+func poolDrainJSON(p drain.PoolEstimate) map[string]any {
+	m := map[string]any{"state": string(p.Kind), "accounts": p.Accounts, "hours_left": nil, "speed_per_hour": nil}
+	if p.Kind == drain.Hours {
+		m["hours_left"], m["speed_per_hour"] = round1(p.Left.Hours()), round1(p.PerHour)
+	}
+	return m
+}
+
 func drainJSON(e drain.Estimate, measured bool) map[string]any {
 	m := map[string]any{"state": string(e.Kind), "hours_left": nil, "speed_per_hour": nil,
 		"used_elsewhere": e.Elsewhere}

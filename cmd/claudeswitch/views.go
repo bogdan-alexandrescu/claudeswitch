@@ -129,7 +129,7 @@ func runwayJSON(cfg *config.Config, st *state.State, now time.Time) runways {
 	out := runways{profiles: map[string]map[string]any{}, accounts: map[string]any{}}
 	for _, v := range profileViews(cfg, st, "") {
 		r := v.runway(cfg, st, now)
-		m := map[string]any{}
+		m := map[string]any{"pool_drain": poolDrainJSON(v.drainPool(st, now))}
 		addRunwayJSON(m, r)
 		out.profiles[v.in.Name] = m
 		for _, id := range v.in.Pool {
@@ -323,6 +323,7 @@ func whyJSON(cfg *config.Config, st *state.State, now time.Time, only string) ma
 		m := map[string]any{"decision": decisionJSON(dec), "accounts": verdictsJSON(verdicts, views[0].cfg, st, now, r, views[0].in.Name)}
 		addBest(m, in, "", cfg, st, now)
 		addRunwayJSON(m, r)
+		m["pool_drain"] = poolDrainJSON(views[0].drainPool(st, now))
 		return m
 	}
 	var list []map[string]any
@@ -336,6 +337,7 @@ func whyJSON(cfg *config.Config, st *state.State, now time.Time, only string) ma
 		}
 		addBest(m, in, v.in.Name, cfg, st, now)
 		addRunwayJSON(m, r)
+		m["pool_drain"] = poolDrainJSON(v.drainPool(st, now))
 		markCurrent(m, cfg, v.in.Name)
 		list = append(list, m)
 	}
