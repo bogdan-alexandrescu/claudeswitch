@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/drain"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/render"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/state"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/usage"
@@ -142,6 +143,7 @@ func accountJSON(cfg *config.Config, st *state.State, a config.Account, now time
 		"refresh_expires_at": nil, "access_expires_at": nil,
 		"state": accountState(acct, a.Reserve, now), "reading": readingJSON(cfg.ForAccount(a.ID), acct, now),
 		"ignore_weekly_gte": setOrNull(a.IgnoreWeeklyGTE), "pick_priority": setOrNull(float64(a.PickPriority)),
+		"drain": drainJSON(estimateOf(cfg, st, a.ID, now), drain.Measured(acct, now)),
 	}
 	if acct != nil {
 		m["refresh_expires_at"] = timeOrNull(acct.RefreshExpiry)
@@ -229,6 +231,7 @@ func accountList(w io.Writer, cfgPath string, asJSON bool) error {
 		if acct := st.Accounts[r.id]; acct != nil {
 			r.last = acct.Last
 		}
+		r.lasts = estimateOf(cfg, st, r.id, now)
 		if rd, ok := m["reading"].(map[string]any); ok {
 			if v, ok := rd["five_hour"].(float64); ok {
 				r.five = &v
@@ -298,6 +301,7 @@ type accountRow struct {
 	profiles    string // without the piped form's star: ▸ says it here
 	live        bool
 	last        *usage.Usage
+	lasts       drain.Estimate // the drain forecast
 }
 
 // accountClears is what follows a figure: when its window clears, as a time
@@ -316,9 +320,11 @@ func accountClears(at *time.Time, form int, now time.Time) string {
 
 // writeAccountBox writes the list as a bordered table in the status view's
 // colours and marks, for a terminal. It gives up what matters least until the
-// table fits: the time of day for a countdown, then the countdown, the email
-// and the plan. It writes nothing and reports false when even that is too
-// wide, and the plain table is drawn instead: a box that wraps is unreadable.
+// table fits: the time of day for a countdown, then the countdown, the email,
+// the plan and LASTS (the drain forecast, shown only once a daemon has
+// measured something). It writes nothing and reports false when even that is
+// too wide, and the plain table is drawn instead: a box that wraps is
+// unreadable.
 func writeAccountBox(w io.Writer, cfg *config.Config, st *state.State, rows []accountRow, width int, now time.Time) bool {
 	figure := func(r accountRow, v *float64, at *time.Time, window string, form int) string {
 		if v == nil {
@@ -335,11 +341,21 @@ func writeAccountBox(w io.Writer, cfg *config.Config, st *state.State, rows []ac
 		return cell
 	}
 	shapes := []struct {
-		form        int
-		plan, email bool
-	}{{0, true, true}, {1, true, true}, {2, true, true}, {2, true, false}, {2, false, false}}
+		form               int
+		lasts, plan, email bool
+	}{{0, true, true, true}, {1, true, true, true}, {2, true, true, true}, {2, true, true, false},
+		{2, true, false, false}, {2, false, false, false}}
+	measured := anyMeasured(cfg, st, now)
+	elsewhere := false
+	for _, r := range rows {
+		elsewhere = elsewhere || r.lasts.Elsewhere
+	}
 	for _, s := range shapes {
+		lasts := s.lasts && measured
 		head := []string{"#", "ACCOUNT", "PROFILES", "STATE", "SESSION", "WEEK"}
+		if lasts {
+			head = append(head, "LASTS")
+		}
 		if s.plan {
 			head = append(head, "PLAN")
 		}
@@ -355,6 +371,9 @@ func writeAccountBox(w io.Writer, cfg *config.Config, st *state.State, rows []ac
 			row := []string{r.cells[0], name, r.profiles, render.ColorState(r.cells[3]),
 				figure(r, r.five, r.r5, usage.FiveHourKey, s.form),
 				figure(r, r.seven, r.r7, usage.SevenDayKey, s.form)}
+			if lasts {
+				row = append(row, render.Lasts(r.lasts))
+			}
 			if s.plan {
 				row = append(row, r.plan)
 			}
@@ -379,7 +398,11 @@ func writeAccountBox(w io.Writer, cfg *config.Config, st *state.State, rows []ac
 		}
 		printHeader(w, st)
 		fmt.Fprintf(w, "\n%s", t.RenderBox())
-		fmt.Fprintln(w, "\n  ▸ live now · ! limit warning · cs switch <#> to use it")
+		legend := "▸ live now · ! limit warning · "
+		if lasts && elsewhere {
+			legend += render.ElsewhereMark + " used elsewhere · "
+		}
+		fmt.Fprintln(w, "\n  "+legend+"cs switch <#> to use it")
 		if key := render.ColourKey(); key != "" {
 			fmt.Fprintln(w, key)
 		}

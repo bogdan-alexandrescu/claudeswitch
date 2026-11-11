@@ -78,6 +78,9 @@ func TestPoolsLinesFitTheTerminal(t *testing.T) {
 	b.Reset()
 	renderWhy(&b, cfg, st, now, "")
 	linesWithin(t, "why", b.String(), 80)
+	b.Reset()
+	renderForecast(&b, cfg, st, now, "")
+	linesWithin(t, "forecast", b.String(), 80)
 
 	b.Reset()
 	if err := poolList(&b, path, false); err != nil {

@@ -326,6 +326,18 @@ clears instead (`3% · 2h 30m`, `41% · 3d 10h`); in a terminal too narrow
 for that as well, the figures stand alone. The pool and the expiries are in
 `--json` only.
 
+On a terminal, once a running daemon has measured the accounts' speeds, a
+LASTS column follows WEEK: how many hours of use the account has left before
+its switch point (`~4h`, `lasts to reset`, `∞`, `drained`, `-`, with `↑`
+when someone elsewhere is spending it), as
+[`cs forecast`](status.md#cs-forecast) explains. It gives way after the
+email and the plan when the terminal is narrow; piped output keeps its
+columns. `--json` carries it for every account as `drain`: `state` (`hours`,
+`lasts_to_reset`, `idle`, `drained` or `unknown`), `hours_left` (`null`
+unless `hours` or `lasts_to_reset`), `speed_per_hour` (week points an hour
+of use, `null` unless measured in the last 30 minutes) and
+`used_elsewhere`.
+
 `refresh_expires_at` (in `--json`) is when the account's refresh token
 expires, as state.json last recorded it — never read from the keychain, so
 the app's re-login reminders (IMPROVEMENTS F5) can poll it. The daemon

@@ -54,11 +54,12 @@ func TestHelpIsASuccess(t *testing.T) {
 func TestEveryCommandsHelpHasASynopsis(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	for name, want := range map[string]string{
-		"status":  "usage: claudeswitch status [--profile NAME]",
-		"why":     "usage: claudeswitch why [--profile NAME]",
-		"history": "usage: claudeswitch history",
-		"use":     "usage: claudeswitch use <id|number>",
-		"login":   "usage: claudeswitch login <id>",
+		"status":   "usage: claudeswitch status [--profile NAME]",
+		"why":      "usage: claudeswitch why [--profile NAME]",
+		"forecast": "usage: claudeswitch forecast [--profile NAME]",
+		"history":  "usage: claudeswitch history",
+		"use":      "usage: claudeswitch use <id|number>",
+		"login":    "usage: claudeswitch login <id>",
 	} {
 		out, _, _ := runCLISplit(t, name, "--help")
 		if !strings.Contains(out, want) {
@@ -92,7 +93,7 @@ func TestAnUnknownCommandSaysSo(t *testing.T) {
 // Arguments the read commands take none of were silently dropped.
 func TestReadCommandsRejectArguments(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	for _, name := range []string{"status", "why", "plan", "top"} {
+	for _, name := range []string{"status", "why", "plan", "top", "forecast"} {
 		_, errOut, code := runCLISplit(t, name, "work")
 		if code != 2 || !strings.Contains(errOut, name+" takes no arguments") {
 			t.Errorf("%s work: exit %d, want 2:\n%s", name, code, errOut)

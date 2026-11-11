@@ -31,6 +31,7 @@ import (
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/ccdir"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/detector"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/drain"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/keychain"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/notify"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/oauth"
@@ -101,6 +102,8 @@ func main() {
 		err = cmdPlan(args)
 	case "why":
 		err = cmdWhy(args)
+	case "forecast":
+		err = cmdForecast(args)
 	case "top":
 		err = cmdTop(args)
 	case "audit":
@@ -222,6 +225,8 @@ func usageText(w io.Writer) {
              and email (the same as account list; --json for scripts)
   plan       the rotation decision right now (changes nothing)
   why        the same decision, account by account, with the reasoning
+  forecast   how many hours of use each account and pool has left at its
+             speed, and which accounts someone elsewhere is spending (--json)
   top        a live view that refreshes in place (ctrl-c to leave)
   audit      what the daemon has observed, decided and done
   forget     drop an account's recorded observations (not its vault entry)
@@ -544,6 +549,13 @@ func cmdWatch(args []string) error {
 	} else {
 		d.readings = rl
 	}
+	// The drain forecast's meter, seeded with the log's last day. Without
+	// the log it starts empty and fills as readings come in.
+	past, err := readings.Read("", time.Now().Add(-drain.Lookback))
+	if err != nil {
+		log.Warn("could not read past readings; speeds start from now", "err", err)
+	}
+	d.meter = meterFrom(past)
 	p.Busy = d.busy
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -2563,6 +2575,26 @@ func slPaint(colour, s string, on bool) string {
 	return colour + s + ansiReset
 }
 
+// slDrain is the live account's drain forecast (IMPROVEMENTS "Drain
+// forecast") for the status line: "~4h left" (orange under an hour), "lasts
+// to reset" or "∞ left". Nothing when it is unknown or drained: the week
+// figure already says drained.
+func slDrain(e drain.Estimate, colour bool) string {
+	switch e.Kind {
+	case drain.Hours:
+		c := ansiDim
+		if e.Left < time.Hour {
+			c = ansiOrange
+		}
+		return slPaint(c, render.HoursOfUse(e.Left)+" left", colour)
+	case drain.ToReset:
+		return slPaint(ansiMeltwater, "lasts to reset", colour)
+	case drain.Idle:
+		return slPaint(ansiDim, "∞ left", colour)
+	}
+	return ""
+}
+
 // slWindow renders one usage window. The "▸" marks the binding window — the one
 // that will bite first — so two close figures do not have to be compared by eye.
 func slWindow(label string, w usage.Window, binding bool, trend string, now time.Time,
@@ -2738,6 +2770,9 @@ func statuslineBody(cfg *config.Config, st *state.State) error {
 		slPaint(ansiDim, name, colour),
 		slWindow("session", a.Last.FiveHour, bindKey == usage.FiveHourKey, t5, now, cfg, colour),
 		slWindow("week", a.Last.SevenDay, bindKey == usage.SevenDayKey, t7, now, cfg, colour),
+	}
+	if s := slDrain(drain.For(a, cfg.TriggerFor(usage.SevenDayKey), true, now), colour); s != "" {
+		parts = append(parts, s)
 	}
 	for _, l := range models {
 		parts = append(parts, slModel(l, modelBinds && l.IsActive, now, cfg, colour))

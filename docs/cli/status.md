@@ -1,6 +1,6 @@
-# cs status, top, why, plan, whoami
+# cs status, top, why, plan, forecast, whoami
 
-The read commands: where every account stands, what rotation will do and why, and which account is live.
+The read commands: where every account stands, what rotation will do and why, how long each account lasts, and which account is live.
 
 See also: [accounts](accounts.md) · [profiles](profiles.md) · [daemon](daemon.md) · [concepts](../concepts.md) · [app: popover](../app/popover.md) · [GUIDE → Commands](../GUIDE.md#commands)
 
@@ -95,21 +95,18 @@ Each profile block shows:
   points of session room, so rotation will not land on it, and so on). An
   account live in another profile that shares its pool reads
   `in use by <profile>` there, never available;
-- the pool's runway, when there is a forecast (IMPROVEMENTS F2):
-  `work pool: runs dry Thu 14:00 at this pace` (`default's pools: run dry
-  …` for a profile that lists several), or, when a window resets
-  first and gives the pool room back (an account rotation cannot use, or
-  one already being spent),
-  `work pool: does not run dry before work-team resets today 15:30 at this pace`.
-  The pool is spent as rotation would spend it — the live account to its
-  trigger, then each account rotation would land on, in its order — at the
-  pace the live account is burning now (its last two readings, which must
-  be recent: within 15 minutes, or three `poll_active`, of each other and
-  of now). Without such readings, or with an account in the pool not yet
-  read, there is no forecast and no line: unknown is never guessed.
-  `--detail` says so (`work pool: runway unknown (too few recent readings)`,
-  `not being spent`, `no eligible account left`) and adds, under each
-  account, `↳ reaches its trigger Thu 13:10 at this pace`;
+- how long the pool lasts (the drain forecast, [→ cs forecast](#cs-forecast)):
+  `work pool: ~11h of use left across 5 accounts` (`default's pools: …`
+  for a profile that lists several): the room every account in the pool
+  has before its switch point, at the speed the live account is being
+  spent. Refused, unread and drained accounts are left out. `work pool: ∞,
+  not being spent (5 accounts with room)` when the live account has not
+  climbed in the last hour. Without a speed measured by a running daemon in
+  the last 30 minutes there is no line: unknown is never guessed. `--detail`
+  says so (`work pool: hours of use unknown (no speed measured lately)`,
+  `work pool: drained, no account under its switch point`) and adds, under
+  each account, `↳ reaches its trigger Thu 13:10 at this pace` (the runway,
+  IMPROVEMENTS F2, which `--json` and the daemon's warning keep);
 - **RECENT SWITCHES**, the profile's last five, with the reason for each,
   dated `today 15:01`, a weekday within six days, or `18 Oct 09:12` further
   off (`forced` ahead of the reason for a mid-turn switch).
@@ -275,6 +272,59 @@ lines (verbatim from the source):
 A decision has `kind` and `reason`, and may have `target`, `forced` (a
 mid-turn swap past the hard floor), `failover`, `recovers_account`,
 `recovers_at` and `unpin` (the pin it lifts, IMPROVEMENTS F3).
+
+Exit status: as above.
+
+## cs forecast
+
+```
+cs forecast [--profile NAME] [--json] [--config PATH]
+```
+
+How many hours of use each account and each profile's pool has left before
+its switch point, at the speed it is being spent (IMPROVEMENTS "Drain
+forecast"). It reads saved state only.
+
+```
+  ACCOUNT    WEEK  SWITCH AT  SPEED  LASTS    CLEARS
+  ▸ work-1    62%        98%  4.1/h  ~9h      Sat 14:00
+    work-2    30%        98%    6/h  ~11h ↑   Sun 09:00
+    work-3    12%        98%      -  ∞        Fri 10:00
+    work-4    97%        98%   12/h  ~5m      Thu 23:00
+    work-5    70%        65%      -  drained  Sat 18:00
+
+  work pool: ~47h of use left across 4 accounts
+
+  ▸ live now · ↑ used elsewhere · SPEED: week points an hour of use
+  LASTS: hours of use before the switch point
+```
+
+- **SPEED** is how fast the account's week climbs while it is being spent:
+  the daemon keeps every account's week figures for the last 24 hours and
+  counts the time between rises that come within an hour of each other (a
+  stretch of use), recent use weighing more (a rise two hours ago counts
+  half). Use from anyone counts, since it is the account's own figure that
+  climbs. `-` when it has not climbed.
+- **SWITCH AT** is where the account leaves rotation on its week: its
+  `ignore_weekly_gte`, else the week trigger of the first profile that uses
+  it.
+- **LASTS** is the hours of use left before the switch point at that speed:
+  `~45m` to the nearest five minutes under an hour and a half, `~4h` past
+  that. `lasts to reset` when that outlasts the time until its week clears;
+  `∞` when it has not climbed in the last hour; `drained` at or past its
+  switch point, or refused on its week; `-` when unknown (no reading, or no
+  speed measured by a running daemon in the last 30 minutes, which the
+  command then says). `↑` follows it when the week rose in the last 20
+  minutes while no profile here has the account live: someone on another
+  machine is spending it.
+- Each profile's pool line is the one `cs status` prints, said even when it
+  is unknown or drained.
+
+| flag | default | meaning |
+|---|---|---|
+| `--profile NAME` | every profile | only this profile's pool and its accounts |
+| `--json` | off | `accounts` (`id`, `live`, `week`, `switch_at`, `week_clears_at`, `drain` as in [`account list --json`](accounts.md#cs-account-list)) and `pools` (`profile`, `state`: `hours`, `idle`, `drained` or `unknown`, `hours_left` and `speed_per_hour`, `null` unless `hours`, and `accounts`, how many have room) |
+| `--config PATH` | the default config | the config to read |
 
 Exit status: as above.
 

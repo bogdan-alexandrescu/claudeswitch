@@ -150,17 +150,30 @@ plugin](cli/claude-code.md#claudeai-calls-across-a-switch)).
 **Next:** line and `cs plan` show the same. `cs audit --kind decision` lists
 past decisions.
 
+## Drain forecast
+
+The daemon measures each account's **speed**: how fast its week climbs while
+it is being spent, in week points an hour of use, from the rises in the last
+24 hours that come within an hour of each other, recent use weighing more.
+From it, each account's **hours of use left** before its switch point
+(`~4h`): `∞` when it has not climbed in the last hour, `lasts to reset` when
+it outlasts its week, `↑` when someone elsewhere is spending it. A pool's is
+the room its accounts have left at the live account's speed (`work pool:
+~11h of use left across 5 accounts`). It is hours of use, not a clock time:
+it does not guess when you work. Without a speed measured in the last 30
+minutes it is unknown, and says so. `cs forecast` shows it all; `cs list`,
+`cs status` and the status line show their part.
+
 ## Runway
 
-`cs status` forecasts each profile's **runway**: when its pool has no
-eligible account left at the pace the live account is burning now
-(`work pool: runs dry Thu 14:00 at this pace`), spending each account to its
-trigger in the order rotation would. A forecast needs the live account's
-last two readings, both recent; with fewer, or with an account in the pool
-not yet read, there is none: unknown stays unknown. When a window resets
-before the pool would run dry, the pool gets room back, and `status` says
-that instead. The daemon notifies once when the forecast falls within two
-hours. `cs status --detail` adds when each account reaches its trigger.
+The **runway** is the clock-time forecast the daemon warns from: when the
+profile's pool has no eligible account left at the pace the live account is
+burning now, spending each account to its trigger in the order rotation
+would. A forecast needs the live account's last two readings, both recent;
+with fewer, or with an account in the pool not yet read, there is none:
+unknown stays unknown. The daemon notifies once when it falls within two
+hours. `cs status --detail` adds when each account reaches its trigger, and
+`--json` carries the pool's (`pool_dry_at`).
 
 ## Hot swaps
 

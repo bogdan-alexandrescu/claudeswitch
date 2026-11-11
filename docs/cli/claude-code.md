@@ -40,6 +40,11 @@ several profiles it starts with the profile's name, as in `work: work-team`.
   shows which way it moved since the reading before.
 - Each figure is coloured by band: below 60%, from 60%, from the profile's
   `switch_at`, and from its `hard_floor`.
+- `~4h left` after the week is how many hours of use the account has left
+  before its switch point at its speed (orange under an hour; `lasts to
+  reset` when it outlasts its week, `∞ left` when it is not being spent;
+  nothing when that is unknown or it is drained):
+  [→ cs forecast](status.md#cs-forecast).
 - A per-model weekly limit appears only when it binds or is at the weekly
   trigger.
 - A refused account reads `personal  refused until 14:30  week ...`.

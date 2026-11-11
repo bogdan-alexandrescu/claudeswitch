@@ -9,9 +9,11 @@ import (
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/audit"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/drain"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/policy"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/render"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/state"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/usage"
 )
 
 // profileView is one profile as the read-only views (status, top, why, plan,
@@ -75,6 +77,24 @@ func (v profileView) runway(cfg *config.Config, st *state.State, now time.Time) 
 	in := v.input(st, now)
 	in.Unavailable = bestExclusions(cfg, st, v.in.Name, now, recordingSince(st))
 	return policy.Forecast(in)
+}
+
+// drainPool is the profile's pool drain forecast (IMPROVEMENTS "Drain
+// forecast"): the room its accounts have before their switch points, at the
+// speed its live account is spent at.
+func (v profileView) drainPool(st *state.State, now time.Time) drain.PoolEstimate {
+	ids := v.pool
+	if ids == nil {
+		for _, a := range v.cfg.Accounts {
+			ids = append(ids, a.ID)
+		}
+	}
+	members := make([]drain.Member, 0, len(ids))
+	for _, id := range ids {
+		members = append(members, drain.Member{Account: st.Accounts[id],
+			SwitchAt: v.cfg.ForAccount(id).TriggerFor(usage.SevenDayKey)})
+	}
+	return drain.Pool(st.Accounts[v.ist.Active], members, now)
 }
 
 // addRunwayJSON adds a profile's runway (IMPROVEMENTS F2): pool_dry_at,
@@ -250,8 +270,8 @@ func renderStatus(w io.Writer, cfg *config.Config, st *state.State, base render.
 		o := v.options(base, st)
 		dec := policy.Decide(v.input(st, now))
 		o.Decision = &dec
-		r := v.runway(cfg, st, now)
-		o.Runway = &r
+		r, pe := v.runway(cfg, st, now), v.drainPool(st, now)
+		o.Runway, o.Drain = &r, &pe
 		o.Switches = lastOf(switches, recentShown)
 		if multi {
 			v.heading(w)
