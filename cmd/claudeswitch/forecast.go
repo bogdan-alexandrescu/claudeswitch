@@ -137,11 +137,8 @@ func forecastJSON(cfg *config.Config, st *state.State, now time.Time, only strin
 	pools := []map[string]any{}
 	for _, v := range profileViews(cfg, st, only) {
 		_, _, p := forecastPool(v, st, now)
-		m := map[string]any{"profile": v.in.Name, "state": string(p.Kind), "accounts": p.Accounts,
-			"hours_left": nil, "speed_per_hour": nil}
-		if p.Kind == drain.Hours {
-			m["hours_left"], m["speed_per_hour"] = round1(p.Left.Hours()), round1(p.PerHour)
-		}
+		m := poolDrainJSON(p)
+		m["profile"] = v.in.Name
 		pools = append(pools, m)
 	}
 	return map[string]any{"accounts": accounts, "pools": pools}

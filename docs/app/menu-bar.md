@@ -16,6 +16,7 @@ The text after the glyph is `<profile> · <account> <percent>`:
 | account | that profile's live account |
 | percent | the account's binding utilization: whichever of the session (5-hour) and week windows is closer to its switch threshold |
 | `!` at the end | the account is over its threshold, was refused, or needs sign-in |
+| `· ~45m` at the end | how long the account lasts before its switch point, only while that is under 2 hours ([the drain forecast](../concepts.md#drain-forecast)); the icon-only menu bar leaves it out |
 
 A profile or account name longer than 16 characters is cut in the middle
 (`client-integration` reads `client-i…gration`), so the figure and its `!`

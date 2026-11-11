@@ -16,6 +16,7 @@ acts on it or goes where it is fixed:
 | `The daemon is not installed: nothing switches by itself`, or `The daemon has not polled for 21m` | **Open Daemon** |
 | `work-1 needs sign-in` | **Sign In…**: starts that account's sign-in, as the popover's does ([Add account](add-account.md), over Settings → Accounts) |
 | `Claude in Chrome in "Work" does not follow switches to work-team` | **Give work-team Its Own Chrome Profile**: creates one and opens it at the sign-in pages, as the [popover's banner](popover.md#banners) does |
+| `“work”’s pool has ~45m of use left` (under 2 hours of use), or `“work”’s pool is drained` | **Open Rotation** |
 | `2 health checks fail` (in the last `cs doctor` run) | **Open Health** |
 | `ClaudeSwitch 0.5.6 is available` | **Update…** (the [update window](updates.md)) |
 
@@ -30,7 +31,7 @@ drawn in amber.
 | **Daemon** | Live or Dry run, and when it last polled (`polled 1m ago`); Not installed (`nothing switches by itself`) or Not polling (`for 21m`). Once Settings has read `cs daemon status`, its mode and whether the service is installed count over the state file |
 | **Profiles** | the only profile's name, with its account, session and week (`work-1 · 3% · week 41%`), or how many, with each one's account (`default: work-1 · work: work-team`). Profiles not signed in come first (`1 not signed in · …`) |
 | **Accounts** | how many, then how many need sign-in, have no headroom, were refused, are unknown, or were read before a window reset (`1 read before a reset`), and the number of pools. It says `all available` only when every account is |
-| **Rotation** | the next decision of the first profile (`Next: stay`), then when its pool runs dry at this pace (`pool runs dry in 3h 20m`), or its thresholds (`session 85% · week 98%`). With several profiles it names the profile those figures are from (`default: …`) |
+| **Rotation** | the next decision of the first profile (`Next: stay`), or of one whose pool has under 2 hours of use left (then in amber), then how long its pool lasts (`pool: ~83h of use left`), or its thresholds when the CLI does not know (`session 85% · week 98%`). With several profiles it names the profile those figures are from (`default pool: …`, `default: …`) |
 | **Cleanup** | Daily, Every …, or Schedule off, then the last run's age and size (`last run 2h ago · 512 MB`) or `no run yet` ([Settings → Cleanup](settings-cleanup.md)) |
 | **Updates** | Up to date, a newer version (`0.5.6 available`), Last check failed, Not checked yet (before the first check), Version unknown (a build with no version, from `swift run`), or Check is off; then this version (`This is 0.8.18`) and when it last checked or failed |
 

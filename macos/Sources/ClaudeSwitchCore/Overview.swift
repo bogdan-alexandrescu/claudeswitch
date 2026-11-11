@@ -205,14 +205,13 @@ public struct Overview: Equatable {
         for n in i.chromeNotices {
             needs.append(OverviewNeed(text: n.text, action: n.ownButton, target: .chromeOwn, account: n.account))
         }
-        // A pool about to run dry is the person's to act on (add an account,
-        // or plan around it).
-        for c in i.cards where Runway.urgent(dryAt: c.poolDryAt, now: i.now) {
-            if let dry = c.poolDryAt, dry > i.now {
-                needs.append(OverviewNeed(text: "\(inQuotes(c.name))’s pool runs dry in "
-                                            + Format.duration(dry.timeIntervalSince(i.now)),
-                                          action: "Open Rotation", target: .rotation))
-            }
+        // A pool with under two hours of use left is the person's to act on
+        // (add an account, or plan around it).
+        for c in i.cards where DrainText.low(c.poolDrain) {
+            let left = c.poolDrain?.state == .drained ? "is drained"
+                : "has " + (DrainText.poolShort(c.poolDrain) ?? "little use left")
+            needs.append(OverviewNeed(text: "\(inQuotes(c.name))’s pool " + left,
+                                      action: "Open Rotation", target: .rotation))
         }
         if let f = i.healthFailing, f > 0 {
             var text = "\(f) health check\(f == 1 ? "" : "s") fail\(f == 1 ? "s" : "")"
@@ -314,20 +313,20 @@ public struct Overview: Equatable {
         var t = OverviewTile(title: "Rotation", symbol: "arrow.triangle.2.circlepath", primary: "Next: unknown",
                              secondary: "", attention: false, target: .rotation)
         // The profile that most needs a look speaks for the tile: a pool
-        // running dry soon, then a pending switch or wait, then a pin; else
-        // the first. With one, its figures are named as its own.
-        let pressing = i.cards.first { Runway.urgent(dryAt: $0.poolDryAt, now: i.now) }
+        // low on use, then a pending switch or wait, then a pin; else the
+        // first. With one, its figures are named as its own.
+        let pressing = i.cards.first { DrainText.low($0.poolDrain) }
             ?? i.cards.first { $0.decision?.kind == "switch" || $0.decision?.kind == "wait" }
             ?? i.cards.first { $0.isPinned }
         guard let c = pressing ?? i.cards.first else { return t }
-        t.attention = Runway.urgent(dryAt: c.poolDryAt, now: i.now)
+        t.attention = DrainText.low(c.poolDrain)
         t.primary = "Next: " + Format.next(c.decision)
         // With several profiles the figures are one profile's: name it.
-        let whose = i.cards.count > 1 ? c.name + ": " : ""
-        if let dry = c.poolDryAt, dry > i.now {
-            t.secondary = whose + "pool runs dry in " + Format.duration(dry.timeIntervalSince(i.now))
+        let several = i.cards.count > 1
+        if let lasts = DrainText.poolShort(c.poolDrain) {
+            t.secondary = (several ? c.name + " pool: " : "pool: ") + lasts
         } else {
-            t.secondary = whose + "session \(Int(c.switchAt))% · week \(Int(c.switchAtWeekly))%"
+            t.secondary = (several ? c.name + ": " : "") + "session \(Int(c.switchAt))% · week \(Int(c.switchAtWeekly))%"
         }
         return t
     }

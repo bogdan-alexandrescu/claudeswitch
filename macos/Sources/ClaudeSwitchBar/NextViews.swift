@@ -7,21 +7,38 @@ import SwiftUI
 // Each shows only what the CLI reported: a key an older binary lacks hides
 // its row, and an unknown figure is never drawn as 0.
 
-// MARK: F2 the pool line
+// MARK: the drain forecast
 
-/// "work pool: runs dry Thu 14:00 at this pace"; amber within two hours.
-/// Hidden when the CLI does not know (null) or does not say.
+/// "work pool: ~83h of use left across 6 accounts"; amber under two hours
+/// of use, or drained. Hidden when the CLI does not know or does not say.
 struct PoolLine: View {
     let card: ProfileCard
-    let now: Date
 
     var body: some View {
-        if let line = Runway.poolLine(profile: card.name, dryAt: card.poolDryAt, now: now) {
-            let urgent = Runway.urgent(dryAt: card.poolDryAt, now: now)
-            // Urgent says so with its symbol too, not by colour alone.
-            Label(line, systemImage: urgent ? "exclamationmark.triangle.fill" : "hourglass")
+        if let line = DrainText.poolLine(profile: card.name, card.poolDrain) {
+            let low = DrainText.low(card.poolDrain)
+            // Low says so with its symbol too, not by colour alone.
+            Label(line, systemImage: low ? "exclamationmark.triangle.fill" : "hourglass")
                 .font(.caption)
-                .foregroundStyle(urgent ? Color.csWarn : Color.secondary)
+                .foregroundStyle(low ? Color.csWarn : Color.secondary)
+                .lineLimit(1).truncationMode(.tail)
+                .help(line)
+        }
+    }
+}
+
+/// Under the live account's dials: "~21h of use left at 2.6% an hour";
+/// amber while under two hours, as the menu bar names them then. Hidden
+/// when the CLI does not know or does not say.
+struct LiveDrainLine: View {
+    let account: AccountView
+
+    var body: some View {
+        if let line = DrainText.live(account.drain) {
+            let low = DrainText.menu(account.drain) != nil
+            Label(line, systemImage: low ? "exclamationmark.triangle.fill" : "timer")
+                .font(.caption)
+                .foregroundStyle(low ? Color.csWarn : Color.secondary)
                 .lineLimit(1).truncationMode(.tail)
                 .help(line)
         }

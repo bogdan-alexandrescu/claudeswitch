@@ -11,16 +11,18 @@ public enum AccountLine {
     /// then Chrome, then the login, then who uses it (named, then counted);
     /// the figure goes last. `usedBy` nil when the CLI does not say, empty
     /// when no profile uses it.
-    /// `clears` (when each window clears) gives way after the login.
-    public static func variants(usedBy: [String]?, figure: String?, clears: String? = nil, chrome: String?,
-                                seat: String?, login: String?) -> [String] {
+    /// `clears` (when each window clears) gives way after the login, and
+    /// `lasts` (the drain forecast, "~21h left") after that.
+    public static func variants(usedBy: [String]?, figure: String?, lasts: String? = nil, clears: String? = nil,
+                                chrome: String?, seat: String?, login: String?) -> [String] {
         let named = usedBy.map { $0.isEmpty ? "used by no profile" : "used by " + $0.joined(separator: ", ") }
         let counted = (usedBy?.count ?? 0) > 1 ? "used by \(usedBy!.count) profiles" : nil
         let steps: [[String?]] = [
-            [named, figure, clears, chrome, seat, login],
-            [named, figure, clears, chrome, login],
-            [named, figure, clears, login],
-            [named, figure, clears],
+            [named, figure, lasts, clears, chrome, seat, login],
+            [named, figure, lasts, clears, chrome, login],
+            [named, figure, lasts, clears, login],
+            [named, figure, lasts, clears],
+            [named, figure, lasts],
             [named, figure],
             [counted, figure],
             [figure],

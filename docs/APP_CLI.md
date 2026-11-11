@@ -969,7 +969,14 @@ several) carries:
   count — it gives back only what that account used before), `idle` (the
   live account's last two readings are level: not being spent) or
   `unknown`;
-- `pool_refills_at` (RFC 3339 UTC, or `null` unless `refills`).
+- `pool_refills_at` (RFC 3339 UTC, or `null` unless `refills`);
+- `pool_drain` (additive, IMPROVEMENTS "Drain forecast"): how many hours
+  of use the pool has left before its accounts' switch points, at the speed
+  its live account is spent at, as `cs status` and `cs forecast` say it:
+  `state` (`hours`, `idle`, `drained` or `unknown`), `accounts` (how many
+  have room), and `hours_left` and `speed_per_hour` (week points an hour of
+  use), both `null` unless `hours`. Example:
+  `{"state": "hours", "accounts": 6, "hours_left": 83.1, "speed_per_hour": 2.6}`.
 
 The forecast: the pace is the live account's burn in points a minute, from
 its last two readings, both within 15 minutes (or three `poll_active`,
@@ -996,7 +1003,7 @@ live at 40% and rising a point a minute, `work-team` at 5%:
 ```
 
 `status --json` carries the same: `trigger_at` on each account (from the
-runway of the profile it is live in, else of the first that may use it) and the three pool keys at the
+runway of the profile it is live in, else of the first that may use it) and the pool keys (`pool_drain` too) at the
 top level with one profile, in each `profiles` entry with several. With
 several profiles each account in `status --json` also carries `pool` and
 `profiles` (additive, shared pools), as `account list --json` gives them,

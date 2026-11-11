@@ -654,7 +654,8 @@ exact key names may grow, but these keys must exist.
   `pool_dry_at` (RFC 3339 or null) and per account `trigger_at` (or null).
   The daemon notifies once when `pool_dry_at` falls within 2 hours. The app
   shows the pool line on each card and per-account ETAs in the account
-  picker.
+  picker (since 2026-11-11 the drain forecast in their place: "Drain
+  forecast", the app).
 
   *As built (2026-10-09, Go side).* `policy.Forecast` (beside `Best` and
   `Choose`). The pace is the live account's burn, points a minute, from its
@@ -1928,3 +1929,34 @@ CLD's calls:
   appends `~4h left`, `lasts to reset` or `∞ left` after the week, and nothing
   for unknown or drained (the week figure says drained). `cs status` says an
   unknown or drained pool only under `--detail`, as it did the runway.
+
+**The app (owner picks, 2026-11-11).** Asked "did we also update the macos app
+to show these nice stats?", the owner had it shown in the app too, and picked:
+- **The menu bar names the hours only when low:** `default · work-1 41% · ~45m`
+  while the live account has under 2 hours of use left; otherwise the title is
+  as it was. The icon-only menu bar is unchanged. Rejected: always, and never.
+- **Shown under the live dials, in the switch menu, on Settings → Accounts
+  rows and on Settings → Overview.**
+- **Low is under 2 hours of use**, by the drain forecast, not the runway's
+  clock time: the pool line turns amber with a warning triangle, and Overview
+  lists the pool as a need.
+
+CLD's calls, in the playback the owner approved:
+- **Under the dials:** `~21h of use left at 2.6% an hour`, `lasts until the
+  week clears at …`, `∞, not being spent` or `drained: at its switch point`;
+  amber under 2 hours, as the menu bar names them then. Hidden while the line
+  there says the account needs sign-in, was refused or failed.
+- **The pool line** replaces the runway's: `saga-cs pool: ~83h of use left
+  across 6 accounts`, from `why --json`'s new `pool_drain` (beside
+  `pool_dry_at`, additive), so the app needs no forecast of its own.
+- **The switch menu** says each account's forecast where it said `trigger Thu
+  09:30`: `w09  56% week · available · ~21h left`, with `↑` in words, `used
+  elsewhere`. **Settings → Accounts** puts it after the figure; it gives way
+  after when the windows clear.
+- **Overview:** the Rotation tile says `default pool: ~83h of use left` (the
+  thresholds when the CLI does not know), and a pool under 2 hours of use, or
+  drained, is a need: `“work”’s pool has ~45m of use left`.
+- The app reads each account's forecast from the `account list --json` it
+  already loads, and stops reading `pool_dry_at` and `trigger_at`. An older CLI
+  hides every line; unknown is never said as 0. The daemon's own runway
+  notification is unchanged.

@@ -98,6 +98,55 @@ func TestForecastWithoutADaemonSaysWhy(t *testing.T) {
 	}
 }
 
+// why --json carries the pool's drain forecast beside its runway, for the
+// app's pool line: unknown until something is measured, then hours of use.
+func TestWhyJSONCarriesThePoolDrain(t *testing.T) {
+	now := time.Now()
+	cfg, st := runwayState(t, now)
+	m := whyJSON(cfg, st, now, "")
+	if d, _ := m["pool_drain"].(map[string]any); d == nil || d["state"] != "unknown" || d["hours_left"] != nil {
+		t.Fatalf("nothing measured: pool_drain = %v", m["pool_drain"])
+	}
+	a := st.Accounts["work-1"]
+	a.WeekSpeed, a.WeekSpeedAt, a.WeekRiseAt = 4, now, now
+	m = whyJSON(cfg, st, now, "")
+	// 88 points to the 98 switch point on each of two accounts, at 4 an hour.
+	d, _ := m["pool_drain"].(map[string]any)
+	if d == nil || d["state"] != "hours" || d["hours_left"] != 44.0 || d["speed_per_hour"] != 4.0 ||
+		d["accounts"] != 2 {
+		t.Fatalf("pool_drain = %v", m["pool_drain"])
+	}
+}
+
+// With several profiles, each profile in why --json and in status --json
+// carries its own pool's.
+func TestWhyAndStatusJSONCarryEachProfilesPoolDrain(t *testing.T) {
+	path := speedWorld(t, "160")
+	cfg := loadOrFail(t, path)
+	st, _ := state.Load("", cfg.ProfileNames()...)
+	now := time.Now()
+	want := map[string]map[string]any{
+		"default": {"state": "hours", "hours_left": 20.4, "speed_per_hour": 10.0, "accounts": 3},
+		"work":    {"state": "unknown", "hours_left": nil, "speed_per_hour": nil},
+	}
+	check := func(where string, got any, want map[string]any) {
+		t.Helper()
+		d, _ := got.(map[string]any)
+		for k, w := range want {
+			if v, ok := d[k]; !ok || v != w {
+				t.Errorf("%s: pool_drain[%s] = %v, want %v (%v)", where, k, v, w, got)
+			}
+		}
+	}
+	for _, p := range whyJSON(cfg, st, now, "")["profiles"].([]map[string]any) {
+		name := p["profile"].(string)
+		check("why "+name, p["pool_drain"], want[name])
+	}
+	for name, p := range runwayJSON(cfg, st, now).profiles {
+		check("status "+name, p["pool_drain"], want[name])
+	}
+}
+
 func TestForecastJSON(t *testing.T) {
 	path := speedWorld(t, "160")
 	cfg, err := config.Load(path)

@@ -167,9 +167,10 @@ enum Render {
         let now = fixed ?? state?.accounts.values.compactMap(\.lastAt).max()?.addingTimeInterval(60) ?? Date()
         let profiles = data("cli-profile-list.json").flatMap(ProfileList.init(data:))
         let why = data("why-profiles.json").flatMap(WhyReport.init(data:))
+        let accountList = data("cli-account-list.json").flatMap(AccountList.init(data:))
         let snap = Snapshot.build(state: state, why: why,
                                   settings: data("config.json").flatMap(ConfigSettings.init(data:)),
-                                  profiles: profiles, now: now)
+                                  profiles: profiles, accounts: accountList, now: now)
         var fx = PreviewData()
         fx.state = state
         fx.why = why
@@ -177,7 +178,7 @@ enum Render {
         // A set may bring its own Chrome state (RenderFixtures/tutorial).
         fx.chrome = (data("render-chrome-list.json") ?? data("cli-chrome-list-some.json")).flatMap(ChromeList.init(data:))
         fx.chromeProfiles = data("render-chrome-profiles.json").flatMap(ChromeProfiles.init(data:))
-        fx.accountList = data("cli-account-list.json").flatMap(AccountList.init(data:))
+        fx.accountList = accountList
         // Shared pools: `pool list --json`, or a binary from before pools
         // (a set brings a `usage` error object in its place).
         if let d = data("cli-pool-list.json") {

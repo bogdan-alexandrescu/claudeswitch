@@ -133,8 +133,8 @@ public enum Format {
 }
 
 public extension Format {
-    /// A card's account picker line: "work-1  41% week · available ·
-    /// trigger Thu 09:30" (F2: the ETA only when the CLI knows it), "w03
+    /// A card's account picker line: "work-1  41% week · available · ~21h
+    /// left" (the drain forecast, only when the CLI knows it), "w03
     /// 100% · refused · session · clears in 36m", or "team-2  12% session ·
     /// in use by work" for one live in another profile (D34). The figure
     /// names its window, since one line's may be a session and the next's a
@@ -148,7 +148,7 @@ public extension Format {
         if a.bindingPct != nil, !refusalNamesWindow, let w = windowName(a.bindingWindow) { s += " " + w }
         if let p = inUseBy { return s + " · in use by " + p }
         s += " · " + status(a.status, now: now)
-        if let eta = Runway.accountETA(a.triggerAt, now: now) { s += " · " + eta }
+        if let lasts = DrainText.short(a.drain) { s += " · " + lasts }
         return s
     }
 
@@ -261,7 +261,10 @@ public struct MenuTitle: Equatable {
         if case .stale = s.daemon.health { level = .over }
         let marker = level == .over ? "!" : ""
         if compact { return MenuTitle(text: marker, level: level, problem: false) }
-        return MenuTitle(text: "\(prefix)\(Format.middle(a.id, 16)) \(Format.pct(a.bindingPct))\(marker)",
+        // The hours of use left only while they run low, so the title stays
+        // short and the hours read as a warning.
+        let low = DrainText.menu(a.drain).map { " · " + $0 } ?? ""
+        return MenuTitle(text: "\(prefix)\(Format.middle(a.id, 16)) \(Format.pct(a.bindingPct))\(marker)\(low)",
                          level: level, problem: false)
     }
 }
