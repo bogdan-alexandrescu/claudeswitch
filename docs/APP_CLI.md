@@ -557,6 +557,7 @@ test fails if it runs `security`), so the app may run it on every refresh:
    "profiles": ["default", "work"], "active_in": "default",
    "pinned": false, "pin_hard": false, "refresh_expires_at": "…", "access_expires_at": "…", "state": "available",
    "ignore_weekly_gte": 65, "pick_priority": null,
+   "drain": {"state": "hours", "hours_left": 6.8, "speed_per_hour": 4.1, "used_elsewhere": false},
    "reading": {"five_hour": 3, "seven_day": 41, "binding": "seven_day", "at": "…", "error": null,
                "refused_until": null, "refused_window": null,
                "five_hour_resets_at": "…", "seven_day_resets_at": "…"}}]}
@@ -573,6 +574,13 @@ test fails if it runs `security`), so the app may run it on every refresh:
   records both when it vaults (`add`, `login`, `setup`) or identifies
   (`identify`) an account, and the daemon records the plan a vault entry
   names whenever it reads one to poll. `null` until then.
+- `drain` (contract 2, additive, IMPROVEMENTS "Drain forecast") is how long
+  the account lasts: `state` (`hours`, `lasts_to_reset`, `idle`, `drained`
+  or `unknown`), `hours_left` (hours of use before its switch point, `null`
+  unless `hours` or `lasts_to_reset`), `speed_per_hour` (week points an hour
+  of use, as a running daemon measured it in the last 30 minutes, else
+  `null`) and `used_elsewhere` (its week rose in the last 20 minutes while
+  no profile here has it live).
 - `seat` is the config's `account_uuid@org_id` (`null` when unpinned);
   `profiles` (additive, shared pools) every profile that may use it, in
   config order (D6 included; several when they list one pool, D31);

@@ -54,6 +54,7 @@ claudeswitch history --usage     # each account's utilization over 30 days, and 
 ```sh
 claudeswitch plan                # the rotation decision right now (changes nothing)
 claudeswitch why                 # the same decision, account by account, with reasons
+claudeswitch forecast            # hours of use each account and pool has left at its speed
 claudeswitch audit               # what the daemon observed, decided and did
 claudeswitch audit --kind switch --since 24h
 ```
@@ -354,6 +355,8 @@ floor take the colours for "rotation coming" and "mid-turn swap". Past the
 threshold the line says what happens next — `· rotating to work-a`,
 `· all out, quota at 14:30`, `· holding` — and a refused account reads
 `refused until 14:30`. `· read 12m ago` means the readings have stopped moving.
+`~4h left` after the week is how many hours of use the account has left before
+its switch point (`lasts to reset`, `∞ left`; see `cs forecast`).
 
 `claudeswitch statusline install` writes it to `~/.claude/settings.json`
 (honouring `CLAUDE_CONFIG_DIR`). It leaves an existing status line alone unless
@@ -484,8 +487,8 @@ account can no longer be swapped to *or* polled. Once you use
 in Chrome needs, that the shared one needs signing in as the new account, or
 that the new account has none yet.
 It also notifies once when a profile's pool is forecast to run dry within two
-hours at the pace it is being spent (`cs status` shows the same forecast:
-`work pool: runs dry Thu 14:00 at this pace`), and when it lifts a pin
+hours at the pace it is being spent (`cs status --json` carries the same
+forecast as `pool_dry_at`), and when it lifts a pin
 because the pinned account was refused, ran out or needs sign-in
 (`pin on work-1 lifted: it was refused`; `cs account pin --hard` keeps a pin
 even then). Nothing else notifies; `--quiet` disables them. While the

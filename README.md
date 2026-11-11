@@ -73,6 +73,12 @@ the full manual. This README covers installing it and finding your way around.
   need the account ([→ how](docs/GUIDE.md#keeping-credentials-alive)).
 - **Explanations.** `cs why` says, account by account, why it is staying,
   switching or waiting. `cs audit` shows what it observed, decided and did.
+- **How long each account lasts.** The daemon measures how fast each
+  account's week climbs while it is being spent, and `cs forecast` says how
+  many hours of use every account and pool has left before its switch point:
+  `∞` when nobody is spending it, `lasts to reset` when it outlasts its week,
+  and `↑` when someone elsewhere is spending it. `cs list`, `cs status` and the
+  status line show the same.
 - **Usage across a session.** `cs session` adds up tokens across every account
   a stretch of work touched.
 - **Cleaning up after Claude.** `cs clean` finds the worktrees, branches, lane
@@ -641,6 +647,9 @@ its pool reads `in use by <profile>`. Each window has a dot bar: lit dots are
 what has been used, and the bold dot is where the profile rotates away (`◉`
 without colour). Amber means climbing and red means refused or over the
 trigger.
+Under the table, the pool line says how many hours of use the pool has left
+at the speed its live account is being spent (`work pool: ~11h of use left
+across 5 accounts`, `∞` when nobody is spending it).
 `--detail` adds reading age, burn rate and the binding limit. `cs top` is the
 same view, redrawn in place.
 
@@ -701,6 +710,7 @@ command in more depth: [docs/GUIDE.md → Commands](docs/GUIDE.md#commands).
 | `cs status [--detail] [--profile P] [--json]` | every account's utilization in both windows; `--refresh=false` skips the live read of the account in use, `--max-age D` re-reads anything older |
 | `cs top [--every 2s] [--profile P]` | `status`, redrawn in place (ctrl-c to leave) |
 | `cs why [--profile P] [--json]` | the rotation decision per profile, account by account, with reasons |
+| `cs forecast [--profile P] [--json]` | how many hours of use each account and pool has left at its speed before its switch point, and which accounts someone elsewhere is spending |
 | `cs plan [--profile P] [--json]` | the same decision in brief, and whether anything will act on it |
 | `cs whoami [--profile P]` | which account is live in a profile right now |
 | `cs accounts [--json]` | what is in the vault: account, email, plan, organization |
@@ -728,7 +738,7 @@ command in more depth: [docs/GUIDE.md → Commands](docs/GUIDE.md#commands).
 | command | what it does |
 |---|---|
 | `cs priority <id>... [--json]` | set the rotation order (also `cs account priority`) |
-| `cs list [--json]` | every account: state, figures, when each window clears, plan and email, as a bordered table in the colours of `cs status` on a terminal, the live account's row tinted like a selection, and plain columns when piped (also `cs account list`) |
+| `cs list [--json]` | every account: state, figures, when each window clears, how long it lasts, plan and email, as a bordered table in the colours of `cs status` on a terminal, the live account's row tinted like a selection, and plain columns when piped (also `cs account list`) |
 | `cs account pin <id> [--profile P]` / `cs account unpin [<id>] [--profile P]` | stop and resume automatic rotation in the profile the account is live in, or `--profile` |
 | `cs rename <old> <new>` | re-file an account under another id, in config, state and vault (also `cs account rename`) |
 | `cs remove <id> [--yes] [--json]` | delete an account everywhere: credential, config block, pool and priority entries, observations (also `cs account delete`) |
