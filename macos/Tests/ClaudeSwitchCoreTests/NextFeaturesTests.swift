@@ -58,44 +58,13 @@ private func at(_ s: String) -> Date { GoTime.parse(s)! }
     }
 }
 
-// MARK: F2 pool runway
+// MARK: clock times (the refills say when with them)
 
 @Suite struct RunwayTests {
-    @Test func testWhyCarriesPoolDryAtAndTriggerAt() throws {
-        let w = try #require(WhyReport(data: try fixture("why-runway.json")))
-        let def = try #require(w.profiles.first { $0.profile == "default" })
-        #expect(def.poolDryAt == at("2026-10-08T14:00:00Z"))
-        #expect(def.accounts.first { $0.id == "work-1" }?.triggerAt == at("2026-10-08T09:30:00Z"))
-        #expect(def.accounts.first { $0.id == "personal" }?.triggerAt == nil, "null is unknown")
-        #expect(w.profiles.first { $0.profile == "review" }?.poolDryAt == nil)
-    }
-
-    @Test func testAnOlderWhyHasNoRunway() throws {
-        let w = try #require(WhyReport(data: try fixture("why-profiles.json")))
-        #expect(w.profiles.allSatisfy { $0.poolDryAt == nil })
-        #expect(w.profiles.flatMap(\.accounts).allSatisfy { $0.triggerAt == nil })
-    }
-
-    @Test func testTheCardsCarryTheRunway() throws {
-        let s = Snapshot.build(state: StateFile(data: try fixture("state.json")),
-                               why: WhyReport(data: try fixture("why-runway.json")),
-                               settings: nil, profiles: ProfileList(data: try fixture("cli-profile-list.json")),
-                               now: fixtureNow)
-        #expect(s.card("default")?.poolDryAt == at("2026-10-08T14:00:00Z"))
-        #expect(s.card("review")?.poolDryAt == nil)
-        #expect(s.card("default")?.accounts.first { $0.id == "work-2" }?.triggerAt == at("2026-10-10T18:15:00Z"))
-    }
-
-    @Test func testThePoolLineNamesTheProfileAndTheTime() {
+    @Test func testWithinTheWeekNamesTheDayAndTime() {
         let now = at("2026-10-08T02:46:41Z") // a Thursday
-        #expect(Runway.poolLine(profile: "work", dryAt: at("2026-10-08T14:00:00Z"), now: now, timeZone: utc)
-                == "work pool: runs dry Thu 14:00 at this pace")
-        #expect(Runway.poolLine(profile: "work", dryAt: at("2026-10-10T09:05:00Z"), now: now, timeZone: utc)
-                == "work pool: runs dry Sat 09:05 at this pace")
-    }
-
-    @Test func testNullHidesThePoolLine() {
-        #expect(Runway.poolLine(profile: "work", dryAt: nil, now: Date(), timeZone: utc) == nil)
+        #expect(Runway.when(at("2026-10-08T14:00:00Z"), now: now, timeZone: utc) == "Thu 14:00")
+        #expect(Runway.when(at("2026-10-10T09:05:00Z"), now: now, timeZone: utc) == "Sat 09:05")
     }
 
     @Test func testAWeekOrMoreAwayNamesTheDate() {
@@ -103,23 +72,9 @@ private func at(_ s: String) -> Date { GoTime.parse(s)! }
         #expect(Runway.when(at("2026-10-16T08:00:00Z"), now: now, timeZone: utc) == "16 Oct 08:00")
     }
 
-    @Test func testAPassedTimeHasRunDry() {
+    @Test func testAPassedTimeIsNow() {
         let now = at("2026-10-08T02:46:41Z")
-        #expect(Runway.poolLine(profile: "work", dryAt: at("2026-10-08T02:00:00Z"), now: now, timeZone: utc)
-                == "work pool: has run dry")
-    }
-
-    @Test func testWithinTwoHoursIsUrgent() {
-        let now = at("2026-10-08T02:46:41Z")
-        #expect(Runway.urgent(dryAt: at("2026-10-08T04:00:00Z"), now: now))
-        #expect(!Runway.urgent(dryAt: at("2026-10-08T05:00:00Z"), now: now))
-        #expect(!Runway.urgent(dryAt: nil, now: now))
-    }
-
-    @Test func testThePickerShowsEachAccountsTriggerETA() {
-        let now = at("2026-10-08T02:46:41Z")
-        #expect(Runway.accountETA(at("2026-10-08T09:30:00Z"), now: now, timeZone: utc) == "trigger Thu 09:30")
-        #expect(Runway.accountETA(nil, now: now, timeZone: utc) == nil, "unknown is hidden, never a guess")
+        #expect(Runway.when(at("2026-10-08T02:00:00Z"), now: now, timeZone: utc) == "now")
     }
 }
 

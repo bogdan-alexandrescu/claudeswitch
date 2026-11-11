@@ -236,9 +236,6 @@ public struct Verdict: Equatable {
     public var active: Bool
     public var clearsAt: Date?
     public var pace: WeeklyPace?
-    /// F2: when this account reaches its trigger at its recent pace; nil
-    /// when unknown (too few readings, an older binary).
-    public var triggerAt: Date?
 
     init(_ j: JSON) {
         id = j["id"].string ?? ""
@@ -249,7 +246,6 @@ public struct Verdict: Equatable {
         active = j["active"].bool ?? false
         clearsAt = j["clears_at"].date
         pace = WeeklyPace(j["weekly_pace"])
-        triggerAt = j["trigger_at"].date
     }
 }
 
@@ -275,9 +271,9 @@ public struct ProfileWhy: Equatable {
     /// trigger, as the policy ranks them; nil when unknown.
     public var activeRoom: Double? = nil
     public var bestRoom: Double? = nil
-    /// F2: when no account of the pool is eligible any more at this pace;
-    /// nil when unknown (or from an older binary).
-    public var poolDryAt: Date? = nil
+    /// How long the pool lasts at the speed the daemon measured (why's
+    /// pool_drain); nil from an older binary.
+    public var poolDrain: PoolDrain? = nil
 }
 
 /// `claudeswitch why --json`. With one profile it is
@@ -301,7 +297,7 @@ public struct WhyReport: Equatable {
                 pool: b["pool"].array.compactMap(\.string),
                 best: Self.text(b["best"]), bestWhy: Self.text(b["best_why"]),
                 onBest: b["on_best"].bool, activeRoom: b["active_room"].double, bestRoom: b["best_room"].double,
-                poolDryAt: b["pool_dry_at"].date))
+                poolDrain: PoolDrain(b["pool_drain"])))
         }
         if list.isEmpty {
             let d = Decision(j["decision"])
@@ -311,7 +307,8 @@ public struct WhyReport: Equatable {
                                     decision: d, accounts: a, switchAt: nil, switchAtWeekly: nil,
                                     best: Self.text(j["best"]), bestWhy: Self.text(j["best_why"]),
                                     onBest: j["on_best"].bool, activeRoom: j["active_room"].double,
-                                    bestRoom: j["best_room"].double, poolDryAt: j["pool_dry_at"].date))
+                                    bestRoom: j["best_room"].double,
+                                    poolDrain: PoolDrain(j["pool_drain"])))
         }
         profiles = list
     }

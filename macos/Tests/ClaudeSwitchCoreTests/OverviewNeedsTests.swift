@@ -93,14 +93,14 @@ import Testing
     }
 
     /// The Rotation tile speaks for the profile that most needs it: a pool
-    /// running dry soon, then a pending switch or wait, then a pin.
+    /// low on use, then a pending switch or wait, then a pin.
     @Test func testTheRotationTileSpeaksForThePressingProfile() throws {
         var i = try input()
-        i.cards[1].poolDryAt = fixtureNow.addingTimeInterval(40 * 60)
+        i.cards[1].poolDrain = PoolDrain(state: .hours, accounts: 1, hoursLeft: 0.7, speedPerHour: 9)
         let o = Overview.build(i)
         let t = try #require(o.tiles.first { $0.title == "Rotation" })
-        #expect(t.secondary.hasPrefix(i.cards[1].name + ": ") && t.attention)
-        #expect(o.needs.contains { $0.text.contains("runs dry") && $0.target == .rotation })
+        #expect(t.secondary.hasPrefix(i.cards[1].name + " pool: ") && t.attention)
+        #expect(o.needs.contains { $0.text.contains("of use left") && $0.target == .rotation })
     }
 
     @Test func testRecentSaysWhatAnUndoPutBack() throws {

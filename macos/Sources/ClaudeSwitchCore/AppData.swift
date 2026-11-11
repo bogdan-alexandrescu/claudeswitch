@@ -324,7 +324,8 @@ public struct AppData: Equatable {
     /// The menu's picture of it all, at `now`.
     public func snapshot(now: Date) -> Snapshot? {
         guard state != nil || why != nil else { return nil }
-        return Snapshot.build(state: state, why: why, settings: settings, profiles: profiles, now: now)
+        return Snapshot.build(state: state, why: why, settings: settings, profiles: profiles,
+                              accounts: accountList, now: now)
     }
 }
 

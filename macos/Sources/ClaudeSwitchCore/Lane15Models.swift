@@ -72,6 +72,8 @@ public struct AccountInfo: Equatable, Identifiable {
     /// newer CLI adds).
     public var state: String
     public var reading: AccountReading?
+    /// Its drain forecast; nil from a CLI that predates it.
+    public var drain: AccountDrain? = nil
 
     init?(_ j: JSON) {
         guard let id = j["id"].string else { return nil }
@@ -93,6 +95,7 @@ public struct AccountInfo: Equatable, Identifiable {
         accessExpiresAt = j["access_expires_at"].date
         state = j["state"].string ?? "unknown"
         reading = AccountReading(j["reading"])
+        drain = AccountDrain(j["drain"])
     }
 
     /// The Plan column: the plan, or a dash when none was recorded.

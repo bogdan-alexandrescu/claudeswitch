@@ -55,44 +55,16 @@ public enum OverrideChoices {
     }
 }
 
-// MARK: F2 pool runway
+// MARK: clock times
 
+/// A time a person reads: the refills (F12) say when quota frees with it.
 public enum Runway {
-    /// Within this of the pool running dry the line is a warning (the
-    /// daemon notifies then too).
-    public static let urgentWithin: TimeInterval = 2 * 3600
-
     /// "Thu 14:00" within the week, "16 Oct 08:00" beyond it, "now" once
     /// it has passed.
     public static func when(_ at: Date, now: Date, timeZone: TimeZone = .current) -> String {
         if at <= now { return "now" }
         if at.timeIntervalSince(now) < 6.5 * 86400 { return clock(at, "EEE HH:mm", timeZone) }
         return clock(at, "d MMM HH:mm", timeZone)
-    }
-
-    /// "work pool: runs dry Thu 14:00 at this pace"; within two hours a
-    /// countdown, "runs dry in 40m (20:26) at this pace" (a bare clock time
-    /// 40 minutes away read as days off); once passed, "has run dry"; nil
-    /// when unknown.
-    public static func poolLine(profile: String, dryAt: Date?, now: Date, timeZone: TimeZone = .current) -> String? {
-        guard let at = dryAt else { return nil }
-        let head = "\(profile) pool: "
-        if at <= now { return head + "has run dry" }
-        if urgent(dryAt: at, now: now) {
-            let left = Format.duration(at.timeIntervalSince(now))
-            return head + "runs dry in \(left) (\(clock(at, "HH:mm", timeZone))) at this pace"
-        }
-        return head + "runs dry \(when(at, now: now, timeZone: timeZone)) at this pace"
-    }
-
-    public static func urgent(dryAt: Date?, now: Date) -> Bool {
-        guard let at = dryAt else { return false }
-        return at.timeIntervalSince(now) <= urgentWithin
-    }
-
-    /// The account picker's "trigger Thu 09:30"; nil when unknown.
-    public static func accountETA(_ triggerAt: Date?, now: Date, timeZone: TimeZone = .current) -> String? {
-        triggerAt.map { "trigger " + when($0, now: now, timeZone: timeZone) }
     }
 }
 
