@@ -6,16 +6,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/drain"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/policy"
 )
 
-// IMPROVEMENTS F2 in the status view: one pool line per profile, and the
-// per-account ETAs under --detail.
+// The pool line under the status table is the drain forecast (IMPROVEMENTS
+// "Drain forecast"): how many hours of use the pool's room lasts at the live
+// account's speed. The runway forecast (F2) keeps the per-account ETAs under
+// --detail.
 
-func runwayStatus(r *policy.Runway, profile string, detail bool) string {
+func poolStatus(p *drain.PoolEstimate, r *policy.Runway, profile string, detail bool) string {
 	cfg, st := modelsWorld()
 	var b bytes.Buffer
-	o := Options{Cfg: cfg, St: st, DaemonOwns: true, Detail: detail, Runway: r}
+	o := Options{Cfg: cfg, St: st, DaemonOwns: true, Detail: detail, Drain: p, Runway: r}
 	if profile != "" {
 		o.Profile, o.Pool = profile, []string{"work-a", "work-b"}
 		st.Profiles[profile] = st.Default()
@@ -24,54 +27,65 @@ func runwayStatus(r *policy.Runway, profile string, detail bool) string {
 	return b.String()
 }
 
-func TestStatusSaysWhenThePoolRunsDry(t *testing.T) {
+func TestStatusSaysHowLongThePoolLasts(t *testing.T) {
+	p := &drain.PoolEstimate{Kind: drain.Hours, Left: 10*time.Hour + 40*time.Minute, Accounts: 5, PerHour: 6}
+	if out := poolStatus(p, nil, "work", false); !strings.Contains(out, "work pool: ~11h of use left across 5 accounts") {
+		t.Fatalf("no pool line:\n%s", out)
+	}
+	if out := poolStatus(p, nil, "", false); !strings.Contains(out, "  pool: ~11h of use left across 5 accounts") {
+		t.Fatalf("no pool line for the implicit profile:\n%s", out)
+	}
+	if out := poolStatus(p, nil, "work", true); !strings.Contains(out, "work pool: ~11h of use left across 5 accounts") {
+		t.Fatalf("no pool line under --detail:\n%s", out)
+	}
+	one := &drain.PoolEstimate{Kind: drain.Hours, Left: 40 * time.Minute, Accounts: 1, PerHour: 6}
+	if out := poolStatus(one, nil, "work", false); !strings.Contains(out, "work pool: ~40m of use left in 1 account") {
+		t.Fatalf("one account is not a pool of them:\n%s", out)
+	}
+}
+
+// An account not being spent lasts for ever: the owner's ∞.
+func TestStatusSaysAnIdlePoolIsInfinite(t *testing.T) {
+	p := &drain.PoolEstimate{Kind: drain.Idle, Accounts: 2}
+	if out := poolStatus(p, nil, "work", false); !strings.Contains(out, "work pool: ∞, not being spent (2 accounts with room)") {
+		t.Fatalf("no idle line:\n%s", out)
+	}
+}
+
+// Nothing is said of an unknown or drained pool in the compact view (the
+// table and the headline already show a pool with no room); --detail says it.
+func TestStatusSaysAnUnknownOrDrainedPoolOnlyUnderDetail(t *testing.T) {
+	plain := poolStatus(nil, nil, "work", false)
+	for _, k := range []drain.Kind{drain.Unknown, drain.Drained} {
+		if out := poolStatus(&drain.PoolEstimate{Kind: k}, nil, "work", false); out != plain {
+			t.Fatalf("%s changed the compact view:\n%s", k, out)
+		}
+	}
+	if out := poolStatus(&drain.PoolEstimate{Kind: drain.Unknown, Accounts: 3}, nil, "work", true); !strings.Contains(out,
+		"work pool: hours of use unknown (no speed measured lately)") {
+		t.Fatalf("--detail does not say the forecast is unknown:\n%s", out)
+	}
+	if out := poolStatus(&drain.PoolEstimate{Kind: drain.Drained}, nil, "work", true); !strings.Contains(out,
+		"work pool: drained, no account under its switch point") {
+		t.Fatalf("--detail does not say the pool is drained:\n%s", out)
+	}
+}
+
+// The runway's clock time is the daemon's warning now, not the status view's
+// pool line; its per-account ETAs stay under --detail.
+func TestTheRunwayNoLongerSpeaksForThePool(t *testing.T) {
 	d := time.Now().Add(72 * time.Hour)
 	dry := time.Date(d.Year(), d.Month(), d.Day(), 14, 0, 0, 0, time.Local)
 	day := dry.Format("Mon") // not today: today reads "today 14:00"
 	r := &policy.Runway{Kind: policy.RunwayDry, DryAt: dry, Pace: 1,
 		TriggerAt: map[string]time.Time{"work-a": dry.Add(-time.Hour), "work-b": dry}}
-	out := runwayStatus(r, "work", false)
-	if !strings.Contains(out, "work pool: runs dry "+day+" 14:00 at this pace") {
-		t.Fatalf("no pool line:\n%s", out)
+	p := &drain.PoolEstimate{Kind: drain.Hours, Left: 4 * time.Hour, Accounts: 2, PerHour: 6}
+	out := poolStatus(p, r, "work", false)
+	if strings.Contains(out, "runs dry") || strings.Contains(out, "reaches its trigger") {
+		t.Fatalf("the runway still speaks in the compact view:\n%s", out)
 	}
-	if strings.Contains(out, "reaches its trigger") {
-		t.Fatalf("per-account ETAs outside --detail:\n%s", out)
-	}
-	if out := runwayStatus(r, "", false); !strings.Contains(out, "pool: runs dry "+day+" 14:00 at this pace") {
-		t.Fatalf("no pool line for the implicit profile:\n%s", out)
-	}
-	detail := runwayStatus(r, "work", true)
-	if !strings.Contains(detail, "reaches its trigger "+day+" 13:00 at this pace") ||
-		!strings.Contains(detail, "work pool: runs dry "+day+" 14:00 at this pace") {
-		t.Fatalf("--detail lacks the ETAs or the pool line:\n%s", detail)
-	}
-}
-
-func TestStatusSaysWhenAResetComesFirst(t *testing.T) {
-	d := time.Now().Add(72 * time.Hour)
-	at := time.Date(d.Year(), d.Month(), d.Day(), 15, 30, 0, 0, time.Local)
-	r := &policy.Runway{Kind: policy.RunwayRefills, RefillsAt: at, RefillsAccount: "work-b", Pace: 1}
-	out := runwayStatus(r, "work", false)
-	if !strings.Contains(out, "work pool: does not run dry before work-b resets "+at.Format("Mon")+" 15:30 at this pace") {
-		t.Fatalf("no refill line:\n%s", out)
-	}
-}
-
-// Nothing is said without a forecast in the compact view (unknown is not
-// shown as a guess, nor as an empty line); --detail says why there is none.
-func TestStatusSaysNothingOfAnUnknownRunway(t *testing.T) {
-	plain := runwayStatus(nil, "work", false)
-	for _, r := range []*policy.Runway{{Kind: policy.RunwayUnknown}, {Kind: policy.RunwayIdle}} {
-		if out := runwayStatus(r, "work", false); out != plain {
-			t.Fatalf("%s changed the compact view:\n%s", r.Kind, out)
-		}
-	}
-	if out := runwayStatus(&policy.Runway{Kind: policy.RunwayUnknown}, "work", true); !strings.Contains(out,
-		"work pool: runway unknown (too few recent readings)") {
-		t.Fatalf("--detail does not say the runway is unknown:\n%s", out)
-	}
-	if out := runwayStatus(&policy.Runway{Kind: policy.RunwayIdle}, "work", true); !strings.Contains(out,
-		"work pool: not being spent") {
-		t.Fatalf("--detail does not say the pool is idle:\n%s", out)
+	detail := poolStatus(p, r, "work", true)
+	if !strings.Contains(detail, "reaches its trigger "+day+" 13:00 at this pace") || strings.Contains(detail, "runs dry") {
+		t.Fatalf("--detail lost the ETAs or kept the runway's pool line:\n%s", detail)
 	}
 }

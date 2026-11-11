@@ -13,6 +13,7 @@ import (
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/audit"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
+	"github.com/bogdan-alexandrescu/claudeswitch/internal/drain"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/policy"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/state"
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/usage"
@@ -62,10 +63,12 @@ type Options struct {
 	// Pools is how many pools the profile lists (D31); with more than one,
 	// the runway is theirs together, and the line says so.
 	Pools int
-	// Runway is the profile's pool runway forecast (IMPROVEMENTS F2): one
-	// line under the table when it forecasts something, and each account's
-	// ETA under --detail. Nil says nothing.
+	// Runway is the profile's pool runway forecast (IMPROVEMENTS F2): each
+	// account's ETA under --detail. Nil says nothing.
 	Runway *policy.Runway
+	// Drain is the profile's pool drain forecast (IMPROVEMENTS "Drain
+	// forecast"): the line under the table. Nil says nothing.
+	Drain *drain.PoolEstimate
 	// Block marks this view as one of several, one per profile: it ends
 	// without the footer and legend, which SharedFooter prints once after the
 	// last block.
@@ -568,7 +571,7 @@ func statusCompact(out io.Writer, o Options) {
 
 	fmt.Fprint(out, t.render("  "))
 	modelBlock(out, o, accounts)
-	if line := poolLine(o, false, time.Now()); line != "" {
+	if line := poolLine(o, false); line != "" {
 		fmt.Fprintln(out)
 		for _, l := range Wrap(line, terminalWidth()-2) {
 			fmt.Fprintf(out, "  %s\n", l)
@@ -698,36 +701,39 @@ func spare(b *usage.Budget) string {
 	return Plural(b.Remaining(), "usage check", "usage checks") + " left"
 }
 
-// poolLine is the profile's runway (IMPROVEMENTS F2) in one line: "work
-// pool: runs dry Thu 14:00 at this pace". The compact view says it only when
-// there is a forecast; detail also says why there is none. "" for nothing.
-func poolLine(o Options, detail bool, now time.Time) string {
-	r := o.Runway
-	if r == nil {
+// poolLine is the profile's pool drain forecast (IMPROVEMENTS "Drain
+// forecast") in a line, e.g. "work pool: ~11h of use left across 5 accounts".
+// The compact view says how long the pool lasts, or ∞ when nobody spends it;
+// detail also says when that is unknown, or the pool drained. "" for nothing.
+func poolLine(o Options, detail bool) string {
+	p := o.Drain
+	if p == nil {
 		return ""
 	}
-	name, runs, doesNot := "pool", "runs dry", "does not run dry"
+	name := "pool"
 	if o.Profile != "" {
 		name = o.Profile + " pool"
 	}
 	if o.Pools > 1 {
 		// "default pool" named one pool of several.
-		name, runs, doesNot = o.Profile+"'s pools", "run dry", "do not run dry"
+		name = o.Profile + "'s pools"
+	}
+	accounts, room := fmt.Sprintf("across %d accounts", p.Accounts), fmt.Sprintf("%d accounts with room", p.Accounts)
+	if p.Accounts == 1 {
+		accounts, room = "in 1 account", "1 account with room"
 	}
 	say := ""
 	switch {
-	case r.Kind == policy.RunwayDry && r.DryAt.After(now):
-		say = runs + " " + clockAt(r.DryAt, now) + " at this pace"
-	case r.Kind == policy.RunwayRefills:
-		say = fmt.Sprintf("%s before %s resets %s at this pace", doesNot, r.RefillsAccount, clockAt(r.RefillsAt, now))
+	case p.Kind == drain.Hours:
+		say = HoursOfUse(p.Left) + " of use left " + accounts
+	case p.Kind == drain.Idle:
+		say = "∞, not being spent (" + room + ")"
 	case !detail:
 		return ""
-	case r.Kind == policy.RunwayDry:
-		say = "no eligible account left"
-	case r.Kind == policy.RunwayIdle:
-		say = "not being spent"
+	case p.Kind == drain.Drained:
+		say = "drained, no account under its switch point"
 	default:
-		say = "runway unknown (too few recent readings)"
+		say = "hours of use unknown (no speed measured lately)"
 	}
 	return name + ": " + say
 }
@@ -1084,7 +1090,7 @@ func statusDetailed(out io.Writer, o Options) {
 		}
 	}
 
-	if line := poolLine(o, true, time.Now()); line != "" {
+	if line := poolLine(o, true); line != "" {
 		fmt.Fprintln(out)
 		for _, l := range Wrap(line, width-2) {
 			fmt.Fprintf(out, "  %s\n", l)

@@ -284,3 +284,30 @@ func TestAccountListJSONCarriesTheDrainForecast(t *testing.T) {
 		}
 	}
 }
+
+// cs status says how long each profile's pool lasts at its live account's
+// speed: default's two pools hold p1, t1 and t2, 68 points of room each, and
+// p1 is spent at 10 an hour. The work profile has nothing live, so nothing is
+// said of it outside --detail.
+func TestStatusSaysHowLongEachProfilesPoolLasts(t *testing.T) {
+	path := speedWorld(t, "200")
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, _ := state.Load("", cfg.ProfileNames()...)
+	var b bytes.Buffer
+	renderStatus(&b, cfg, st, render.Options{}, nil, time.Now(), "")
+	out := b.String()
+	if !strings.Contains(out, "default's pools: ~20h of use left across 3 accounts") {
+		t.Errorf("no drain line for default:\n%s", out)
+	}
+	if strings.Contains(out, "work pool:") || strings.Contains(out, "runs dry") {
+		t.Errorf("a line that says nothing, or the runway's:\n%s", out)
+	}
+	b.Reset()
+	renderStatus(&b, cfg, st, render.Options{Detail: true}, nil, time.Now(), "work")
+	if out := b.String(); !strings.Contains(out, "work pool: hours of use unknown") {
+		t.Errorf("--detail does not say work's forecast is unknown:\n%s", out)
+	}
+}
