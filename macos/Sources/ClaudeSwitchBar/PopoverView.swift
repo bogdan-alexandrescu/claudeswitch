@@ -277,11 +277,15 @@ struct ProfileCardView: View {
                     } else if let e = a.lastError {
                         Label(e, systemImage: "exclamationmark.triangle.fill")
                             .font(.caption).foregroundStyle(Color.csBad).lineLimit(2).help(e)
+                    } else {
+                        // How long it lasts, while nothing above says it
+                        // cannot be used.
+                        LiveDrainLine(account: a)
                     }
                 }
                 .padding(.top, 4)
             }
-            PoolLine(card: card, now: now)
+            PoolLine(card: card)
             RefillLine(card: card, now: now)
             HStack(spacing: 8) {
                 OpenClaudeCodePill(card: card)
@@ -601,7 +605,7 @@ struct CompactCardView: View {
                 OpenBlockedLine(text: why)
             }
             CardErrorView(card: card.name)
-            PoolLine(card: card, now: store.now)
+            PoolLine(card: card)
         }
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color(nsColor: .controlBackgroundColor)))
