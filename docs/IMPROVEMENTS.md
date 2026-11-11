@@ -1868,3 +1868,53 @@ rest, and a line's tooltip has the whole reason and the date. The list holds fiv
 at most, up from four. Rejected: two lines per event (twice the height, and the
 fifth event fell below the window), grouping by day (headings add more than they
 explain for five events), and fixing only the wrap.
+
+## Drain forecast (owner request and picks, 2026-11-11)
+
+The owner asked: "i want the daemon to be checking the usage of "%" in some
+interval interally and then decide the "usage speed" and give estimate how long
+it thinks before account weekly is drained... also want to know for all
+accounts when they will get drained based on that". CLD asked four questions,
+and the owner picked:
+- **Speed: each account's own climb.** Rejected: the live account's pace
+  applied to every account. Use from anyone counts (another Mac, a colleague
+  on a shared account), since it is the account's own figure that climbs.
+  "accounts that arent moving can show infinity symbol or something": an
+  account that has not climbed lately shows `∞`.
+- **Hours of use, not a clock time.** `~4h` is how long the account lasts
+  while it is being spent at its speed; it does not guess when someone works.
+  Rejected: a clock time (it needs a guess at hours worked per day) and both.
+- **Drained at its switch point:** the week's trigger, or the account's own
+  `ignore_weekly_gte`. Rejected: 100%.
+- **Shown everywhere:** a LASTS column in `cs list`, a pool line in `cs status`
+  in place of the runway line, the status line, and a new `cs forecast` with
+  the whole picture and `--json`.
+- Two of CLD's suggestions, taken: mark an account that climbs while no
+  profile here has it live (`↑`, used elsewhere), and say `lasts to reset` when
+  the hours of use outlast the time until its week clears. Not taken: a
+  notification when the pool will not last until the next refill.
+
+CLD's calls:
+- **Measuring.** The daemon keeps each account's week figures for the last 24
+  hours (seeded from the readings log at start, then from every new reading)
+  and, at every save, writes into the account's state record its speed in week
+  points per hour of use (`week_speed`), when that was measured
+  (`week_speed_at`) and its last rise (`week_rise_at`). A speed comes from
+  rises that follow one another within an hour: a stretch of use. The first rise
+  of a stretch counts neither its points nor its time, since nobody saw when
+  that use began; a fall (the week cleared) ends a stretch. No stretch in 24
+  hours: speed 0, `∞`. Whole-point readings of a slow burn come in level pairs,
+  which is why the time runs rise to rise, not pair by pair.
+- **Unknown stays unknown.** No reading, or a speed measured more than 30
+  minutes ago (no daemon): `-`. At or past its switch point, or refused on its
+  week: `drained`.
+- **Used elsewhere:** the week rose within the last 20 minutes and no profile
+  here has the account live.
+- **The pool line** uses the live account's speed, applied to the room every
+  account in the pool still has before its switch point (refused, unread and
+  drained accounts left out): `saga-cs pool: ~11h of use left across 5
+  accounts`. The runway forecast (F2) stays for the daemon's warning, `cs status
+  --detail`'s trigger times and `--json`.
+- Piped `cs list` keeps its columns; the LASTS column is the bordered table's,
+  and gives way after the email and the plan. `cs list --json` gains a `drain`
+  object per account.
