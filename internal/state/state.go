@@ -61,6 +61,15 @@ type Account struct {
 	// apart from LastRate, which feeds Projected.
 	RiseRate float64   `json:"rise_rate,omitempty"`
 	RiseAt   time.Time `json:"rise_at,omitzero"`
+	// WeekSpeed is how fast the week figure climbs while the account is
+	// being spent, in points an hour of use, over the last day of readings;
+	// 0 when it has not climbed. WeekSpeedAt is when the daemon measured it,
+	// and WeekRiseAt the week figure's last rise it saw (internal/drain,
+	// IMPROVEMENTS "Drain forecast"). Daemon-owned.
+	WeekSpeed   float64   `json:"week_speed,omitempty"`
+	WeekSpeedAt time.Time `json:"week_speed_at,omitzero"`
+	WeekRiseAt  time.Time `json:"week_rise_at,omitzero"`
+
 	BurntTil time.Time `json:"burnt_until,omitzero"`
 	BurntWin string    `json:"burnt_window,omitempty"`
 
