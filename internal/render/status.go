@@ -701,22 +701,25 @@ func spare(b *usage.Budget) string {
 	return Plural(b.Remaining(), "usage check", "usage checks") + " left"
 }
 
-// poolLine is the profile's pool drain forecast (IMPROVEMENTS "Drain
-// forecast") in a line, e.g. "work pool: ~11h of use left across 5 accounts".
-// The compact view says how long the pool lasts, or ∞ when nobody spends it;
-// detail also says when that is unknown, or the pool drained. "" for nothing.
-func poolLine(o Options, detail bool) string {
-	p := o.Drain
+// poolLine is the view's PoolLine.
+func poolLine(o Options, detail bool) string { return PoolLine(o.Profile, o.Pools, o.Drain, detail) }
+
+// PoolLine is a profile's pool drain forecast (IMPROVEMENTS "Drain forecast")
+// in a line, e.g. "work pool: ~11h of use left across 5 accounts". profile is
+// "" for the implicit one, and pools how many pools it lists. The compact view
+// says how long the pool lasts, or ∞ when nobody spends it; detail also says
+// when that is unknown, or the pool drained. "" for nothing.
+func PoolLine(profile string, pools int, p *drain.PoolEstimate, detail bool) string {
 	if p == nil {
 		return ""
 	}
 	name := "pool"
-	if o.Profile != "" {
-		name = o.Profile + " pool"
+	if profile != "" {
+		name = profile + " pool"
 	}
-	if o.Pools > 1 {
+	if pools > 1 {
 		// "default pool" named one pool of several.
-		name = o.Profile + "'s pools"
+		name = profile + "'s pools"
 	}
 	accounts, room := fmt.Sprintf("across %d accounts", p.Accounts), fmt.Sprintf("%d accounts with room", p.Accounts)
 	if p.Accounts == 1 {
