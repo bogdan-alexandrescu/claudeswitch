@@ -143,6 +143,10 @@ func fresh(a *state.Account, now time.Time) bool {
 	return !a.WeekSpeedAt.IsZero() && now.Sub(a.WeekSpeedAt) <= FreshFor
 }
 
+// Measured reports whether a's speed was measured lately enough to use: by
+// a running daemon, within FreshFor.
+func Measured(a *state.Account, now time.Time) bool { return a != nil && fresh(a, now) }
+
 // moving reports whether a is being spent now: a speed, and a rise within
 // StretchGap. A speed from this morning says how it was spent, not that it is.
 func moving(a *state.Account, now time.Time) bool {

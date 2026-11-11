@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/bogdan-alexandrescu/claudeswitch/internal/config"
@@ -157,5 +159,128 @@ func TestBorderedListMarksLiveOnce(t *testing.T) {
 	}
 	if !strings.Contains(out, "▸ live now · ! limit warning · cs switch <#> to use it") {
 		t.Errorf("legend:\n%s", out)
+	}
+}
+
+// speedWorld is boxWorld with the daemon's speeds measured: p1 (live) at 10
+// points an hour of use, t1 climbing at 6 while live in no profile, t2 not
+// climbing, s1 never measured. Every week is at 30%, clearing in three days.
+func speedWorld(t *testing.T, columns string) string {
+	t.Helper()
+	path := boxWorld(t, columns)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, _ := state.Load("", cfg.ProfileNames()...)
+	now := time.Now()
+	measure := func(id string, perHour float64, rise time.Duration) {
+		a := st.Get(id)
+		a.WeekSpeed, a.WeekSpeedAt = perHour, now
+		if rise >= 0 {
+			a.WeekRiseAt = now.Add(-rise)
+		}
+	}
+	measure("p1", 10, 0)
+	measure("t1", 6, 5*time.Minute)
+	measure("t2", 0, -1)
+	if err := st.Save(); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// The drain forecast in cs list: how many hours of use each account has
+// left before its switch point, after its week.
+func TestBorderedListSaysHowLongEachAccountLasts(t *testing.T) {
+	out := listText(t, speedWorld(t, "160"))
+	checkBox(t, out, 160)
+	lines := boxLines(out)
+	head := strings.Fields(strings.NewReplacer("│", " ").Replace(lines[1]))
+	if i := indexOf(head, "LASTS"); i < 0 || head[i-1] != "WEEK" {
+		t.Fatalf("no LASTS after WEEK: %v", head)
+	}
+	for id, want := range map[string]string{
+		"p1":    "│ ~7h ",         // 68 points at 10 an hour
+		"t1":    "│ ~11h ↑ ",      // 68 at 6, and climbing elsewhere
+		"t2":    "│ ∞ ",           // not climbing
+		"s1":    "│ - ",           // never measured
+		"loose": "│ -          │", // no reading at all
+	} {
+		row := ""
+		for _, l := range lines {
+			if strings.Contains(l, " "+id+" ") {
+				row = l
+			}
+		}
+		if !strings.Contains(row, want) {
+			t.Errorf("%s: no %q in\n%s", id, want, row)
+		}
+	}
+	if !strings.Contains(out, "↑ used elsewhere") {
+		t.Errorf("the legend does not say what ↑ means:\n%s", out)
+	}
+}
+
+// LASTS is worth more than the plan or the email: it is the last to go.
+func TestLastsOutstaysThePlanAndTheEmail(t *testing.T) {
+	for _, columns := range []string{"120", "100", "80"} {
+		out := listText(t, speedWorld(t, columns))
+		n, _ := strconv.Atoi(columns)
+		checkBox(t, out, n)
+		if strings.Contains(out, "EMAIL") && !strings.Contains(out, "LASTS") {
+			t.Errorf("%s columns: the email outstayed LASTS:\n%s", columns, out)
+		}
+		if strings.Contains(out, "PLAN") && !strings.Contains(out, "LASTS") {
+			t.Errorf("%s columns: the plan outstayed LASTS:\n%s", columns, out)
+		}
+	}
+}
+
+// Without a daemon's measurements there is nothing to forecast: no column of
+// dashes, and the legend as it was.
+func TestNoMeasurementsNoLastsColumn(t *testing.T) {
+	out := listText(t, boxWorld(t, "160"))
+	if strings.Contains(out, "LASTS") || strings.Contains(out, "used elsewhere") {
+		t.Errorf("a LASTS column with nothing measured:\n%s", out)
+	}
+}
+
+func indexOf(xs []string, x string) int {
+	for i, v := range xs {
+		if v == x {
+			return i
+		}
+	}
+	return -1
+}
+
+// cs list --json carries each account's drain forecast, for the app and
+// scripts: the state, the hours of use left, the speed, and whether someone
+// elsewhere is spending it.
+func TestAccountListJSONCarriesTheDrainForecast(t *testing.T) {
+	path := speedWorld(t, "160")
+	var buf bytes.Buffer
+	if err := accountList(&buf, path, true); err != nil {
+		t.Fatal(err)
+	}
+	drains := map[string]map[string]any{}
+	for _, a := range decodeJSON(t, buf.Bytes())["accounts"].([]any) {
+		a := a.(map[string]any)
+		d, _ := a["drain"].(map[string]any)
+		drains[a["id"].(string)] = d
+	}
+	for id, want := range map[string]map[string]any{
+		"p1":    {"state": "hours", "hours_left": 6.8, "speed_per_hour": 10.0, "used_elsewhere": false},
+		"t1":    {"state": "hours", "hours_left": 11.3, "speed_per_hour": 6.0, "used_elsewhere": true},
+		"t2":    {"state": "idle", "hours_left": nil, "speed_per_hour": 0.0, "used_elsewhere": false},
+		"s1":    {"state": "unknown", "hours_left": nil, "speed_per_hour": nil, "used_elsewhere": false},
+		"loose": {"state": "unknown", "hours_left": nil, "speed_per_hour": nil, "used_elsewhere": false},
+	} {
+		for k, v := range want {
+			if got, ok := drains[id][k]; !ok || got != v {
+				t.Errorf("%s drain %s = %v, want %v", id, k, got, v)
+			}
+		}
 	}
 }
