@@ -22,6 +22,7 @@ var synopses = map[string]string{
 	"status":    "claudeswitch status [--profile NAME] [--detail] [--json] [--refresh=false] [--max-age DURATION] [--config PATH] [-v]",
 	"top":       "claudeswitch top [--profile NAME] [--every DURATION] [--config PATH]",
 	"why":       "claudeswitch why [--profile NAME] [--json] [--config PATH]",
+	"forecast":  "claudeswitch forecast [--profile NAME] [--json] [--config PATH]",
 	"plan":      "claudeswitch plan [--profile NAME] [--json] [--refresh=false] [--config PATH]",
 	"whoami":    "claudeswitch whoami [--profile NAME] [--sync] [--config PATH]",
 	"watch":     "claudeswitch watch [--live] [--idle-gap DURATION] [--quiet] [--config PATH] [-v]",

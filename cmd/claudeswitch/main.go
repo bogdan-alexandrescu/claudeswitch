@@ -102,6 +102,8 @@ func main() {
 		err = cmdPlan(args)
 	case "why":
 		err = cmdWhy(args)
+	case "forecast":
+		err = cmdForecast(args)
 	case "top":
 		err = cmdTop(args)
 	case "audit":
@@ -223,6 +225,8 @@ func usageText(w io.Writer) {
              and email (the same as account list; --json for scripts)
   plan       the rotation decision right now (changes nothing)
   why        the same decision, account by account, with the reasoning
+  forecast   how many hours of use each account and pool has left at its
+             speed, and which accounts someone elsewhere is spending (--json)
   top        a live view that refreshes in place (ctrl-c to leave)
   audit      what the daemon has observed, decided and done
   forget     drop an account's recorded observations (not its vault entry)
