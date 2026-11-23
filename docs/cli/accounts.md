@@ -125,7 +125,9 @@ cs login <id> [--profile NAME] [--keep] [--sso] [--browser APP]
 
 Signs in to an account, verifies it is the seat that name stands for, vaults
 the credential and, for a new name, writes it into the config pinned to the
-seat that came back.
+seat that came back. An account that needed sign-in stops saying so at once
+(`cs list`, `cs status`); its figures are the last reading until the daemon
+next reads it.
 
 **`--direct`** (recommended) obtains the credential itself and never touches
 any live session.
