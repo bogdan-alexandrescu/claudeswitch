@@ -1470,12 +1470,7 @@ func addAccountTo(cfgPathV, profV, fromV string, forceV bool, positional []strin
 	if err != nil {
 		return nil, addError(id, err)
 	}
-	st.AddVaulted(id)
-	st.SetEmail(id, e.Email)
-	st.SetPlan(id, e.Plan)
-	acct := st.Get(id)
-	acct.OrgID = e.OrgID
-	acct.RefreshExpiry = e.RefreshExpiry
+	recordVaulted(st, id, *e)
 	if err := st.Save(); err != nil {
 		fmt.Fprintf(os.Stderr, "note: %v\n", err)
 	}
@@ -3683,11 +3678,7 @@ func cmdLogin(args []string) error {
 		return nil
 	}
 
-	st.AddVaulted(id)
-	st.SetEmail(id, e.Email)
-	st.SetPlan(id, e.Plan)
-	acct := st.Get(id)
-	acct.OrgID, acct.RefreshExpiry = e.OrgID, e.RefreshExpiry
+	recordVaulted(st, id, *e)
 	st.Profile(target.Name).SetActive(id)
 	fmt.Printf("\n  ✓ vaulted %s (org %s, %s)\n", id, shortID(e.OrgID), nonEmpty(e.Tier, "tier unknown"))
 	if e.NoRefreshToken {
@@ -3944,11 +3935,7 @@ func finishDirectLogin(cfg *config.Config, st *state.State, v *vault.Vault, pend
 		return nil, err
 	}
 
-	st.AddVaulted(id)
-	st.SetEmail(id, e.Email)
-	st.SetPlan(id, e.Plan)
-	acct := st.Get(id)
-	acct.OrgID, acct.RefreshExpiry = e.OrgID, e.RefreshExpiry
+	recordVaulted(st, id, *e)
 	if err := st.Save(); err != nil {
 		fmt.Fprintf(os.Stderr, "note: %v\n", err)
 	}
