@@ -228,7 +228,8 @@ session is never touched. Its other flags are login's.
 
 It never adds an account: a name that is not one is `not_found`, with the
 hint to add it with `cs login <id>`. With no name it lists the accounts that
-need signing in, each as the `cs reauth` command to run.
+need signing in, each as the `cs reauth` command to run; with `--json`,
+`{"needs_sign_in": [...]}`, the account names in list order.
 
 ## cs add
 
