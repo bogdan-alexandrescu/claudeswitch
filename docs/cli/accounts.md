@@ -1,4 +1,4 @@
-# cs use, login, add and the account commands
+# cs use, login, reauth, add and the account commands
 
 Adding, switching, renaming, ordering and removing accounts, and the recovery copies a swap keeps.
 
@@ -213,6 +213,23 @@ attempt pending, or an expired one, is `no_pending_login`.
 
 The [Add Account sheet](../app/add-account.md) runs
 `login <id> --direct --json --no-open` and then `login <id> --code <code> --json`.
+
+## cs reauth
+
+```
+cs reauth <id> [--browser APP] [--email ADDRESS] [--no-open] [--json]
+cs reauth
+```
+
+Signs an account you already have in again, when `cs list` says it needs
+sign-in. It is `cs login <id> --direct`, asking the browser for the address
+the account was last signed in as (`--email` asks for another), so the live
+session is never touched. Its other flags are login's.
+
+It never adds an account: a name that is not one is `not_found`, with the
+hint to add it with `cs login <id>`. With no name it lists the accounts that
+need signing in, each as the `cs reauth` command to run; with `--json`,
+`{"needs_sign_in": [...]}`, the account names in list order.
 
 ## cs add
 

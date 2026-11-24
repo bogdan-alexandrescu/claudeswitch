@@ -72,7 +72,7 @@ One page per command group, with every subcommand and flag, an example, the
 `--json` form and the exit status.
 
 - [Status](cli/status.md): `status`, `top`, `why`, `plan`, `whoami`.
-- [Accounts](cli/accounts.md): `use`, `login`, `add`, `refresh`, `accounts`,
+- [Accounts](cli/accounts.md): `use`, `login`, `reauth`, `add`, `refresh`, `accounts`,
   `account …`, `priority`, `rename`, `remove`, `forget`, `identify`,
   `recovery`.
 - [Profiles](cli/profiles.md): `profile …`, `pool …` and `run`.

@@ -39,6 +39,7 @@ var synopses = map[string]string{
 		"       claudeswitch login <id> --code <code> [--json]\n" +
 		"       claudeswitch login <id> [--profile NAME] [--keep] [--sso] [--browser APP]\n" +
 		"       claudeswitch login   (at a terminal: asks for the name, the pool and the browser)",
+	"reauth":   "claudeswitch reauth [<id>] [--browser APP] [--email ADDRESS] [--no-open] [--json] [--config PATH]",
 	"accounts": "claudeswitch accounts [--json] [--config PATH]",
 	"forget":   "claudeswitch forget <id>... | forget --stale [--config PATH]",
 	"rename":   "claudeswitch rename <old> <new> [--config PATH]",
