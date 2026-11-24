@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"slices"
 	"strings"
 	"testing"
@@ -100,5 +101,47 @@ func TestReauthHelp(t *testing.T) {
 	out, _, _ = runCLISplit(t, "help")
 	if !strings.Contains(out, "\n  reauth ") {
 		t.Errorf("help does not list reauth:\n%s", out)
+	}
+}
+
+// The listed commands keep the config they were listed from, or the name
+// they offer would not be found.
+func TestReauthListKeepsTheConfig(t *testing.T) {
+	path := reauthWorld(t)
+	out, _ := runCLI(t, "reauth", "--config", path)
+	if want := "cs reauth t1 --config " + shellQuote(path); !strings.Contains(out, want) {
+		t.Errorf("reauth does not offer %q:\n%s", want, out)
+	}
+}
+
+func TestReauthListJSON(t *testing.T) {
+	path := reauthWorld(t)
+	out, _, code := runCLISplit(t, "reauth", "--json", "--config", path)
+	got := decodeJSON(t, []byte(out))
+	need, _ := got["needs_sign_in"].([]any)
+	if code != 0 || len(need) != 2 || need[0] != "t1" || need[1] != "t2" {
+		t.Errorf("reauth --json: exit %d\n%s", code, out)
+	}
+
+	path = appWorld(t, sharedTOML)
+	out, _, _ = runCLISplit(t, "reauth", "--json", "--config", path)
+	if need, ok := decodeJSON(t, []byte(out))["needs_sign_in"].([]any); !ok || len(need) != 0 {
+		t.Errorf("nothing to do: want an empty list\n%s", out)
+	}
+}
+
+// A flag reaches login as it was given, false included: --no-open=false must
+// not arrive as --no-open.
+func TestReauthPassesFlagsAsGiven(t *testing.T) {
+	fs := flag.NewFlagSet("reauth", flag.ContinueOnError)
+	fs.String("browser", "", "")
+	fs.Bool("no-open", false, "")
+	fs.Bool("json", false, "")
+	if err := fs.Parse([]string{"--no-open=false", "--browser", "Safari", "--json"}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"--browser", "Safari", "--json=true", "--no-open=false"}
+	if got := givenFlags(fs); !slices.Equal(got, want) {
+		t.Errorf("givenFlags = %q, want %q", got, want)
 	}
 }
