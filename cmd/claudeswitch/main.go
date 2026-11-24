@@ -141,6 +141,8 @@ func main() {
 		err = cmdSetup(args)
 	case "login":
 		err = cmdLogin(args)
+	case "reauth":
+		err = cmdReauth(args)
 	case "statusline":
 		if len(args) > 0 && (args[0] == "install" || args[0] == "uninstall") {
 			err = cmdStatuslineManage(args[0], args[1:])
@@ -212,6 +214,9 @@ func usageText(w io.Writer) {
              with --no-open, finish it with: login <id> --code <code>
              --org <org-id>: sign in to that organization; --pool <pool> or
              --no-pool: where a new account goes
+  reauth [<id>]
+             sign an existing account in again (login <id> --direct, asking
+             for its recorded address); with no <id>, lists what needs it
   add <id>   vault the credential that is live right now, as <id>
              (--from <profile>: the one live in that profile; --pool <pool>
              or --no-pool: where a new account goes)
